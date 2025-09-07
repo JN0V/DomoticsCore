@@ -23,7 +23,7 @@ pio lib install "DomoticsCore"
 Add to your `platformio.ini`:
 ```ini
 lib_deps = 
-    https://github.com/seb/DomoticsCore.git
+    https://github.com/JN0V/DomoticsCore.git#v0.1.0
 ```
 
 ### Local Development
@@ -144,11 +144,11 @@ DomoticsCore/
 
 ## 🔗 Dependencies
 
-- ArduinoJson (>=6.21.0)
-- PubSubClient (>=2.8.0)
-- ESP Async WebServer (>=1.2.3)
-- AsyncTCP (>=1.1.1)
-- WiFiManager (>=2.0.17)
+- ArduinoJson (>=6.21.0) - MIT License
+- PubSubClient (>=2.8.0) - MIT License
+- ESP Async WebServer (>=1.2.3) - LGPL 2.1 License
+- AsyncTCP (>=1.1.1) - LGPL 3.0 License
+- WiFiManager (>=2.0.17) - MIT License
 
 ## 📋 Examples
 
@@ -172,7 +172,25 @@ See `examples/AdvancedApp/` for a complete example with:
 
 ## 📄 License
 
-MIT License - see LICENSE file for details.
+This project is licensed under the MIT License - see LICENSE file for details.
+
+### Third-Party Licenses
+
+This project uses several third-party libraries with different licenses:
+
+- **ArduinoJson** by Benoit Blanchon - MIT License
+- **PubSubClient** by Nick O'Leary - MIT License  
+- **WiFiManager** by tzapu - MIT License
+- **ESP Async WebServer** by Hristo Gochkov - LGPL 2.1 License
+- **AsyncTCP** by me-no-dev - LGPL 3.0 License
+
+**Important**: The ESP Async WebServer and AsyncTCP libraries are licensed under LGPL, which means:
+- You can use this library in commercial projects
+- If you modify the LGPL-licensed components, you must make those modifications available under LGPL
+- Your application code remains under your chosen license
+- Static linking is allowed, but you must provide a way for users to replace the LGPL components
+
+For full license compliance, please review the individual license files of each dependency.
 
 ## 🆘 Support
 
