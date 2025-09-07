@@ -5,16 +5,16 @@
   "keywords": ["esp32", "domotics", "iot", "mqtt", "home-assistant", "wifi"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/seb/DomoticsCore.git"
+    "url": "https://github.com/JN0V/DomoticsCore.git"
   },
   "authors": [
     {
-      "name": "Seb",
+      "name": "JN0V",
       "maintainer": true
     }
   ],
   "license": "MIT",
-  "homepage": "https://github.com/seb/DomoticsCore",
+  "homepage": "https://github.com/JN0V/DomoticsCore",
   "frameworks": ["arduino"],
   "platforms": ["espressif32"],
   "build": {
