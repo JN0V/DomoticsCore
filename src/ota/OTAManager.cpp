@@ -1,5 +1,8 @@
 #include <DomoticsCore/OTAManager.h>
 #include <DomoticsCore/WebConfig.h>
+#include <DomoticsCore/SystemUtils.h>
+#include <DomoticsCore/Logger.h>
+#include <Update.h>
 
 OTAManager::OTAManager(AsyncWebServer* srv, WebConfig* webCfg) : server(srv), webConfig(webCfg) {
   otaError = "";
@@ -56,27 +59,27 @@ void OTAManager::setupRoutes() {
     }
   }, [this](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
     if (!index) {
-      Serial.printf("Update Start: %s\n", filename.c_str());
+      DLOG_I(LOG_OTA, "Update Start: %s", filename.c_str());
       if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
         otaError = "Cannot start update: " + String(Update.errorString());
-        Update.printError(Serial);
+        DLOG_E(LOG_OTA, "Update begin failed: %s", Update.errorString());
       }
     }
     
     if (!Update.hasError()) {
       if (Update.write(data, len) != len) {
         otaError = "Write failed: " + String(Update.errorString());
-        Update.printError(Serial);
+        DLOG_E(LOG_OTA, "Update write failed: %s", Update.errorString());
       }
     }
     
     if (final) {
       if (Update.end(true)) {
-        Serial.printf("Update Success: %uB\n", index+len);
+        DLOG_I(LOG_OTA, "Update Success: %uB", index+len);
         otaError = "";
       } else {
         otaError = "Update failed: " + String(Update.errorString());
-        Update.printError(Serial);
+        DLOG_E(LOG_OTA, "Update end failed: %s", Update.errorString());
       }
     }
   });

@@ -1,4 +1,5 @@
 #include <DomoticsCore/LEDManager.h>
+#include <DomoticsCore/Logger.h>
 #include <Arduino.h>
 
 LEDManager::LEDManager(int pin)
@@ -6,7 +7,7 @@ LEDManager::LEDManager(int pin)
     lastUpdate(0), ledState(false), blinkCount(0),
     startingSequenceStart(0) {
   if (pin < 0 || pin > 39 || pin == 6 || pin == 7 || pin == 8 || pin == 9 || pin == 10 || pin == 11) {
-    Serial.printf("Warning: Invalid LED pin %d, using default pin 2\n", pin);
+    DLOG_W(LOG_LED, "Invalid LED pin %d, using default pin 2", pin);
     ledPin = 2;
   }
 }
@@ -29,7 +30,7 @@ WiFiStatus LEDManager::getCurrentStatus() { return currentStatus; }
 
 void LEDManager::runSequence(WiFiStatus status, unsigned long duration) {
   if (duration > 60000) {
-    Serial.printf("Warning: LED sequence duration %lu too long, limiting to 60s\n", duration);
+    DLOG_W(LOG_LED, "LED sequence duration %lu too long, limiting to 60s", duration);
     duration = 60000;
   }
   setStatus(status);

@@ -1,4 +1,5 @@
 #include <DomoticsCore/HomeAssistant.h>
+#include <DomoticsCore/Logger.h>
 #include <WiFi.h>
 
 HomeAssistantDiscovery::HomeAssistantDiscovery(PubSubClient* client, const String& devId, 
@@ -48,9 +49,9 @@ bool HomeAssistantDiscovery::publishDiscoveryMessage(const String& component, co
   bool result = mqttClient->publish(topic.c_str(), config.c_str(), true); // Retain message
   
   if (result) {
-    Serial.printf("[HA] Published %s entity: %s\n", component.c_str(), objectId.c_str());
+    DLOG_I(LOG_HA, "Published %s entity: %s", component.c_str(), objectId.c_str());
   } else {
-    Serial.printf("[HA] Failed to publish %s entity: %s\n", component.c_str(), objectId.c_str());
+    DLOG_E(LOG_HA, "Failed to publish %s entity: %s", component.c_str(), objectId.c_str());
   }
   
   return result;
@@ -59,7 +60,7 @@ bool HomeAssistantDiscovery::publishDiscoveryMessage(const String& component, co
 void HomeAssistantDiscovery::publishDevice() {
   if (!enabled) return;
   
-  Serial.println("[HA] Publishing device information");
+  DLOG_I(LOG_HA, "Publishing device information");
   // Device info is included in each entity, no separate device topic needed
 }
 
@@ -167,12 +168,12 @@ void HomeAssistantDiscovery::removeEntity(const String& component, const String&
   String topic = getTopicPrefix(component, name) + "/config";
   mqttClient->publish(topic.c_str(), "", true); // Empty retained message removes entity
   
-  Serial.printf("[HA] Removed %s entity: %s\n", component.c_str(), name.c_str());
+  DLOG_I(LOG_HA, "Removed %s entity: %s", component.c_str(), name.c_str());
 }
 
 void HomeAssistantDiscovery::removeAllEntities() {
   // Note: This is a simplified approach. In practice, you'd need to track all published entities
-  Serial.println("[HA] Removing all entities (manual cleanup required)");
+  DLOG_W(LOG_HA, "Removing all entities (manual cleanup required)");
 }
 
 String HomeAssistantDiscovery::getDefaultStateTopic(const String& entityName) {

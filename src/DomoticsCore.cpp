@@ -1,6 +1,7 @@
 #include <DomoticsCore/DomoticsCore.h>
 #include <DomoticsCore/Config.h>
 #include <DomoticsCore/SystemUtils.h>
+#include <DomoticsCore/Logger.h>
 #include <ESPmDNS.h>
 
 DomoticsCore::DomoticsCore(const CoreConfig& cfg)
@@ -26,10 +27,10 @@ void DomoticsCore::begin() {
   preferences.begin("esp32-config", false);
 
   // Banner
-  Serial.println(String("=== ") + cfg.deviceName + " v" + cfg.firmwareVersion + " ===");
-  Serial.println(String("Library: DomoticsCore v") + String(FIRMWARE_VERSION));
-  Serial.println("Manufacturer: " MANUFACTURER);
-  Serial.println("System starting...");
+  DLOG_I(LOG_CORE, "=== %s v%s ===", cfg.deviceName.c_str(), cfg.firmwareVersion.c_str());
+  DLOG_I(LOG_CORE, "Library: DomoticsCore v%s", FIRMWARE_VERSION);
+  DLOG_I(LOG_CORE, "Manufacturer: %s", MANUFACTURER);
+  DLOG_I(LOG_CORE, "System starting...");
 
   // Starting LED sequence
   ledManager.runSequence(WIFI_STARTING, 3000);
@@ -43,29 +44,29 @@ void DomoticsCore::begin() {
   wifiManager.setConnectTimeout((int)cfg.wifiConnectTimeoutSec);
 
   wifiManager.setAPCallback([this](WiFiManager *myWiFiManager) {
-    Serial.println("Entered config mode");
-    Serial.println("AP IP address: " + WiFi.softAPIP().toString());
-    Serial.println("Connect to: " + String(myWiFiManager->getConfigPortalSSID()));
+    DLOG_I(LOG_WIFI, "Entered config mode");
+    DLOG_I(LOG_WIFI, "AP IP address: %s", WiFi.softAPIP().toString().c_str());
+    DLOG_I(LOG_WIFI, "Connect to: %s", myWiFiManager->getConfigPortalSSID());
     ledManager.setStatus(WIFI_AP_MODE);
   });
 
   wifiManager.setSaveConfigCallback([this]() {
-    Serial.println("WiFi config saved, will restart");
+    DLOG_I(LOG_WIFI, "WiFi config saved, will restart");
     shouldReboot = true;
   });
 
   // WiFi connect
-  Serial.println("\nStarting WiFi configuration...");
+  DLOG_I(LOG_WIFI, "Starting WiFi configuration...");
   ledManager.runSequence(WIFI_CONNECTING, 1000);
 
   if (!wifiManager.autoConnect(cfg.deviceName.c_str())) {
-    Serial.println("Failed to connect and hit timeout");
-    Serial.println("Starting in AP mode for configuration");
+    DLOG_E(LOG_WIFI, "Failed to connect and hit timeout");
+    DLOG_W(LOG_WIFI, "Starting in AP mode for configuration");
     ledManager.setStatus(WIFI_FAILED);
   } else {
-    Serial.println("\nWiFi connected!");
-    Serial.printf("IP Address: %s\n", WiFi.localIP().toString().c_str());
-    Serial.printf("Connect to: http://%s\n", WiFi.localIP().toString().c_str());
+    DLOG_I(LOG_WIFI, "WiFi connected!");
+    DLOG_I(LOG_WIFI, "IP Address: %s", WiFi.localIP().toString().c_str());
+    DLOG_I(LOG_WIFI, "Connect to: http://%s", WiFi.localIP().toString().c_str());
     // brief confirmation
     ledManager.runSequence(WIFI_CONNECTED, 1000);
   }
@@ -89,10 +90,10 @@ void DomoticsCore::begin() {
     host.toLowerCase();
     host.replace(" ", "-");
     if (!MDNS.begin(host.c_str())) {
-      Serial.println("mDNS start failed");
+      DLOG_E(LOG_SYSTEM, "mDNS start failed");
     } else {
       MDNS.addService("http", "tcp", cfg.webServerPort);
-      Serial.println("mDNS: http://" + host + ".local");
+      DLOG_I(LOG_SYSTEM, "mDNS: http://%s.local", host.c_str());
     }
   }
 
@@ -119,7 +120,7 @@ void DomoticsCore::begin() {
   webConfig.setHomeAssistantChangeCallback([this]() {
     if (webConfig.isHomeAssistantEnabled()) {
       homeAssistant.begin(webConfig.getHomeAssistantDiscoveryPrefix());
-      Serial.println("[HA] Home Assistant settings updated and reinitialized");
+      DLOG_I(LOG_HA, "Home Assistant settings updated and reinitialized");
     }
   });
   
@@ -132,7 +133,7 @@ void DomoticsCore::begin() {
                             webConfig.getHomeAssistantDiscoveryPrefix() : 
                             cfg.homeAssistantDiscoveryPrefix;
     homeAssistant.begin(discoveryPrefix);
-    Serial.println("Home Assistant auto-discovery enabled with prefix: " + discoveryPrefix);
+    DLOG_I(LOG_HA, "Home Assistant auto-discovery enabled with prefix: %s", discoveryPrefix.c_str());
   }
 
   // Initialize MQTT if enabled (check both config and web preferences)
@@ -145,25 +146,25 @@ void DomoticsCore::begin() {
 
   // Start server
   server.begin();
-  Serial.println("Web interface available at: http://" + WiFi.localIP().toString());
-  Serial.println("OTA ready at http://" + WiFi.localIP().toString() + "/update");
+  DLOG_I(LOG_HTTP, "Web interface available at: http://%s", WiFi.localIP().toString().c_str());
+  DLOG_I(LOG_OTA, "OTA ready at http://%s/update", WiFi.localIP().toString().c_str());
   
   // Not found handler for easier diagnostics
   server.onNotFound([this](AsyncWebServerRequest *request){
-    Serial.printf("[HTTP] 404 Not Found: %s\n", request->url().c_str());
+    DLOG_W(LOG_HTTP, "404 Not Found: %s", request->url().c_str());
     request->send(404, "text/plain", "Not found: " + request->url());
   });
 
-  Serial.println("=== System Ready ===");
-  Serial.println("Web interface available at: http://" + WiFi.localIP().toString());
-  Serial.println("Also available at: http://" + cfg.mdnsHostname + ".local");
+  DLOG_I(LOG_CORE, "=== System Ready ===");
+  DLOG_I(LOG_HTTP, "Web interface available at: http://%s", WiFi.localIP().toString().c_str());
+  DLOG_I(LOG_HTTP, "Also available at: http://%s.local", cfg.mdnsHostname.c_str());
   
 }
 
 void DomoticsCore::loop() {
   // Handle reboot request
   if (shouldReboot) {
-    Serial.println("Rebooting in 3 seconds...");
+    DLOG_I(LOG_CORE, "Rebooting in 3 seconds...");
     delay(3000);
     ESP.restart();
   }
@@ -177,18 +178,18 @@ void DomoticsCore::loop() {
       wifiReconnecting = true;
       wifiLostTime = millis();
       reconnectAttempts = 0;
-      Serial.println("WiFi connection lost, attempting reconnection...");
+      DLOG_W(LOG_WIFI, "WiFi connection lost, attempting reconnection...");
       ledManager.setStatus(WIFI_RECONNECTING);
     }
 
     if (reconnectAttempts >= cfg.wifiMaxReconnectAttempts) {
-      Serial.println("Max WiFi reconnection attempts reached, restarting...");
+      DLOG_E(LOG_WIFI, "Max WiFi reconnection attempts reached, restarting...");
       delay(1000);
       ESP.restart();
     }
 
     if (millis() - wifiLostTime > cfg.wifiReconnectTimeoutMs) {
-      Serial.println("WiFi reconnection timeout, restarting...");
+      DLOG_E(LOG_WIFI, "WiFi reconnection timeout, restarting...");
       delay(1000);
       ESP.restart();
     }
@@ -198,7 +199,7 @@ void DomoticsCore::loop() {
     if (millis() - lastReconnectAttempt > backoffDelay) {
       lastReconnectAttempt = millis();
       reconnectAttempts++;
-      Serial.printf("WiFi reconnection attempt %d/%d (delay: %lums)\n",
+      DLOG_I(LOG_WIFI, "WiFi reconnection attempt %d/%d (delay: %lums)",
                     reconnectAttempts, cfg.wifiMaxReconnectAttempts, backoffDelay);
       WiFi.reconnect();
     }
@@ -206,7 +207,7 @@ void DomoticsCore::loop() {
     if (wifiReconnecting) {
       wifiReconnecting = false;
       reconnectAttempts = 0;
-      Serial.println("WiFi reconnected successfully!");
+      DLOG_I(LOG_WIFI, "WiFi reconnected successfully!");
       ledManager.setStatus(WIFI_NORMAL_OPERATION);
     }
   }
@@ -234,14 +235,14 @@ void DomoticsCore::loop() {
     logMessage += String(ESP.getFreeHeap());
     logMessage += " bytes - IP: ";
     logMessage += WiFi.localIP().toString();
-    Serial.println(SystemUtils::getFormattedLog(logMessage));
+    DLOG_I(LOG_SYSTEM, "System active - Free heap: %d bytes - IP: %s", ESP.getFreeHeap(), WiFi.localIP().toString().c_str());
   }
 
   delay(LOOP_DELAY);
 }
 
 void DomoticsCore::initializeMQTT() {
-  Serial.println("Initializing MQTT...");
+  DLOG_I(LOG_MQTT, "Initializing MQTT...");
   
   // Load MQTT settings from web config or fallback to config defaults
   String mqttServer = webConfig.isMQTTEnabled() ? webConfig.getMQTTServer() : cfg.mqttServer;
@@ -251,11 +252,11 @@ void DomoticsCore::initializeMQTT() {
   String mqttClientId = webConfig.isMQTTEnabled() ? webConfig.getMQTTClientId() : cfg.mqttClientId;
   
   if (mqttServer.isEmpty()) {
-    Serial.println("[MQTT] Server not configured, skipping initialization");
+    DLOG_W(LOG_MQTT, "Server not configured, skipping initialization");
     return;
   }
   
-  Serial.printf("[MQTT] Initializing - Server: %s:%d, Client ID: %s\n", 
+  DLOG_I(LOG_MQTT, "Initializing - Server: %s:%d, Client ID: %s", 
                 mqttServer.c_str(), mqttPort, mqttClientId.c_str());
   
   // Set MQTT timeouts
@@ -288,7 +289,7 @@ void DomoticsCore::initializeMQTT() {
     for (unsigned int i = 0; i < length; i++) {
       message += (char)payload[i];
     }
-    Serial.printf("[MQTT] Received: %s => %s\n", topic, message.c_str());
+    DLOG_D(LOG_MQTT, "Received: %s => %s", topic, message.c_str());
     onMQTTMessage(String(topic), message);
   });
   
@@ -319,7 +320,7 @@ void DomoticsCore::handleMQTT() {
         reachable = testClient.connect(mqttServerBuffer, mqttPort);
       }
       if (!reachable) {
-        Serial.printf("[MQTT] Connection failed - cannot reach %s:%d\n", mqttServerBuffer, mqttPort);
+        DLOG_E(LOG_MQTT, "Connection failed - cannot reach %s:%d", mqttServerBuffer, mqttPort);
         testClient.stop();
         return;
       }
@@ -333,7 +334,7 @@ void DomoticsCore::handleMQTT() {
       }
       
       if (connected) {
-        Serial.println("[MQTT] Connected successfully!");
+        DLOG_I(LOG_MQTT, "Connected successfully!");
         
         // Subscribe to default topics
         String baseTopic = "jnov/" + String(mqttClientBuffer);
@@ -342,23 +343,23 @@ void DomoticsCore::handleMQTT() {
         
         // Publish online status
         mqttClient.publish((baseTopic + "/status").c_str(), "online", true);
-        Serial.printf("[MQTT] Ready - Topics: %s/{cmd,set,status}\n", baseTopic.c_str());
+        DLOG_I(LOG_MQTT, "Ready - Topics: %s/{cmd,set,status}", baseTopic.c_str());
         
         mqttConnected = true;
       } else {
         int state = mqttClient.state();
-        Serial.printf("[MQTT] Connection failed, rc=%d", state);
+        DLOG_E(LOG_MQTT, "Connection failed, rc=%d", state);
         switch(state) {
-          case -4: Serial.println(" (MQTT_CONNECTION_TIMEOUT)"); break;
-          case -3: Serial.println(" (MQTT_CONNECTION_LOST)"); break;
-          case -2: Serial.println(" (MQTT_CONNECT_FAILED)"); break;
-          case -1: Serial.println(" (MQTT_DISCONNECTED)"); break;
-          case 1: Serial.println(" (MQTT_CONNECT_BAD_PROTOCOL)"); break;
-          case 2: Serial.println(" (MQTT_CONNECT_BAD_CLIENT_ID)"); break;
-          case 3: Serial.println(" (MQTT_CONNECT_UNAVAILABLE)"); break;
-          case 4: Serial.println(" (MQTT_CONNECT_BAD_CREDENTIALS)"); break;
-          case 5: Serial.println(" (MQTT_CONNECT_UNAUTHORIZED)"); break;
-          default: Serial.println(" (UNKNOWN)"); break;
+          case -4: DLOG_E(LOG_MQTT, " (MQTT_CONNECTION_TIMEOUT)"); break;
+          case -3: DLOG_E(LOG_MQTT, " (MQTT_CONNECTION_LOST)"); break;
+          case -2: DLOG_E(LOG_MQTT, " (MQTT_CONNECT_FAILED)"); break;
+          case -1: DLOG_E(LOG_MQTT, " (MQTT_DISCONNECTED)"); break;
+          case  1: DLOG_E(LOG_MQTT, " (MQTT_CONNECT_BAD_PROTOCOL)"); break;
+          case  2: DLOG_E(LOG_MQTT, " (MQTT_CONNECT_BAD_CLIENT_ID)"); break;
+          case  3: DLOG_E(LOG_MQTT, " (MQTT_CONNECT_UNAVAILABLE)"); break;
+          case  4: DLOG_E(LOG_MQTT, " (MQTT_CONNECT_BAD_CREDENTIALS)"); break;
+          case  5: DLOG_E(LOG_MQTT, " (MQTT_CONNECT_UNAUTHORIZED)"); break;
+          default: DLOG_E(LOG_MQTT, " (UNKNOWN)"); break;
         }
         mqttConnected = false;
       }
@@ -376,17 +377,17 @@ void DomoticsCore::reconnectMQTT() {
     mqttClient.disconnect();
   }
   mqttConnected = false;
-  Serial.println("[MQTT] Forcing reconnection with new settings...");
+  DLOG_I(LOG_MQTT, "Forcing reconnection with new settings...");
 }
 
 void DomoticsCore::onMQTTMessage(const String& topic, const String& message) {
   // Default MQTT message handler - can be overridden by user
-  Serial.printf("[MQTT] Default handler: %s => %s\n", topic.c_str(), message.c_str());
+  DLOG_D(LOG_MQTT, "Default handler: %s => %s", topic.c_str(), message.c_str());
   
   // Handle basic system commands
   if (topic.endsWith("/cmd")) {
     if (message == "restart" || message == "reboot") {
-      Serial.println("[MQTT] Restart command received");
+      DLOG_I(LOG_MQTT, "Restart command received");
       delay(1000);
       ESP.restart();
     } else if (message == "status") {
