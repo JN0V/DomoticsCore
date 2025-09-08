@@ -4,6 +4,12 @@
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 
+// Custom application logging tags
+#define LOG_APP      "APP"
+#define LOG_SENSOR   "SENSOR"
+#define LOG_API      "API"
+#define LOG_MONITOR  "MONITOR"
+
 CoreConfig cfg; // defaults from firmware-config.h
 DomoticsCore* gCore = nullptr;
 
@@ -21,15 +27,20 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
+  DLOG_I(LOG_APP, "AdvancedApp v2.1.0 starting...");
+
   // Example runtime overrides (keep minimal to let WebConfig take precedence)
   cfg.deviceName = "JNOV-ADV";
   cfg.firmwareVersion = "2.1.0";          // AdvancedApp firmware version
   cfg.strictNtpBeforeNormalOp = true;
   cfg.mqttEnabled = true; // allow MQTT; server/credentials managed via Web UI
+  DLOG_I(LOG_APP, "Device configured: %s", cfg.deviceName.c_str());
+  
   // Do not force server/port here; use Web UI or firmware defaults
   // Provide a fallback clientId only if none set in firmware defaults
   if (cfg.mqttClientId.length() == 0) {
     cfg.mqttClientId = String("adv-") + getChipId();
+    DLOG_D(LOG_APP, "Generated MQTT client ID: %s", cfg.mqttClientId.c_str());
   }
   // cfg.webServerPort = 8080; // uncomment to change HTTP port
 
@@ -38,6 +49,7 @@ void setup() {
   // Register routes BEFORE starting the server
   // Custom JSON status endpoint
   gCore->webServer().on("/api/status", HTTP_GET, [](AsyncWebServerRequest* request){
+    DLOG_D(LOG_API, "Status request from %s", request->client()->remoteIP().toString().c_str());
     DynamicJsonDocument doc(256);
     doc["version_full"] = gCore->version();  // App firmware version
     doc["library_version"] = gCore->libraryVersion();  // DomoticsCore lib version
@@ -51,6 +63,7 @@ void setup() {
 
   // Simple ping endpoint
   gCore->webServer().on("/api/ping", HTTP_GET, [](AsyncWebServerRequest* request){
+    DLOG_V(LOG_API, "Ping request received");
     String body;
     body.reserve(64);
     body = "pong: ";
@@ -61,6 +74,7 @@ void setup() {
 
   // Reboot endpoint (use with care)
   gCore->webServer().on("/api/reboot", HTTP_POST, [](AsyncWebServerRequest* request){
+    DLOG_W(LOG_API, "Reboot requested from %s", request->client()->remoteIP().toString().c_str());
     request->send(200, "text/plain", "rebooting");
     delay(250);
     ESP.restart();
@@ -71,6 +85,8 @@ void setup() {
 
   // Setup Home Assistant auto-discovery if enabled
   if (gCore->isHomeAssistantEnabled()) {
+    DLOG_I(LOG_SENSOR, "Setting up system monitoring sensors");
+    
     // Publish system sensors
     gCore->getHomeAssistant().publishSensor("uptime", "System Uptime", "s", "");
     gCore->getHomeAssistant().publishSensor("free_heap", "Free Heap Memory", "bytes", "");
@@ -133,6 +149,7 @@ void loop() {
           mqtt.publish(("jnov/" + deviceId + "/uptime/state").c_str(), String(millis() / 1000).c_str());
           mqtt.publish(("jnov/" + deviceId + "/free_heap/state").c_str(), String(ESP.getFreeHeap()).c_str());
           mqtt.publish(("jnov/" + deviceId + "/wifi_rssi/state").c_str(), String(WiFi.RSSI()).c_str());
+          DLOG_V(LOG_MONITOR, "Published sensor data to Home Assistant");
         }
 
         DLOG_I(LOG_MQTT, "Heartbeat sent: %s", payload.c_str());
