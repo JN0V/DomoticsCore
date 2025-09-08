@@ -10,6 +10,7 @@ ESP32 domotics framework with WiFi, MQTT, web interface and Home Assistant integ
 - **Home Assistant**: Auto-discovery integration
 - **OTA Updates**: Over-the-air firmware updates
 - **LED Status**: Visual feedback system
+- **Unified Logging**: Decentralized, extensible logging system
 - **Modular Design**: Clean, extensible architecture
 
 ## 📦 Installation
@@ -23,7 +24,7 @@ pio lib install "DomoticsCore"
 Add to your `platformio.ini`:
 ```ini
 lib_deps = 
-    https://github.com/JN0V/DomoticsCore.git#v0.1.0
+    https://github.com/JN0V/DomoticsCore.git#v0.1.4
 ```
 
 ### Local Development
@@ -107,6 +108,44 @@ String deviceId = core.config().deviceName;
 core.getMQTTClient().publish(("jnov/" + deviceId + "/temperature/state").c_str(), "23.5");
 ```
 
+### Unified Logging System
+The framework provides a decentralized logging system with component-based tagging:
+
+```cpp
+#include <DomoticsCore/Logger.h>
+
+// Use predefined library tags
+DLOG_I(LOG_CORE, "System initialized");
+DLOG_W(LOG_WIFI, "Connection unstable, RSSI: %d", WiFi.RSSI());
+DLOG_E(LOG_MQTT, "Broker connection failed");
+
+// Define custom application tags
+#define LOG_SENSOR "SENSOR"
+#define LOG_PUMP   "PUMP"
+
+DLOG_I(LOG_SENSOR, "Temperature: %.2f°C", temperature);
+DLOG_E(LOG_PUMP, "Motor failure detected");
+
+// Or use inline custom tags
+DLOG_D("CUSTOM", "My component message");
+```
+
+**Available Log Levels:**
+- `DLOG_E` - Error messages
+- `DLOG_W` - Warning messages  
+- `DLOG_I` - Information messages
+- `DLOG_D` - Debug messages
+- `DLOG_V` - Verbose messages
+
+**Predefined Component Tags:**
+`LOG_CORE`, `LOG_WIFI`, `LOG_MQTT`, `LOG_HTTP`, `LOG_HA`, `LOG_OTA`, `LOG_LED`, `LOG_SECURITY`, `LOG_WEB`, `LOG_SYSTEM`
+
+**Log Level Control:**
+```ini
+build_flags = 
+    -DCORE_DEBUG_LEVEL=3  ; 0=None, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Verbose
+```
+
 ### LED Status System
 The framework includes a comprehensive LED status system:
 - **Solid ON (3s)**: System starting
@@ -127,6 +166,7 @@ DomoticsCore/
 │   ├── DomoticsCore.h        # Main framework class
 │   ├── HomeAssistant.h       # HA integration
 │   ├── LEDManager.h          # LED status management
+│   ├── Logger.h              # Unified logging system
 │   ├── OTAManager.h          # OTA updates
 │   ├── SystemUtils.h         # System utilities
 │   └── WebConfig.h           # Web interface
