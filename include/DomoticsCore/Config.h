@@ -12,6 +12,7 @@ struct CoreConfig {
   // Identity
   String deviceName;
   String manufacturer;
+  String firmwareVersion;  // Application firmware version (overrides library default)
 
   // Hardware / services
   uint16_t webServerPort;
@@ -46,6 +47,7 @@ struct CoreConfig {
   CoreConfig()
     : deviceName(generateUniqueDeviceName()),
       manufacturer(MANUFACTURER),
+      firmwareVersion(FIRMWARE_VERSION),
       webServerPort(WEB_SERVER_PORT),
       ledPin(LED_PIN),
       wifiConfigPortalTimeoutMs(WIFI_CONFIG_PORTAL_TIMEOUT * 1000UL),

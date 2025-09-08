@@ -70,9 +70,11 @@ String SystemUtils::getFormattedLog(const String& message) {
 }
 
 String SystemUtils::getFullFirmwareVersion() {
+  // This returns the DomoticsCore library version with build info
+  // Applications should use DomoticsCore::version() for their own version
   String s;
   s.reserve(32);
-  s = String(FIRMWARE_VERSION);
+  s = String(FIRMWARE_VERSION);  // Library version
   s += "+build.";
   s += String((uint64_t)BUILD_NUMBER_NUM);
   return s;
