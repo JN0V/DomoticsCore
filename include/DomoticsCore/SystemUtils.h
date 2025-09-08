@@ -22,7 +22,6 @@ public:
   static void initializeNTP();
   static bool isTimeInitialized();
   static String getCurrentTimeString();
-  static String getFormattedLog(const String& message);
   static String getFullFirmwareVersion();
 };
 

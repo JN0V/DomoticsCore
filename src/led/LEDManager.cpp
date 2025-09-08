@@ -37,7 +37,7 @@ void LEDManager::runSequence(WiFiStatus status, unsigned long duration) {
   unsigned long startTime = millis();
   while (millis() - startTime < duration) {
     update();
-    delay(50);
+    yield(); // Non-blocking yield instead of delay
   }
 }
 
