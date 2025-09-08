@@ -32,7 +32,8 @@ public:
 
   // MQTT client access
   PubSubClient& getMQTTClient() { return mqttClient; }
-  bool isMQTTConnected() const { return const_cast<PubSubClient&>(mqttClient).connected(); }
+  bool isMQTTConnected() const { return mqttConnected; }
+  void reconnectMQTT(); // Force MQTT reconnection with new settings
 
   // Access to underlying web server for custom routes
   AsyncWebServer& webServer() { return server; }
@@ -44,7 +45,15 @@ public:
   // Access configuration
   const CoreConfig& config() const { return cfg; }
 
+protected:
+  // MQTT message handler - can be overridden by derived classes
+  virtual void onMQTTMessage(const String& topic, const String& message);
+
 private:
+  // MQTT initialization and handling
+  void initializeMQTT();
+  void handleMQTT();
+
   CoreConfig cfg;
   // Core services
   WiFiManager wifiManager;
@@ -63,6 +72,16 @@ private:
   bool wifiReconnecting = false;
   unsigned long wifiLostTime = 0;
   uint8_t reconnectAttempts = 0;
+
+  // MQTT state
+  bool mqttInitialized = false;
+  bool mqttConnected = false;
+  char mqttServerBuffer[64]; // Static buffer for MQTT server to avoid dangling pointers
+  char mqttClientBuffer[64]; // Static buffer for MQTT client ID
+  char mqttUserBuffer[64];   // Static buffer for MQTT user
+  char mqttPassBuffer[64];   // Static buffer for MQTT password
+  bool mqttServerIsIP = false; // True if server parsed as IP
+  IPAddress mqttServerIp;      // Parsed IP if mqttServerIsIP
 
   // MQTT client for HA integration
   WiFiClient wifiClient;

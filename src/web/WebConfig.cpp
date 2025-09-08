@@ -19,6 +19,7 @@ WebConfig::WebConfig(AsyncWebServer* srv, Preferences* prefs, const String& devi
 
 void WebConfig::begin() {
   loadMQTTSettings();
+  loadHomeAssistantSettings();
   loadAdminAuth();
   setupRoutes();
 }
@@ -30,6 +31,11 @@ void WebConfig::loadMQTTSettings() {
   mqttUser = preferences->getString("mqtt_user", "");
   mqttPassword = preferences->getString("mqtt_password", "");
   mqttClientId = preferences->getString("mqtt_clientid", "jnov-esp32-domotics");
+}
+
+void WebConfig::loadHomeAssistantSettings() {
+  haEnabled = preferences->getBool("ha_enabled", false);
+  haDiscoveryPrefix = preferences->getString("ha_discovery_prefix", "homeassistant");
 }
 
 void WebConfig::loadAdminAuth() {
@@ -136,8 +142,8 @@ void WebConfig::setupRoutes() {
   // MQTT Configuration page
   server->on("/mqtt", HTTP_GET, [this](AsyncWebServerRequest *request){
     if (!authenticate(request)) return;
-    String html = getHTMLHeader("MQTT Configuration");
-    html += "<div class='container'><h1>MQTT Configuration</h1>";
+    String html = getHTMLHeader("MQTT & Home Assistant Configuration");
+    html += "<div class='container'><h1>MQTT & Home Assistant Configuration</h1>";
 
     html += "<div class='info'><h3>Current Status</h3>";
     html += "<p><strong>MQTT Enabled:</strong> " + String(mqttEnabled ? "Yes" : "No") + "</p>";
@@ -145,6 +151,10 @@ void WebConfig::setupRoutes() {
       html += "<p><strong>Server:</strong> " + mqttServer + "</p>";
       html += "<p><strong>Port:</strong> " + String(mqttPort) + "</p>";
       html += "<p><strong>Client ID:</strong> " + mqttClientId + "</p>";
+    }
+    html += "<p><strong>Home Assistant Discovery:</strong> " + String(haEnabled ? "Enabled" : "Disabled") + "</p>";
+    if (haEnabled) {
+      html += "<p><strong>Discovery Prefix:</strong> " + haDiscoveryPrefix + "</p>";
     }
 
     // mDNS configuration section
@@ -161,22 +171,6 @@ void WebConfig::setupRoutes() {
     html += "</div>";
     html += "</div>";
 
-    // Home Assistant configuration section
-    html += "<div class='section'>";
-    html += "<h3>Home Assistant Integration</h3>";
-    html += "<div class='form-group'>";
-    html += "<label for='ha_enabled'>Enable Home Assistant Auto-Discovery:</label>";
-    html += "<input type='checkbox' id='ha_enabled' name='ha_enabled'" + String(haEnabled ? " checked" : "") + ">";
-    html += "</div>";
-    html += "<div class='form-group'>";
-    html += "<label for='ha_discovery_prefix'>Discovery Prefix:</label>";
-    html += "<input type='text' id='ha_discovery_prefix' name='ha_discovery_prefix' value='" + haDiscoveryPrefix + "' placeholder='homeassistant'>";
-    html += "<small>MQTT topic prefix for Home Assistant discovery</small>";
-    html += "</div>";
-    html += "<div class='info-box'>";
-    html += "<p><strong>Note:</strong> Home Assistant integration requires MQTT to be enabled and configured.</p>";
-    html += "</div>";
-    html += "</div>";
 
     html += "<form method='POST' action='/mqtt'>";
     html += "<label><input type='checkbox' name='enabled' " + String(mqttEnabled ? "checked" : "") + "> Enable MQTT</label>";
@@ -186,6 +180,16 @@ void WebConfig::setupRoutes() {
     // Do not echo stored password; leave blank unless user wants to change it
     html += "<label>Password (optional):</label><input type='password' name='password' value='' placeholder='(unchanged)'>";
     html += "<label>Client ID:</label><input type='text' name='clientid' value='" + mqttClientId + "'>";
+    
+    // Home Assistant integration (part of MQTT config)
+    html += "<h4>Home Assistant Integration</h4>";
+    html += "<label><input type='checkbox' name='ha_enabled' " + String(haEnabled ? "checked" : "") + "> Enable Home Assistant Auto-Discovery</label>";
+    html += "<label>Discovery Prefix:</label><input type='text' name='ha_discovery_prefix' value='" + haDiscoveryPrefix + "' placeholder='homeassistant'>";
+    html += "<small>MQTT topic prefix for Home Assistant discovery</small>";
+    html += "<div class='info-box'>";
+    html += "<p><strong>Note:</strong> Home Assistant auto-discovery uses MQTT to publish device information.</p>";
+    html += "</div>";
+    
     html += "<br><br><input type='submit' value='Save Configuration' class='button'>";
     html += "</form>";
 
@@ -253,6 +257,11 @@ void WebConfig::setupRoutes() {
       mqttPassword = password;
     }
     mqttClientId = clientId;
+    
+    // Trigger MQTT reconnection if callback is set
+    if (mqttChangeCallback) {
+      mqttChangeCallback();
+    }
 
     // Handle mDNS settings
     if (request->hasParam("mdns_enabled", true)) {
@@ -281,10 +290,15 @@ void WebConfig::setupRoutes() {
       haDiscoveryPrefix = request->getParam("ha_discovery_prefix", true)->value();
       preferences->putString("ha_discovery_prefix", haDiscoveryPrefix);
     }
+    
+    // Trigger Home Assistant reconfiguration if callback is set
+    if (haChangeCallback) {
+      haChangeCallback();
+    }
 
-    String html = getHTMLHeader("MQTT Configuration Saved");
+    String html = getHTMLHeader("MQTT & Home Assistant Configuration Saved");
     html += "<div class='container'><h1>Configuration Saved</h1>";
-    html += "<div class='success'><p>MQTT configuration has been saved successfully!</p></div>";
+    html += "<div class='success'><p>MQTT and Home Assistant configuration has been saved successfully!</p></div>";
     html += "<a href='/mqtt' class='button'>Back to MQTT Settings</a>";
     html += "<a href='/' class='button'>Main Menu</a>";
     html += "</div>" + getHTMLFooter();

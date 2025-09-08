@@ -49,6 +49,12 @@ private:
   static const unsigned long AUTH_LOCKOUT_TIME = 300000; // 5 minutes
   AuthAttempt authAttempts[MAX_AUTH_ATTEMPTS];
   int authAttemptCount;
+  
+  // Callback for MQTT settings change
+  std::function<void()> mqttChangeCallback;
+  
+  // Callback for Home Assistant settings change
+  std::function<void()> haChangeCallback;
 
 public:
   WebConfig(AsyncWebServer* srv, Preferences* prefs, const String& device,
@@ -56,6 +62,7 @@ public:
 
   void begin();
   void loadMQTTSettings();
+  void loadHomeAssistantSettings();
   void loadAdminAuth();
   void setupRoutes();
 
@@ -86,6 +93,12 @@ public:
     mqttPassword = password;
     mqttClientId = clientId;
   }
+  
+  // Callback for MQTT settings change
+  void setMQTTChangeCallback(std::function<void()> callback) { mqttChangeCallback = callback; }
+  
+  // Callback for Home Assistant settings change
+  void setHomeAssistantChangeCallback(std::function<void()> callback) { haChangeCallback = callback; }
   
   void setDefaultMDNS(bool enabled, const String& hostname);
   void setDefaultHomeAssistant(bool enabled, const String& discoveryPrefix);

@@ -2,12 +2,9 @@
 #include <DomoticsCore/DomoticsCore.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
-#include <PubSubClient.h>
 
 CoreConfig cfg; // defaults from firmware-config.h
 DomoticsCore* gCore = nullptr;
-WiFiClient gNet;
-PubSubClient gMqtt(gNet);
 
 static String topicIn() { return String("jnov/") + cfg.mqttClientId + "/in"; }
 static String topicOut() { return String("jnov/") + cfg.mqttClientId + "/out"; }
@@ -23,13 +20,15 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  // Example runtime overrides
+  // Example runtime overrides (keep minimal to let WebConfig take precedence)
   cfg.deviceName = "JNOV-ADV";
   cfg.strictNtpBeforeNormalOp = true;
-  cfg.mqttEnabled = true;
-  cfg.mqttServer = "192.168.1.10"; // change to your broker
-  cfg.mqttPort = 1883;
-  cfg.mqttClientId = String("adv-") + getChipId();
+  cfg.mqttEnabled = true; // allow MQTT; server/credentials managed via Web UI
+  // Do not force server/port here; use Web UI or firmware defaults
+  // Provide a fallback clientId only if none set in firmware defaults
+  if (cfg.mqttClientId.length() == 0) {
+    cfg.mqttClientId = String("adv-") + getChipId();
+  }
   // cfg.webServerPort = 8080; // uncomment to change HTTP port
 
   gCore = new DomoticsCore(cfg);
@@ -80,10 +79,9 @@ void setup() {
     Serial.println("[HA] Auto-discovery entities published");
   }
 
-  // MQTT setup (demo)
+  // MQTT setup is handled by DomoticsCore; we can still set a callback on its client if needed
   if (cfg.mqttEnabled && cfg.mqttServer.length()) {
-    gMqtt.setServer(cfg.mqttServer.c_str(), cfg.mqttPort);
-    gMqtt.setCallback([](char* topic, byte* payload, unsigned int length){
+    gCore->getMQTTClient().setCallback([](char* topic, byte* payload, unsigned int length){
       String msg; msg.reserve(length);
       for (unsigned int i=0;i<length;i++) msg += (char)payload[i];
       Serial.printf("[MQTT] %s => %s\n", topic, msg.c_str());
@@ -94,55 +92,50 @@ void setup() {
 void loop() {
   if (gCore) gCore->loop();
 
-  // MQTT demo loop
-  static unsigned long lastPub = 0;
+  // MQTT demo loop using DomoticsCore's MQTT client
   if (cfg.mqttEnabled && cfg.mqttServer.length()) {
-    if (!gMqtt.connected() && WiFi.isConnected()) {
-      String clientId = cfg.mqttClientId.length() ? cfg.mqttClientId : String("jnov-") + String((uint32_t)ESP.getEfuseMac(), HEX);
-      bool ok;
-      if (cfg.mqttUser.length()) {
-        ok = gMqtt.connect(clientId.c_str(), cfg.mqttUser.c_str(), cfg.mqttPassword.c_str());
-      } else {
-        ok = gMqtt.connect(clientId.c_str());
-      }
-      if (ok) {
-        Serial.println("[MQTT] Connected");
-        gMqtt.subscribe(topicIn().c_str());
-        gMqtt.publish(topicOut().c_str(), "online");
-      }
-    }
-    gMqtt.loop();
+    PubSubClient& mqtt = gCore->getMQTTClient();
+    mqtt.loop();
 
-    // Example: Publish MQTT heartbeat every 30 seconds
-    static unsigned long lastHeartbeat = 0;
-    if (millis() - lastHeartbeat > 30000) {
-      lastHeartbeat = millis();
-      
-      if (gMqtt.connected()) {
+    // Subscribe/publish once connected
+    static bool subscribed = false;
+    if (gCore->isMQTTConnected()) {
+      if (!subscribed) {
+        mqtt.subscribe(topicIn().c_str());
+        mqtt.publish(topicOut().c_str(), "online", true);
+        subscribed = true;
+      }
+
+      // Heartbeat every 30s
+      static unsigned long lastHeartbeat = 0;
+      if (millis() - lastHeartbeat > 30000) {
+        lastHeartbeat = millis();
+
         DynamicJsonDocument doc(256);
         doc["device"] = "JNOV-ESP32-Domotics";
         doc["status"] = "online";
         doc["uptime"] = millis() / 1000;
         doc["free_heap"] = ESP.getFreeHeap();
         doc["wifi_rssi"] = WiFi.RSSI();
-        
+
         String payload;
         serializeJson(doc, payload);
-        
+
         String topic = "jnov/" + String(WiFi.macAddress()) + "/out";
         topic.replace(":", "");
-        gMqtt.publish(topic.c_str(), payload.c_str());
-        
-        // Also publish individual HA sensor values if enabled
+        mqtt.publish(topic.c_str(), payload.c_str());
+
         if (gCore->isHomeAssistantEnabled()) {
           String deviceId = gCore->config().deviceName;
-          gMqtt.publish(("jnov/" + deviceId + "/uptime/state").c_str(), String(millis() / 1000).c_str());
-          gMqtt.publish(("jnov/" + deviceId + "/free_heap/state").c_str(), String(ESP.getFreeHeap()).c_str());
-          gMqtt.publish(("jnov/" + deviceId + "/wifi_rssi/state").c_str(), String(WiFi.RSSI()).c_str());
+          mqtt.publish(("jnov/" + deviceId + "/uptime/state").c_str(), String(millis() / 1000).c_str());
+          mqtt.publish(("jnov/" + deviceId + "/free_heap/state").c_str(), String(ESP.getFreeHeap()).c_str());
+          mqtt.publish(("jnov/" + deviceId + "/wifi_rssi/state").c_str(), String(WiFi.RSSI()).c_str());
         }
-        
+
         Serial.println("MQTT heartbeat sent: " + payload);
       }
+    } else {
+      subscribed = false; // reset on disconnect
     }
   }
 }
