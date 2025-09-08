@@ -3,40 +3,35 @@
 
 #include <Arduino.h>
 
-// Log components for consistent tagging
-enum LogComponent {
-  LOG_CORE,      // DomoticsCore main system
-  LOG_WIFI,      // WiFiManager and connections
-  LOG_MQTT,      // MQTT client
-  LOG_HTTP,      // Web server and HTTP requests
-  LOG_HA,        // Home Assistant integration
-  LOG_OTA,       // OTA updates
-  LOG_LED,       // LED manager
-  LOG_SECURITY,  // Authentication and security
-  LOG_WEB,       // Web configuration
-  LOG_SYSTEM     // System utilities
-};
-
-// Get component tag string
-const char* getComponentTag(LogComponent component);
-
 // Unified logging macros using Arduino ESP32 logging
 // Format: [timestamp] [LEVEL] [COMPONENT] message
 // Timestamp is handled automatically by Arduino logging (millis before NTP, time after NTP)
-// Arduino log macros expect: log_level(format, ...) - tag is handled internally
+// Each component declares its own tag string
 
-#define DLOG_E(component, format, ...) log_e("[%s] " format, getComponentTag(component), ##__VA_ARGS__)
-#define DLOG_W(component, format, ...) log_w("[%s] " format, getComponentTag(component), ##__VA_ARGS__)
-#define DLOG_I(component, format, ...) log_i("[%s] " format, getComponentTag(component), ##__VA_ARGS__)
-#define DLOG_D(component, format, ...) log_d("[%s] " format, getComponentTag(component), ##__VA_ARGS__)
-#define DLOG_V(component, format, ...) log_v("[%s] " format, getComponentTag(component), ##__VA_ARGS__)
+#define DLOG_E(tag, format, ...) log_e("[%s] " format, tag, ##__VA_ARGS__)
+#define DLOG_W(tag, format, ...) log_w("[%s] " format, tag, ##__VA_ARGS__)
+#define DLOG_I(tag, format, ...) log_i("[%s] " format, tag, ##__VA_ARGS__)
+#define DLOG_D(tag, format, ...) log_d("[%s] " format, tag, ##__VA_ARGS__)
+#define DLOG_V(tag, format, ...) log_v("[%s] " format, tag, ##__VA_ARGS__)
 
 // Convenience macros for simple string messages (no formatting)
-#define DLOG_ES(component, message) DLOG_E(component, "%s", message)
-#define DLOG_WS(component, message) DLOG_W(component, "%s", message)
-#define DLOG_IS(component, message) DLOG_I(component, "%s", message)
-#define DLOG_DS(component, message) DLOG_D(component, "%s", message)
-#define DLOG_VS(component, message) DLOG_V(component, "%s", message)
+#define DLOG_ES(tag, message) DLOG_E(tag, "%s", message)
+#define DLOG_WS(tag, message) DLOG_W(tag, "%s", message)
+#define DLOG_IS(tag, message) DLOG_I(tag, "%s", message)
+#define DLOG_DS(tag, message) DLOG_D(tag, "%s", message)
+#define DLOG_VS(tag, message) DLOG_V(tag, "%s", message)
+
+// Standard component tags (can be used by library and apps)
+#define LOG_CORE     "CORE"
+#define LOG_WIFI     "WIFI"
+#define LOG_MQTT     "MQTT"
+#define LOG_HTTP     "HTTP"
+#define LOG_HA       "HA"
+#define LOG_OTA      "OTA"
+#define LOG_LED      "LED"
+#define LOG_SECURITY "SECURITY"
+#define LOG_WEB      "WEB"
+#define LOG_SYSTEM   "SYSTEM"
 
 // Log levels (for reference - controlled by CORE_DEBUG_LEVEL):
 // 0 = None

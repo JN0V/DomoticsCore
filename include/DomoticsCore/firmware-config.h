@@ -8,7 +8,7 @@
 // SemVer2 versioning (MAJOR.MINOR.PATCH)
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
-#define VERSION_PATCH 3
+#define VERSION_PATCH 4
 
 // Build metadata (automatically generated) - numeric universal format
 // Extract components from __DATE__ ("Mmm dd yyyy") and __TIME__ ("hh:mm:ss")
