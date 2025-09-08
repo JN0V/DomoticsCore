@@ -1,5 +1,7 @@
 #include <DomoticsCore/WebConfig.h>
 #include <DomoticsCore/SystemUtils.h>
+#include <DomoticsCore/Logger.h>
+#include <WiFi.h>
 #include <ArduinoJson.h>
 #include "WebConfigPages.h"
 
@@ -45,7 +47,7 @@ void WebConfig::loadAdminAuth() {
   
   // If no credentials set, use temporary defaults but log warning
   if (adminUser.isEmpty() || adminPass.isEmpty()) {
-    Serial.println("WARNING: Using default admin credentials (admin/admin). Change them immediately via /admin!");
+    DLOG_W(LOG_SECURITY, "Using default admin credentials (admin/admin). Change them immediately via /admin!");
     adminUser = "admin";
     adminPass = "admin";
   }
@@ -223,7 +225,7 @@ void WebConfig::setupRoutes() {
     String clientId = request->getParam("clientid", true)->value();
 
     if (port < 1 || port > 65535) {
-      Serial.printf("Warning: Invalid MQTT port %d, using default 1883\n", port);
+      DLOG_W(LOG_WEB, "Invalid MQTT port %d, using default 1883", port);
       port = 1883;
     }
 
@@ -427,5 +429,5 @@ void WebConfig::recordAuthAttempt(const String& clientIP) {
     authAttemptCount++;
   }
   
-  Serial.printf("[SECURITY] Failed auth attempt from %s\n", clientIP.c_str());
+  DLOG_E(LOG_SECURITY, "Failed auth attempt from %s", clientIP.c_str());
 }

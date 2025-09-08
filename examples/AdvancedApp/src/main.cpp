@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <DomoticsCore/DomoticsCore.h>
+#include <DomoticsCore/Logger.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 
@@ -78,7 +79,7 @@ void setup() {
     // Publish device info
     gCore->getHomeAssistant().publishDevice();
     
-    Serial.println("[HA] Auto-discovery entities published");
+    DLOG_I(LOG_HA, "Auto-discovery entities published");
   }
 
   // MQTT setup is handled by DomoticsCore; we can still set a callback on its client if needed
@@ -86,7 +87,7 @@ void setup() {
     gCore->getMQTTClient().setCallback([](char* topic, byte* payload, unsigned int length){
       String msg; msg.reserve(length);
       for (unsigned int i=0;i<length;i++) msg += (char)payload[i];
-      Serial.printf("[MQTT] %s => %s\n", topic, msg.c_str());
+      DLOG_I(LOG_MQTT, "%s => %s", topic, msg.c_str());
     });
   }
 }
@@ -134,7 +135,7 @@ void loop() {
           mqtt.publish(("jnov/" + deviceId + "/wifi_rssi/state").c_str(), String(WiFi.RSSI()).c_str());
         }
 
-        Serial.println("MQTT heartbeat sent: " + payload);
+        DLOG_I(LOG_MQTT, "Heartbeat sent: %s", payload.c_str());
       }
     } else {
       subscribed = false; // reset on disconnect
