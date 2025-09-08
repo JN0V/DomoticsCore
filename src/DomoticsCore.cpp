@@ -7,9 +7,9 @@ DomoticsCore::DomoticsCore(const CoreConfig& cfg)
   : cfg(cfg),
     server(cfg.webServerPort),
     ledManager(cfg.ledPin),
-    webConfig(&server, &preferences, cfg.deviceName, cfg.manufacturer, FIRMWARE_VERSION),
+    webConfig(&server, &preferences, cfg.deviceName, cfg.manufacturer, cfg.firmwareVersion),
     otaManager(&server, &webConfig),
-    homeAssistant(&mqttClient, cfg.deviceName, cfg.deviceName, cfg.manufacturer, FIRMWARE_VERSION),
+    homeAssistant(&mqttClient, cfg.deviceName, cfg.deviceName, cfg.manufacturer, cfg.firmwareVersion),
     mqttClient(wifiClient) {}
 
 void DomoticsCore::begin() {
@@ -26,7 +26,8 @@ void DomoticsCore::begin() {
   preferences.begin("esp32-config", false);
 
   // Banner
-  Serial.println(String("=== JNOV ESP32 Domotics Core v") + SystemUtils::getFullFirmwareVersion() + " ===");
+  Serial.println(String("=== ") + cfg.deviceName + " v" + cfg.firmwareVersion + " ===");
+  Serial.println(String("Library: DomoticsCore v") + String(FIRMWARE_VERSION));
   Serial.println("Manufacturer: " MANUFACTURER);
   Serial.println("System starting...");
 

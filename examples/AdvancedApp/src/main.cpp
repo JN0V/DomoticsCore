@@ -22,6 +22,7 @@ void setup() {
 
   // Example runtime overrides (keep minimal to let WebConfig take precedence)
   cfg.deviceName = "JNOV-ADV";
+  cfg.firmwareVersion = "2.1.0";          // AdvancedApp firmware version
   cfg.strictNtpBeforeNormalOp = true;
   cfg.mqttEnabled = true; // allow MQTT; server/credentials managed via Web UI
   // Do not force server/port here; use Web UI or firmware defaults
@@ -37,7 +38,8 @@ void setup() {
   // Custom JSON status endpoint
   gCore->webServer().on("/api/status", HTTP_GET, [](AsyncWebServerRequest* request){
     DynamicJsonDocument doc(256);
-    doc["version_full"] = gCore->fullVersion();
+    doc["version_full"] = gCore->version();  // App firmware version
+    doc["library_version"] = gCore->libraryVersion();  // DomoticsCore lib version
     doc["device"] = gCore->config().deviceName;
     doc["manufacturer"] = gCore->config().manufacturer;
     doc["heap"] = (uint32_t)ESP.getFreeHeap();

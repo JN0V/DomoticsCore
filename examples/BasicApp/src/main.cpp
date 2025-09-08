@@ -12,6 +12,7 @@ void setup() {
 
   // Example overrides (optional). Keep BasicApp minimal, no MQTT demo here.
   cfg.deviceName = "JNOV-EXAMPLE";        // custom AP/hostname
+  cfg.firmwareVersion = "1.0.0";          // BasicApp firmware version
   cfg.strictNtpBeforeNormalOp = true;      // keep LED solid only after NTP
   // cfg.webServerPort = 8080;             // uncomment to change HTTP port
   // cfg.ledPin = 2;                        // override LED pin if needed

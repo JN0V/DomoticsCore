@@ -39,8 +39,9 @@ public:
   AsyncWebServer& webServer() { return server; }
 
   // Version helpers
-  String version() const { return String(FIRMWARE_VERSION); }
+  String version() const { return cfg.firmwareVersion; }  // Application firmware version
   String fullVersion() const { return SystemUtils::getFullFirmwareVersion(); }
+  String libraryVersion() const { return String(FIRMWARE_VERSION); }  // DomoticsCore library version
 
   // Access configuration
   const CoreConfig& config() const { return cfg; }
