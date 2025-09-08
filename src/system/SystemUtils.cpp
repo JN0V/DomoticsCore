@@ -58,17 +58,7 @@ String SystemUtils::getCurrentTimeString() {
   return "";
 }
 
-String SystemUtils::getFormattedLog(const String& message) {
-  if (timeInitialized) {
-    struct tm timeinfo;
-    if (getLocalTime(&timeinfo)) {
-      char timeStr[32];
-      strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
-      return "[" + String(timeStr) + "] " + message;
-    }
-  }
-  return "[" + String(millis()/1000) + "] " + message;
-}
+// Removed getFormattedLog - Arduino Core logging handles timestamps automatically
 
 String SystemUtils::getFullFirmwareVersion() {
   // This returns the DomoticsCore library version with build info

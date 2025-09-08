@@ -1,16 +1,14 @@
 # DomoticsCore Logging System
 
-The DomoticsCore framework provides a unified, decentralized logging system that allows both the library and applications to generate consistent, tagged log messages.
+Unified, decentralized logging with component tags and multiple log levels built on ESP32 Arduino Core.
 
-## Overview
+## Features
 
-The logging system is built on top of the ESP32 Arduino Core logging infrastructure and provides:
-
-- **Component-based tagging** for easy filtering and debugging
-- **Multiple log levels** (Error, Warning, Info, Debug, Verbose)
-- **Decentralized tag management** - no central enum to modify
-- **Easy extensibility** for custom application components
-- **Automatic timestamps** (milliseconds before NTP sync, real time after)
+- **Component tagging** for filtering and debugging
+- **5 log levels** (Error, Warning, Info, Debug, Verbose)  
+- **Decentralized** - no central enum to modify
+- **Extensible** for custom application components
+- **Auto timestamps** (millis before NTP, real time after)
 
 ## Quick Start
 
