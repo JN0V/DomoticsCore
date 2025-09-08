@@ -10,7 +10,7 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  // Example overrides (optional)
+  // Example overrides (optional). Keep BasicApp minimal, no MQTT demo here.
   cfg.deviceName = "JNOV-EXAMPLE";        // custom AP/hostname
   cfg.strictNtpBeforeNormalOp = true;      // keep LED solid only after NTP
   // cfg.webServerPort = 8080;             // uncomment to change HTTP port

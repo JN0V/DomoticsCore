@@ -95,8 +95,7 @@ void DomoticsCore::begin() {
     }
   }
 
-  // Modules
-  // Apply default MQTT parameters from configuration (can be overridden via UI/preferences)
+  // Initialize web configuration
   webConfig.setDefaultMQTT(
     cfg.mqttEnabled,
     cfg.mqttServer,
@@ -106,12 +105,41 @@ void DomoticsCore::begin() {
     cfg.mqttClientId
   );
   webConfig.begin();
+  
+  // Set up MQTT change callback to trigger reconnection
+  webConfig.setMQTTChangeCallback([this]() {
+    bool mqttEnabled = cfg.mqttEnabled || webConfig.isMQTTEnabled();
+    if (mqttEnabled && mqttInitialized) {
+      reconnectMQTT();
+    }
+  });
+  
+  // Set up Home Assistant change callback to reinitialize discovery
+  webConfig.setHomeAssistantChangeCallback([this]() {
+    if (webConfig.isHomeAssistantEnabled()) {
+      homeAssistant.begin(webConfig.getHomeAssistantDiscoveryPrefix());
+      Serial.println("[HA] Home Assistant settings updated and reinitialized");
+    }
+  });
+  
   otaManager.begin();
   
-  // Initialize Home Assistant if enabled
-  if (cfg.homeAssistantEnabled) {
-    homeAssistant.begin(cfg.homeAssistantDiscoveryPrefix);
-    Serial.println("Home Assistant auto-discovery enabled");
+  // Initialize Home Assistant if enabled (check both config and web preferences)
+  bool haEnabled = cfg.homeAssistantEnabled || webConfig.isHomeAssistantEnabled();
+  if (haEnabled) {
+    String discoveryPrefix = webConfig.isHomeAssistantEnabled() ? 
+                            webConfig.getHomeAssistantDiscoveryPrefix() : 
+                            cfg.homeAssistantDiscoveryPrefix;
+    homeAssistant.begin(discoveryPrefix);
+    Serial.println("Home Assistant auto-discovery enabled with prefix: " + discoveryPrefix);
+  }
+
+  // Initialize MQTT if enabled (check both config and web preferences)
+  bool mqttEnabled = cfg.mqttEnabled || webConfig.isMQTTEnabled();
+  String mqttServer = webConfig.isMQTTEnabled() ? webConfig.getMQTTServer() : cfg.mqttServer;
+  
+  if (mqttEnabled && !mqttServer.isEmpty()) {
+    initializeMQTT();
   }
 
   // Start server
@@ -125,14 +153,10 @@ void DomoticsCore::begin() {
     request->send(404, "text/plain", "Not found: " + request->url());
   });
 
-  Serial.println("\n=== System Ready ===");
+  Serial.println("=== System Ready ===");
   Serial.println("Web interface available at: http://" + WiFi.localIP().toString());
-  if (cfg.mdnsEnabled) {
-    String host = cfg.mdnsHostname;
-    host.toLowerCase();
-    host.replace(" ", "-");
-    Serial.println("Also available at: http://" + host + ".local");
-  }
+  Serial.println("Also available at: http://" + cfg.mdnsHostname + ".local");
+  
 }
 
 void DomoticsCore::loop() {
@@ -186,6 +210,14 @@ void DomoticsCore::loop() {
     }
   }
 
+  // MQTT handling (check both config and web preferences)
+  bool mqttEnabled = cfg.mqttEnabled || webConfig.isMQTTEnabled();
+  String mqttServer = webConfig.isMQTTEnabled() ? webConfig.getMQTTServer() : cfg.mqttServer;
+  
+  if (mqttEnabled && !mqttServer.isEmpty()) {
+    handleMQTT();
+  }
+
   // LED
   ledManager.update();
 
@@ -205,4 +237,161 @@ void DomoticsCore::loop() {
   }
 
   delay(LOOP_DELAY);
+}
+
+void DomoticsCore::initializeMQTT() {
+  Serial.println("Initializing MQTT...");
+  
+  // Load MQTT settings from web config or fallback to config defaults
+  String mqttServer = webConfig.isMQTTEnabled() ? webConfig.getMQTTServer() : cfg.mqttServer;
+  int mqttPort = webConfig.isMQTTEnabled() ? webConfig.getMQTTPort() : cfg.mqttPort;
+  String mqttUser = webConfig.isMQTTEnabled() ? webConfig.getMQTTUser() : cfg.mqttUser;
+  String mqttPassword = webConfig.isMQTTEnabled() ? webConfig.getMQTTPassword() : cfg.mqttPassword;
+  String mqttClientId = webConfig.isMQTTEnabled() ? webConfig.getMQTTClientId() : cfg.mqttClientId;
+  
+  if (mqttServer.isEmpty()) {
+    Serial.println("[MQTT] Server not configured, skipping initialization");
+    return;
+  }
+  
+  Serial.printf("[MQTT] Initializing - Server: %s:%d, Client ID: %s\n", 
+                mqttServer.c_str(), mqttPort, mqttClientId.c_str());
+  
+  // Set MQTT timeouts
+  mqttClient.setSocketTimeout(15); // 15 seconds socket timeout
+  mqttClient.setKeepAlive(60);     // 60 seconds keep alive
+  
+  // Copy all MQTT credentials to static buffers to prevent dangling pointers
+  strncpy(mqttServerBuffer, mqttServer.c_str(), sizeof(mqttServerBuffer) - 1);
+  mqttServerBuffer[sizeof(mqttServerBuffer) - 1] = '\0';
+
+  strncpy(mqttClientBuffer, mqttClientId.c_str(), sizeof(mqttClientBuffer) - 1);
+  mqttClientBuffer[sizeof(mqttClientBuffer) - 1] = '\0';
+
+  strncpy(mqttUserBuffer, mqttUser.c_str(), sizeof(mqttUserBuffer) - 1);
+  mqttUserBuffer[sizeof(mqttUserBuffer) - 1] = '\0';
+
+  strncpy(mqttPassBuffer, mqttPassword.c_str(), sizeof(mqttPassBuffer) - 1);
+  mqttPassBuffer[sizeof(mqttPassBuffer) - 1] = '\0';
+
+  // Prefer IPAddress to avoid DNS resolution when server is an IP literal
+  mqttServerIsIP = mqttServerIp.fromString(mqttServerBuffer);
+  if (mqttServerIsIP) {
+    mqttClient.setServer(mqttServerIp, mqttPort);
+  } else {
+    mqttClient.setServer(mqttServerBuffer, mqttPort);
+  }
+  mqttClient.setCallback([this](char* topic, byte* payload, unsigned int length) {
+    String message;
+    message.reserve(length);
+    for (unsigned int i = 0; i < length; i++) {
+      message += (char)payload[i];
+    }
+    Serial.printf("[MQTT] Received: %s => %s\n", topic, message.c_str());
+    onMQTTMessage(String(topic), message);
+  });
+  
+  mqttInitialized = true;
+}
+
+void DomoticsCore::handleMQTT() {
+  if (!mqttInitialized || !WiFi.isConnected()) {
+    return;
+  }
+  
+  // Handle MQTT connection
+  if (!mqttClient.connected()) {
+    static unsigned long lastReconnectAttempt = 0;
+    unsigned long now = millis();
+    
+    if (now - lastReconnectAttempt > 5000) { // Try reconnect every 5 seconds
+      lastReconnectAttempt = now;
+      
+      int mqttPort = webConfig.isMQTTEnabled() ? webConfig.getMQTTPort() : cfg.mqttPort;
+
+      // Test network connectivity first, avoiding DNS if server is an IP literal
+      WiFiClient testClient;
+      bool reachable = false;
+      if (mqttServerIsIP) {
+        reachable = testClient.connect(mqttServerIp, mqttPort);
+      } else {
+        reachable = testClient.connect(mqttServerBuffer, mqttPort);
+      }
+      if (!reachable) {
+        Serial.printf("[MQTT] Connection failed - cannot reach %s:%d\n", mqttServerBuffer, mqttPort);
+        testClient.stop();
+        return;
+      }
+      testClient.stop();
+
+      bool connected = false;
+      if (strlen(mqttUserBuffer) > 0) {
+        connected = mqttClient.connect(mqttClientBuffer, mqttUserBuffer, mqttPassBuffer);
+      } else {
+        connected = mqttClient.connect(mqttClientBuffer);
+      }
+      
+      if (connected) {
+        Serial.println("[MQTT] Connected successfully!");
+        
+        // Subscribe to default topics
+        String baseTopic = "jnov/" + String(mqttClientBuffer);
+        mqttClient.subscribe((baseTopic + "/cmd").c_str());
+        mqttClient.subscribe((baseTopic + "/set").c_str());
+        
+        // Publish online status
+        mqttClient.publish((baseTopic + "/status").c_str(), "online", true);
+        Serial.printf("[MQTT] Ready - Topics: %s/{cmd,set,status}\n", baseTopic.c_str());
+        
+        mqttConnected = true;
+      } else {
+        int state = mqttClient.state();
+        Serial.printf("[MQTT] Connection failed, rc=%d", state);
+        switch(state) {
+          case -4: Serial.println(" (MQTT_CONNECTION_TIMEOUT)"); break;
+          case -3: Serial.println(" (MQTT_CONNECTION_LOST)"); break;
+          case -2: Serial.println(" (MQTT_CONNECT_FAILED)"); break;
+          case -1: Serial.println(" (MQTT_DISCONNECTED)"); break;
+          case 1: Serial.println(" (MQTT_CONNECT_BAD_PROTOCOL)"); break;
+          case 2: Serial.println(" (MQTT_CONNECT_BAD_CLIENT_ID)"); break;
+          case 3: Serial.println(" (MQTT_CONNECT_UNAVAILABLE)"); break;
+          case 4: Serial.println(" (MQTT_CONNECT_BAD_CREDENTIALS)"); break;
+          case 5: Serial.println(" (MQTT_CONNECT_UNAUTHORIZED)"); break;
+          default: Serial.println(" (UNKNOWN)"); break;
+        }
+        mqttConnected = false;
+      }
+    }
+  } else {
+    mqttConnected = true;
+  }
+  
+  // Process MQTT messages
+  mqttClient.loop();
+}
+
+void DomoticsCore::reconnectMQTT() {
+  if (mqttClient.connected()) {
+    mqttClient.disconnect();
+  }
+  mqttConnected = false;
+  Serial.println("[MQTT] Forcing reconnection with new settings...");
+}
+
+void DomoticsCore::onMQTTMessage(const String& topic, const String& message) {
+  // Default MQTT message handler - can be overridden by user
+  Serial.printf("[MQTT] Default handler: %s => %s\n", topic.c_str(), message.c_str());
+  
+  // Handle basic system commands
+  if (topic.endsWith("/cmd")) {
+    if (message == "restart" || message == "reboot") {
+      Serial.println("[MQTT] Restart command received");
+      delay(1000);
+      ESP.restart();
+    } else if (message == "status") {
+      String baseTopic = "jnov/" + String(mqttClientBuffer);
+      String statusMsg = "{\"status\":\"online\",\"uptime\":" + String(millis()/1000) + ",\"heap\":" + String(ESP.getFreeHeap()) + "}";
+      mqttClient.publish((baseTopic + "/status").c_str(), statusMsg.c_str());
+    }
+  }
 }
