@@ -27,8 +27,8 @@ private:
   bool enabled;
 
   // Helper methods
-  String getDeviceConfigJson();
-  String getTopicPrefix(const String& component, const String& objectId);
+  String getDeviceConfigJson() const;
+  String getTopicPrefix(const String& component, const String& objectId) const;
   bool publishDiscoveryMessage(const String& component, const String& objectId, const String& config);
 
 public:
@@ -107,12 +107,12 @@ public:
   /**
    * @brief Get default state topic for entity
    */
-  String getDefaultStateTopic(const String& entityName);
+  String getDefaultStateTopic(const String& entityName) const;
 
   /**
    * @brief Get default command topic for entity
    */
-  String getDefaultCommandTopic(const String& entityName);
+  String getDefaultCommandTopic(const String& entityName) const;
 };
 
 #endif // DOMOTICS_CORE_HOME_ASSISTANT_H

@@ -34,7 +34,7 @@ public:
   void setStatus(WiFiStatus status);
   void update();
   void runSequence(WiFiStatus status, unsigned long duration);
-  WiFiStatus getCurrentStatus();
+  WiFiStatus getCurrentStatus() const;
 };
 
 #endif // DOMOTICS_CORE_LED_MANAGER_H

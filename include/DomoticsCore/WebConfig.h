@@ -76,12 +76,12 @@ public:
   bool isRateLimited(const String& clientIP);
   void recordAuthAttempt(const String& clientIP);
 
-  String getMQTTServer() { return mqttServer; }
-  int getMQTTPort() { return mqttPort; }
-  String getMQTTUser() { return mqttUser; }
-  String getMQTTPassword() { return mqttPassword; }
-  String getMQTTClientId() { return mqttClientId; }
-  bool isMQTTEnabled() { return mqttEnabled; }
+  String getMQTTServer() const { return mqttServer; }
+  int getMQTTPort() const { return mqttPort; }
+  String getMQTTUser() const { return mqttUser; }
+  String getMQTTPassword() const { return mqttPassword; }
+  String getMQTTClientId() const { return mqttClientId; }
+  bool isMQTTEnabled() const { return mqttEnabled; }
 
   void setDefaultMQTT(bool enabled, const String& server, int port,
                       const String& user, const String& password,

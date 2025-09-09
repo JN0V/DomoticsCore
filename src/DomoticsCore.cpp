@@ -42,6 +42,9 @@ void DomoticsCore::begin() {
   // WiFi timeouts (WiFiManager expects seconds for config portal timeout and connect timeout)
   wifiManager.setConfigPortalTimeout((int)(cfg.wifiConfigPortalTimeoutMs / 1000UL));
   wifiManager.setConnectTimeout((int)cfg.wifiConnectTimeoutSec);
+  
+  // Disable WiFiManager debug output to use our unified logging
+  wifiManager.setDebugOutput(false);
 
   wifiManager.setAPCallback([this](WiFiManager *myWiFiManager) {
     DLOG_I(LOG_WIFI, "Entered config mode");
@@ -64,8 +67,8 @@ void DomoticsCore::begin() {
     DLOG_W(LOG_WIFI, "Starting in AP mode for configuration");
     ledManager.setStatus(WIFI_FAILED);
   } else {
-    DLOG_I(LOG_WIFI, "WiFi connected!");
-    DLOG_I(LOG_WIFI, "IP Address: %s", WiFi.localIP().toString().c_str());
+    DLOG_I(LOG_WIFI, "AutoConnect: SUCCESS");
+    DLOG_I(LOG_WIFI, "STA IP Address: %s", WiFi.localIP().toString().c_str());
     DLOG_I(LOG_WIFI, "Connect to: http://%s", WiFi.localIP().toString().c_str());
     // brief confirmation
     ledManager.runSequence(WIFI_CONNECTED, 1000);
@@ -146,8 +149,6 @@ void DomoticsCore::begin() {
 
   // Start server
   server.begin();
-  DLOG_I(LOG_HTTP, "Web interface available at: http://%s", WiFi.localIP().toString().c_str());
-  DLOG_I(LOG_OTA, "OTA ready at http://%s/update", WiFi.localIP().toString().c_str());
   
   // Not found handler for easier diagnostics
   server.onNotFound([this](AsyncWebServerRequest *request){
@@ -155,9 +156,10 @@ void DomoticsCore::begin() {
     request->send(404, "text/plain", "Not found: " + request->url());
   });
 
-  DLOG_I(LOG_CORE, "=== System Ready ===");
   DLOG_I(LOG_HTTP, "Web interface available at: http://%s", WiFi.localIP().toString().c_str());
   DLOG_I(LOG_HTTP, "Also available at: http://%s.local", cfg.mdnsHostname.c_str());
+  DLOG_I(LOG_OTA, "OTA ready at http://%s/update", WiFi.localIP().toString().c_str());
+  DLOG_I(LOG_CORE, "=== System Ready ===");
   
 }
 
@@ -223,22 +225,20 @@ void DomoticsCore::loop() {
   // LED
   ledManager.update();
 
-  // Periodic log
-  static unsigned long lastPrint = 0;
+  // Periodic log and non-blocking delay
+  static unsigned long lastLoopTime = 0;
   unsigned long currentTime = millis();
-  if (currentTime - lastPrint >= SYSTEM_LOG_INTERVAL) {
-    lastPrint = currentTime;
+  if (currentTime - lastLoopTime >= LOOP_DELAY) {
+    lastLoopTime = currentTime;
 
-    String logMessage;
-    logMessage.reserve(128);
-    logMessage = "System active - Free heap: ";
-    logMessage += String(ESP.getFreeHeap());
-    logMessage += " bytes - IP: ";
-    logMessage += WiFi.localIP().toString();
-    DLOG_I(LOG_SYSTEM, "System active - Free heap: %d bytes - IP: %s", ESP.getFreeHeap(), WiFi.localIP().toString().c_str());
+    static unsigned long lastPrint = 0;
+    if (currentTime - lastPrint >= SYSTEM_LOG_INTERVAL) {
+      lastPrint = currentTime;
+      char logBuffer[128];
+      snprintf(logBuffer, sizeof(logBuffer), "System active - Free heap: %d bytes - IP: %s", ESP.getFreeHeap(), WiFi.localIP().toString().c_str());
+      DLOG_I(LOG_SYSTEM, "%s", logBuffer);
+    }
   }
-
-  delay(LOOP_DELAY);
 }
 
 void DomoticsCore::initializeMQTT() {
