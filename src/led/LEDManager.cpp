@@ -26,7 +26,7 @@ void LEDManager::setStatus(WiFiStatus status) {
   }
 }
 
-WiFiStatus LEDManager::getCurrentStatus() { return currentStatus; }
+WiFiStatus LEDManager::getCurrentStatus() const { return currentStatus; }
 
 void LEDManager::runSequence(WiFiStatus status, unsigned long duration) {
   if (duration > 60000) {

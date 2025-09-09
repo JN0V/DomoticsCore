@@ -24,7 +24,7 @@ pio lib install "DomoticsCore"
 Add to your `platformio.ini`:
 ```ini
 lib_deps = 
-    https://github.com/JN0V/DomoticsCore.git#v0.1.4
+    https://github.com/JN0V/DomoticsCore.git#v0.1.5
 ```
 
 ### Local Development
@@ -52,7 +52,7 @@ void setup() {
   
   // Add Home Assistant entities
   if (core.isHomeAssistantEnabled()) {
-    core.getHomeAssistant().publishSensor("temperature", "Temperature", "°C");
+    core.getHomeAssistant().publishSensor("temperature", "Temperature", "°C", "temperature");
   }
 }
 

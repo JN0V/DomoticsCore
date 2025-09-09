@@ -22,7 +22,7 @@ public:
   explicit OTAManager(AsyncWebServer* srv, WebConfig* webCfg);
   void begin();
   void setupRoutes();
-  String getOTAError() { return otaError; }
+  String getOTAError() const { return otaError; }
   void clearError() { otaError = ""; }
 };
 

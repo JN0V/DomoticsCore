@@ -44,28 +44,30 @@ struct CoreConfig {
   bool homeAssistantEnabled;
   String homeAssistantDiscoveryPrefix;
 
-  CoreConfig()
-    : deviceName(generateUniqueDeviceName()),
-      manufacturer(MANUFACTURER),
-      firmwareVersion(FIRMWARE_VERSION),
-      webServerPort(WEB_SERVER_PORT),
-      ledPin(LED_PIN),
-      wifiConfigPortalTimeoutMs(WIFI_CONFIG_PORTAL_TIMEOUT * 1000UL),
-      wifiConnectTimeoutSec(WIFI_CONNECT_TIMEOUT),
-      wifiReconnectTimeoutMs(WIFI_RECONNECT_TIMEOUT),
-      wifiReconnectIntervalMs(WIFI_RECONNECT_INTERVAL),
-      wifiMaxReconnectAttempts(WIFI_MAX_RECONNECT_ATTEMPTS),
-      strictNtpBeforeNormalOp(true),
-      mqttEnabled(false),
-      mqttServer(""),
-      mqttPort(DEFAULT_MQTT_PORT),
-      mqttUser(""),
-      mqttPassword(""),
-      mqttClientId(DEFAULT_MQTT_CLIENT_ID),
-      mdnsEnabled(true),
-      mdnsHostname(generateUniqueDeviceName()),
-      homeAssistantEnabled(false),
-      homeAssistantDiscoveryPrefix("homeassistant") {}
+  CoreConfig() {
+    String uniqueName = generateUniqueDeviceName();
+    deviceName = uniqueName;
+    manufacturer = MANUFACTURER;
+    firmwareVersion = FIRMWARE_VERSION;
+    webServerPort = WEB_SERVER_PORT;
+    ledPin = LED_PIN;
+    wifiConfigPortalTimeoutMs = WIFI_CONFIG_PORTAL_TIMEOUT * 1000UL;
+    wifiConnectTimeoutSec = WIFI_CONNECT_TIMEOUT;
+    wifiReconnectTimeoutMs = WIFI_RECONNECT_TIMEOUT;
+    wifiReconnectIntervalMs = WIFI_RECONNECT_INTERVAL;
+    wifiMaxReconnectAttempts = WIFI_MAX_RECONNECT_ATTEMPTS;
+    strictNtpBeforeNormalOp = true;
+    mqttEnabled = false;
+    mqttServer = "";
+    mqttPort = DEFAULT_MQTT_PORT;
+    mqttUser = "";
+    mqttPassword = "";
+    mqttClientId = DEFAULT_MQTT_CLIENT_ID;
+    mdnsEnabled = true;
+    mdnsHostname = uniqueName;
+    homeAssistantEnabled = false;
+    homeAssistantDiscoveryPrefix = "homeassistant";
+  }
 
 private:
   String generateUniqueDeviceName() {

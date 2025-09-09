@@ -13,7 +13,7 @@ void HomeAssistantDiscovery::begin(const String& prefix) {
   enabled = true;
 }
 
-String HomeAssistantDiscovery::getDeviceConfigJson() {
+String HomeAssistantDiscovery::getDeviceConfigJson() const {
   DynamicJsonDocument doc(512);
   
   JsonArray identifiers = doc.createNestedArray("identifiers");
@@ -36,7 +36,7 @@ String HomeAssistantDiscovery::getDeviceConfigJson() {
   return result;
 }
 
-String HomeAssistantDiscovery::getTopicPrefix(const String& component, const String& objectId) {
+String HomeAssistantDiscovery::getTopicPrefix(const String& component, const String& objectId) const {
   return discoveryPrefix + "/" + component + "/" + deviceId + "/" + objectId;
 }
 
@@ -176,10 +176,10 @@ void HomeAssistantDiscovery::removeAllEntities() {
   DLOG_W(LOG_HA, "Removing all entities (manual cleanup required)");
 }
 
-String HomeAssistantDiscovery::getDefaultStateTopic(const String& entityName) {
+String HomeAssistantDiscovery::getDefaultStateTopic(const String& entityName) const {
   return "jnov/" + deviceId + "/" + entityName + "/state";
 }
 
-String HomeAssistantDiscovery::getDefaultCommandTopic(const String& entityName) {
+String HomeAssistantDiscovery::getDefaultCommandTopic(const String& entityName) const {
   return "jnov/" + deviceId + "/" + entityName + "/cmd";
 }
