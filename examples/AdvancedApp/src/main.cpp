@@ -1,161 +1,109 @@
-#include <Arduino.h>
 #include <DomoticsCore/DomoticsCore.h>
 #include <DomoticsCore/Logger.h>
-#include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 
-// Custom application logging tags
-#define LOG_APP      "APP"
-#define LOG_SENSOR   "SENSOR"
-#define LOG_API      "API"
-#define LOG_MONITOR  "MONITOR"
+#define SENSOR_PIN A0
+#define RELAY_PIN 4
 
-CoreConfig cfg; // defaults from firmware-config.h
-DomoticsCore* gCore = nullptr;
+#define LOG_SENSOR "SENSOR"
+#define LOG_RELAY "RELAY"
 
-static String topicIn() { return String("jnov/") + cfg.mqttClientId + "/in"; }
-static String topicOut() { return String("jnov/") + cfg.mqttClientId + "/out"; }
-
-static String getChipId() {
-  uint64_t mac = ESP.getEfuseMac();
-  char buf[17];
-  snprintf(buf, sizeof(buf), "%04X%08X", (uint16_t)(mac >> 32), (uint32_t)mac);
-  return String(buf);
-}
+DomoticsCore* core = nullptr;
+float sensorValue = 0.0;
+bool relayState = false;
 
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
+  // Configure device
+  CoreConfig config;
+  config.deviceName = "AdvancedExample";
+  config.firmwareVersion = "2.0.0";
+  config.mqttEnabled = true;
+  config.homeAssistantEnabled = true;
 
-  DLOG_I(LOG_APP, "AdvancedApp v2.1.0 starting...");
-
-  // Example runtime overrides (keep minimal to let WebConfig take precedence)
-  cfg.deviceName = "JNOV-ADV";
-  cfg.firmwareVersion = "2.1.0";          // AdvancedApp firmware version
-  cfg.strictNtpBeforeNormalOp = true;
-  cfg.mqttEnabled = true; // allow MQTT; server/credentials managed via Web UI
-  DLOG_I(LOG_APP, "Device configured: %s", cfg.deviceName.c_str());
+  core = new DomoticsCore(config);
   
-  // Do not force server/port here; use Web UI or firmware defaults
-  // Provide a fallback clientId only if none set in firmware defaults
-  if (cfg.mqttClientId.length() == 0) {
-    cfg.mqttClientId = String("adv-") + getChipId();
-    DLOG_D(LOG_APP, "Generated MQTT client ID: %s", cfg.mqttClientId.c_str());
-  }
-  // cfg.webServerPort = 8080; // uncomment to change HTTP port
-
-  gCore = new DomoticsCore(cfg);
+  // Initialize hardware
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
+  DLOG_I(LOG_RELAY, "Relay initialized on pin %d", RELAY_PIN);
   
-  // Register routes BEFORE starting the server
-  // Custom JSON status endpoint
-  gCore->webServer().on("/api/status", HTTP_GET, [](AsyncWebServerRequest* request){
-    DLOG_D(LOG_API, "Status request from %s", request->client()->remoteIP().toString().c_str());
-    DynamicJsonDocument doc(256);
-    doc["version_full"] = gCore->version();  // App firmware version
-    doc["library_version"] = gCore->libraryVersion();  // DomoticsCore lib version
-    doc["device"] = gCore->config().deviceName;
-    doc["manufacturer"] = gCore->config().manufacturer;
-    doc["heap"] = (uint32_t)ESP.getFreeHeap();
-    doc["ip"] = WiFi.localIP().toString();
-    String out; serializeJson(doc, out);
-    request->send(200, "application/json", out);
+  // Multiple REST API endpoints
+  core->webServer().on("/api/status", HTTP_GET, [](AsyncWebServerRequest* request){
+    DynamicJsonDocument doc(512);
+    doc["device"] = core->config().deviceName;
+    doc["version"] = core->version();
+    doc["library_version"] = core->libraryVersion();
+    doc["uptime"] = millis() / 1000;
+    doc["free_heap"] = ESP.getFreeHeap();
+    doc["wifi_rssi"] = WiFi.RSSI();
+    doc["sensor_value"] = sensorValue;
+    doc["relay_state"] = relayState;
+    String response;
+    serializeJson(doc, response);
+    request->send(200, "application/json", response);
   });
 
-  // Simple ping endpoint
-  gCore->webServer().on("/api/ping", HTTP_GET, [](AsyncWebServerRequest* request){
-    DLOG_V(LOG_API, "Ping request received");
-    String body;
-    body.reserve(64);
-    body = "pong: ";
-    body += String(millis()/1000);
-    body += "s";
-    request->send(200, "text/plain", body);
+  core->webServer().on("/api/relay", HTTP_POST, [](AsyncWebServerRequest* request){
+    if (request->hasParam("state", true)) {
+      String state = request->getParam("state", true)->value();
+      relayState = (state == "on" || state == "1" || state == "true");
+      digitalWrite(RELAY_PIN, relayState ? HIGH : LOW);
+      DLOG_I(LOG_RELAY, "Relay turned %s via API", relayState ? "ON" : "OFF");
+      request->send(200, "application/json", "{\"relay_state\":" + String(relayState ? "true" : "false") + "}");
+    } else {
+      request->send(400, "application/json", "{\"error\":\"Missing state parameter\"}");
+    }
   });
 
-  // Reboot endpoint (use with care)
-  gCore->webServer().on("/api/reboot", HTTP_POST, [](AsyncWebServerRequest* request){
-    DLOG_W(LOG_API, "Reboot requested from %s", request->client()->remoteIP().toString().c_str());
-    request->send(200, "text/plain", "rebooting");
-    delay(250);
+  core->webServer().on("/api/reboot", HTTP_POST, [](AsyncWebServerRequest* request){
+    request->send(200, "text/plain", "Rebooting...");
+    delay(1000);
     ESP.restart();
   });
 
-  // Now start the core (starts server, WiFi, NTP, etc.)
-  gCore->begin();
+  core->begin();
 
-  // Setup Home Assistant auto-discovery if enabled
-  if (gCore->isHomeAssistantEnabled()) {
-    DLOG_I(LOG_SENSOR, "Setting up system monitoring sensors");
-    
-    // Publish system sensors
-    gCore->getHomeAssistant().publishSensor("uptime", "System Uptime", "s", "");
-    gCore->getHomeAssistant().publishSensor("free_heap", "Free Heap Memory", "bytes", "");
-    gCore->getHomeAssistant().publishSensor("wifi_rssi", "WiFi Signal Strength", "dBm", "signal_strength");
-    
-    // Publish device info
-    gCore->getHomeAssistant().publishDevice();
-    
-    DLOG_I(LOG_HA, "Auto-discovery entities published");
-  }
-
-  // MQTT setup is handled by DomoticsCore; we can still set a callback on its client if needed
-  if (cfg.mqttEnabled && cfg.mqttServer.length()) {
-    gCore->getMQTTClient().setCallback([](char* topic, byte* payload, unsigned int length){
-      String msg; msg.reserve(length);
-      for (unsigned int i=0;i<length;i++) msg += (char)payload[i];
-      DLOG_I(LOG_MQTT, "%s => %s", topic, msg.c_str());
-    });
+  // Setup Home Assistant sensors and controls
+  if (core->isHomeAssistantEnabled()) {
+    core->getHomeAssistant().publishSensor("sensor_value", "Sensor Reading", "%", "");
+    core->getHomeAssistant().publishSensor("uptime", "System Uptime", "s", "duration");
+    core->getHomeAssistant().publishSensor("free_heap", "Free Heap", "bytes", "data_size");
+    core->getHomeAssistant().publishSensor("wifi_rssi", "WiFi Signal", "dBm", "signal_strength");
+    DLOG_I("HA", "Published %d sensors to Home Assistant", 4);
   }
 }
 
 void loop() {
-  if (gCore) gCore->loop();
+  core->loop();
 
-  // MQTT demo loop using DomoticsCore's MQTT client
-  if (cfg.mqttEnabled && cfg.mqttServer.length()) {
-    PubSubClient& mqtt = gCore->getMQTTClient();
-    mqtt.loop();
+  // Read sensor every 5 seconds
+  static unsigned long lastSensorRead = 0;
+  if (millis() - lastSensorRead > 5000) {
+    lastSensorRead = millis();
+    
+    float newValue = (analogRead(SENSOR_PIN) / 4095.0) * 100.0;
+    if (abs(newValue - sensorValue) > 2.0) {
+      DLOG_I(LOG_SENSOR, "Sensor value changed: %.1f%% -> %.1f%%", sensorValue, newValue);
+    }
+    sensorValue = newValue;
+  }
 
-    // Subscribe/publish once connected
-    static bool subscribed = false;
-    if (gCore->isMQTTConnected()) {
-      if (!subscribed) {
-        mqtt.subscribe(topicIn().c_str());
-        mqtt.publish(topicOut().c_str(), "online", true);
-        subscribed = true;
-      }
-
-      // Heartbeat every 30s
-      static unsigned long lastHeartbeat = 0;
-      if (millis() - lastHeartbeat > 30000) {
-        lastHeartbeat = millis();
-
-        DynamicJsonDocument doc(256);
-        doc["device"] = "JNOV-ESP32-Domotics";
-        doc["status"] = "online";
-        doc["uptime"] = millis() / 1000;
-        doc["free_heap"] = ESP.getFreeHeap();
-        doc["wifi_rssi"] = WiFi.RSSI();
-
-        String payload;
-        serializeJson(doc, payload);
-
-        String topic = "jnov/" + String(WiFi.macAddress()) + "/out";
-        topic.replace(":", "");
-        mqtt.publish(topic.c_str(), payload.c_str());
-
-        if (gCore->isHomeAssistantEnabled()) {
-          String deviceId = gCore->config().deviceName;
-          mqtt.publish(("jnov/" + deviceId + "/uptime/state").c_str(), String(millis() / 1000).c_str());
-          mqtt.publish(("jnov/" + deviceId + "/free_heap/state").c_str(), String(ESP.getFreeHeap()).c_str());
-          mqtt.publish(("jnov/" + deviceId + "/wifi_rssi/state").c_str(), String(WiFi.RSSI()).c_str());
-          DLOG_V(LOG_MONITOR, "Published sensor data to Home Assistant");
-        }
-
-        DLOG_I(LOG_MQTT, "Heartbeat sent: %s", payload.c_str());
-      }
-    } else {
-      subscribed = false; // reset on disconnect
+  // Publish sensor data every 30 seconds
+  static unsigned long lastMqttUpdate = 0;
+  if (millis() - lastMqttUpdate > 30000) {
+    lastMqttUpdate = millis();
+    
+    if (core->isMQTTConnected() && core->isHomeAssistantEnabled()) {
+      String deviceId = core->config().deviceName;
+      core->getMQTTClient().publish(("jnov/" + deviceId + "/sensor_value/state").c_str(), 
+                                   String(sensorValue).c_str());
+      core->getMQTTClient().publish(("jnov/" + deviceId + "/uptime/state").c_str(), 
+                                   String(millis() / 1000).c_str());
+      core->getMQTTClient().publish(("jnov/" + deviceId + "/free_heap/state").c_str(), 
+                                   String(ESP.getFreeHeap()).c_str());
+      core->getMQTTClient().publish(("jnov/" + deviceId + "/wifi_rssi/state").c_str(), 
+                                   String(WiFi.RSSI()).c_str());
+      DLOG_D(LOG_SENSOR, "Published sensor data: %.1f%%", sensorValue);
     }
   }
 }
