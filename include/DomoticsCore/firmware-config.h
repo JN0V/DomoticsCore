@@ -8,7 +8,7 @@
 // SemVer2 versioning (MAJOR.MINOR.PATCH)
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
-#define VERSION_PATCH 5
+#define VERSION_PATCH 6
 
 // Build metadata (automatically generated) - numeric universal format
 // Extract components from __DATE__ ("Mmm dd yyyy") and __TIME__ ("hh:mm:ss")
@@ -45,8 +45,6 @@
 
 // Hardware configuration
 #define LED_PIN 2
-#define RELAY_PIN 4
-#define SENSOR_PIN 5
 
 // WiFi configuration
 #define WIFI_CONFIG_PORTAL_TIMEOUT 300  // 5 minutes

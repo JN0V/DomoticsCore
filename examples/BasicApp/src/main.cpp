@@ -1,38 +1,34 @@
-#include <Arduino.h>
 #include <DomoticsCore/DomoticsCore.h>
-#include <ESPAsyncWebServer.h>
 
-// Demonstrate runtime override via CoreConfig
-CoreConfig cfg; // defaults come from firmware-config.h
-DomoticsCore* gCore = nullptr;
+#define SENSOR_PIN A0
+
+DomoticsCore* core = nullptr;
+float sensorValue = 0.0;
 
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
-
-  // Example overrides (optional). Keep BasicApp minimal, no MQTT demo here.
-  cfg.deviceName = "JNOV-EXAMPLE";        // custom AP/hostname
-  cfg.firmwareVersion = "1.0.0";          // BasicApp firmware version
-  cfg.strictNtpBeforeNormalOp = true;      // keep LED solid only after NTP
-  // cfg.webServerPort = 8080;             // uncomment to change HTTP port
-  // cfg.ledPin = 2;                        // override LED pin if needed
-
-  gCore = new DomoticsCore(cfg); // construct after overrides
-
-  // Register custom routes BEFORE starting the server
-  gCore->webServer().on("/api/ping", HTTP_GET, [](AsyncWebServerRequest* request){
-    String body;
-    body.reserve(64);
-    body = "pong: ";
-    body += String(millis()/1000);
-    body += "s";
-    request->send(200, "text/plain", body);
+  // Configure device
+  CoreConfig config;
+  config.deviceName = "BasicExample";
+  config.firmwareVersion = "1.0.0";
+  
+  core = new DomoticsCore(config);
+  
+  // Add REST API endpoint
+  core->webServer().on("/api/sensor", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "{\"sensor_value\":" + String(sensorValue) + "}";
+    request->send(200, "application/json", json);
   });
-
-  // Now start the core (starts server, WiFi, NTP, etc.)
-  gCore->begin();
+  
+  core->begin();
 }
 
 void loop() {
-  if (gCore) gCore->loop();
+  core->loop();
+  
+  // Read sensor every 5 seconds
+  static unsigned long lastRead = 0;
+  if (millis() - lastRead > 5000) {
+    sensorValue = (analogRead(SENSOR_PIN) / 4095.0) * 100.0;
+    lastRead = millis();
+  }
 }

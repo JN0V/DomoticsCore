@@ -24,7 +24,7 @@ pio lib install "DomoticsCore"
 Add to your `platformio.ini`:
 ```ini
 lib_deps = 
-    https://github.com/JN0V/DomoticsCore.git#v0.1.5
+    https://github.com/JN0V/DomoticsCore.git#v0.1.6
 ```
 
 ### Local Development
@@ -35,33 +35,45 @@ lib_deps =
 
 ## 🔧 Quick Start
 
+### Basic Usage
 ```cpp
 #include <DomoticsCore/DomoticsCore.h>
 
-CoreConfig config;
-DomoticsCore core(config);
+#define SENSOR_PIN A0
+
+DomoticsCore* core = nullptr;
+float sensorValue = 0.0;
 
 void setup() {
-  // Configure your project
-  config.deviceName = "MyDevice";
-  config.mqttEnabled = true;
-  config.homeAssistantEnabled = true;
+  CoreConfig config;
+  config.deviceName = "BasicExample";
+  config.firmwareVersion = "1.0.0";
   
-  // Start the framework
-  core.begin();
+  core = new DomoticsCore(config);
   
-  // Add Home Assistant entities
-  if (core.isHomeAssistantEnabled()) {
-    core.getHomeAssistant().publishSensor("temperature", "Temperature", "°C", "temperature");
-  }
+  // Add REST API endpoint
+  core->webServer().on("/api/sensor", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "{\"sensor_value\":" + String(sensorValue) + "}";
+    request->send(200, "application/json", json);
+  });
+  
+  core->begin();
 }
 
 void loop() {
-  core.loop();
+  core->loop();
   
-  // Your application code here
+  // Read sensor every 5 seconds
+  static unsigned long lastRead = 0;
+  if (millis() - lastRead > 5000) {
+    sensorValue = (analogRead(SENSOR_PIN) / 4095.0) * 100.0;
+    lastRead = millis();
+  }
 }
 ```
+
+### Advanced Usage
+For MQTT, Home Assistant, and relay control, see `examples/AdvancedApp/`.
 
 ## 📖 Documentation
 
@@ -192,15 +204,20 @@ DomoticsCore/
 
 ## 📋 Examples
 
-### Basic Usage
-See `examples/BasicApp/` for a minimal implementation.
+### BasicApp
+Simple sensor monitoring with REST API (21 lines):
+- Analog sensor reading on pin A0
+- Single REST endpoint: `GET /api/sensor`
+- Minimal configuration example
 
-### Advanced Usage
-See `examples/AdvancedApp/` for a complete example with:
-- Custom web routes
-- MQTT messaging
-- Home Assistant integration
-- System monitoring
+### AdvancedApp  
+Comprehensive IoT device with hardware control:
+- Sensor monitoring with change detection
+- Relay control via `POST /api/relay`
+- Multiple REST endpoints (`/api/status`, `/api/reboot`)
+- MQTT integration with 30-second updates
+- Home Assistant auto-discovery (4 sensors)
+- Specific logging for sensor/relay operations
 
 ## 🤝 Contributing
 
