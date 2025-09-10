@@ -69,6 +69,12 @@ private:
   LEDManager ledManager;
   WebConfig webConfig;
   OTAManager otaManager;
+
+  // MQTT client for HA integration
+  WiFiClient wifiClient;
+  PubSubClient mqttClient;
+
+  // Higher-level modules depending on MQTT
   HomeAssistantDiscovery homeAssistant;
   Storage storageManager;
 
@@ -89,9 +95,7 @@ private:
   bool mqttServerIsIP = false; // True if server parsed as IP
   IPAddress mqttServerIp;      // Parsed IP if mqttServerIsIP
 
-  // MQTT client for HA integration
-  WiFiClient wifiClient;
-  PubSubClient mqttClient;
+  // (no additional members)
 };
 
 #endif // DOMOTICS_CORE_H
