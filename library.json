@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "ESP32 domotics framework with WiFi, MQTT, web interface, Home Assistant integration, and persistent storage",
   "keywords": ["esp32", "domotics", "iot", "mqtt", "home-assistant", "wifi"],
   "repository": {
@@ -31,12 +31,12 @@
       "version": ">=2.8.0"
     },
     {
-      "name": "ESP Async WebServer",
-      "version": ">=1.2.3"
+      "name": "ESP32Async/ESPAsyncWebServer",
+      "version": ">=3.8.0"
     },
     {
-      "name": "AsyncTCP",
-      "version": ">=1.1.1"
+      "name": "ESP32Async/AsyncTCP",
+      "version": ">=3.4.7"
     },
     {
       "name": "WiFiManager",
