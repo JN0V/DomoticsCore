@@ -41,7 +41,9 @@
 
 // Complete version string (SemVer2 format: MAJOR.MINOR.PATCH)
 // Build metadata is exposed separately via BUILD_NUMBER_NUM
+#ifndef FIRMWARE_VERSION
 #define FIRMWARE_VERSION TOSTRING(VERSION_MAJOR) "." TOSTRING(VERSION_MINOR) "." TOSTRING(VERSION_PATCH)
+#endif
 
 // Hardware configuration
 #define LED_PIN 2
