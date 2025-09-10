@@ -127,7 +127,7 @@ void WebConfig::setupRoutes() {
 
   // Version JSON endpoint
   server->on("/version", HTTP_GET, [this](AsyncWebServerRequest *request){
-    DynamicJsonDocument doc(256);
+    ArduinoJson::JsonDocument doc;
     String firmwareFull = SystemUtils::getFullFirmwareVersion();
     doc["version"] = firmwareVersion;
     doc["build"] = String((uint64_t)BUILD_NUMBER_NUM);

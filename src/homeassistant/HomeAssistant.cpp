@@ -14,9 +14,8 @@ void HomeAssistantDiscovery::begin(const String& prefix) {
 }
 
 String HomeAssistantDiscovery::getDeviceConfigJson() const {
-  DynamicJsonDocument doc(512);
-  
-  JsonArray identifiers = doc.createNestedArray("identifiers");
+  ArduinoJson::JsonDocument doc;
+  JsonArray identifiers = doc["identifiers"].to<JsonArray>();
   identifiers.add(deviceId);
   
   doc["name"] = deviceName;
@@ -26,8 +25,8 @@ String HomeAssistantDiscovery::getDeviceConfigJson() const {
   
   // Add network info if available
   if (WiFi.status() == WL_CONNECTED) {
-    JsonObject connections = doc.createNestedObject("connections");
-    JsonArray mac = connections.createNestedArray("mac");
+    JsonObject connections = doc["connections"].to<JsonObject>();
+    JsonArray mac = connections["mac"].to<JsonArray>();
     mac.add(WiFi.macAddress());
   }
   
@@ -69,7 +68,8 @@ void HomeAssistantDiscovery::publishSensor(const String& name, const String& fri
                                           const String& stateTopic) {
   if (!enabled) return;
   
-  DynamicJsonDocument doc(1024);
+  
+  ArduinoJson::JsonDocument doc;
   
   // Basic entity info
   doc["name"] = friendlyName.isEmpty() ? name : friendlyName;
@@ -100,7 +100,7 @@ void HomeAssistantDiscovery::publishSwitch(const String& name, const String& fri
                                           const String& commandTopic, const String& stateTopic) {
   if (!enabled) return;
   
-  DynamicJsonDocument doc(1024);
+  ArduinoJson::JsonDocument doc;
   
   // Basic entity info
   doc["name"] = friendlyName.isEmpty() ? name : friendlyName;
@@ -132,7 +132,7 @@ void HomeAssistantDiscovery::publishBinarySensor(const String& name, const Strin
                                                 const String& deviceClass, const String& stateTopic) {
   if (!enabled) return;
   
-  DynamicJsonDocument doc(1024);
+  ArduinoJson::JsonDocument doc;
   
   // Basic entity info
   doc["name"] = friendlyName.isEmpty() ? name : friendlyName;

@@ -10,8 +10,8 @@ DomoticsCore::DomoticsCore(const CoreConfig& cfg)
     ledManager(cfg.ledPin),
     webConfig(&server, &preferences, cfg.deviceName, cfg.manufacturer, cfg.firmwareVersion),
     otaManager(&server, &webConfig),
-    homeAssistant(&mqttClient, cfg.deviceName, cfg.deviceName, cfg.manufacturer, cfg.firmwareVersion),
     mqttClient(wifiClient),
+    homeAssistant(&mqttClient, cfg.deviceName, cfg.deviceName, cfg.manufacturer, cfg.firmwareVersion),
     storageManager() {}
 
 void DomoticsCore::begin() {
