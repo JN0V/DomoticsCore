@@ -13,6 +13,7 @@
 #include <DomoticsCore/WebConfig.h>
 #include <DomoticsCore/OTAManager.h>
 #include <DomoticsCore/HomeAssistant.h>
+#include <DomoticsCore/Storage.h>
 #include <DomoticsCore/Config.h>
 #include <PubSubClient.h>
 
@@ -37,6 +38,9 @@ public:
 
   // Access to underlying web server for custom routes
   AsyncWebServer& webServer() { return server; }
+
+  // Storage access for applications
+  Storage& storage() { return storageManager; }
 
   // Version helpers
   String version() const { return cfg.firmwareVersion; }  // Application firmware version
@@ -66,6 +70,7 @@ private:
   WebConfig webConfig;
   OTAManager otaManager;
   HomeAssistantDiscovery homeAssistant;
+  Storage storageManager;
 
   // State
   volatile bool shouldReboot = false;
