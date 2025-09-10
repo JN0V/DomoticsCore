@@ -11,7 +11,8 @@ DomoticsCore::DomoticsCore(const CoreConfig& cfg)
     webConfig(&server, &preferences, cfg.deviceName, cfg.manufacturer, cfg.firmwareVersion),
     otaManager(&server, &webConfig),
     homeAssistant(&mqttClient, cfg.deviceName, cfg.deviceName, cfg.manufacturer, cfg.firmwareVersion),
-    mqttClient(wifiClient) {}
+    mqttClient(wifiClient),
+    storageManager() {}
 
 void DomoticsCore::begin() {
   // Initialize serial if not already
@@ -25,6 +26,10 @@ void DomoticsCore::begin() {
 
   // Preferences
   preferences.begin("esp32-config", false);
+
+  // Initialize storage system
+  storageManager.setSystemPreferences(&preferences);
+  storageManager.begin();
 
   // Banner
   DLOG_I(LOG_CORE, "=== %s v%s ===", cfg.deviceName.c_str(), cfg.firmwareVersion.c_str());

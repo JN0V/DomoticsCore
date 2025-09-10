@@ -1,6 +1,6 @@
 # DomoticsCore
 
-ESP32 domotics framework with WiFi, MQTT, web interface and Home Assistant integration.
+ESP32 domotics framework with WiFi, MQTT, web interface, Home Assistant integration, and persistent storage.
 
 ## 🚀 Features
 
@@ -9,6 +9,7 @@ ESP32 domotics framework with WiFi, MQTT, web interface and Home Assistant integ
 - **MQTT Integration**: Full MQTT client with reconnection
 - **Home Assistant**: Auto-discovery integration
 - **OTA Updates**: Over-the-air firmware updates
+- **Persistent Storage**: Application data storage with preferences separation
 - **LED Status**: Visual feedback system
 - **Unified Logging**: Decentralized, extensible logging system
 - **Modular Design**: Clean, extensible architecture
@@ -24,7 +25,7 @@ pio lib install "DomoticsCore"
 Add to your `platformio.ini`:
 ```ini
 lib_deps = 
-    https://github.com/JN0V/DomoticsCore.git#v0.1.6
+    https://github.com/JN0V/DomoticsCore.git#v0.2.0
 ```
 
 ### Local Development
@@ -73,7 +74,7 @@ void loop() {
 ```
 
 ### Advanced Usage
-For MQTT, Home Assistant, and relay control, see `examples/AdvancedApp/`.
+For MQTT, Home Assistant, storage, and relay control, see `examples/AdvancedApp/`.
 
 ## 📖 Documentation
 
@@ -94,6 +95,42 @@ config.mqttPort = 1883;
 config.homeAssistantEnabled = true;
 config.homeAssistantDiscoveryPrefix = "homeassistant";
 ```
+
+### Persistent Storage System
+The framework provides a robust storage system that separates system preferences from application data:
+
+```cpp
+// Store application data
+core->storage().putULong("boot_count", bootCount);
+core->storage().putFloat("sensor_threshold", 75.5);
+core->storage().putString("device_nickname", "Living Room Sensor");
+
+// Retrieve application data with defaults
+unsigned long boots = core->storage().getULong("boot_count", 0);
+float threshold = core->storage().getFloat("sensor_threshold", 50.0);
+String nickname = core->storage().getString("device_nickname", "My Device");
+
+// Check if keys exist
+if (core->storage().isKey("calibration_offset")) {
+    float offset = core->storage().getFloat("calibration_offset");
+}
+
+// Storage management
+core->storage().remove("old_key");        // Remove specific key
+core->storage().clear();                  // Clear all application data
+size_t entries = core->storage().freeEntries(); // Get available space
+```
+
+**Supported Data Types:**
+- `bool`, `uint8_t`, `int16_t`, `uint16_t`
+- `int32_t`, `uint32_t`, `int64_t`, `uint64_t`
+- `float`, `double`, `String`
+- Binary data via `putBytes()`/`getBytes()`
+
+**Storage Namespaces:**
+- **System Preferences** (`esp32-config`): Used internally for WiFi, MQTT, and web config
+- **Application Data** (`app-data`): Available for your application use
+- Complete separation prevents conflicts between system and application data
 
 ### Web Interface
 The framework provides a complete web interface accessible at `http://[device-ip]/`:
@@ -150,7 +187,7 @@ DLOG_D("CUSTOM", "My component message");
 - `DLOG_V` - Verbose messages
 
 **Predefined Component Tags:**
-`LOG_CORE`, `LOG_WIFI`, `LOG_MQTT`, `LOG_HTTP`, `LOG_HA`, `LOG_OTA`, `LOG_LED`, `LOG_SECURITY`, `LOG_WEB`, `LOG_SYSTEM`
+`LOG_CORE`, `LOG_WIFI`, `LOG_MQTT`, `LOG_HTTP`, `LOG_HA`, `LOG_OTA`, `LOG_LED`, `LOG_SECURITY`, `LOG_WEB`, `LOG_SYSTEM`, `LOG_STORAGE`
 
 **Log Level Control:**
 ```ini
@@ -180,6 +217,7 @@ DomoticsCore/
 │   ├── LEDManager.h          # LED status management
 │   ├── Logger.h              # Unified logging system
 │   ├── OTAManager.h          # OTA updates
+│   ├── Storage.h             # Persistent storage system
 │   ├── SystemUtils.h         # System utilities
 │   └── WebConfig.h           # Web interface
 ├── src/                      # Implementation files
@@ -187,6 +225,7 @@ DomoticsCore/
 │   ├── homeassistant/
 │   ├── led/
 │   ├── ota/
+│   ├── storage/
 │   ├── system/
 │   └── web/
 └── examples/                 # Example projects
@@ -211,13 +250,16 @@ Simple sensor monitoring with REST API (21 lines):
 - Minimal configuration example
 
 ### AdvancedApp  
-Comprehensive IoT device with hardware control:
-- Sensor monitoring with change detection
+Comprehensive IoT device with hardware control and storage:
+- Sensor monitoring with configurable threshold
+- Persistent boot counter and device nickname
 - Relay control via `POST /api/relay`
-- Multiple REST endpoints (`/api/status`, `/api/reboot`)
+- Configuration endpoints (`POST /api/config`)
+- Storage management (`GET /api/storage/stats`, `POST /api/storage/clear`)
 - MQTT integration with 30-second updates
-- Home Assistant auto-discovery (4 sensors)
-- Specific logging for sensor/relay operations
+- Home Assistant auto-discovery (5 sensors including boot count)
+- Threshold-based automation logic
+- Specific logging for sensor/relay/storage operations
 
 ## 🤝 Contributing
 
