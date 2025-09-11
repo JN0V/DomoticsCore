@@ -22,6 +22,7 @@ WebConfig::WebConfig(AsyncWebServer* srv, Preferences* prefs, const String& devi
 void WebConfig::begin() {
   loadMQTTSettings();
   loadHomeAssistantSettings();
+  loadMDNSSettings();
   loadAdminAuth();
   setupRoutes();
 }
@@ -38,6 +39,11 @@ void WebConfig::loadMQTTSettings() {
 void WebConfig::loadHomeAssistantSettings() {
   haEnabled = preferences->getBool("ha_enabled", false);
   haDiscoveryPrefix = preferences->getString("ha_discovery_prefix", "homeassistant");
+}
+
+void WebConfig::loadMDNSSettings() {
+  mdnsEnabled = preferences->getBool("mdns_enabled", true);
+  mdnsHostname = preferences->getString("mdns_hostname", "esp32-domotics");
 }
 
 void WebConfig::loadAdminAuth() {
@@ -430,4 +436,30 @@ void WebConfig::recordAuthAttempt(const String& clientIP) {
   }
   
   DLOG_E(LOG_SECURITY, "Failed auth attempt from %s", clientIP.c_str());
+}
+
+void WebConfig::setDefaultMDNS(bool enabled, const String& hostname) {
+  mdnsEnabled = enabled;
+  mdnsHostname = hostname;
+  
+  // Save to preferences if they don't exist
+  if (!preferences->isKey("mdns_enabled")) {
+    preferences->putBool("mdns_enabled", enabled);
+  }
+  if (!preferences->isKey("mdns_hostname")) {
+    preferences->putString("mdns_hostname", hostname);
+  }
+}
+
+void WebConfig::setDefaultHomeAssistant(bool enabled, const String& discoveryPrefix) {
+  haEnabled = enabled;
+  haDiscoveryPrefix = discoveryPrefix;
+  
+  // Save to preferences if they don't exist
+  if (!preferences->isKey("ha_enabled")) {
+    preferences->putBool("ha_enabled", enabled);
+  }
+  if (!preferences->isKey("ha_discovery_prefix")) {
+    preferences->putString("ha_discovery_prefix", discoveryPrefix);
+  }
 }

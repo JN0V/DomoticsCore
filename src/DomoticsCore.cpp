@@ -114,6 +114,19 @@ void DomoticsCore::begin() {
     cfg.mqttPassword,
     cfg.mqttClientId
   );
+  
+  // Initialize Home Assistant defaults
+  webConfig.setDefaultHomeAssistant(
+    cfg.homeAssistantEnabled,
+    cfg.homeAssistantDiscoveryPrefix
+  );
+  
+  // Initialize mDNS defaults
+  webConfig.setDefaultMDNS(
+    cfg.mdnsEnabled,
+    cfg.mdnsHostname
+  );
+  
   webConfig.begin();
   
   // Set up MQTT change callback to trigger reconnection

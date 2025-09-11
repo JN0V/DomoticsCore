@@ -63,6 +63,7 @@ public:
   void begin();
   void loadMQTTSettings();
   void loadHomeAssistantSettings();
+  void loadMDNSSettings();
   void loadAdminAuth();
   void setupRoutes();
 
