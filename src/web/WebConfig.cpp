@@ -100,7 +100,7 @@ void WebConfig::setupRoutes() {
     html += "<p><strong>Manufacturer:</strong> " + manufacturer + "</p>";
     html += "<p><strong>Device:</strong> " + deviceName + "</p>";
     html += "<p><strong>Firmware:</strong> v" + firmwareVersion + "</p>";
-    html += "<p><strong>Library:</strong> DomoticsCore v" + String(FIRMWARE_VERSION) + "</p>";
+    html += "<p><strong>Library:</strong> DomoticsCore v" + String(DOMOTICSCORE_VERSION) + "</p>";
     html += "<p><strong>Build:</strong> " + String((uint64_t)BUILD_NUMBER_NUM) + "</p>";
     html += "<p><strong>IP Address:</strong> " + WiFi.localIP().toString() + "</p>";
     html += "<p><strong>MAC Address:</strong> " + WiFi.macAddress() + "</p>";
@@ -134,12 +134,11 @@ void WebConfig::setupRoutes() {
   // Version JSON endpoint
   server->on("/version", HTTP_GET, [this](AsyncWebServerRequest *request){
     ArduinoJson::JsonDocument doc;
-    String firmwareFull = SystemUtils::getFullFirmwareVersion();
+    String firmwareFull = firmwareVersion + "+build." + String((uint64_t)BUILD_NUMBER_NUM);
     doc["version"] = firmwareVersion;
     doc["build"] = String((uint64_t)BUILD_NUMBER_NUM);
-    doc["firmware_full"] = firmwareVersion;
-    doc["library_version"] = String(FIRMWARE_VERSION);
-    doc["library_full"] = firmwareFull;
+    doc["firmware_full"] = firmwareFull;
+    doc["library_version"] = String(DOMOTICSCORE_VERSION);
     doc["device"] = deviceName;
     doc["manufacturer"] = manufacturer;
     doc["ip"] = WiFi.localIP().toString();

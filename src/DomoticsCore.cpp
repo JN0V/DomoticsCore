@@ -33,7 +33,7 @@ void DomoticsCore::begin() {
 
   // Banner
   DLOG_I(LOG_CORE, "=== %s v%s ===", cfg.deviceName.c_str(), cfg.firmwareVersion.c_str());
-  DLOG_I(LOG_CORE, "Library: DomoticsCore v%s", FIRMWARE_VERSION);
+  DLOG_I(LOG_CORE, "Library: DomoticsCore v%s", DOMOTICSCORE_VERSION);
   DLOG_I(LOG_CORE, "Manufacturer: %s", MANUFACTURER);
   DLOG_I(LOG_CORE, "System starting...");
 
