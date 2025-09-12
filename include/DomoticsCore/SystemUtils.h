@@ -22,7 +22,6 @@ public:
   static void initializeNTP();
   static bool isTimeInitialized();
   static String getCurrentTimeString();
-  static String getFullFirmwareVersion();
 };
 
 #endif // DOMOTICS_CORE_SYSTEM_UTILS_H

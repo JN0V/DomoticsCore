@@ -8,7 +8,7 @@
 // SemVer2 versioning (MAJOR.MINOR.PATCH)
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 2
-#define VERSION_PATCH 0
+#define VERSION_PATCH 4
 
 // Build metadata (automatically generated) - numeric universal format
 // Extract components from __DATE__ ("Mmm dd yyyy") and __TIME__ ("hh:mm:ss")
@@ -41,8 +41,13 @@
 
 // Complete version string (SemVer2 format: MAJOR.MINOR.PATCH)
 // Build metadata is exposed separately via BUILD_NUMBER_NUM
+#ifndef DOMOTICSCORE_VERSION
+#define DOMOTICSCORE_VERSION TOSTRING(VERSION_MAJOR) "." TOSTRING(VERSION_MINOR) "." TOSTRING(VERSION_PATCH)
+#endif
+
+// Default firmware version for applications (can be overridden)
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION TOSTRING(VERSION_MAJOR) "." TOSTRING(VERSION_MINOR) "." TOSTRING(VERSION_PATCH)
+#define FIRMWARE_VERSION DOMOTICSCORE_VERSION
 #endif
 
 // Hardware configuration
