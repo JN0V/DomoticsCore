@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiManager.h>
+// WiFiManager removed - using custom WiFi management
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
 
@@ -58,10 +58,17 @@ private:
   // MQTT initialization and handling
   void initializeMQTT();
   void handleMQTT();
+  
+  // Custom WiFi management
+  void startAPMode();
+  void exitAPMode();
+  
+  // State tracking
+  bool isInAPMode = false;
 
   CoreConfig cfg;
   // Core services
-  WiFiManager wifiManager;
+  // WiFiManager removed - using custom WiFi management
   AsyncWebServer server;
   Preferences preferences;
 

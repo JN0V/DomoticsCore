@@ -36,9 +36,21 @@ void WebConfig::loadMQTTSettings() {
   mqttClientId = preferences->getString("mqtt_clientid", "jnov-esp32-domotics");
 }
 
+void WebConfig::setMQTTChangeCallback(ChangeCallback callback) {
+  mqttChangeCallback = callback;
+}
+
+void WebConfig::setHomeAssistantChangeCallback(ChangeCallback callback) {
+  haChangeCallback = callback;
+}
+
+void WebConfig::setWiFiConnectedCallback(WiFiConnectedCallback callback) {
+  wifiConnectedCallback = callback;
+}
+
 void WebConfig::loadHomeAssistantSettings() {
   haEnabled = preferences->getBool("ha_enabled", false);
-  haDiscoveryPrefix = preferences->getString("ha_discovery_prefix", "homeassistant");
+  haDiscoveryPrefix = preferences->getString("ha_prefix", "homeassistant");
 }
 
 void WebConfig::loadMDNSSettings() {
@@ -47,15 +59,13 @@ void WebConfig::loadMDNSSettings() {
 }
 
 void WebConfig::loadAdminAuth() {
-  // Force initial setup if no admin credentials exist
-  adminUser = preferences->getString("admin_user", "");
-  adminPass = preferences->getString("admin_pass", "");
+  // Load admin credentials (defaults should already be set by setDefaultAdmin)
+  adminUser = preferences->getString("admin_user", "admin");
+  adminPass = preferences->getString("admin_pass", "admin");
   
-  // If no credentials set, use temporary defaults but log warning
-  if (adminUser.isEmpty() || adminPass.isEmpty()) {
+  // Log warning if using default credentials
+  if (adminUser == "admin" && adminPass == "admin") {
     DLOG_W(LOG_SECURITY, "Using default admin credentials (admin/admin). Change them immediately via /admin!");
-    adminUser = "admin";
-    adminPass = "admin";
   }
 }
 
@@ -298,7 +308,7 @@ void WebConfig::setupRoutes() {
     
     if (request->hasParam("ha_discovery_prefix", true)) {
       haDiscoveryPrefix = request->getParam("ha_discovery_prefix", true)->value();
-      preferences->putString("ha_discovery_prefix", haDiscoveryPrefix);
+      preferences->putString("ha_prefix", haDiscoveryPrefix);
     }
     
     // Trigger Home Assistant reconfiguration if callback is set
@@ -320,10 +330,137 @@ void WebConfig::setupRoutes() {
     if (!authenticate(request)) return;
     String html = getHTMLHeader("WiFi Configuration");
     html += "<div class='container'><h1>WiFi Configuration</h1>";
-    html += "<p>Click the button below to reconfigure WiFi settings:</p>";
-    html += "<a href='/reset' class='button' onclick='return confirm(\"This will reset WiFi settings and reboot the device. Continue?\")'>Reset WiFi Settings</a>";
-    html += "<br><br><a href='/' class='button'>Back to Main</a>";
+    
+    // Current WiFi status
+    html += "<div class='info'>";
+    html += "<h3>Current Connection</h3>";
+    html += "<p><strong>Status:</strong> " + String(WiFi.isConnected() ? "Connected" : "Disconnected") + "</p>";
+    if (WiFi.isConnected()) {
+      html += "<p><strong>SSID:</strong> " + WiFi.SSID() + "</p>";
+      html += "<p><strong>IP Address:</strong> " + WiFi.localIP().toString() + "</p>";
+      html += "<p><strong>Signal Strength:</strong> " + String(WiFi.RSSI()) + " dBm</p>";
+    }
+    html += "</div>";
+    
+    // WiFi scan results
+    html += "<h3>Available Networks</h3>";
+    html += "<div id='networks'><p>Scanning for networks...</p></div>";
+    html += "<button onclick='scanNetworks()' class='button'>Refresh Scan</button>";
+    
+    // Manual WiFi configuration form
+    html += "<h3>Connect to Network</h3>";
+    html += "<form method='POST' action='/wifi'>";
+    html += "<label>Network SSID:</label>";
+    html += "<input type='text' name='ssid' id='ssid' placeholder='Enter network name' required>";
+    html += "<label>Password:</label>";
+    html += "<input type='password' name='password' placeholder='Enter password'>";
+    html += "<br><br>";
+    html += "<input type='submit' value='Connect' class='button'>";
+    html += "</form>";
+    
+    html += "<br><a href='/' class='button'>Back to Main</a>";
+    html += "<a href='/reset' class='button' onclick='return confirm(\"Reset WiFi settings and reboot?\")'>Reset WiFi</a>";
+    
+    // JavaScript for network scanning
+    html += "<script>";
+    html += "function scanNetworks() {";
+    html += "  document.getElementById('networks').innerHTML = '<p>Scanning...</p>';";
+    html += "  fetch('/wifi/scan').then(r => r.json()).then(data => {";
+    html += "    let html = '<table><tr><th>SSID</th><th>Signal</th><th>Security</th><th>Action</th></tr>';";
+    html += "    data.networks.forEach(net => {";
+    html += "      html += '<tr><td>' + net.ssid + '</td><td>' + net.rssi + ' dBm</td>';";
+    html += "      html += '<td>' + (net.secure ? 'Secured' : 'Open') + '</td>';";
+    html += "      html += '<td><button onclick=\"selectNetwork(\\'' + net.ssid + '\\')\" class=\"button\">Select</button></td></tr>';";
+    html += "    });";
+    html += "    html += '</table>';";
+    html += "    document.getElementById('networks').innerHTML = html;";
+    html += "  });";
+    html += "}";
+    html += "function selectNetwork(ssid) {";
+    html += "  document.getElementById('ssid').value = ssid;";
+    html += "}";
+    html += "scanNetworks();"; // Auto-scan on page load
+    html += "</script>";
+    
     html += "</div>" + getHTMLFooter();
+    request->send(200, "text/html", html);
+  });
+
+  // WiFi scan endpoint
+  server->on("/wifi/scan", HTTP_GET, [this](AsyncWebServerRequest *request){
+    if (!authenticate(request)) return;
+    
+    ArduinoJson::JsonDocument doc;
+    ArduinoJson::JsonArray networks = doc["networks"].to<ArduinoJson::JsonArray>();
+    
+    int n = WiFi.scanNetworks();
+    for (int i = 0; i < n; i++) {
+      ArduinoJson::JsonObject network = networks.add<ArduinoJson::JsonObject>();
+      network["ssid"] = WiFi.SSID(i);
+      network["rssi"] = WiFi.RSSI(i);
+      network["secure"] = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+    }
+    
+    String response;
+    serializeJson(doc, response);
+    request->send(200, "application/json", response);
+  });
+
+  // WiFi connection handler (POST)
+  server->on("/wifi", HTTP_POST, [this](AsyncWebServerRequest *request){
+    if (!authenticate(request)) return;
+    
+    if (!request->hasParam("ssid", true)) {
+      request->send(400, "text/plain", "SSID is required");
+      return;
+    }
+    
+    String ssid = request->getParam("ssid", true)->value();
+    String password = request->hasParam("password", true) ? request->getParam("password", true)->value() : "";
+    
+    // Save credentials to preferences
+    preferences->putString("wifi_ssid", ssid);
+    preferences->putString("wifi_password", password);
+    
+    // Disconnect from current network
+    WiFi.disconnect();
+    delay(100);
+    
+    // Connect to new network
+    WiFi.begin(ssid.c_str(), password.c_str());
+    
+    // Wait for connection (up to 10 seconds)
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+      delay(500);
+      attempts++;
+    }
+    
+    String html = getHTMLHeader("WiFi Connection Result");
+    html += "<div class='container'><h1>WiFi Connection Result</h1>";
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      html += "<div class='success'>";
+      html += "<p>Successfully connected to: " + ssid + "</p>";
+      html += "<p>IP Address: " + WiFi.localIP().toString() + "</p>";
+      html += "<p>The device will now operate in station mode.</p>";
+      html += "</div>";
+      
+      // Call WiFi connected callback to exit AP mode
+      if (wifiConnectedCallback) {
+        wifiConnectedCallback();
+      }
+    } else {
+      html += "<div class='error'>";
+      html += "<p>Failed to connect to: " + ssid + "</p>";
+      html += "<p>Please check the password and try again.</p>";
+      html += "</div>";
+    }
+    
+    html += "<br><a href='/wifi' class='button'>Back to WiFi Settings</a>";
+    html += "<a href='/' class='button'>Main Menu</a>";
+    html += "</div>" + getHTMLFooter();
+    
     request->send(200, "text/html", html);
   });
 
@@ -450,6 +587,37 @@ void WebConfig::setDefaultMDNS(bool enabled, const String& hostname) {
   }
 }
 
+void WebConfig::setDefaultMQTT(bool enabled, const String& server, int port,
+                              const String& user, const String& password,
+                              const String& clientId) {
+  mqttEnabled = enabled;
+  mqttServer = server;
+  mqttPort = port;
+  mqttUser = user;
+  mqttPassword = password;
+  mqttClientId = clientId;
+  
+  // Save to preferences if they don't exist
+  if (!preferences->isKey("mqtt_enabled")) {
+    preferences->putBool("mqtt_enabled", enabled);
+  }
+  if (!preferences->isKey("mqtt_server")) {
+    preferences->putString("mqtt_server", server);
+  }
+  if (!preferences->isKey("mqtt_port")) {
+    preferences->putInt("mqtt_port", port);
+  }
+  if (!preferences->isKey("mqtt_user")) {
+    preferences->putString("mqtt_user", user);
+  }
+  if (!preferences->isKey("mqtt_password")) {
+    preferences->putString("mqtt_password", password);
+  }
+  if (!preferences->isKey("mqtt_clientid")) {
+    preferences->putString("mqtt_clientid", clientId);
+  }
+}
+
 void WebConfig::setDefaultHomeAssistant(bool enabled, const String& discoveryPrefix) {
   haEnabled = enabled;
   haDiscoveryPrefix = discoveryPrefix;
@@ -458,7 +626,20 @@ void WebConfig::setDefaultHomeAssistant(bool enabled, const String& discoveryPre
   if (!preferences->isKey("ha_enabled")) {
     preferences->putBool("ha_enabled", enabled);
   }
-  if (!preferences->isKey("ha_discovery_prefix")) {
-    preferences->putString("ha_discovery_prefix", discoveryPrefix);
+  if (!preferences->isKey("ha_prefix")) {
+    preferences->putString("ha_prefix", discoveryPrefix);
+  }
+}
+
+void WebConfig::setDefaultAdmin(const String& user, const String& pass) {
+  adminUser = user;
+  adminPass = pass;
+  
+  // Save to preferences if they don't exist
+  if (!preferences->isKey("admin_user")) {
+    preferences->putString("admin_user", user);
+  }
+  if (!preferences->isKey("admin_pass")) {
+    preferences->putString("admin_pass", pass);
   }
 }
