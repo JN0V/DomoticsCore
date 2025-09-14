@@ -20,7 +20,11 @@ private:
     String password;
     Utils::NonBlockingDelay reconnectTimer;
     Utils::NonBlockingDelay statusTimer;
+    Utils::NonBlockingDelay connectionTimer;
     bool shouldConnect;
+    bool isConnecting;
+    unsigned long connectionStartTime;
+    static const unsigned long CONNECTION_TIMEOUT = 15000; // 15 seconds
     
 public:
     /**
@@ -30,7 +34,8 @@ public:
      */
     WiFiComponent(const String& ssid, const String& password) 
         : ssid(ssid), password(password), 
-          reconnectTimer(5000), statusTimer(30000), shouldConnect(true) {
+          reconnectTimer(5000), statusTimer(30000), connectionTimer(100),
+          shouldConnect(true), isConnecting(false), connectionStartTime(0) {
     }
     
     ComponentStatus begin() override {
@@ -52,6 +57,10 @@ public:
                               .length(64));
         config.defineParameter(ConfigParam("reconnect_interval", ConfigType::Integer, false, "5000", 
                                          "Reconnection attempt interval in ms").min(1000).max(60000));
+        config.defineParameter(ConfigParam("connection_timeout", ConfigType::Integer, false, "15000",
+                                         "Connection timeout in ms").min(5000).max(60000));
+        config.defineParameter(ConfigParam("auto_reconnect", ConfigType::Boolean, false, "true",
+                                         "Enable automatic reconnection"));
         
         ComponentStatus status = connectToWiFi();
         setStatus(status);
@@ -59,20 +68,47 @@ public:
     }
     
     void loop() override {
+        // Handle ongoing connection attempt
+        if (isConnecting) {
+            if (connectionTimer.isReady()) {
+                wl_status_t status = WiFi.status();
+                
+                if (status == WL_CONNECTED) {
+                    // Connection successful
+                    isConnecting = false;
+                    DLOG_I(LOG_CORE, "WiFi connected successfully");
+                    DLOG_I(LOG_CORE, "IP Address: %s", WiFi.localIP().toString().c_str());
+                    DLOG_I(LOG_CORE, "Signal strength: %d dBm", WiFi.RSSI());
+                    setStatus(ComponentStatus::Success);
+                } else if (millis() - connectionStartTime > CONNECTION_TIMEOUT) {
+                    // Connection timeout
+                    isConnecting = false;
+                    DLOG_E(LOG_CORE, "WiFi connection timeout - status: %d", status);
+                    setStatus(ComponentStatus::NetworkError);
+                } else if (status == WL_CONNECT_FAILED || status == WL_NO_SSID_AVAIL) {
+                    // Connection failed immediately
+                    isConnecting = false;
+                    DLOG_E(LOG_CORE, "WiFi connection failed - status: %d", status);
+                    setStatus(ComponentStatus::NetworkError);
+                }
+                // Continue waiting for connection...
+            }
+        }
+        
         // Check connection status periodically
         if (statusTimer.isReady()) {
             if (WiFi.status() == WL_CONNECTED) {
                 DLOG_D(LOG_CORE, "WiFi connected - IP: %s, RSSI: %d dBm", 
                        WiFi.localIP().toString().c_str(), WiFi.RSSI());
-            } else if (shouldConnect) {
+            } else if (shouldConnect && !isConnecting) {
                 DLOG_W(LOG_CORE, "WiFi disconnected - status: %d", WiFi.status());
             }
         }
         
         // Handle reconnection
-        if (shouldConnect && WiFi.status() != WL_CONNECTED && reconnectTimer.isReady()) {
+        if (shouldConnect && !isConnecting && WiFi.status() != WL_CONNECTED && reconnectTimer.isReady()) {
             DLOG_I(LOG_CORE, "Attempting WiFi reconnection...");
-            connectToWiFi();
+            startConnection();
         }
     }
     
@@ -123,7 +159,48 @@ public:
     void reconnect() {
         shouldConnect = true;
         reconnectTimer.reset();
+        if (!isConnecting) {
+            startConnection();
+        }
         DLOG_I(LOG_CORE, "WiFi reconnection requested");
+    }
+    
+    bool isConnectionInProgress() const {
+        return isConnecting;
+    }
+    
+    String getDetailedStatus() const {
+        String status = "WiFi Status: " + getConnectionStatusString();
+        if (WiFi.status() == WL_CONNECTED) {
+            status += "\n  IP: " + WiFi.localIP().toString();
+            status += "\n  SSID: " + WiFi.SSID();
+            status += "\n  RSSI: " + String(WiFi.RSSI()) + " dBm";
+            status += "\n  MAC: " + WiFi.macAddress();
+        }
+        if (isConnecting) {
+            unsigned long elapsed = millis() - connectionStartTime;
+            status += "\n  Connecting... (" + String(elapsed / 1000) + "s)";
+        }
+        return status;
+    }
+    
+    bool scanNetworks(std::vector<String>& networks) {
+        int n = WiFi.scanNetworks();
+        networks.clear();
+        
+        if (n == -1) {
+            DLOG_E(LOG_CORE, "WiFi scan failed");
+            return false;
+        }
+        
+        DLOG_I(LOG_CORE, "Found %d WiFi networks", n);
+        for (int i = 0; i < n; i++) {
+            String network = WiFi.SSID(i) + " (" + String(WiFi.RSSI(i)) + " dBm)";
+            networks.push_back(network);
+            DLOG_D(LOG_CORE, "  %s", network.c_str());
+        }
+        
+        return true;
     }
 
 private:
@@ -133,25 +210,38 @@ private:
             return ComponentStatus::ConfigError;
         }
         
+        // Start non-blocking connection
+        startConnection();
+        
+        // Return pending status - actual result will be determined in loop()
+        return ComponentStatus::Success;
+    }
+    
+    void startConnection() {
+        if (isConnecting) return; // Already connecting
+        
         DLOG_I(LOG_CORE, "Connecting to WiFi: %s", ssid.c_str());
         WiFi.begin(ssid.c_str(), password.c_str());
         
-        // Wait up to 10 seconds for connection
-        unsigned long startTime = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - startTime < 10000) {
-            delay(100);
-        }
-        
-        if (WiFi.status() == WL_CONNECTED) {
-            DLOG_I(LOG_CORE, "WiFi connected successfully");
-            DLOG_I(LOG_CORE, "IP Address: %s", WiFi.localIP().toString().c_str());
-            DLOG_I(LOG_CORE, "Signal strength: %d dBm", WiFi.RSSI());
-            return ComponentStatus::Success;
-        } else {
-            DLOG_E(LOG_CORE, "WiFi connection failed - status: %d", WiFi.status());
-            return ComponentStatus::NetworkError;
+        isConnecting = true;
+        connectionStartTime = millis();
+        connectionTimer.reset();
+    }
+    
+    // Additional utility methods
+    String getConnectionStatusString() const {
+        switch (WiFi.status()) {
+            case WL_IDLE_STATUS: return "Idle";
+            case WL_NO_SSID_AVAIL: return "SSID not available";
+            case WL_SCAN_COMPLETED: return "Scan completed";
+            case WL_CONNECTED: return "Connected";
+            case WL_CONNECT_FAILED: return "Connection failed";
+            case WL_CONNECTION_LOST: return "Connection lost";
+            case WL_DISCONNECTED: return "Disconnected";
+            default: return "Unknown (" + String(WiFi.status()) + ")";
         }
     }
+    
 };
 
 } // namespace Components
