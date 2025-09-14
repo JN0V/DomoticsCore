@@ -1,9 +1,9 @@
 #include <Arduino.h>
 #include <DomoticsCore/Core.h>
-// Uncomment to test WiFi component from library:
-// #include <DomoticsCore/Components/WiFi.h>
-
-// Include our custom components (built by app developer)
+#include <DomoticsCore/Components/ComponentRegistry.h>
+#include <DomoticsCore/Components/IComponent.h>
+#include <DomoticsCore/Utils/Timer.h>
+#include <memory>
 #include "CustomComponents.h"
 
 using namespace DomoticsCore;
