@@ -1,0 +1,213 @@
+#pragma once
+
+#include <Arduino.h>
+#include <DomoticsCore/Components/IComponent.h>
+#include <DomoticsCore/Logger.h>
+#include <DomoticsCore/Utils/Timer.h>
+
+using namespace DomoticsCore;
+using namespace DomoticsCore::Components;
+
+/**
+ * Example custom component showing how to build new behaviors with DomoticsCore
+ * This demonstrates the component development pattern for library users
+ */
+class TestComponent : public IComponent {
+private:
+    String componentName;
+    Utils::NonBlockingDelay heartbeatTimer;
+    Utils::NonBlockingDelay workTimer;
+    int counter;
+    bool simulateWork;
+    std::vector<String> dependencies;
+    
+public:
+    /**
+     * Constructor
+     * @param name Component instance name
+     * @param heartbeatInterval Heartbeat logging interval in ms (default: 5000)
+     * @param deps List of component dependencies (optional)
+     */
+    TestComponent(const String& name, 
+                  unsigned long heartbeatInterval = 5000,
+                  const std::vector<String>& deps = {}) 
+        : componentName(name), 
+          heartbeatTimer(heartbeatInterval), 
+          workTimer(2000),
+          counter(0), 
+          simulateWork(true),
+          dependencies(deps) {
+    }
+    
+    bool begin() override {
+        DLOG_I(LOG_CORE, "TestComponent '%s' initializing...", componentName.c_str());
+        
+        // Simulate some initialization work
+        delay(50);
+        
+        counter = 0;
+        DLOG_I(LOG_CORE, "TestComponent '%s' initialized successfully", componentName.c_str());
+        return true;
+    }
+    
+    void loop() override {
+        // Heartbeat logging
+        if (heartbeatTimer.isReady()) {
+            DLOG_I(LOG_CORE, "TestComponent '%s' heartbeat - counter: %d, uptime: %lu ms", 
+                   componentName.c_str(), counter, millis());
+        }
+        
+        // Simulate periodic work
+        if (simulateWork && workTimer.isReady()) {
+            counter++;
+            DLOG_D(LOG_CORE, "TestComponent '%s' doing work iteration %d", 
+                   componentName.c_str(), counter);
+            
+            // Simulate different work patterns
+            if (counter % 10 == 0) {
+                DLOG_I(LOG_CORE, "TestComponent '%s' milestone reached: %d iterations", 
+                       componentName.c_str(), counter);
+            }
+            
+            if (counter % 25 == 0) {
+                DLOG_W(LOG_CORE, "TestComponent '%s' warning: high iteration count (%d)", 
+                       componentName.c_str(), counter);
+            }
+        }
+    }
+    
+    void shutdown() override {
+        DLOG_I(LOG_CORE, "TestComponent '%s' shutting down...", componentName.c_str());
+        simulateWork = false;
+        DLOG_I(LOG_CORE, "TestComponent '%s' shutdown complete - final counter: %d", 
+               componentName.c_str(), counter);
+    }
+    
+    String getName() const override {
+        return componentName;
+    }
+    
+    String getVersion() const override {
+        return "1.0.0-test";
+    }
+    
+    std::vector<String> getDependencies() const override {
+        return dependencies;
+    }
+    
+    // Test-specific methods
+    int getCounter() const {
+        return counter;
+    }
+    
+    void resetCounter() {
+        counter = 0;
+        DLOG_I(LOG_CORE, "TestComponent '%s' counter reset", componentName.c_str());
+    }
+    
+    void setWorkEnabled(bool enabled) {
+        simulateWork = enabled;
+        DLOG_I(LOG_CORE, "TestComponent '%s' work %s", 
+               componentName.c_str(), enabled ? "enabled" : "disabled");
+    }
+    
+    void setHeartbeatInterval(unsigned long intervalMs) {
+        heartbeatTimer.setInterval(intervalMs);
+        DLOG_I(LOG_CORE, "TestComponent '%s' heartbeat interval set to %lu ms", 
+               componentName.c_str(), intervalMs);
+    }
+    
+    void setWorkInterval(unsigned long intervalMs) {
+        workTimer.setInterval(intervalMs);
+        DLOG_I(LOG_CORE, "TestComponent '%s' work interval set to %lu ms", 
+               componentName.c_str(), intervalMs);
+    }
+    
+    void triggerError() {
+        DLOG_E(LOG_CORE, "TestComponent '%s' simulated error triggered!", componentName.c_str());
+    }
+    
+    void logStatus() {
+        DLOG_I(LOG_CORE, "TestComponent '%s' status:", componentName.c_str());
+        DLOG_I(LOG_CORE, "  - Counter: %d", counter);
+        DLOG_I(LOG_CORE, "  - Work enabled: %s", simulateWork ? "yes" : "no");
+        DLOG_I(LOG_CORE, "  - Heartbeat interval: %lu ms", heartbeatTimer.getInterval());
+        DLOG_I(LOG_CORE, "  - Work interval: %lu ms", workTimer.getInterval());
+        DLOG_I(LOG_CORE, "  - Dependencies: %d", dependencies.size());
+        for (const auto& dep : dependencies) {
+            DLOG_I(LOG_CORE, "    - %s", dep.c_str());
+        }
+    }
+};
+
+/**
+ * Example LED blinker component showing hardware interaction
+ */
+class LEDBlinkerComponent : public IComponent {
+private:
+    int ledPin;
+    Utils::NonBlockingDelay blinkTimer;
+    bool ledState;
+    bool blinkEnabled;
+    
+public:
+    LEDBlinkerComponent(int pin, unsigned long blinkInterval = 1000) 
+        : ledPin(pin), blinkTimer(blinkInterval), ledState(false), blinkEnabled(true) {
+    }
+    
+    bool begin() override {
+        DLOG_I(LOG_CORE, "LEDBlinker initializing on pin %d...", ledPin);
+        pinMode(ledPin, OUTPUT);
+        digitalWrite(ledPin, LOW);
+        ledState = false;
+        DLOG_I(LOG_CORE, "LEDBlinker initialized successfully");
+        return true;
+    }
+    
+    void loop() override {
+        if (blinkEnabled && blinkTimer.isReady()) {
+            ledState = !ledState;
+            digitalWrite(ledPin, ledState ? HIGH : LOW);
+            DLOG_D(LOG_CORE, "LED %s", ledState ? "ON" : "OFF");
+        }
+    }
+    
+    void shutdown() override {
+        DLOG_I(LOG_CORE, "LEDBlinker shutting down...");
+        digitalWrite(ledPin, LOW);
+        blinkEnabled = false;
+    }
+    
+    String getName() const override {
+        return "LEDBlinker";
+    }
+    
+    void setBlinkInterval(unsigned long intervalMs) {
+        blinkTimer.setInterval(intervalMs);
+        DLOG_I(LOG_CORE, "LED blink interval set to %lu ms", intervalMs);
+    }
+    
+    void setEnabled(bool enabled) {
+        blinkEnabled = enabled;
+        if (!enabled) {
+            digitalWrite(ledPin, LOW);
+            ledState = false;
+        }
+        DLOG_I(LOG_CORE, "LED blinking %s", enabled ? "enabled" : "disabled");
+    }
+};
+
+/**
+ * Factory functions for easy component creation
+ */
+inline std::unique_ptr<TestComponent> createTestComponent(
+    const String& name, 
+    unsigned long heartbeatInterval = 5000,
+    const std::vector<String>& dependencies = {}
+) {
+    return std::unique_ptr<TestComponent>(new TestComponent(name, heartbeatInterval, dependencies));
+}
+
+inline std::unique_ptr<LEDBlinkerComponent> createLEDBlinker(int pin, unsigned long blinkInterval = 1000) {
+    return std::unique_ptr<LEDBlinkerComponent>(new LEDBlinkerComponent(pin, blinkInterval));
+}
