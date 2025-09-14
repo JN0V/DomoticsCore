@@ -39,15 +39,38 @@ public:
           dependencies(deps) {
     }
     
-    bool begin() override {
+    ComponentStatus begin() override {
         DLOG_I(LOG_CORE, "TestComponent '%s' initializing...", componentName.c_str());
+        
+        // Initialize component metadata
+        metadata.name = componentName;
+        metadata.version = "1.0.0-test";
+        metadata.author = "DomoticsCore Example";
+        metadata.description = "Test component for demonstration";
+        
+        // Define configuration parameters
+        config.defineParameter(ConfigParam("heartbeat_interval", ConfigType::Integer, false, 
+                                         String(heartbeatTimer.getInterval()), "Heartbeat interval in ms")
+                              .min(1000).max(60000));
+        config.defineParameter(ConfigParam("simulate_work", ConfigType::Boolean, false, "true", 
+                                         "Enable work simulation"));
+        
+        // Validate configuration
+        auto validation = validateConfig();
+        if (!validation.isValid()) {
+            DLOG_E(LOG_CORE, "TestComponent '%s' config validation failed: %s", 
+                   componentName.c_str(), validation.toString().c_str());
+            setStatus(ComponentStatus::ConfigError);
+            return ComponentStatus::ConfigError;
+        }
         
         // Simulate some initialization work
         delay(50);
         
         counter = 0;
+        setStatus(ComponentStatus::Success);
         DLOG_I(LOG_CORE, "TestComponent '%s' initialized successfully", componentName.c_str());
-        return true;
+        return ComponentStatus::Success;
     }
     
     void loop() override {
@@ -76,11 +99,13 @@ public:
         }
     }
     
-    void shutdown() override {
+    ComponentStatus shutdown() override {
         DLOG_I(LOG_CORE, "TestComponent '%s' shutting down...", componentName.c_str());
         simulateWork = false;
+        setStatus(ComponentStatus::Success);
         DLOG_I(LOG_CORE, "TestComponent '%s' shutdown complete - final counter: %d", 
                componentName.c_str(), counter);
+        return ComponentStatus::Success;
     }
     
     String getName() const override {
@@ -153,15 +178,32 @@ private:
 public:
     LEDBlinkerComponent(int pin, unsigned long blinkInterval = 1000) 
         : ledPin(pin), blinkTimer(blinkInterval), ledState(false), blinkEnabled(true) {
+        pinMode(ledPin, OUTPUT);
+        digitalWrite(ledPin, LOW);
     }
     
-    bool begin() override {
+    ComponentStatus begin() override {
         DLOG_I(LOG_CORE, "LEDBlinker initializing on pin %d...", ledPin);
+        
+        // Initialize component metadata
+        metadata.name = "LEDBlinker";
+        metadata.version = "1.0.0";
+        metadata.author = "DomoticsCore Example";
+        metadata.description = "LED blinker component for hardware demonstration";
+        
+        // Define configuration parameters
+        config.defineParameter(ConfigParam("blink_interval", ConfigType::Integer, false, 
+                                         String(blinkTimer.getInterval()), "LED blink interval in ms")
+                              .min(100).max(10000));
+        config.defineParameter(ConfigParam("enabled", ConfigType::Boolean, false, "true", 
+                                         "Enable LED blinking"));
+        
         pinMode(ledPin, OUTPUT);
         digitalWrite(ledPin, LOW);
         ledState = false;
+        setStatus(ComponentStatus::Success);
         DLOG_I(LOG_CORE, "LEDBlinker initialized successfully");
-        return true;
+        return ComponentStatus::Success;
     }
     
     void loop() override {
@@ -172,10 +214,12 @@ public:
         }
     }
     
-    void shutdown() override {
+    ComponentStatus shutdown() override {
         DLOG_I(LOG_CORE, "LEDBlinker shutting down...");
         digitalWrite(ledPin, LOW);
         blinkEnabled = false;
+        setStatus(ComponentStatus::Success);
+        return ComponentStatus::Success;
     }
     
     String getName() const override {
