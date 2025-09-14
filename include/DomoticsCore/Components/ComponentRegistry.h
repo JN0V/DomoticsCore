@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include "IComponent.h"
+#include "ComponentConfig.h"
 #include "../Logger.h"
 
 namespace DomoticsCore {
@@ -18,7 +19,7 @@ class ComponentRegistry {
 private:
     std::vector<std::unique_ptr<IComponent>> components;
     std::map<String, IComponent*> componentMap;
-    std::vector<IComponent*> initOrder;
+    std::vector<IComponent*> initializationOrder;
     bool initialized = false;
     
 public:
@@ -50,27 +51,39 @@ public:
     
     /**
      * Initialize all registered components in dependency order
-     * @return true if all components initialized successfully
+     * @return ComponentStatus indicating overall initialization result
      */
-    bool initializeAll() {
+    ComponentStatus initializeAll() {
         if (initialized) {
             DLOG_W(LOG_CORE, "Components already initialized");
-            return true;
+            return ComponentStatus::Success;
         }
         
         // Resolve dependency order
         if (!resolveDependencies()) {
             DLOG_E(LOG_CORE, "Failed to resolve component dependencies");
-            return false;
+            return ComponentStatus::DependencyError;
+        }
+        
+        // Validate all component configurations first
+        for (const auto& component : initializationOrder) {
+            auto validation = component->validateConfig();
+            if (!validation.isValid()) {
+                DLOG_E(LOG_CORE, "Component %s config validation failed: %s", 
+                       component->getName().c_str(), validation.toString().c_str());
+                return ComponentStatus::ConfigError;
+            }
         }
         
         // Initialize components in dependency order
-        for (auto* component : initOrder) {
+        for (auto* component : initializationOrder) {
             DLOG_I(LOG_CORE, "Initializing component: %s", component->getName().c_str());
             
-            if (!component->begin()) {
-                DLOG_E(LOG_CORE, "Failed to initialize component: %s", component->getName().c_str());
-                return false;
+            ComponentStatus status = component->begin();
+            if (status != ComponentStatus::Success) {
+                DLOG_E(LOG_CORE, "Failed to initialize component %s: %s", 
+                       component->getName().c_str(), statusToString(status));
+                return status;
             }
             
             component->setActive(true);
@@ -78,8 +91,8 @@ public:
         }
         
         initialized = true;
-        DLOG_I(LOG_CORE, "All components initialized successfully (%d components)", initOrder.size());
-        return true;
+        DLOG_I(LOG_CORE, "All components initialized successfully (%d components)", initializationOrder.size());
+        return ComponentStatus::Success;
     }
     
     /**
@@ -88,7 +101,7 @@ public:
     void loopAll() {
         if (!initialized) return;
         
-        for (auto* component : initOrder) {
+        for (auto* component : initializationOrder) {
             if (component->isActive()) {
                 component->loop();
             }
@@ -102,11 +115,15 @@ public:
         if (!initialized) return;
         
         // Shutdown in reverse order
-        for (auto it = initOrder.rbegin(); it != initOrder.rend(); ++it) {
-            IComponent* component = *it;
+        for (auto it = initializationOrder.rbegin(); it != initializationOrder.rend(); ++it) {
+            auto* component = *it;
             if (component->isActive()) {
                 DLOG_I(LOG_CORE, "Shutting down component: %s", component->getName().c_str());
-                component->shutdown();
+                ComponentStatus status = component->shutdown();
+                if (status != ComponentStatus::Success) {
+                    DLOG_W(LOG_CORE, "Component %s shutdown warning: %s", 
+                           component->getName().c_str(), statusToString(status));
+                }
                 component->setActive(false);
             }
         }
@@ -147,7 +164,7 @@ private:
      * @return true if dependencies resolved successfully, false if circular dependency
      */
     bool resolveDependencies() {
-        initOrder.clear();
+        initializationOrder.clear();
         std::map<String, int> inDegree;
         std::map<String, std::vector<String>> dependents;
         
@@ -187,7 +204,7 @@ private:
             String current = queue.back();
             queue.pop_back();
             
-            initOrder.push_back(componentMap[current]);
+            initializationOrder.push_back(componentMap[current]);
             
             for (const String& dependent : dependents[current]) {
                 inDegree[dependent]--;
@@ -198,7 +215,7 @@ private:
         }
         
         // Check for circular dependencies
-        if (initOrder.size() != components.size()) {
+        if (initializationOrder.size() != components.size()) {
             DLOG_E(LOG_CORE, "Circular dependency detected in components");
             return false;
         }
