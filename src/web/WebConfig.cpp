@@ -48,6 +48,10 @@ void WebConfig::setWiFiConnectedCallback(WiFiConnectedCallback callback) {
   wifiConnectedCallback = callback;
 }
 
+void WebConfig::setAPModeStatusCallback(APModeStatusCallback callback) {
+  apModeStatusCallback = callback;
+}
+
 void WebConfig::loadHomeAssistantSettings() {
   haEnabled = preferences->getBool("ha_enabled", false);
   haDiscoveryPrefix = preferences->getString("ha_prefix", "homeassistant");
@@ -334,11 +338,27 @@ void WebConfig::setupRoutes() {
     // Current WiFi status
     html += "<div class='info'>";
     html += "<h3>Current Connection</h3>";
-    html += "<p><strong>Status:</strong> " + String(WiFi.isConnected() ? "Connected" : "Disconnected") + "</p>";
-    if (WiFi.isConnected()) {
-      html += "<p><strong>SSID:</strong> " + WiFi.SSID() + "</p>";
-      html += "<p><strong>IP Address:</strong> " + WiFi.localIP().toString() + "</p>";
-      html += "<p><strong>Signal Strength:</strong> " + String(WiFi.RSSI()) + " dBm</p>";
+    
+    // Check if we're in AP mode
+    bool inAPMode = apModeStatusCallback ? apModeStatusCallback() : false;
+    
+    if (inAPMode) {
+      html += "<p><strong>Mode:</strong> Access Point (Setup Mode)</p>";
+      html += "<p><strong>AP SSID:</strong> " + String(WiFi.softAPSSID()) + "</p>";
+      html += "<p><strong>AP IP:</strong> " + WiFi.softAPIP().toString() + "</p>";
+      html += "<div class='warning'>";
+      html += "<p><strong>Note:</strong> Device is in setup mode. Connect to a WiFi network or exit AP mode to enable internet services (NTP, OTA, etc.).</p>";
+      html += "</div>";
+      html += "<form method='POST' action='/wifi/exit-ap' style='margin: 10px 0;'>";
+      html += "<input type='submit' value='Exit AP Mode' class='button' onclick='return confirm(\"Exit AP mode? You will need to connect via the device IP address.\")' style='background-color: #ff6b6b;'>";
+      html += "</form>";
+    } else {
+      html += "<p><strong>Status:</strong> " + String(WiFi.isConnected() ? "Connected" : "Disconnected") + "</p>";
+      if (WiFi.isConnected()) {
+        html += "<p><strong>SSID:</strong> " + WiFi.SSID() + "</p>";
+        html += "<p><strong>IP Address:</strong> " + WiFi.localIP().toString() + "</p>";
+        html += "<p><strong>Signal Strength:</strong> " + String(WiFi.RSSI()) + " dBm</p>";
+      }
     }
     html += "</div>";
     
@@ -424,7 +444,7 @@ void WebConfig::setupRoutes() {
     
     // Disconnect from current network
     WiFi.disconnect();
-    delay(100);
+    SystemUtils::watchdogSafeDelay(100);
     
     // Connect to new network
     WiFi.begin(ssid.c_str(), password.c_str());
@@ -432,7 +452,7 @@ void WebConfig::setupRoutes() {
     // Wait for connection (up to 10 seconds)
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-      delay(500);
+      SystemUtils::watchdogSafeDelay(500);
       attempts++;
     }
     
@@ -464,11 +484,48 @@ void WebConfig::setupRoutes() {
     request->send(200, "text/html", html);
   });
 
+  // Exit AP Mode endpoint
+  server->on("/wifi/exit-ap", HTTP_POST, [this](AsyncWebServerRequest *request){
+    if (!authenticate(request)) return;
+    
+    String html = getHTMLHeader("Exit AP Mode");
+    html += "<div class='container'><h1>Exit AP Mode</h1>";
+    
+    // Check if we're actually in AP mode
+    bool inAPMode = apModeStatusCallback ? apModeStatusCallback() : false;
+    
+    if (inAPMode) {
+      // Call the WiFi connected callback to exit AP mode
+      if (wifiConnectedCallback) {
+        wifiConnectedCallback();
+      }
+      
+      html += "<div class='success'>";
+      html += "<p>Successfully exited AP mode.</p>";
+      html += "<p>Device is now in station mode.</p>";
+      html += "<p><strong>Important:</strong> You will need to connect to the device using its IP address from now on.</p>";
+      if (WiFi.isConnected()) {
+        html += "<p>Device IP: " + WiFi.localIP().toString() + "</p>";
+      }
+      html += "</div>";
+    } else {
+      html += "<div class='error'>";
+      html += "<p>Device is not currently in AP mode.</p>";
+      html += "</div>";
+    }
+    
+    html += "<br><a href='/wifi' class='button'>Back to WiFi Settings</a>";
+    html += "<a href='/' class='button'>Main Menu</a>";
+    html += "</div>" + getHTMLFooter();
+    
+    request->send(200, "text/html", html);
+  });
+
   // WiFi reset
   server->on("/reset", HTTP_GET, [this](AsyncWebServerRequest *request){
     if (!authenticate(request)) return;
     request->send(200, "text/plain", "Resetting WiFi settings...");
-    delay(1000);
+    SystemUtils::watchdogSafeDelay(1000);
     WiFi.disconnect(true);
     ESP.restart();
   });
@@ -477,7 +534,7 @@ void WebConfig::setupRoutes() {
   server->on("/reboot", HTTP_GET, [this](AsyncWebServerRequest *request){
     if (!authenticate(request)) return;
     request->send(200, "text/plain", "Rebooting...");
-    delay(1000);
+    SystemUtils::watchdogSafeDelay(1000);
     ESP.restart();
   });
 

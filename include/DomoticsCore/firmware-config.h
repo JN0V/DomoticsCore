@@ -54,7 +54,6 @@
 #define LED_PIN 2
 
 // WiFi configuration
-#define WIFI_CONFIG_PORTAL_TIMEOUT 300  // 5 minutes
 #define WIFI_CONNECT_TIMEOUT 20         // 20 seconds
 #define WIFI_RECONNECT_TIMEOUT 30000    // 30 seconds
 #define WIFI_RECONNECT_INTERVAL 5000    // 5 seconds

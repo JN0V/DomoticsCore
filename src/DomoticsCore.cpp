@@ -18,7 +18,7 @@ void DomoticsCore::begin() {
   // Initialize serial if not already
   if (!Serial) {
     Serial.begin(115200);
-    delay(1000);
+    SystemUtils::watchdogSafeDelay(1000);
   }
 
   // LED init
@@ -185,6 +185,11 @@ void DomoticsCore::begin() {
     }
   });
   
+  // Set up AP mode status callback
+  webConfig.setAPModeStatusCallback([this]() {
+    return isInAPMode;
+  });
+  
   // Initialize OTA only if WiFi is connected (not in AP mode)
   if (WiFi.status() == WL_CONNECTED) {
     otaManager.begin();
@@ -220,14 +225,23 @@ void DomoticsCore::begin() {
   });
 
   // Small delay to ensure network stack is ready
-  delay(100);
+  SystemUtils::watchdogSafeDelay(100);
   
   // Start server
   server.begin();
 
-  DLOG_I(LOG_HTTP, "Web interface available at: http://%s", WiFi.localIP().toString().c_str());
-  DLOG_I(LOG_HTTP, "Also available at: http://%s.local", cfg.mdnsHostname.c_str());
-  DLOG_I(LOG_OTA, "OTA ready at http://%s/update", WiFi.localIP().toString().c_str());
+  // Show correct IP address based on mode
+  String currentIP;
+  if (isInAPMode) {
+    currentIP = WiFi.softAPIP().toString();
+    DLOG_I(LOG_HTTP, "Web interface available at: http://%s:%d (AP Mode)", currentIP.c_str(), cfg.webServerPort);
+    DLOG_I(LOG_OTA, "OTA will be available after connecting to WiFi");
+  } else {
+    currentIP = WiFi.localIP().toString();
+    DLOG_I(LOG_HTTP, "Web interface available at: http://%s:%d", currentIP.c_str(), cfg.webServerPort);
+    DLOG_I(LOG_HTTP, "Also available at: http://%s.local:%d", cfg.mdnsHostname.c_str(), cfg.webServerPort);
+    DLOG_I(LOG_OTA, "OTA ready at http://%s:%d/update", currentIP.c_str(), cfg.webServerPort);
+  }
   DLOG_I(LOG_CORE, "=== System Ready ===");
   
 }
@@ -236,11 +250,9 @@ void DomoticsCore::loop() {
   // Handle reboot request
   if (shouldReboot) {
     DLOG_I(LOG_CORE, "Rebooting in 3 seconds...");
-    delay(3000);
+    SystemUtils::watchdogSafeDelay(3000);
     ESP.restart();
   }
-
-  // WiFiManager removed - no processing needed
 
   // Reconnection management (skip if in AP mode)
   if (!isInAPMode && WiFi.status() != WL_CONNECTED) {
@@ -254,13 +266,13 @@ void DomoticsCore::loop() {
 
     if (reconnectAttempts >= cfg.wifiMaxReconnectAttempts) {
       DLOG_E(LOG_WIFI, "Max WiFi reconnection attempts reached, restarting...");
-      delay(1000);
+      SystemUtils::watchdogSafeDelay(1000);
       ESP.restart();
     }
 
     if (millis() - wifiLostTime > cfg.wifiReconnectTimeoutMs) {
       DLOG_E(LOG_WIFI, "WiFi reconnection timeout, restarting...");
-      delay(1000);
+      SystemUtils::watchdogSafeDelay(1000);
       ESP.restart();
     }
 
@@ -271,8 +283,19 @@ void DomoticsCore::loop() {
       reconnectAttempts++;
       DLOG_I(LOG_WIFI, "WiFi reconnection attempt %d/%d (delay: %lums)",
                     reconnectAttempts, cfg.wifiMaxReconnectAttempts, backoffDelay);
-      WiFi.reconnect();
+      
+      // Use non-blocking WiFi.begin() instead of WiFi.reconnect()
+      String ssid = preferences.getString("wifi_ssid", "");
+      String password = preferences.getString("wifi_password", "");
+      if (!ssid.isEmpty()) {
+        WiFi.begin(ssid.c_str(), password.c_str());
+        // Allow other tasks to run
+        yield();
+      }
     }
+    
+    // Always yield during reconnection to prevent watchdog
+    yield();
   } else {
     if (wifiReconnecting) {
       wifiReconnecting = false;
@@ -314,7 +337,20 @@ void DomoticsCore::loop() {
     handleMQTT();
   }
 
-  // LED
+  // Check for NTP sync completion (non-blocking)
+  static bool ntpSyncLogged = false;
+  if (!SystemUtils::isTimeInitialized() && !ntpSyncLogged) {
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo)) {
+      SystemUtils::setTimeInitialized(true);
+      char timeStr[64];
+      strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
+      DLOG_I(LOG_SYSTEM, "NTP time synchronized: %s", timeStr);
+      ntpSyncLogged = true;
+    }
+  }
+
+  // LED manager update
   ledManager.update();
 
   // Periodic log and non-blocking delay
@@ -326,9 +362,10 @@ void DomoticsCore::loop() {
     static unsigned long lastPrint = 0;
     if (currentTime - lastPrint >= SYSTEM_LOG_INTERVAL) {
       lastPrint = currentTime;
-      char logBuffer[128];
-      snprintf(logBuffer, sizeof(logBuffer), "System active - Free heap: %d bytes - IP: %s", ESP.getFreeHeap(), WiFi.localIP().toString().c_str());
-      DLOG_I(LOG_SYSTEM, "%s", logBuffer);
+      String currentIP = isInAPMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
+      String mode = isInAPMode ? "AP" : "STA";
+      DLOG_I(LOG_SYSTEM, "System active - Free heap: %d bytes - IP: %s (%s)", 
+             ESP.getFreeHeap(), currentIP.c_str(), mode.c_str());
     }
   }
 }
@@ -510,11 +547,16 @@ void DomoticsCore::startAPMode() {
 void DomoticsCore::exitAPMode() {
   DLOG_I(LOG_WIFI, "Exiting Access Point mode - switching to station mode");
   
-  // Clear AP mode flag
+  // Clear AP mode flag first
   isInAPMode = false;
   
-  // Stop AP mode
-  WiFi.softAPdisconnect(true);
+  // Don't disconnect AP abruptly - let it fade out naturally
+  // The AsyncWebServer will continue to work on the station interface
+  WiFi.softAPdisconnect(false); // false = don't erase config, gentler disconnect
+  DLOG_D(LOG_WIFI, "AP disconnected gracefully");
+  
+  // Minimal delay to let the WiFi stack settle
+  SystemUtils::watchdogSafeDelay(100);
   
   // Update LED status
   ledManager.setStatus(WIFI_CONNECTED);

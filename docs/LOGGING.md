@@ -65,7 +65,7 @@ The library provides these predefined component tags:
 | Tag | Component | Description |
 |-----|-----------|-------------|
 | `LOG_CORE` | DomoticsCore | Main framework initialization and control |
-| `LOG_WIFI` | WiFiManager | WiFi connection and management |
+| `LOG_WIFI` | WiFi | WiFi connection and management |
 | `LOG_MQTT` | MQTT Client | MQTT broker communication |
 | `LOG_HTTP` | Web Server | HTTP requests and responses |
 | `LOG_HA` | Home Assistant | Home Assistant integration |

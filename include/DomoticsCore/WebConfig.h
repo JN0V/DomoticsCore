@@ -53,6 +53,7 @@ private:
   // Callback function types
   typedef std::function<void()> ChangeCallback;
   typedef std::function<void()> WiFiConnectedCallback;
+  typedef std::function<bool()> APModeStatusCallback;
   
   // Callback for MQTT settings change
   ChangeCallback mqttChangeCallback;
@@ -62,6 +63,9 @@ private:
 
   // Callback for WiFi connected
   WiFiConnectedCallback wifiConnectedCallback;
+  
+  // Callback to check AP mode status
+  APModeStatusCallback apModeStatusCallback;
 
 public:
   WebConfig(AsyncWebServer* srv, Preferences* prefs, const String& device,
@@ -99,6 +103,7 @@ public:
   void setMQTTChangeCallback(ChangeCallback callback);
   void setHomeAssistantChangeCallback(ChangeCallback callback);
   void setWiFiConnectedCallback(WiFiConnectedCallback callback);
+  void setAPModeStatusCallback(APModeStatusCallback callback);
   
   void setDefaultMDNS(bool enabled, const String& hostname);
   void setDefaultHomeAssistant(bool enabled, const String& discoveryPrefix);

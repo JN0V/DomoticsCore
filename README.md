@@ -4,7 +4,7 @@ ESP32 domotics framework with WiFi, MQTT, web interface, Home Assistant integrat
 
 ## 🚀 Features
 
-- **WiFi Management**: Auto-configuration with WiFiManager
+- **WiFi Management**: Custom WiFi management with web interface
 - **Web Interface**: Configuration portal with responsive UI
 - **MQTT Integration**: Full MQTT client with reconnection
 - **Home Assistant**: Auto-discovery integration
@@ -239,7 +239,6 @@ DomoticsCore/
 - PubSubClient (>=2.8.0) - MIT License
 - ESP Async WebServer (>=1.2.3) - LGPL 2.1 License
 - AsyncTCP (>=1.1.1) - LGPL 3.0 License
-- WiFiManager (>=2.0.17) - MIT License
 
 ## 📋 Examples
 
@@ -279,7 +278,6 @@ This project uses several third-party libraries with different licenses:
 
 - **ArduinoJson** by Benoit Blanchon - MIT License
 - **PubSubClient** by Nick O'Leary - MIT License  
-- **WiFiManager** by tzapu - MIT License
 - **ESP Async WebServer** by Hristo Gochkov - LGPL 2.1 License
 - **AsyncTCP** by me-no-dev - LGPL 3.0 License
 

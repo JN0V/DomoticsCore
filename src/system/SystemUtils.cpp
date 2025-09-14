@@ -21,31 +21,27 @@ void SystemUtils::initializeNTP() {
     DLOG_W(LOG_SYSTEM, "Cannot initialize NTP - WiFi not connected");
     return;
   }
-  DLOG_I(LOG_SYSTEM, "Initializing NTP...");
+  DLOG_I(LOG_SYSTEM, "Initializing NTP (non-blocking)...");
+  
+  // Just configure NTP, don't wait for sync
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-
+  
+  // Check if time is already synchronized (quick check)
   struct tm timeinfo;
-  int ntpRetries = 0;
-  const int maxRetries = 10;
-
-  while (!getLocalTime(&timeinfo) && ntpRetries < maxRetries) {
-    DLOG_I(LOG_SYSTEM, "Waiting for NTP time sync... (attempt %d/%d)", ntpRetries + 1, maxRetries);
-    delay(1000);
-    ntpRetries++;
-  }
-
   if (getLocalTime(&timeinfo)) {
     timeInitialized = true;
     char timeStr[64];
     strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
-    DLOG_I(LOG_SYSTEM, "Time synchronized: %s", timeStr);
+    DLOG_I(LOG_SYSTEM, "Time already synchronized: %s", timeStr);
   } else {
-    DLOG_E(LOG_SYSTEM, "Failed to synchronize time with NTP server after 10 attempts");
-    DLOG_W(LOG_SYSTEM, "System will continue without time synchronization");
+    DLOG_I(LOG_SYSTEM, "NTP sync started in background - time will be available shortly");
+    // Time sync will happen in background, we'll check later in loop
   }
 }
 
 bool SystemUtils::isTimeInitialized() { return timeInitialized; }
+
+void SystemUtils::setTimeInitialized(bool initialized) { timeInitialized = initialized; }
 
 String SystemUtils::getCurrentTimeString() {
   if (!timeInitialized) return "";
@@ -60,3 +56,19 @@ String SystemUtils::getCurrentTimeString() {
 
 // Removed getFormattedLog - Arduino Core logging handles timestamps automatically
 
+void SystemUtils::watchdogSafeDelay(unsigned long milliseconds) {
+  // Break down the delay into 10ms chunks with yield() calls
+  // to prevent watchdog timer resets
+  unsigned long chunks = milliseconds / 10;
+  unsigned long remainder = milliseconds % 10;
+  
+  for (unsigned long i = 0; i < chunks; i++) {
+    yield();
+    delay(10);
+  }
+  
+  if (remainder > 0) {
+    yield();
+    delay(remainder);
+  }
+}
