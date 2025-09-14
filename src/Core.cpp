@@ -1,4 +1,6 @@
 #include "DomoticsCore/Core.h"
+#include "DomoticsCore/Logger.h"
+#include "DomoticsCore/Components/ComponentConfig.h"
 
 namespace DomoticsCore {
 
@@ -36,8 +38,9 @@ bool Core::begin(const CoreConfig& cfg) {
     DLOG_I(LOG_CORE, "Free heap: %d bytes", ESP.getFreeHeap());
     
     // Initialize all registered components
-    if (!componentRegistry.initializeAll()) {
-        DLOG_E(LOG_CORE, "Failed to initialize components");
+    Components::ComponentStatus status = componentRegistry.initializeAll();
+    if (status != Components::ComponentStatus::Success) {
+        DLOG_E(LOG_CORE, "Failed to initialize components: %s", Components::statusToString(status));
         return false;
     }
     

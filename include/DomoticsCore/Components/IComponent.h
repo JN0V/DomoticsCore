@@ -2,24 +2,32 @@
 
 #include <Arduino.h>
 #include <vector>
+#include <memory>
+#include "ComponentConfig.h"
 
 namespace DomoticsCore {
 namespace Components {
 
 /**
  * Base interface for all DomoticsCore components
- * Components are modular, optional features that can be added to Core
+ * Provides lifecycle management, dependency resolution, and status reporting
  */
 class IComponent {
+protected:
+    bool active = false;
+    ComponentStatus lastStatus = ComponentStatus::Success;
+    ComponentConfig config;
+    ComponentMetadata metadata;
+    
 public:
     virtual ~IComponent() = default;
     
     /**
      * Initialize the component
      * Called during Core.begin() after dependencies are resolved
-     * @return true if initialization successful, false otherwise
+     * @return ComponentStatus indicating success or specific error
      */
-    virtual bool begin() = 0;
+    virtual ComponentStatus begin() = 0;
     
     /**
      * Component main loop
@@ -30,8 +38,9 @@ public:
     /**
      * Shutdown the component
      * Called during Core.shutdown() or component removal
+     * @return ComponentStatus indicating success or specific error
      */
-    virtual void shutdown() = 0;
+    virtual ComponentStatus shutdown() = 0;
     
     /**
      * Get component name for identification and logging
@@ -57,15 +66,63 @@ public:
     }
     
     /**
+     * Get last component status
+     * @return Last ComponentStatus from lifecycle operations
+     */
+    virtual ComponentStatus getLastStatus() const {
+        return lastStatus;
+    }
+    
+    /**
+     * Get component metadata
+     * @return ComponentMetadata with version, author, description
+     */
+    virtual const ComponentMetadata& getMetadata() const {
+        return metadata;
+    }
+    
+    /**
+     * Get component configuration
+     * @return ComponentConfig for parameter access
+     */
+    virtual ComponentConfig& getConfig() {
+        return config;
+    }
+    
+    /**
+     * Get component configuration (const)
+     * @return ComponentConfig for parameter access
+     */
+    virtual const ComponentConfig& getConfig() const {
+        return config;
+    }
+    
+    /**
+     * Validate component configuration
+     * @return ValidationResult with detailed error information
+     */
+    virtual ValidationResult validateConfig() const {
+        return config.validate();
+    }
+    
+    /**
      * Get component version for compatibility checking
      * @return Version string (e.g., "1.0.0")
      */
     virtual String getVersion() const { 
-        return "1.0.0"; 
+        return metadata.version.isEmpty() ? "1.0.0" : metadata.version; 
     }
 
 protected:
-    bool active = false;
+    /**
+     * Set component status and update internal state
+     */
+    void setStatus(ComponentStatus status) {
+        lastStatus = status;
+        if (status != ComponentStatus::Success) {
+            active = false;
+        }
+    }
     
     /**
      * Mark component as active (called by ComponentRegistry)

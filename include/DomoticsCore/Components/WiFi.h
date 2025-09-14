@@ -33,13 +33,29 @@ public:
           reconnectTimer(5000), statusTimer(30000), shouldConnect(true) {
     }
     
-    bool begin() override {
+    ComponentStatus begin() override {
         DLOG_I(LOG_CORE, "WiFi component initializing...");
         
         WiFi.mode(WIFI_STA);
         WiFi.setAutoReconnect(false); // We handle reconnection ourselves
         
-        return connectToWiFi();
+        // Initialize component metadata
+        metadata.name = "WiFi";
+        metadata.version = "1.0.0";
+        metadata.author = "DomoticsCore";
+        metadata.description = "WiFi connectivity management component";
+        
+        // Define configuration parameters
+        config.defineParameter(ConfigParam("ssid", ConfigType::String, true, ssid, "WiFi network name")
+                              .length(32));
+        config.defineParameter(ConfigParam("password", ConfigType::String, false, "", "WiFi password")
+                              .length(64));
+        config.defineParameter(ConfigParam("reconnect_interval", ConfigType::Integer, false, "5000", 
+                                         "Reconnection attempt interval in ms").min(1000).max(60000));
+        
+        ComponentStatus status = connectToWiFi();
+        setStatus(status);
+        return status;
     }
     
     void loop() override {
@@ -60,11 +76,13 @@ public:
         }
     }
     
-    void shutdown() override {
+    ComponentStatus shutdown() override {
         DLOG_I(LOG_CORE, "WiFi component shutting down...");
         shouldConnect = false;
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
+        setStatus(ComponentStatus::Success);
+        return ComponentStatus::Success;
     }
     
     String getName() const override {
@@ -109,10 +127,10 @@ public:
     }
 
 private:
-    bool connectToWiFi() {
+    ComponentStatus connectToWiFi() {
         if (ssid.isEmpty()) {
             DLOG_E(LOG_CORE, "WiFi SSID not configured");
-            return false;
+            return ComponentStatus::ConfigError;
         }
         
         DLOG_I(LOG_CORE, "Connecting to WiFi: %s", ssid.c_str());
@@ -128,10 +146,10 @@ private:
             DLOG_I(LOG_CORE, "WiFi connected successfully");
             DLOG_I(LOG_CORE, "IP Address: %s", WiFi.localIP().toString().c_str());
             DLOG_I(LOG_CORE, "Signal strength: %d dBm", WiFi.RSSI());
-            return true;
+            return ComponentStatus::Success;
         } else {
             DLOG_E(LOG_CORE, "WiFi connection failed - status: %d", WiFi.status());
-            return false;
+            return ComponentStatus::NetworkError;
         }
     }
 };
