@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-// WiFiManager removed - using custom WiFi management
+// Custom WiFi management system
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
 
@@ -53,6 +53,9 @@ public:
 protected:
   // MQTT message handler - can be overridden by derived classes
   virtual void onMQTTMessage(const String& topic, const String& message);
+  
+  // Public method to check AP mode status
+  bool getIsInAPMode() const { return isInAPMode; }
 
 private:
   // MQTT initialization and handling
@@ -68,7 +71,7 @@ private:
 
   CoreConfig cfg;
   // Core services
-  // WiFiManager removed - using custom WiFi management
+  // Custom WiFi management system
   AsyncWebServer server;
   Preferences preferences;
 

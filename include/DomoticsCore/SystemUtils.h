@@ -21,7 +21,9 @@ public:
   static void displaySystemInfo();
   static void initializeNTP();
   static bool isTimeInitialized();
+  static void setTimeInitialized(bool initialized);
   static String getCurrentTimeString();
+  static void watchdogSafeDelay(unsigned long milliseconds);
 };
 
 #endif // DOMOTICS_CORE_SYSTEM_UTILS_H

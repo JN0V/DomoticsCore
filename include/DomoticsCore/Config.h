@@ -18,8 +18,7 @@ struct CoreConfig {
   uint16_t webServerPort;
   uint8_t ledPin;
 
-  // WiFi manager settings
-  uint32_t wifiConfigPortalTimeoutMs;
+  // WiFi settings
   uint32_t wifiConnectTimeoutSec;
   uint32_t wifiReconnectTimeoutMs;
   uint32_t wifiReconnectIntervalMs;
@@ -51,7 +50,6 @@ struct CoreConfig {
     firmwareVersion = FIRMWARE_VERSION;
     webServerPort = WEB_SERVER_PORT;
     ledPin = LED_PIN;
-    wifiConfigPortalTimeoutMs = WIFI_CONFIG_PORTAL_TIMEOUT * 1000UL;
     wifiConnectTimeoutSec = WIFI_CONNECT_TIMEOUT;
     wifiReconnectTimeoutMs = WIFI_RECONNECT_TIMEOUT;
     wifiReconnectIntervalMs = WIFI_RECONNECT_INTERVAL;

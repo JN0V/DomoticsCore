@@ -43,7 +43,7 @@ void setup() {
   CoreConfig config;
   config.deviceName = "AdvancedExample";
   config.firmwareVersion = "2.1.0";
-  config.webServerPort = 8080;  // Use port 8080 to avoid WiFiManager conflict on port 80
+  config.webServerPort = 8080;  // Use port 8080 for web interface
   config.mqttEnabled = true;
   config.homeAssistantEnabled = true;
 
@@ -157,7 +157,7 @@ void setup() {
 
   core->webServer().on("/api/reboot", HTTP_POST, [](AsyncWebServerRequest* request){
     request->send(200, "text/plain", "Rebooting...");
-    delay(1000);
+    SystemUtils::watchdogSafeDelay(1000);
     ESP.restart();
   });
 

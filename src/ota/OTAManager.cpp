@@ -36,7 +36,7 @@ void OTAManager::setupRoutes() {
     request->send(response);
     
     if (shouldReboot) {
-      delay(1000);
+      SystemUtils::watchdogSafeDelay(1000);
       ESP.restart();
     }
   }, [this](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
