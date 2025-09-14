@@ -6,45 +6,70 @@ Core::Core() : initialized(false) {
 }
 
 Core::~Core() {
-    shutdown();
+    if (initialized) {
+        shutdown();
+    }
 }
 
 bool Core::begin(const CoreConfig& cfg) {
-    // Ensure Serial is ready for logging
+    if (initialized) {
+        DLOG_W(LOG_CORE, "Core already initialized");
+        return true;
+    }
+    
+    config = cfg;
+    
+    // Initialize Serial if not already done
     if (!Serial) {
         Serial.begin(115200);
         delay(100);
     }
     
-    config = cfg;
-    
-    // Generate device ID if not set
+    // Generate device ID if not provided
     if (config.deviceId.isEmpty()) {
         config.deviceId = "DC" + String((uint32_t)ESP.getEfuseMac(), HEX);
+        config.deviceId.toUpperCase();
     }
     
     DLOG_I(LOG_CORE, "DomoticsCore initializing...");
     DLOG_I(LOG_CORE, "Device: %s (ID: %s)", config.deviceName.c_str(), config.deviceId.c_str());
     DLOG_I(LOG_CORE, "Free heap: %d bytes", ESP.getFreeHeap());
     
+    // Initialize all registered components
+    if (!componentRegistry.initializeAll()) {
+        DLOG_E(LOG_CORE, "Failed to initialize components");
+        return false;
+    }
+    
     initialized = true;
     DLOG_I(LOG_CORE, "Core initialization complete");
-    
     return true;
 }
 
 void Core::loop() {
     if (!initialized) return;
     
-    // Minimal core loop - just keep system alive
-    // Components can be added later
+    // Run component loops
+    componentRegistry.loopAll();
+    
+    // Core minimal heartbeat
+    static unsigned long lastHeartbeat = 0;
+    if (millis() - lastHeartbeat >= 60000) { // Every minute
+        lastHeartbeat = millis();
+        DLOG_D(LOG_CORE, "Core heartbeat - uptime: %lu seconds, components: %d", 
+               millis() / 1000, componentRegistry.getComponentCount());
+    }
 }
 
 void Core::shutdown() {
     if (!initialized) return;
     
     DLOG_I(LOG_CORE, "Shutting down DomoticsCore");
+    // Shutdown all components first
+    componentRegistry.shutdownAll();
+    
     initialized = false;
+    DLOG_I(LOG_CORE, "Core shutdown complete");
 }
 
 } // namespace DomoticsCore
