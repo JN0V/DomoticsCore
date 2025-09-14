@@ -43,57 +43,58 @@ void DomoticsCore::begin() {
   // System info
   SystemUtils::displaySystemInfo();
 
-  // WiFiManager config
-  // WiFi timeouts (WiFiManager expects seconds for config portal timeout and connect timeout)
-  wifiManager.setConfigPortalTimeout((int)(cfg.wifiConfigPortalTimeoutMs / 1000UL));
-  wifiManager.setConnectTimeout((int)cfg.wifiConnectTimeoutSec);
-  
-  // Disable WiFiManager debug output to use our unified logging
-  wifiManager.setDebugOutput(false);
-
-  wifiManager.setAPCallback([this](WiFiManager *myWiFiManager) {
-    DLOG_I(LOG_WIFI, "Entered config mode");
-    DLOG_I(LOG_WIFI, "AP IP address: %s", WiFi.softAPIP().toString().c_str());
-    DLOG_I(LOG_WIFI, "Connect to: %s", myWiFiManager->getConfigPortalSSID());
-    ledManager.setStatus(WIFI_AP_MODE);
-  });
-
-  wifiManager.setSaveConfigCallback([this]() {
-    DLOG_I(LOG_WIFI, "WiFi config saved, will restart");
-    shouldReboot = true;
-  });
-
-  // WiFi connect
-  DLOG_I(LOG_WIFI, "Starting WiFi configuration...");
+  // Custom WiFi connection logic (no WiFiManager)
+  DLOG_I(LOG_WIFI, "Starting custom WiFi connection...");
   ledManager.runSequence(WIFI_CONNECTING, 1000);
 
-  if (!wifiManager.autoConnect(cfg.deviceName.c_str())) {
-    DLOG_E(LOG_WIFI, "Failed to connect and hit timeout");
-    DLOG_W(LOG_WIFI, "Starting in AP mode for configuration");
-    ledManager.setStatus(WIFI_FAILED);
+  // Try to load saved WiFi credentials from preferences
+  String savedSSID = preferences.getString("wifi_ssid", "");
+  String savedPassword = preferences.getString("wifi_password", "");
+
+  if (savedSSID.length() > 0) {
+    DLOG_I(LOG_WIFI, "Attempting to connect to saved network: %s", savedSSID.c_str());
+    WiFi.begin(savedSSID.c_str(), savedPassword.c_str());
+    
+    // Wait for connection (up to 15 seconds)
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+      delay(500);
+      attempts++;
+      DLOG_D(LOG_WIFI, "Connecting... attempt %d/30", attempts);
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      DLOG_I(LOG_WIFI, "WiFi connected successfully!");
+      DLOG_I(LOG_WIFI, "STA IP Address: %s", WiFi.localIP().toString().c_str());
+      DLOG_I(LOG_WIFI, "Connect to: http://%s:%d", WiFi.localIP().toString().c_str(), cfg.webServerPort);
+      ledManager.runSequence(WIFI_CONNECTED, 1000);
+    } else {
+      DLOG_W(LOG_WIFI, "Failed to connect to saved network");
+      startAPMode();
+    }
   } else {
-    DLOG_I(LOG_WIFI, "AutoConnect: SUCCESS");
-    DLOG_I(LOG_WIFI, "STA IP Address: %s", WiFi.localIP().toString().c_str());
-    DLOG_I(LOG_WIFI, "Connect to: http://%s", WiFi.localIP().toString().c_str());
-    // brief confirmation
-    ledManager.runSequence(WIFI_CONNECTED, 1000);
+    DLOG_I(LOG_WIFI, "No saved WiFi credentials found");
+    startAPMode();
   }
 
-  // If not strict, we can enter NORMAL OP before NTP to avoid delaying readiness
-  if (!cfg.strictNtpBeforeNormalOp) {
-    ledManager.setStatus(WIFI_NORMAL_OPERATION);
+  // Initialize NTP only if WiFi is connected (not in AP mode)
+  if (WiFi.status() == WL_CONNECTED) {
+    // If not strict, we can enter NORMAL OP before NTP to avoid delaying readiness
+    if (!cfg.strictNtpBeforeNormalOp) {
+      ledManager.setStatus(WIFI_NORMAL_OPERATION);
+    }
+
+    // NTP
+    SystemUtils::initializeNTP();
+
+    // If strict, only enter NORMAL OP after NTP init attempt
+    if (cfg.strictNtpBeforeNormalOp) {
+      ledManager.setStatus(WIFI_NORMAL_OPERATION);
+    }
   }
 
-  // NTP
-  SystemUtils::initializeNTP();
-
-  // If strict, only enter NORMAL OP after NTP init attempt
-  if (cfg.strictNtpBeforeNormalOp) {
-    ledManager.setStatus(WIFI_NORMAL_OPERATION);
-  }
-
-  // mDNS
-  if (cfg.mdnsEnabled) {
+  // Initialize mDNS only if WiFi is connected (not in AP mode)
+  if (cfg.mdnsEnabled && WiFi.status() == WL_CONNECTED) {
     String host = cfg.mdnsHostname;
     host.toLowerCase();
     host.replace(" ", "-");
@@ -127,6 +128,9 @@ void DomoticsCore::begin() {
     cfg.mdnsHostname
   );
   
+  // Initialize admin defaults
+  webConfig.setDefaultAdmin("admin", "admin");
+  
   webConfig.begin();
   
   // Set up MQTT change callback to trigger reconnection
@@ -145,7 +149,46 @@ void DomoticsCore::begin() {
     }
   });
   
-  otaManager.begin();
+  // Set up WiFi connected callback to exit AP mode and initialize internet services
+  webConfig.setWiFiConnectedCallback([this]() {
+    if (isInAPMode) {
+      exitAPMode();
+      
+      // Initialize internet-dependent services now that we have WiFi
+      DLOG_I(LOG_SYSTEM, "Initializing internet services after WiFi connection");
+      
+      // Initialize NTP
+      if (!cfg.strictNtpBeforeNormalOp) {
+        ledManager.setStatus(WIFI_NORMAL_OPERATION);
+      }
+      SystemUtils::initializeNTP();
+      if (cfg.strictNtpBeforeNormalOp) {
+        ledManager.setStatus(WIFI_NORMAL_OPERATION);
+      }
+      
+      // Initialize mDNS
+      if (cfg.mdnsEnabled) {
+        String host = cfg.mdnsHostname;
+        host.toLowerCase();
+        host.replace(" ", "-");
+        if (!MDNS.begin(host.c_str())) {
+          DLOG_E(LOG_SYSTEM, "mDNS start failed");
+        } else {
+          MDNS.addService("http", "tcp", cfg.webServerPort);
+          DLOG_I(LOG_SYSTEM, "mDNS: http://%s.local", host.c_str());
+        }
+      }
+      
+      // Initialize OTA
+      otaManager.begin();
+      DLOG_I(LOG_OTA, "OTA manager initialized with IP: %s", WiFi.localIP().toString().c_str());
+    }
+  });
+  
+  // Initialize OTA only if WiFi is connected (not in AP mode)
+  if (WiFi.status() == WL_CONNECTED) {
+    otaManager.begin();
+  }
   
   // Initialize Home Assistant if enabled (check both config and web preferences)
   bool haEnabled = cfg.homeAssistantEnabled || webConfig.isHomeAssistantEnabled();
@@ -165,14 +208,22 @@ void DomoticsCore::begin() {
     initializeMQTT();
   }
 
-  // Start server
-  server.begin();
+  // Favicon handler to prevent 404 errors
+  server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(204); // No Content - prevents 404 errors
+  });
   
   // Not found handler for easier diagnostics
   server.onNotFound([this](AsyncWebServerRequest *request){
     DLOG_W(LOG_HTTP, "404 Not Found: %s", request->url().c_str());
     request->send(404, "text/plain", "Not found: " + request->url());
   });
+
+  // Small delay to ensure network stack is ready
+  delay(100);
+  
+  // Start server
+  server.begin();
 
   DLOG_I(LOG_HTTP, "Web interface available at: http://%s", WiFi.localIP().toString().c_str());
   DLOG_I(LOG_HTTP, "Also available at: http://%s.local", cfg.mdnsHostname.c_str());
@@ -189,11 +240,10 @@ void DomoticsCore::loop() {
     ESP.restart();
   }
 
-  // WiFiManager process
-  wifiManager.process();
+  // WiFiManager removed - no processing needed
 
-  // Reconnection management
-  if (WiFi.status() != WL_CONNECTED) {
+  // Reconnection management (skip if in AP mode)
+  if (!isInAPMode && WiFi.status() != WL_CONNECTED) {
     if (!wifiReconnecting) {
       wifiReconnecting = true;
       wifiLostTime = millis();
@@ -228,6 +278,30 @@ void DomoticsCore::loop() {
       wifiReconnecting = false;
       reconnectAttempts = 0;
       DLOG_I(LOG_WIFI, "WiFi reconnected successfully!");
+      
+      // Reinitialize internet services after reconnection
+      DLOG_I(LOG_SYSTEM, "Reinitializing internet services after WiFi reconnection");
+      
+      // Reinitialize NTP
+      SystemUtils::initializeNTP();
+      
+      // Reinitialize mDNS
+      if (cfg.mdnsEnabled) {
+        String host = cfg.mdnsHostname;
+        host.toLowerCase();
+        host.replace(" ", "-");
+        if (!MDNS.begin(host.c_str())) {
+          DLOG_E(LOG_SYSTEM, "mDNS start failed");
+        } else {
+          MDNS.addService("http", "tcp", cfg.webServerPort);
+          DLOG_I(LOG_SYSTEM, "mDNS: http://%s.local", host.c_str());
+        }
+      }
+      
+      // Reinitialize OTA (it may need to update its IP address)
+      otaManager.begin();
+      DLOG_I(LOG_OTA, "OTA manager reinitialized with IP: %s", WiFi.localIP().toString().c_str());
+      
       ledManager.setStatus(WIFI_NORMAL_OPERATION);
     }
   }
@@ -414,4 +488,36 @@ void DomoticsCore::onMQTTMessage(const String& topic, const String& message) {
       mqttClient.publish((baseTopic + "/status").c_str(), statusMsg.c_str());
     }
   }
+}
+
+void DomoticsCore::startAPMode() {
+  DLOG_I(LOG_WIFI, "Starting Access Point mode for initial setup");
+  
+  // Set AP mode flag
+  isInAPMode = true;
+  
+  // Start AP mode
+  String apName = cfg.deviceName + "_Setup";
+  WiFi.softAP(apName.c_str());
+  
+  DLOG_I(LOG_WIFI, "AP started: %s", apName.c_str());
+  DLOG_I(LOG_WIFI, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+  DLOG_I(LOG_WIFI, "Connect to: http://%s:%d", WiFi.softAPIP().toString().c_str(), cfg.webServerPort);
+  
+  ledManager.setStatus(WIFI_AP_MODE);
+}
+
+void DomoticsCore::exitAPMode() {
+  DLOG_I(LOG_WIFI, "Exiting Access Point mode - switching to station mode");
+  
+  // Clear AP mode flag
+  isInAPMode = false;
+  
+  // Stop AP mode
+  WiFi.softAPdisconnect(true);
+  
+  // Update LED status
+  ledManager.setStatus(WIFI_CONNECTED);
+  
+  DLOG_I(LOG_WIFI, "Now in station mode - IP: %s", WiFi.localIP().toString().c_str());
 }

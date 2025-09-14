@@ -43,6 +43,7 @@ void setup() {
   CoreConfig config;
   config.deviceName = "AdvancedExample";
   config.firmwareVersion = "2.1.0";
+  config.webServerPort = 8080;  // Use port 8080 to avoid WiFiManager conflict on port 80
   config.mqttEnabled = true;
   config.homeAssistantEnabled = true;
 

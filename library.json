@@ -37,10 +37,6 @@
     {
       "name": "ESP32Async/AsyncTCP",
       "version": ">=3.4.7"
-    },
-    {
-      "name": "WiFiManager",
-      "version": ">=2.0.17"
     }
   ]
 }

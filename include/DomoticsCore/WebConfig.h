@@ -45,16 +45,23 @@ private:
     unsigned long timestamp;
     String ip;
   };
-  static const int MAX_AUTH_ATTEMPTS = 5;
+  static const int MAX_AUTH_ATTEMPTS = 10;
   static const unsigned long AUTH_LOCKOUT_TIME = 300000; // 5 minutes
   AuthAttempt authAttempts[MAX_AUTH_ATTEMPTS];
   int authAttemptCount;
   
+  // Callback function types
+  typedef std::function<void()> ChangeCallback;
+  typedef std::function<void()> WiFiConnectedCallback;
+  
   // Callback for MQTT settings change
-  std::function<void()> mqttChangeCallback;
+  ChangeCallback mqttChangeCallback;
   
   // Callback for Home Assistant settings change
-  std::function<void()> haChangeCallback;
+  ChangeCallback haChangeCallback;
+
+  // Callback for WiFi connected
+  WiFiConnectedCallback wifiConnectedCallback;
 
 public:
   WebConfig(AsyncWebServer* srv, Preferences* prefs, const String& device,
@@ -86,23 +93,16 @@ public:
 
   void setDefaultMQTT(bool enabled, const String& server, int port,
                       const String& user, const String& password,
-                      const String& clientId) {
-    mqttEnabled = enabled;
-    mqttServer = server;
-    mqttPort = port;
-    mqttUser = user;
-    mqttPassword = password;
-    mqttClientId = clientId;
-  }
+                      const String& clientId);
   
   // Callback for MQTT settings change
-  void setMQTTChangeCallback(std::function<void()> callback) { mqttChangeCallback = callback; }
-  
-  // Callback for Home Assistant settings change
-  void setHomeAssistantChangeCallback(std::function<void()> callback) { haChangeCallback = callback; }
+  void setMQTTChangeCallback(ChangeCallback callback);
+  void setHomeAssistantChangeCallback(ChangeCallback callback);
+  void setWiFiConnectedCallback(WiFiConnectedCallback callback);
   
   void setDefaultMDNS(bool enabled, const String& hostname);
   void setDefaultHomeAssistant(bool enabled, const String& discoveryPrefix);
+  void setDefaultAdmin(const String& user, const String& pass);
   
   // Getters for new config options
   bool isMDNSEnabled() const { return mdnsEnabled; }
