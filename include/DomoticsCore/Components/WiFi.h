@@ -3,8 +3,11 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include "IComponent.h"
+#include "INetworkProvider.h"
+#include "WebUIHelpers.h"
 #include "../Logger.h"
 #include "../Utils/Timer.h"
+#include <ArduinoJson.h>
 
 namespace DomoticsCore {
 namespace Components {
@@ -14,7 +17,7 @@ namespace Components {
  * Provides WiFi connection management with automatic reconnection
  * Header-only implementation - only compiled when included
  */
-class WiFiComponent : public IComponent {
+class WiFiComponent : public IComponent, public INetworkProvider {
 private:
     String ssid;
     String password;
@@ -68,6 +71,11 @@ public:
     }
     
     void loop() override {
+        // Skip WiFi connection logic if in AP mode (empty SSID)
+        if (ssid.isEmpty()) {
+            return; // AP mode - no connection attempts needed
+        }
+        
         // Handle ongoing connection attempt
         if (isConnecting) {
             if (connectionTimer.isReady()) {
@@ -77,38 +85,32 @@ public:
                     // Connection successful
                     isConnecting = false;
                     DLOG_I(LOG_CORE, "WiFi connected successfully");
-                    DLOG_I(LOG_CORE, "IP Address: %s", WiFi.localIP().toString().c_str());
-                    DLOG_I(LOG_CORE, "Signal strength: %d dBm", WiFi.RSSI());
+                    DLOG_I(LOG_CORE, "IP address: %s", WiFi.localIP().toString().c_str());
                     setStatus(ComponentStatus::Success);
                 } else if (millis() - connectionStartTime > CONNECTION_TIMEOUT) {
                     // Connection timeout
                     isConnecting = false;
                     DLOG_E(LOG_CORE, "WiFi connection timeout - status: %d", status);
-                    setStatus(ComponentStatus::NetworkError);
-                } else if (status == WL_CONNECT_FAILED || status == WL_NO_SSID_AVAIL) {
-                    // Connection failed immediately
-                    isConnecting = false;
-                    DLOG_E(LOG_CORE, "WiFi connection failed - status: %d", status);
-                    setStatus(ComponentStatus::NetworkError);
+                    setStatus(ComponentStatus::TimeoutError);
                 }
-                // Continue waiting for connection...
             }
         }
         
-        // Check connection status periodically
-        if (statusTimer.isReady()) {
-            if (WiFi.status() == WL_CONNECTED) {
-                DLOG_D(LOG_CORE, "WiFi connected - IP: %s, RSSI: %d dBm", 
-                       WiFi.localIP().toString().c_str(), WiFi.RSSI());
-            } else if (shouldConnect && !isConnecting) {
-                DLOG_W(LOG_CORE, "WiFi disconnected - status: %d", WiFi.status());
-            }
-        }
-        
-        // Handle reconnection
-        if (shouldConnect && !isConnecting && WiFi.status() != WL_CONNECTED && reconnectTimer.isReady()) {
+        // Handle reconnection attempts
+        if (shouldConnect && !isConnecting && !isConnected() && reconnectTimer.isReady()) {
             DLOG_I(LOG_CORE, "Attempting WiFi reconnection...");
             startConnection();
+        }
+        
+        // Periodic status updates
+        if (statusTimer.isReady()) {
+            if (isConnected()) {
+                DLOG_D(LOG_CORE, "WiFi connected - IP: %s, RSSI: %d dBm", 
+                      WiFi.localIP().toString().c_str(), WiFi.RSSI());
+            } else {
+                DLOG_D(LOG_CORE, "WiFi disconnected - status: %s", 
+                      getConnectionStatusString().c_str());
+            }
         }
     }
     
@@ -148,6 +150,40 @@ public:
     
     String getMacAddress() const {
         return WiFi.macAddress();
+    }
+    
+    // INetworkProvider interface implementation
+    String getNetworkType() const override {
+        return "WiFi";
+    }
+    
+    String getConnectionStatus() const override {
+        return getConnectionStatusString();
+    }
+    
+    String getNetworkInfo() const override {
+        JsonDocument info;
+        info["type"] = "WiFi";
+        info["connected"] = isConnected();
+        
+        if (isConnected()) {
+            info["ssid"] = getSSID();
+            info["ip_address"] = getLocalIP();
+            info["signal_strength"] = getRSSI();
+            info["mac_address"] = getMacAddress();
+        }
+        
+        // AP mode info
+        bool apMode = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
+        info["ap_mode"] = apMode;
+        if (apMode) {
+            info["ap_ssid"] = WiFi.softAPSSID();
+            info["ap_ip"] = WiFi.softAPIP().toString();
+        }
+        
+        String result;
+        serializeJson(info, result);
+        return result;
     }
     
     void disconnect() {
@@ -206,8 +242,18 @@ public:
 private:
     ComponentStatus connectToWiFi() {
         if (ssid.isEmpty()) {
-            DLOG_E(LOG_CORE, "WiFi SSID not configured");
-            return ComponentStatus::ConfigError;
+            DLOG_I(LOG_CORE, "WiFi SSID not configured - starting in AP mode");
+            
+            // Generate AP SSID from MAC address for uniqueness
+            String macAddress = WiFi.macAddress();
+            macAddress.replace(":", "");
+            String apSSID = "DomoticsCore-" + macAddress.substring(6); // Last 6 chars of MAC
+            
+            WiFi.mode(WIFI_AP);
+            WiFi.softAP(apSSID.c_str()); // No password for easy access
+            DLOG_I(LOG_CORE, "AP mode started: %s (open network)", apSSID.c_str());
+            DLOG_I(LOG_CORE, "AP IP address: %s", WiFi.softAPIP().toString().c_str());
+            return ComponentStatus::Success;
         }
         
         // Start non-blocking connection
@@ -241,7 +287,7 @@ private:
             default: return "Unknown (" + String(WiFi.status()) + ")";
         }
     }
-    
+
 };
 
 } // namespace Components
