@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IComponent.h"
+#include "WebUIHelpers.h"
 #include "../Utils/Timer.h"
 #include <Arduino.h>
 #include <vector>
@@ -396,6 +397,7 @@ private:
             setLEDOutput(i, outputColor, outputBrightness);
         }
     }
+
 };
 
 } // namespace Components
