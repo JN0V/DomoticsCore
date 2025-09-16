@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IComponent.h"
+#include "WebUIHelpers.h"
 #include "../Utils/Timer.h"
 #include <Arduino.h>
 #include <Preferences.h>
@@ -462,6 +463,66 @@ private:
         // Return success if all validations pass
         return ValidationResult(ComponentStatus::Success);
     }
+
+#if DOMOTICSCORE_WEBUI_ENABLED
+    // Remove WebUI methods from core Storage component - they should be in wrapper classes only
+    /*
+    WebUISection getWebUISection() WEBUI_OVERRIDE {
+        WebUISection section("storage", "Storage Management", "fas fa-database", "system");
+        
+        section.withField(WebUIField("namespace", "Namespace", WebUIFieldType::Display, 
+                                   storageConfig.namespace_name, "", true))
+               .withField(WebUIField("entries", "Used Entries", WebUIFieldType::Display, 
+                                   String(getEntryCount()), "", true))
+               .withField(WebUIField("free_entries", "Free Entries", WebUIFieldType::Display, 
+                                   String(getFreeEntries()), "", true))
+               .withField(WebUIField("max_entries", "Max Entries", WebUIFieldType::Display, 
+                                   String(storageConfig.maxEntries), "", true))
+               .withField(WebUIField("readonly", "Read Only", WebUIFieldType::Display, 
+                                   storageConfig.readOnly ? "Yes" : "No", "", true))
+               .withField(WebUIField("auto_commit", "Auto Commit", WebUIFieldType::Display, 
+                                   storageConfig.autoCommit ? "Yes" : "No", "", true))
+               .withAPI("/api/storage")
+               .withRealTime(10000);
+        
+        return section;
+    }
+
+    String handleWebUIRequest(const String& endpoint, const String& method, 
+                            const std::map<String, String>& params) WEBUI_OVERRIDE {
+        if (endpoint == "/api/storage") {
+            if (method == "GET") {
+                return "{\"namespace\":\"" + storageConfig.namespace_name + "\","
+                       "\"entries\":" + String(getEntryCount()) + ","
+                       "\"free_entries\":" + String(getFreeEntries()) + ","
+                       "\"max_entries\":" + String(storageConfig.maxEntries) + ","
+                       "\"readonly\":" + (storageConfig.readOnly ? "true" : "false") + ","
+                       "\"auto_commit\":" + (storageConfig.autoCommit ? "true" : "false") + "}";
+            } else if (method == "POST") {
+                auto actionIt = params.find("action");
+                if (actionIt != params.end()) {
+                    if (actionIt->second == "clear") {
+                        bool success = clear();
+                        return "{\"status\":\"" + String(success ? "success" : "error") + "\","
+                               "\"message\":\"" + String(success ? "Storage cleared" : "Failed to clear storage") + "\"}";
+                    } else if (actionIt->second == "get_keys") {
+                        std::vector<String> keys = getKeys();
+                        String result = "{\"keys\":[";
+                        for (size_t i = 0; i < keys.size(); i++) {
+                            if (i > 0) result += ",";
+                            result += "\"" + keys[i] + "\"";
+                        }
+                        result += "]}";
+                        return result;
+                    }
+                }
+                return "{\"status\":\"error\",\"message\":\"Unknown action\"}";
+            }
+        }
+        return "{\"error\":\"not found\"}";
+    }
+    */
+#endif
 };
 
 } // namespace Components
