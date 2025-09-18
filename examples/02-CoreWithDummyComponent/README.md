@@ -50,7 +50,7 @@ This example demonstrates how to build **custom components** using the DomoticsC
 ## Build and Run
 
 ```bash
-cd examples/ComponentTest
+cd examples/02-CoreWithDummyComponent
 pio run -t upload -t monitor
 ```
 

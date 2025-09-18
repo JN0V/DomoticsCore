@@ -7,7 +7,7 @@
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-Core* core = nullptr;
+std::unique_ptr<Core> core;
 
 /**
  * Storage demonstration component showcasing preferences and app data management
@@ -346,7 +346,7 @@ void setup() {
     config.deviceName = "StorageDemoDevice";
     config.logLevel = 3; // INFO level
     
-    core = new Core();
+    core.reset(new Core());
     
     // Add storage demonstration component
     DLOG_I(LOG_CORE, "Adding storage demonstration component...");
