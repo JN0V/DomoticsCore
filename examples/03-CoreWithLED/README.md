@@ -60,7 +60,7 @@ The demo cycles through 6 different effects every 5 seconds:
 ## Building and Running
 
 ```bash
-cd examples/LEDDemo
+cd examples/03-CoreWithLED
 pio run
 pio run --target upload
 pio device monitor

@@ -1,10 +1,11 @@
 #include <Arduino.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Utils/Timer.h>
+#include <memory>
 
 using namespace DomoticsCore;
 
-Core* core = nullptr;
+std::unique_ptr<Core> core;
 Utils::NonBlockingDelay heartbeatTimer(10000); // 10 second heartbeat
 Utils::NonBlockingDelay statusTimer(30000);    // 30 second status
 
@@ -14,7 +15,7 @@ void setup() {
     config.deviceName = "MyESP32Device";
     config.logLevel = 3; // INFO level
     
-    core = new Core();
+    core.reset(new Core());
     
     if (!core->begin(config)) {
         DLOG_E(LOG_CORE, "Failed to initialize core!");

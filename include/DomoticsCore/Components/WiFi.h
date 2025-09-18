@@ -24,9 +24,16 @@ private:
     Utils::NonBlockingDelay reconnectTimer;
     Utils::NonBlockingDelay statusTimer;
     Utils::NonBlockingDelay connectionTimer;
+    
     bool shouldConnect;
     bool isConnecting;
     unsigned long connectionStartTime;
+    
+    // New API state
+    bool wifiEnabled;
+    bool apEnabled;
+    String apSSID_;
+    String apPassword_;
     static const unsigned long CONNECTION_TIMEOUT = 15000; // 15 seconds
     
 public:
@@ -38,7 +45,8 @@ public:
     WiFiComponent(const String& ssid, const String& password) 
         : ssid(ssid), password(password), 
           reconnectTimer(5000), statusTimer(30000), connectionTimer(100),
-          shouldConnect(true), isConnecting(false), connectionStartTime(0) {
+          shouldConnect(true), isConnecting(false), connectionStartTime(0),
+          wifiEnabled(true), apEnabled(false) {
     }
     
     ComponentStatus begin() override {
@@ -133,14 +141,36 @@ public:
     
     // WiFi-specific methods
     bool isConnected() const {
+        // In AP mode, consider "connected" if AP is active
+        if (isAPMode()) {
+            return true; // AP mode is considered "connected" for status purposes
+        }
         return WiFi.status() == WL_CONNECTED;
     }
     
     String getLocalIP() const {
+        // In STA+AP mode, prioritize station IP for connectivity
+        if (isSTAAPMode() && WiFi.status() == WL_CONNECTED) {
+            return WiFi.localIP().toString();
+        }
+        // In AP-only mode, return AP IP
+        else if (isAPMode()) {
+            return WiFi.softAPIP().toString();
+        }
+        // In station mode, return station IP
         return WiFi.localIP().toString();
     }
     
     String getSSID() const {
+        // In STA+AP mode, prioritize station SSID for connectivity
+        if (isSTAAPMode() && WiFi.status() == WL_CONNECTED) {
+            return WiFi.SSID();
+        }
+        // In AP-only mode, return AP SSID
+        else if (isAPMode()) {
+            return WiFi.softAPSSID();
+        }
+        // In station mode, return station SSID
         return WiFi.SSID();
     }
     
@@ -206,17 +236,28 @@ public:
     }
     
     String getDetailedStatus() const {
-        String status = "WiFi Status: " + getConnectionStatusString();
-        if (WiFi.status() == WL_CONNECTED) {
-            status += "\n  IP: " + WiFi.localIP().toString();
-            status += "\n  SSID: " + WiFi.SSID();
-            status += "\n  RSSI: " + String(WiFi.RSSI()) + " dBm";
+        String status;
+        
+        if (isAPMode()) {
+            status = "WiFi Status: AP Mode Active";
+            status += "\n  AP SSID: " + WiFi.softAPSSID();
+            status += "\n  AP IP: " + WiFi.softAPIP().toString();
+            status += "\n  Clients: " + String(WiFi.softAPgetStationNum());
             status += "\n  MAC: " + WiFi.macAddress();
+        } else {
+            status = "WiFi Status: " + getConnectionStatusString();
+            if (WiFi.status() == WL_CONNECTED) {
+                status += "\n  IP: " + WiFi.localIP().toString();
+                status += "\n  SSID: " + WiFi.SSID();
+                status += "\n  RSSI: " + String(WiFi.RSSI()) + " dBm";
+                status += "\n  MAC: " + WiFi.macAddress();
+            }
+            if (isConnecting) {
+                unsigned long elapsed = millis() - connectionStartTime;
+                status += "\n  Connecting... (" + String(elapsed / 1000) + "s)";
+            }
         }
-        if (isConnecting) {
-            unsigned long elapsed = millis() - connectionStartTime;
-            status += "\n  Connecting... (" + String(elapsed / 1000) + "s)";
-        }
+        
         return status;
     }
     
@@ -238,6 +279,66 @@ public:
         
         return true;
     }
+    
+    bool isSTAAPMode() const {
+        return WiFi.getMode() == WIFI_AP_STA;
+    }
+    
+    /**
+     * Check if currently in AP mode
+     * @return true if in AP mode
+     */
+    bool isAPMode() const {
+        wifi_mode_t mode = WiFi.getMode();
+        return (mode == WIFI_AP || mode == WIFI_AP_STA);
+    }
+    
+    /**
+     * Get AP mode information
+     * @return JSON string with AP details
+     */
+    String getAPInfo() const {
+        JsonDocument info;
+        
+        if (isAPMode()) {
+            info["active"] = true;
+            info["ssid"] = WiFi.softAPSSID();
+            info["ip"] = WiFi.softAPIP().toString();
+            info["clients"] = WiFi.softAPgetStationNum();
+        } else {
+            info["active"] = false;
+        }
+        
+        String result;
+        serializeJson(info, result);
+        return result;
+    }
+    
+    // Simple WiFi and AP management - hides mode complexity
+    bool enableWiFi(bool enable = true) {
+        wifiEnabled = enable;
+        return updateWiFiMode();
+    }
+    
+    bool enableAP(const String& apSSID, const String& apPassword = "", bool enable = true) {
+        if (enable) {
+            apSSID_ = apSSID;
+            apPassword_ = apPassword;
+            apEnabled = true;
+        } else {
+            apEnabled = false;
+        }
+        return updateWiFiMode();
+    }
+    
+    bool disableAP() {
+        return enableAP("", "", false);
+    }
+    
+    // Status methods that work with the new API
+    bool isWiFiEnabled() const { return wifiEnabled; }
+    bool isAPEnabled() const { return apEnabled; }
+    String getAPSSID() const { return apSSID_; }
 
 private:
     ComponentStatus connectToWiFi() {
@@ -285,6 +386,78 @@ private:
             case WL_CONNECTION_LOST: return "Connection lost";
             case WL_DISCONNECTED: return "Disconnected";
             default: return "Unknown (" + String(WiFi.status()) + ")";
+        }
+    }
+    
+    // Internal method to update WiFi mode based on enabled features
+    bool updateWiFiMode() {
+        DLOG_I(LOG_CORE, "Updating WiFi mode - WiFi: %s, AP: %s", 
+               wifiEnabled ? "enabled" : "disabled", 
+               apEnabled ? "enabled" : "disabled");
+        
+        if (wifiEnabled && apEnabled) {
+            // Both WiFi and AP requested - use STA+AP mode
+            DLOG_I(LOG_CORE, "Enabling STA+AP mode");
+            WiFi.mode(WIFI_AP_STA);
+            delay(100);
+            
+            // Start AP
+            bool apSuccess;
+            if (apPassword_.isEmpty()) {
+                apSuccess = WiFi.softAP(apSSID_.c_str());
+            } else {
+                apSuccess = WiFi.softAP(apSSID_.c_str(), apPassword_.c_str());
+            }
+            
+            if (apSuccess) {
+                DLOG_I(LOG_CORE, "AP started: %s (IP: %s)", apSSID_.c_str(), WiFi.softAPIP().toString().c_str());
+            }
+            
+            // Enable station connection attempts
+            shouldConnect = true;
+            reconnectTimer.reset();
+            
+            return apSuccess;
+        } else if (wifiEnabled && !apEnabled) {
+            // Only WiFi requested - use STA mode
+            DLOG_I(LOG_CORE, "Enabling station mode only");
+            WiFi.softAPdisconnect(true);
+            delay(100);
+            WiFi.mode(WIFI_STA);
+            delay(100);
+            shouldConnect = true;
+            reconnectTimer.reset();
+            return true;
+        } else if (!wifiEnabled && apEnabled) {
+            // Only AP requested - use AP mode
+            DLOG_I(LOG_CORE, "Enabling AP mode only");
+            shouldConnect = false;
+            isConnecting = false;
+            WiFi.disconnect();
+            WiFi.mode(WIFI_AP);
+            delay(100);
+            
+            bool success;
+            if (apPassword_.isEmpty()) {
+                success = WiFi.softAP(apSSID_.c_str());
+            } else {
+                success = WiFi.softAP(apSSID_.c_str(), apPassword_.c_str());
+            }
+            
+            if (success) {
+                DLOG_I(LOG_CORE, "AP-only mode started: %s (IP: %s)", apSSID_.c_str(), WiFi.softAPIP().toString().c_str());
+            }
+            
+            return success;
+        } else {
+            // Both disabled - turn off WiFi
+            DLOG_I(LOG_CORE, "Disabling all WiFi features");
+            shouldConnect = false;
+            isConnecting = false;
+            WiFi.softAPdisconnect(true);
+            WiFi.disconnect();
+            WiFi.mode(WIFI_OFF);
+            return true;
         }
     }
 
