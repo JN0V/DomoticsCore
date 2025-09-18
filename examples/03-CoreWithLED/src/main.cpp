@@ -6,7 +6,7 @@
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-Core* core = nullptr;
+std::unique_ptr<Core> core;
 
 // LED Test Component - demonstrates comprehensive LED functionality
 class LEDDemoComponent : public IComponent {
@@ -265,7 +265,7 @@ void setup() {
     config.deviceName = "LEDDemoDevice";
     config.logLevel = 3; // INFO level
     
-    core = new Core();
+    core.reset(new Core());
     
     // Add LED demonstration component
     DLOG_I(LOG_CORE, "Adding LED demonstration component...");

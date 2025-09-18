@@ -9,7 +9,7 @@
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-Core* core = nullptr;
+std::unique_ptr<Core> core;
 
 void setup() {
     // Create core with custom device name
@@ -17,7 +17,7 @@ void setup() {
     config.deviceName = "ComponentTestDevice";
     config.logLevel = 3; // INFO level
     
-    core = new Core();
+    core.reset(new Core());
     
     // Add custom components to demonstrate the system
     DLOG_I(LOG_CORE, "Adding custom components...");
