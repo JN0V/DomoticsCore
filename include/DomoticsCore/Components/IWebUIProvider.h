@@ -193,6 +193,10 @@ public:
      * @return JSON string with current context data
      */
     virtual String getWebUIData(const String& contextId) { return "{}"; }
+
+    // Methods to get component metadata directly for the UI
+    virtual String getWebUIName() const = 0;
+    virtual String getWebUIVersion() const = 0;
     
     /**
      * Get specific WebUI context by ID
@@ -215,17 +219,6 @@ public:
      */
     virtual bool isWebUIEnabled() { return true; }
     
-    /**
-     * Get component metadata for WebUI
-     * @return JSON object with component info
-     */
-    virtual JsonObject getWebUIMetadata(JsonDocument& doc) {
-        JsonObject meta = doc.to<JsonObject>();
-        meta["name"] = "Unknown Component";
-        meta["version"] = "1.0.0";
-        meta["author"] = "DomoticsCore";
-        return meta;
-    }
 };
 
 } // namespace Components
