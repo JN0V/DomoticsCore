@@ -163,7 +163,8 @@ private:
                 serveFromFileSystem(request, "/webui/index.html", "text/html");
             } else {
                 auto* resp = request->beginResponse(200, "text/html",
-                    (const uint8_t*)WebUIContent::htmlP(), strlen_P(WebUIContent::htmlP()));
+                    WebUIContent::htmlGz(), WebUIContent::htmlGzLen());
+                resp->addHeader("Content-Encoding", "gzip");
                 resp->addHeader("Cache-Control", "public, max-age=3600");
                 request->send(resp);
             }
@@ -175,7 +176,8 @@ private:
                 serveFromFileSystem(request, "/webui/style.css", "text/css");
             } else {
                 auto* resp = request->beginResponse(200, "text/css",
-                    (const uint8_t*)WebUIContent::cssP(), strlen_P(WebUIContent::cssP()));
+                    WebUIContent::cssGz(), WebUIContent::cssGzLen());
+                resp->addHeader("Content-Encoding", "gzip");
                 resp->addHeader("Cache-Control", "public, max-age=86400");
                 request->send(resp);
             }
@@ -187,7 +189,8 @@ private:
                 serveFromFileSystem(request, "/webui/app.js", "application/javascript");
             } else {
                 auto* resp = request->beginResponse(200, "application/javascript",
-                    (const uint8_t*)WebUIContent::jsP(), strlen_P(WebUIContent::jsP()));
+                    WebUIContent::jsGz(), WebUIContent::jsGzLen());
+                resp->addHeader("Content-Encoding", "gzip");
                 resp->addHeader("Cache-Control", "public, max-age=86400");
                 request->send(resp);
             }
@@ -246,7 +249,8 @@ private:
                     serveFromFileSystem(request, "/webui/index.html", "text/html");
                 } else {
                     auto* resp = request->beginResponse(200, "text/html",
-                        (const uint8_t*)WebUIContent::htmlP(), strlen_P(WebUIContent::htmlP()));
+                        WebUIContent::htmlGz(), WebUIContent::htmlGzLen());
+                    resp->addHeader("Content-Encoding", "gzip");
                     resp->addHeader("Cache-Control", "public, max-age=3600");
                     request->send(resp);
                 }
