@@ -1,0 +1,72 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DomoticsCore Dashboard</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <div class="header-left">
+                <button class="menu-toggle" id="menuToggle"><span class="icon-bars">☰</span></button>
+                <h1 class="device-name" id="deviceName">DomoticsCore Device</h1>
+            </div>
+            <div class="header-center">
+                <div class="datetime" id="datetime"></div>
+            </div>
+            <div class="header-right">
+                <div class="status-indicators">
+                    <span class="status-indicator" id="wifiStatus"><span class="icon-wifi">📶</span></span>
+                    <span class="status-indicator" id="wsStatus"><span class="icon-connection">🔌</span></span>
+                </div>
+            </div>
+        </header>
+        
+        <div class="content-wrapper">
+            <nav class="sidebar" id="sidebar">
+                <ul class="nav-menu">
+                    <li><a href="#dashboard" class="nav-link active" data-section="dashboard">
+                        <span class="icon-dashboard">📊</span> Dashboard
+                    </a></li>
+                    <li><a href="#components" class="nav-link" data-section="components">
+                        <span class="icon-components">🧩</span> Components
+                    </a></li>
+                    <li><a href="#settings" class="nav-link" data-section="settings">
+                        <span class="icon-settings">⚙️</span> Settings
+                    </a></li>
+                </ul>
+            </nav>
+            
+            <main class="main-content">
+            <section id="dashboard-section" class="content-section active">
+                <h2>Dashboard</h2>
+                <div id="dashboardGrid" class="dashboard-grid">
+                    <div class="loading-message">Loading dashboard...</div>
+                </div>
+            </section>
+            
+            <section id="components-section" class="content-section">
+                <h2>Components</h2>
+                <div id="componentsGrid" class="components-grid">
+                    <div class="loading-message">Loading components...</div>
+                </div>
+            </section>
+            
+            <section id="settings-section" class="content-section">
+                <h2>System Settings</h2>
+                <div id="settingsGrid" class="settings-grid">
+                    <div class="loading-message">Loading settings...</div>
+                </div>
+            </section>
+            </main>
+        </div>
+        
+        <footer class="footer">
+            <div class="footer-content">
+                <span class="footer-text" id="footerText">Loading...</span>
+            </div>
+        </footer>
+    </div>
+    <script src="./app.js"></script>
+</body>
