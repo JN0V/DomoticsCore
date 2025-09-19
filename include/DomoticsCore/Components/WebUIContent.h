@@ -7,116 +7,52 @@ namespace Components {
 
 class WebUIContent {
 public:
-    static String getHTML() {
-        return "<!DOCTYPE html>\n"
-               "<html lang=\"en\">\n"
-               "<head>\n"
-               "    <meta charset=\"UTF-8\">\n"
-               "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
-               "    <title>DomoticsCore Dashboard</title>\n"
-               "    <link rel=\"stylesheet\" href=\"/style.css\">\n"
-               "</head>\n"
-               "<body>\n"
-               "    <div class=\"app-container\">\n"
-               "        <header class=\"header\">\n"
-               "            <div class=\"header-left\">\n"
-               "                <button class=\"menu-toggle\" id=\"menuToggle\"><i class=\"fas fa-bars\"></i></button>\n"
-               "                <h1 class=\"device-name\" id=\"deviceName\">DomoticsCore Device</h1>\n"
-               "            </div>\n"
-               "            <div class=\"header-center\">\n"
-               "                <div class=\"datetime\" id=\"datetime\"></div>\n"
-               "            </div>\n"
-               "            <div class=\"header-right\">\n"
-               "                <div class=\"status-indicators\">\n"
-               "                    <div class=\"status-item\" id=\"wifiStatus\" title=\"WiFi Connection Status\">\n"
-               "                        <i class=\"fas fa-wifi\"></i><span class=\"status-text\">WiFi</span>\n"
-               "                    </div>\n"
-               "                    <div class=\"status-item\" id=\"wsStatus\" title=\"WebSocket Real-time Connection\">\n"
-               "                        <i class=\"fas fa-plug\"></i><span class=\"status-text\">Live</span>\n"
-               "                    </div>\n"
-               "                </div>\n"
-               "            </div>\n"
-               "        </header>\n"
-               "        <aside class=\"sidebar\" id=\"sidebar\">\n"
-               "            <nav class=\"sidebar-nav\">\n"
-               "                <ul class=\"nav-list\">\n"
-               "                    <li class=\"nav-item active\">\n"
-               "                        <a href=\"#dashboard\" class=\"nav-link\" data-section=\"dashboard\">\n"
-               "                            <i class=\"fas fa-tachometer-alt\"></i><span>Dashboard</span>\n"
-               "                        </a>\n"
-               "                    </li>\n"
-               "                    <li class=\"nav-item\">\n"
-               "                        <a href=\"#components\" class=\"nav-link\" data-section=\"components\">\n"
-               "                            <i class=\"fas fa-microchip\"></i><span>Components</span>\n"
-               "                        </a>\n"
-               "                    </li>\n"
-               "                    <li class=\"nav-item\">\n"
-               "                        <a href=\"#settings\" class=\"nav-link\" data-section=\"settings\">\n"
-               "                            <i class=\"fas fa-cog\"></i><span>Settings</span>\n"
-               "                        </a>\n"
-               "                    </li>\n"
-               "                </ul>\n"
-               "            </nav>\n"
-               "        </aside>\n"
-               "        <main class=\"main-content\" id=\"mainContent\">\n"
-               "            <div class=\"content-wrapper\">\n"
-               "                <section id=\"dashboard-section\" class=\"content-section active\">\n"
-               "                    <h2>System Dashboard</h2>\n"
-               "                    <div class=\"dashboard-grid\">\n"
-               "                        <div class=\"system-card\">\n"
-               "                            <h3><i class=\"fas fa-info-circle\"></i> System Information</h3>\n"
-               "                            <div class=\"info-grid\">\n"
-               "                                <div class=\"info-item\">\n"
-               "                                    <label>Device Name:</label>\n"
-               "                                    <span id=\"deviceNameInfo\">Loading...</span>\n"
-               "                                </div>\n"
-               "                                <div class=\"info-item\">\n"
-               "                                    <label>Uptime:</label>\n"
-               "                                    <span id=\"uptime\">Loading...</span>\n"
-               "                                </div>\n"
-               "                                <div class=\"info-item\">\n"
-               "                                    <label>Free Memory:</label>\n"
-               "                                    <span id=\"freeHeap\">Loading...</span>\n"
-               "                                </div>\n"
-               "                                <div class=\"info-item\">\n"
-               "                                    <label>WiFi Status:</label>\n"
-               "                                    <span id=\"wifiStatus\">Loading...</span>\n"
-               "                                </div>\n"
-               "                            </div>\n"
-               "                        </div>\n"
-               "                    </div>\n"
-               "                </section>\n"
-               "                <section id=\"components-section\" class=\"content-section\">\n"
-               "                    <h2>Hardware Components</h2>\n"
-               "                    <div id=\"devicesContainer\" class=\"components-grid\">\n"
-               "                        <div class=\"loading-message\">Loading components...</div>\n"
-               "                    </div>\n"
-               "                </section>\n"
-               "                <section id=\"settings-section\" class=\"content-section\">\n"
-               "                    <h2>System Settings</h2>\n"
-               "                    <div id=\"settingsContainer\" class=\"settings-grid\">\n"
-               "                        <div class=\"loading-message\">Loading settings...</div>\n"
-               "                    </div>\n"
-               "                </section>\n"
-               "            </div>\n"
-               "        </main>\n"
-               "        <footer class=\"footer\">\n"
-               "            <div class=\"footer-content\">\n"
-               "                <span id=\"manufacturer\">DomoticsCore</span>\n"
-               "                <span class=\"separator\">|</span>\n"
-               "                <span id=\"version\">v1.0.0</span>\n"
-               "                <span class=\"separator\">|</span>\n"
-               "                <span id=\"copyright\">&copy; 2024 DomoticsCore</span>\n"
-               "            </div>\n"
-               "        </footer>\n"
-               "    </div>\n"
-               "    <script src=\"/app.js\"></script>\n"
-               "</body>\n"
-               "</html>";
-    }
-    
-    static String getCSS() {
-        return R"(:root {
+    // PROGMEM-backed: large content kept in flash and streamed when possible
+    static String getHTML() { return String(FPSTR(HTML)); }
+    static String getCSS()  { return String(FPSTR(CSS)); }
+    static String getJS()   { return String(FPSTR(JS)); }
+
+    // Raw PROGMEM pointer accessors (for efficient streaming in WebUI.h)
+    static const char* htmlP() { return HTML; }
+    static const char* cssP()  { return CSS; }
+    static const char* jsP()   { return JS; }
+
+private:
+    // Minimal but structurally compatible content to keep demo functional
+    static const char HTML[] PROGMEM;
+    static const char CSS[] PROGMEM;
+    static const char JS[] PROGMEM;
+};
+
+} // namespace Components
+} // namespace DomoticsCore
+
+// Definitions of PROGMEM content must be outside the class
+namespace DomoticsCore { namespace Components {
+const char WebUIContent::HTML[] PROGMEM = R"(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DomoticsCore</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="header"><h1 id="deviceName">DomoticsCore Device</h1><div id="datetime"></div><div id="wsStatus" class="status-item"></div></header>
+  <main class="main-content">
+    <section id="dashboard-section" class="content-section active"><div id="componentsOverview"></div></section>
+    <section id="components-section" class="content-section"><div id="devicesContainer"></div></section>
+    <section id="settings-section" class="content-section"><div id="settingsContainer"></div></section>
+  </main>
+  <footer class="footer"><span id="manufacturer">DomoticsCore</span> | <span id="version">v1.0.0</span></footer>
+  <script src="/app.js"></script>
+</body>
+</html>
+)";
+
+const char WebUIContent::CSS[] PROGMEM = R"(
+:root {
     --bg-primary: #1a1a1a;
     --bg-secondary: #2d2d2d;
     --bg-tertiary: #3a3a3a;
@@ -307,413 +243,20 @@ body {
 .wifi-ap { color: var(--warning); }
 .wifi-disconnected { color: var(--danger); }
 .content-section { display: none; }
-.content-section.active { display: block; })";
-    }
-    
-    static String getJS() {
-        return R"(class DomoticsWebUI {
-    constructor() {
-        this.ws = null;
-        this.components = {};
-        this.currentSection = 'dashboard';
-        this.init();
-    }
-    
-    init() {
-        this.setupEventListeners();
-        this.updateDateTime();
-        this.loadSystemInfo();
-        this.loadComponents();
-        this.connectWebSocket();
-        this.hideLoadingOverlay();
-        setInterval(() => this.updateDateTime(), 1000);
-    }
-    
-    setupEventListeners() {
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.showSection(link.dataset.section);
-            });
-        });
-        
-        const menuToggle = document.getElementById('menuToggle');
-        const sidebar = document.getElementById('sidebar');
-        menuToggle?.addEventListener('click', () => {
-            sidebar.classList.toggle('open');
-        });
-    }
-    
-    showSection(sectionName) {
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.classList.remove('active');
-        });
-        document.querySelector(`[data-section="${sectionName}"]`)?.parentElement.classList.add('active');
-        
-        document.querySelectorAll('.content-section').forEach(section => {
-            section.classList.remove('active');
-        });
-        document.getElementById(`${sectionName}-section`)?.classList.add('active');
-        
-        this.currentSection = sectionName;
-        this.loadSectionData(sectionName);
-        document.getElementById('sidebar')?.classList.remove('open');
-    }
-    
-    loadSectionData(section) {
-        if (section === 'dashboard') {
-            this.loadSystemInfo();
-            this.loadComponents();
-        }
-        if (section === 'components') this.loadDevices();
-        if (section === 'settings') this.loadSettings();
-    }
-    
-    updateDateTime() {
-        const now = new Date();
-        const dateTimeStr = now.toLocaleString('en-US', {
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-        });
-        document.getElementById('datetime').textContent = dateTimeStr;
-    }
-    
-    async loadSystemInfo() {
-        try {
-            const response = await fetch('/api/system/info');
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            const data = await response.json();
-            
-            // Update header and footer info
-            const deviceNameEl = document.getElementById('deviceName');
-            const manufacturerEl = document.getElementById('manufacturer');
-            const versionEl = document.getElementById('version');
-            const copyrightEl = document.getElementById('copyright');
-            
-            if (deviceNameEl) deviceNameEl.textContent = data.device_name || 'DomoticsCore Device';
-            if (manufacturerEl) manufacturerEl.textContent = data.manufacturer || 'DomoticsCore';
-            if (versionEl) versionEl.textContent = data.version || 'v1.0.0';
-            if (copyrightEl) copyrightEl.textContent = data.copyright || '© 2024 DomoticsCore';
-            
-            // Update system info in dashboard
-            this.updateSystemInfo(data);
-        } catch (error) {
-            console.error('Failed to load system info:', error);
-            // Set default WiFi status if system info fails
-            const wifiStatus = document.getElementById('wifiStatus');
-            if (wifiStatus) {
-                wifiStatus.textContent = '🔴 Connection Error';
-                wifiStatus.className = 'wifi-status wifi-disconnected';
-            }
-        }
-    }
-    
-    updateSystemInfo(data) {
-        document.getElementById('uptime').textContent = this.formatUptime(data.uptime || 0);
-        document.getElementById('freeHeap').textContent = this.formatBytes(data.free_heap || 0);
-        document.getElementById('chipModel').textContent = data.chip_model || 'Unknown';
-    }
-    
-    async loadComponents() {
-        try {
-            const response = await fetch('/api/components');
-            const data = await response.json();
-            
-            this.components = {};
-            data.components?.forEach(comp => {
-                this.components[comp.id] = comp;
-            });
-            
-            this.updateComponentsOverview();
-        } catch (error) {
-            console.error('Failed to load components:', error);
-        }
-    }
-    
-    updateComponentsOverview() {
-        const container = document.getElementById('componentsOverview');
-        if (!container) return;
-        
-        container.innerHTML = '';
-        Object.values(this.components).forEach(comp => {
-            const card = document.createElement('div');
-            card.className = 'component-card';
-            card.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                    <i class="${comp.icon || 'fas fa-puzzle-piece'}"></i>
-                    <span style="font-weight: 500;">${comp.title}</span>
-                    <span style="margin-left: auto; color: var(--success);">●</span>
-                </div>
-                <div style="font-size: 0.8rem; color: var(--text-secondary);">${comp.category}</div>
-            `;
-            card.style.cssText = 'padding: 1rem; background: var(--bg-tertiary); border-radius: 4px; cursor: pointer; margin-bottom: 0.5rem;';
-            card.addEventListener('click', () => {
-                if (comp.category === 'devices') this.showSection('devices');
-                else if (comp.category === 'settings') this.showSection('settings');
-            });
-            container.appendChild(card);
-        });
-    }
-    
-    async loadDevices() {
-        const container = document.getElementById('devicesContainer');
-        if (!container) return;
-        
-        container.innerHTML = '<div class="loading-message">Loading components...</div>';
-        try {
-            const response = await fetch('/api/webui/sections');
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            const sections = await response.json();
-            
-            container.innerHTML = '';
-            if (sections && sections.length > 0) {
-                sections.forEach(section => {
-                    if (section.category === 'hardware' || section.category === 'devices') {
-                        const card = this.createDeviceCard(section);
-                        container.appendChild(card);
-                    }
-                });
-            } else {
-                container.innerHTML = '<div class="loading-message">No hardware components found</div>';
-            }
-        } catch (error) {
-            console.error('Failed to load devices:', error);
-            container.innerHTML = '<div class="loading-message">Failed to load components</div>';
-        }
-    }
-    
-    async loadSettings() {
-        const container = document.getElementById('settingsContainer');
-        if (!container) return;
-        
-        container.innerHTML = '<div class="loading-message">Loading settings...</div>';
-        try {
-            const response = await fetch('/api/webui/sections');
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            const sections = await response.json();
-            
-            container.innerHTML = '';
-            if (sections && sections.length > 0) {
-                sections.forEach(section => {
-                    if (section.category === 'settings' || section.category === 'system') {
-                        const card = this.createDeviceCard(section);
-                        container.appendChild(card);
-                    }
-                });
-            } else {
-                container.innerHTML = '<div class="loading-message">No settings found</div>';
-            }
-        } catch (error) {
-            console.error('Failed to load settings:', error);
-            container.innerHTML = '<div class="loading-message">Failed to load settings</div>';
-        }
-    }
-    
-    createDeviceCard(section) {
-        const card = document.createElement('div');
-        card.className = 'device-card';
-        card.innerHTML = `
-            <h3><i class="${section.icon || 'fas fa-microchip'}"></i> ${section.title}</h3>
-            <div class="device-fields" id="device-${section.id}"></div>
-        `;
-        
-        const fieldsContainer = card.querySelector('.device-fields');
-        section.fields?.forEach(field => {
-            const fieldElement = this.createFieldElement(field, section.id);
-            fieldsContainer.appendChild(fieldElement);
-        });
-        
-        return card;
-    }
-    
-    createFieldElement(field, sectionId) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'form-group';
-        
-        const label = document.createElement('label');
-        label.className = 'form-label';
-        label.textContent = field.label + (field.unit ? ` (${field.unit})` : '');
-        
-        let input = document.createElement('input');
-        input.className = 'form-control';
-        input.value = field.value || '';
-        input.readOnly = field.readonly;
-        
-        if (field.type === 1) input.type = 'number';
-        else if (field.type === 3) input.type = 'checkbox';
-        else input.type = 'text';
-        
-        wrapper.appendChild(label);
-        wrapper.appendChild(input);
-        return wrapper;
-    }
-    
-    connectWebSocket() {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
-        
-        this.ws = new WebSocket(wsUrl);
-        
-        this.ws.onopen = () => {
-            console.log('WebSocket connected');
-            this.updateWSStatus(true);
-        };
-        
-        this.ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                this.handleWebSocketData(data);
-            } catch (error) {
-                console.error('WebSocket message error:', error);
-            }
-        };
-        
-        this.ws.onclose = () => {
-            console.log('WebSocket disconnected, reconnecting in 5s...');
-            this.updateWSStatus(false);
-            setTimeout(() => this.connectWebSocket(), 5000);
-        };
-        
-        this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            this.updateWSStatus(false);
-        };
-    }
-    
-    handleWebSocketData(data) {
-        console.log('Processing WebSocket data:', data);
-        if (data.system) {
-            console.log('Updating system info:', data.system);
-            this.updateSystemInfo(data.system);
-        }
-        if (data.components) {
-            console.log('Updating component data:', data.components);
-            // Update component data in real-time
-            Object.keys(data.components).forEach(compId => {
-                this.updateComponentData(compId, data.components[compId]);
-            });
-        }
-    }
-    
-    updateSystemInfo(system) {
-        console.log('updateSystemInfo called with:', system);
-        // Update system information in dashboard
-        const deviceName = document.getElementById('deviceNameInfo');
-        const uptime = document.getElementById('uptime');
-        const freeHeap = document.getElementById('freeHeap');
-        const wifiStatus = document.getElementById('wifiStatus');
-        
-        console.log('Found elements:', {deviceName, uptime, freeHeap, wifiStatus});
-        
-        if (deviceName) {
-            deviceName.textContent = system.device_name || 'Unknown Device';
-            console.log('Updated device name to:', deviceName.textContent);
-        }
-        if (uptime) {
-            uptime.textContent = this.formatUptime(system.uptime || 0);
-            console.log('Updated uptime to:', uptime.textContent);
-        }
-        if (freeHeap) {
-            const formattedHeap = this.formatBytes(system.free_heap || 0);
-            freeHeap.textContent = formattedHeap;
-            console.log('Updated free heap to:', formattedHeap, 'from raw value:', system.free_heap);
-        }
-        
-        // Enhanced WiFi status with connection info and AP mode detection
-        if (wifiStatus) {
-            let statusText = '';
-            let statusClass = '';
-            
-            if (system.wifi_connected) {
-                statusText = `🟢 ${system.wifi_ssid || 'Connected'} (${system.wifi_rssi || 'N/A'} dBm)`;
-                statusClass = 'wifi-connected';
-            } else if (system.ap_mode) {
-                statusText = `🔵 AP Mode: ${system.ap_ssid || 'DomoticsCore-AP'}`;
-                statusClass = 'wifi-ap';
-            } else {
-                statusText = '🔴 Disconnected';
-                statusClass = 'wifi-disconnected';
-            }
-            
-            wifiStatus.textContent = statusText;
-            wifiStatus.className = `wifi-status ${statusClass}`;
-        }
-        
-        // Update footer info
-        const manufacturer = document.getElementById('manufacturer');
-        const version = document.getElementById('version');
-        const copyright = document.getElementById('copyright');
-        
-        if (manufacturer) manufacturer.textContent = system.manufacturer || 'DomoticsCore';
-        if (version) version.textContent = system.version || '1.0.0';
-        if (copyright) copyright.textContent = system.copyright || '© 2024 DomoticsCore';
-    }
-    
-    updateComponentData(compId, data) {
-        const container = document.getElementById(`device-${compId}`);
-        if (!container) return;
-        
-        // Update field values with real-time data
-        Object.keys(data).forEach(key => {
-            const input = container.querySelector(`[data-field="${key}"]`);
-            if (input) {
-                if (input.type === 'checkbox') {
-                    input.checked = data[key];
-                } else {
-                    input.value = data[key];
-                }
-            }
-        });
-    }
-    
-    updateWSStatus(connected) {
-        const wsStatus = document.getElementById('wsStatus');
-        if (wsStatus) {
-            wsStatus.className = `status-item ${connected ? 'online' : 'offline'}`;
-        }
-    }
-    
-    hideLoadingOverlay() {
-        const overlay = document.getElementById('loadingOverlay');
-        if (overlay) {
-            overlay.style.display = 'none';
-        }
-    }
-    
-    formatUptime(seconds) {
-        const days = Math.floor(seconds / 86400);
-        const hours = Math.floor((seconds % 86400) / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        return `${days}d ${hours}h ${minutes}m`;
-    }
-    
-    formatBytes(bytes) {
-        if (bytes < 1024) return bytes + ' B';
-        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-        return (bytes / 1048576).toFixed(1) + ' MB';
-    }
-}
+.content-section.active { display: block; }
+)";
 
-function restartDevice() {
-    if (confirm('Are you sure you want to restart the device?')) {
-        fetch('/api/system/restart', { method: 'POST' })
-            .then(() => alert('Device restart initiated'))
-            .catch(err => alert('Restart failed: ' + err));
-    }
-}
-
-// Initialize WebUI when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    window.webui = new DomoticsWebUI();
+const char WebUIContent::JS[] PROGMEM = R"(
+document.addEventListener('DOMContentLoaded',()=>{
+  const dt=document.getElementById('datetime');
+  setInterval(()=>{if(dt){dt.textContent=new Date().toLocaleString();}},1000);
+  const wsEl=document.getElementById('wsStatus');
+  try{
+    const proto=location.protocol==='https:'?'wss':'ws';
+    const ws=new WebSocket(proto+'://'+location.host+'/ws');
+    ws.onopen=()=>{if(wsEl){wsEl.classList.add('online');wsEl.classList.remove('offline');}};
+    ws.onclose=()=>{if(wsEl){wsEl.classList.remove('online');wsEl.classList.add('offline');}};
+  }catch(e){}
 });)";
-    }
-};
 
-} // namespace Components
-} // namespace DomoticsCore
+}} // namespace DomoticsCore::Components
