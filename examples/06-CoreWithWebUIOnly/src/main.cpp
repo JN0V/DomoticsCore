@@ -51,9 +51,14 @@ public:
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
 
-        // Dashboard context (for real-time data)
-        contexts.push_back(WebUIContext::dashboard("led_dashboard", "LED Status")
-            .withField(WebUIField("state", "State", WebUIFieldType::Display))
+        // Dashboard context with a toggle switch for direct control
+        contexts.push_back(WebUIContext::dashboard("led_dashboard", "LED Control")
+            .withField(WebUIField("state_toggle", "LED", WebUIFieldType::Boolean, demoLedState ? "true" : "false"))
+            .withRealTime(1000));
+
+        // Header status badge for at-a-glance status
+        contexts.push_back(WebUIContext::statusBadge("led_status", "LED")
+            .withField(WebUIField("state", "State", WebUIFieldType::Status, demoLedState ? "ON" : "OFF"))
             .withRealTime(1000));
 
         // Settings context (for configuration/control)
@@ -66,7 +71,7 @@ public:
     
     String handleWebUIRequest(const String& contextId, const String& endpoint, 
                              const String& method, const std::map<String, String>& params) override {
-        if (contextId == "led_settings" && method == "POST") {
+        if ((contextId == "led_settings" || contextId == "led_dashboard") && method == "POST") {
             auto fieldIt = params.find("field");
             auto valueIt = params.find("value");
 
