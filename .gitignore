@@ -23,6 +23,7 @@ Thumbs.db
 *.bin
 *.elf
 *.map
+include/DomoticsCore/Generated/
 
 # Logs
 *.log
