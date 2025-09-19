@@ -201,27 +201,60 @@ class DomoticsApp {
 
     updateDashboard(contexts) {
         Object.entries(contexts).forEach(([contextId, data]) => {
-            const card = document.querySelector(`.card[data-context-id='${contextId}']`);
-            if (card) {
-                Object.entries(data).forEach(([fieldName, value]) => {
-                    // Try to find an input element first (for toggles, sliders, etc.)
-                    const inputEl = card.querySelector(`#${fieldName}`);
-                    if (inputEl) {
-                        if (inputEl.type === 'checkbox') {
-                            inputEl.checked = (value === 'true' || value === true);
+            const contextSchema = this.uiSchema.find(ctx => ctx.contextId === contextId);
+            if (!contextSchema) return;
+
+            if (contextSchema.location === this.WebUILocation.HeaderStatus) {
+                this.updateHeaderStatus(contextId, data);
+            } else {
+                const card = document.querySelector(`.card[data-context-id='${contextId}']`);
+                if (card) {
+                    Object.entries(data).forEach(([fieldName, value]) => {
+                        const fieldSchema = contextSchema.fields.find(f => f.name === fieldName);
+                        // Try to find an input element first (for toggles, sliders, etc.)
+                        const inputEl = card.querySelector(`#${fieldName}`);
+                        if (inputEl) {
+                            if (inputEl.type === 'checkbox') {
+                                inputEl.checked = (value === 'true' || value === true);
+                            } else {
+                                inputEl.value = value;
+                            }
                         } else {
-                            inputEl.value = value;
+                            // Otherwise, find a display span
+                            const displayEl = card.querySelector(`[data-field-name='${fieldName}']`);
+                            if (displayEl) {
+                                displayEl.textContent = this.formatValue(value) + (fieldSchema.unit || '');
+                            }
                         }
-                    } else {
-                        // Otherwise, find a display span
-                        const displayEl = card.querySelector(`[data-field-name='${fieldName}']`);
-                        if (displayEl) {
-                            displayEl.textContent = this.formatValue(value) + (displayEl.dataset.unit || '');
-                        }
-                    }
-                });
+                    });
+                }
             }
         });
+    }
+
+    updateHeaderStatus(contextId, data) {
+        const statusContainer = document.querySelector('.status-indicators');
+        if (!statusContainer) return;
+
+        let indicator = statusContainer.querySelector(`[data-context-id='${contextId}']`);
+        if (!indicator) {
+            const contextSchema = this.uiSchema.find(ctx => ctx.contextId === contextId);
+            if (!contextSchema) return;
+
+            indicator = document.createElement('span');
+            indicator.className = 'status-indicator';
+            indicator.dataset.contextId = contextId;
+            indicator.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><use href="#dc-components"/></svg>`; // Generic icon
+            statusContainer.appendChild(indicator);
+        }
+
+        // Update status based on the first field's value
+        const firstField = Object.keys(data)[0];
+        if (firstField) {
+            const value = data[firstField];
+            indicator.classList.toggle('active', value === 'ON' || value === 'true' || value === true);
+            indicator.title = `${contextId}: ${value}`;
+        }
     }
     
     formatValue(value) {
