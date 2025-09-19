@@ -132,15 +132,30 @@ public:
     }
 
     // Provider management
-    void registerProvider(const String& contextId, IWebUIProvider* provider) {
-        if (provider) {
-            contextProviders[contextId] = provider;
-            DLOG_I(LOG_CORE, "Registered WebUI provider: %s", contextId.c_str());
+    void registerProvider(IWebUIProvider* provider) {
+        if (!provider) return;
+
+        auto contexts = provider->getWebUIContexts();
+        if (contexts.empty()) {
+            DLOG_W(LOG_CORE, "[WebUI] Provider has no contexts to register.");
+            return;
+        }
+
+        for (const auto& context : contexts) {
+            contextProviders[context.contextId] = provider;
+            DLOG_I(LOG_CORE, "[WebUI] Registered provider for context: %s", context.contextId.c_str());
         }
     }
 
-    void unregisterProvider(const String& contextId) {
-        contextProviders.erase(contextId);
+    void unregisterProvider(IWebUIProvider* provider) {
+        if (!provider) return;
+        for (auto it = contextProviders.begin(); it != contextProviders.end(); ) {
+            if (it->second == provider) {
+                it = contextProviders.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
 
     int getWebSocketClients() const {
@@ -204,25 +219,62 @@ private:
             request->send(200, "application/json", sysInfo);
         });
         
-        // Contexts API
-        server->on("/api/contexts", HTTP_GET, [this](AsyncWebServerRequest* request) {
-            String location = request->getParam("location") ? 
-                             request->getParam("location")->value() : "";
-            request->send(200, "application/json", getContextsJSON(location));
-        });
-        
-        // Context data API
-        server->on("/api/context", HTTP_GET, [this](AsyncWebServerRequest* request) {
-            String contextId = request->getParam("id") ? 
-                              request->getParam("id")->value() : "";
-            
-            auto it = contextProviders.find(contextId);
-            if (it != contextProviders.end()) {
-                String data = it->second->getWebUIData(contextId);
-                request->send(200, "application/json", data);
-            } else {
-                request->send(404, "application/json", "{\"error\":\"Context not found\"}");
+        // New UI Schema API endpoint
+        server->on("/api/components", HTTP_GET, [this](AsyncWebServerRequest* request) {
+            if (config.enableAuth && !authenticate(request)) {
+                return request->requestAuthentication();
             }
+            
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            JsonDocument doc;
+            JsonArray comps = doc["components"].to<JsonArray>();
+
+            std::vector<IWebUIProvider*> uniqueProviders;
+            for (const auto& pair : contextProviders) {
+                if (std::find(uniqueProviders.begin(), uniqueProviders.end(), pair.second) == uniqueProviders.end()) {
+                    uniqueProviders.push_back(pair.second);
+                }
+            }
+
+            for (IWebUIProvider* provider : uniqueProviders) {
+                JsonObject compObj = comps.add<JsonObject>();
+                compObj["name"] = provider->getWebUIName();
+                compObj["version"] = provider->getWebUIVersion();
+                compObj["status"] = "Active"; // Placeholder
+            }
+            
+            serializeJson(doc, *response);
+            request->send(response);
+        });
+
+        server->on("/api/ui/schema", HTTP_GET, [this](AsyncWebServerRequest* request) {
+            if (config.enableAuth && !authenticate(request)) {
+                return request->requestAuthentication();
+            }
+            
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            JsonDocument doc;
+            JsonArray schema = doc.to<JsonArray>();
+
+            std::vector<IWebUIProvider*> uniqueProviders;
+            for (const auto& pair : contextProviders) {
+                if (std::find(uniqueProviders.begin(), uniqueProviders.end(), pair.second) == uniqueProviders.end()) {
+                    uniqueProviders.push_back(pair.second);
+                }
+            }
+
+            for (IWebUIProvider* provider : uniqueProviders) {
+                if (provider && provider->isWebUIEnabled()) {
+                    auto contexts = provider->getWebUIContexts();
+                    for (const auto& context : contexts) {
+                        JsonObject contextObj = schema.add<JsonObject>();
+                        serializeContext(contextObj, context);
+                    }
+                }
+            }
+            
+            serializeJson(doc, *response);
+            request->send(response);
         });
         
         // Favicon handler
@@ -317,11 +369,32 @@ private:
     }
     
     void handleWebSocketMessage(AsyncWebSocketClient* client, const String& message) {
-        // Parse simple JSON commands manually to avoid ArduinoJson
-        if (message.indexOf("\"action\":\"refresh\"") >= 0) {
-            sendWebSocketUpdate(client);
-        } else if (message.indexOf("\"action\":\"refreshAll\"") >= 0) {
-            sendWebSocketUpdate(client);
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, message);
+
+        if (error) {
+            DLOG_W(LOG_CORE, "[WebUI] Failed to parse WebSocket message: %s", message.c_str());
+            return;
+        }
+
+        const char* type = doc["type"];
+        if (type && strcmp(type, "ui_action") == 0) {
+            String contextId = doc["contextId"].as<String>();
+            String field = doc["field"].as<String>();
+            JsonVariant value = doc["value"];
+
+            auto it = contextProviders.find(contextId);
+            if (it != contextProviders.end()) {
+                IWebUIProvider* provider = it->second;
+                std::map<String, String> params;
+                params["field"] = field;
+                params["value"] = value.as<String>();
+
+                // Call the provider's handler
+                provider->handleWebUIRequest(contextId, "/", "POST", params);
+            } else {
+                 DLOG_W(LOG_CORE, "[WebUI] No provider found for contextId: %s", contextId.c_str());
+            }
         }
     }
     
@@ -393,29 +466,35 @@ private:
         }
     }
     
-    String getContextsJSON(const String& location) {
-        String json = "{\"contexts\":[";
-        bool first = true;
-        
-        for (const auto& pair : contextProviders) {
-            if (!first) json += ",";
-            first = false;
-            
-            const String& contextId = pair.first;
-            IWebUIProvider* provider = pair.second;
-            
-            WebUIContext context = provider->getWebUIContext(contextId);
-            
-            json += "{";
-            json += "\"id\":\"" + contextId + "\",";
-            json += "\"name\":\"" + context.title + "\",";
-            json += "\"location\":\"" + String((int)context.location) + "\",";
-            json += "\"presentation\":\"" + String((int)context.presentation) + "\"";
-            json += "}";
+    // Helper function to serialize a WebUIContext to a JsonObject
+    void serializeContext(JsonObject& obj, const WebUIContext& context) {
+        obj["contextId"] = context.contextId;
+        obj["title"] = context.title;
+        obj["icon"] = context.icon;
+        obj["location"] = (int)context.location;
+        obj["presentation"] = (int)context.presentation;
+        obj["priority"] = context.priority;
+        obj["apiEndpoint"] = context.apiEndpoint;
+
+        JsonArray fields = obj["fields"].to<JsonArray>();
+        for (const auto& field : context.fields) {
+            JsonObject fieldObj = fields.add<JsonObject>();
+            fieldObj["name"] = field.name;
+            fieldObj["label"] = field.label;
+            fieldObj["type"] = (int)field.type;
+            fieldObj["value"] = field.value;
+            fieldObj["unit"] = field.unit;
+            fieldObj["readOnly"] = field.readOnly;
+            fieldObj["minValue"] = field.minValue;
+            fieldObj["maxValue"] = field.maxValue;
+            fieldObj["endpoint"] = field.endpoint;
+            if (!field.options.empty()) {
+                JsonArray options = fieldObj["options"].to<JsonArray>();
+                for (const auto& opt : field.options) {
+                    options.add(opt);
+                }
+            }
         }
-        
-        json += "]}";
-        return json;
     }
 };
 

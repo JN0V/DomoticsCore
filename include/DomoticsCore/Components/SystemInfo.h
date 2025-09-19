@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include "IComponent.h"
-#include "IWebUIProviderEnhanced.h"
+#include "IWebUIProvider.h"
 
 namespace DomoticsCore {
 namespace Components {
@@ -14,7 +14,6 @@ namespace Components {
 struct SystemInfoConfig {
     bool enableDetailedInfo = true;     // Include detailed chip info
     bool enableMemoryInfo = true;       // Include memory statistics
-    bool enableNetworkInfo = true;      // Include network information
     int updateInterval = 5000;          // Update interval in ms
 };
 
@@ -22,7 +21,7 @@ struct SystemInfoConfig {
  * System Information Component
  * Provides system metrics and hardware information
  */
-class SystemInfoComponent : public IComponent, public IWebUIProviderEnhanced {
+class SystemInfoComponent : public IComponent, public virtual IWebUIProvider {
 private:
     SystemInfoConfig config;
     unsigned long lastUpdate = 0;
@@ -43,9 +42,40 @@ private:
         bool valid = false;
     } metrics;
 
+    String formatBytes(uint32_t bytes) {
+        if (bytes < 1024) {
+            return String(bytes) + " B";
+        } else if (bytes < 1024 * 1024) {
+            return String(bytes / 1024.0, 1) + " KB";
+        } else {
+            return String(bytes / (1024.0 * 1024.0), 1) + " MB";
+        }
+    }
+
+    String getFormattedUptime() {
+        uint32_t seconds = metrics.uptime;
+        uint32_t days = seconds / 86400;
+        seconds %= 86400;
+        uint32_t hours = seconds / 3600;
+        seconds %= 3600;
+        uint32_t minutes = seconds / 60;
+        seconds %= 60;
+        
+        if (days > 0) {
+            return String(days) + "d " + String(hours) + "h";
+        } else if (hours > 0) {
+            return String(hours) + "h " + String(minutes) + "m";
+        } else {
+            return String(minutes) + "m " + String(seconds) + "s";
+        }
+    }
+
 public:
     SystemInfoComponent(const SystemInfoConfig& cfg = SystemInfoConfig()) 
-        : config(cfg) {}
+        : config(cfg) {
+        metadata.name = "System Info";
+        metadata.version = "1.1.0";
+    }
 
     // IComponent interface
     ComponentStatus begin() override {
@@ -60,107 +90,57 @@ public:
         }
     }
 
-    ComponentStatus shutdown() override {
-        return ComponentStatus::Success;
-    }
+    ComponentStatus shutdown() override { return ComponentStatus::Success; }
+    String getName() const override { return metadata.name; }
+    String getVersion() const override { return metadata.version; }
 
-    String getName() const override {
-        return "SystemInfo";
-    }
+    String getWebUIName() const override { return metadata.name; }
+    String getWebUIVersion() const override { return metadata.version; }
 
-    String getVersion() const override {
-        return "1.0.0";
-    }
-
-    // IWebUIProviderEnhanced interface
-    std::vector<String> getWebUIContexts() const override {
-        return {"system_overview", "memory_info", "hardware_info"};
-    }
-
-    String getWebUIData(const String& contextId) override {
+    // IWebUIProvider interface
+    std::vector<WebUIContext> getWebUIContexts() override {
+        std::vector<WebUIContext> contexts;
+        
+        // Always update metrics before generating contexts to ensure initial values are not zero
         if (!metrics.valid) {
             updateMetrics();
         }
 
-        if (contextId == "system_overview") {
-            return getSystemOverviewJSON();
-        } else if (contextId == "memory_info") {
-            return getMemoryInfoJSON();
-        } else if (contextId == "hardware_info") {
-            return getHardwareInfoJSON();
+        if (config.enableDetailedInfo) {
+            contexts.push_back(WebUIContext::dashboard("system_overview", "System Overview")
+                .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Display))
+                .withField(WebUIField("cpu", "CPU", WebUIFieldType::Display))
+                .withRealTime(config.updateInterval));
+            
+            contexts.push_back(WebUIContext::settings("hardware_info", "Hardware")
+                .withField(WebUIField("chip_model", "Chip", WebUIFieldType::Display, metrics.chipModel, "", true))
+                .withField(WebUIField("chip_revision", "Revision", WebUIFieldType::Display, String(metrics.chipRevision), "", true)));
         }
-        
+        if (config.enableMemoryInfo) {
+            contexts.push_back(WebUIContext::settings("memory_info", "Memory")
+                .withField(WebUIField("free_heap", "Free Heap", WebUIFieldType::Display, formatBytes(metrics.freeHeap), "", true))
+                .withField(WebUIField("min_free_heap", "Min Free", WebUIFieldType::Display, formatBytes(metrics.minFreeHeap), "", true))
+                .withField(WebUIField("flash_size", "Flash", WebUIFieldType::Display, formatBytes(metrics.flashSize), "", true)));
+        }
+        return contexts;
+    }
+
+    String getWebUIData(const String& contextId) override {
+        if (!metrics.valid) updateMetrics();
+
+        if (contextId == "system_overview") {
+            JsonDocument doc;
+            doc["uptime"] = getFormattedUptime();
+            doc["cpu"] = String(metrics.cpuFreq) + " MHz";
+            String json;
+            serializeJson(doc, json);
+            return json;
+        }
         return "{}";
     }
 
-    WebUIContext getWebUIContext(const String& contextId) override {
-        WebUIContext context;
-        context.id = contextId;
-        context.location = WebUILocation::Dashboard;
-        
-        if (contextId == "system_overview") {
-            context.name = "System Overview";
-            context.presentation = WebUIPresentation::Card;
-            context.priority = 100;
-            context.refreshInterval = config.updateInterval;
-            
-            context.fields = {
-                {"uptime", "Uptime", WebUIFieldType::Text, ""},
-                {"heap", "Free Memory", WebUIFieldType::Text, ""},
-                {"cpu", "CPU Frequency", WebUIFieldType::Text, ""}
-            };
-        } else if (contextId == "memory_info") {
-            context.name = "Memory Statistics";
-            context.presentation = WebUIPresentation::Gauge;
-            context.priority = 90;
-            context.refreshInterval = config.updateInterval;
-            
-            context.fields = {
-                {"heap_usage", "Heap Usage", WebUIFieldType::Number, "%"},
-                {"free_heap", "Free Heap", WebUIFieldType::Text, "bytes"},
-                {"min_free", "Min Free", WebUIFieldType::Text, "bytes"}
-            };
-        } else if (contextId == "hardware_info") {
-            context.name = "Hardware Information";
-            context.presentation = WebUIPresentation::Table;
-            context.priority = 80;
-            context.refreshInterval = 0; // Static data
-            
-            context.fields = {
-                {"chip_model", "Chip Model", WebUIFieldType::Text, ""},
-                {"chip_revision", "Revision", WebUIFieldType::Text, ""},
-                {"flash_size", "Flash Size", WebUIFieldType::Text, "MB"},
-                {"sketch_size", "Sketch Size", WebUIFieldType::Text, "bytes"}
-            };
-        }
-        
-        return context;
-    }
-
-    // Public API for other components
-    uint32_t getFreeHeap() const { return metrics.freeHeap; }
-    uint32_t getTotalHeap() const { return metrics.totalHeap; }
-    uint32_t getUptime() const { return metrics.uptime; }
-    float getCpuFrequency() const { return metrics.cpuFreq; }
-    String getChipModel() const { return metrics.chipModel; }
-    
-    // Get formatted uptime string
-    String getFormattedUptime() const {
-        uint32_t seconds = metrics.uptime;
-        uint32_t days = seconds / 86400;
-        seconds %= 86400;
-        uint32_t hours = seconds / 3600;
-        seconds %= 3600;
-        uint32_t minutes = seconds / 60;
-        seconds %= 60;
-        
-        if (days > 0) {
-            return String(days) + "d " + String(hours) + "h " + String(minutes) + "m";
-        } else if (hours > 0) {
-            return String(hours) + "h " + String(minutes) + "m " + String(seconds) + "s";
-        } else {
-            return String(minutes) + "m " + String(seconds) + "s";
-        }
+    String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params) override {
+        return "{\"success\":false, \"error\":\"Not supported\"}";
     }
 
 private:
@@ -177,50 +157,6 @@ private:
         metrics.chipRevision = ESP.getChipRevision();
         metrics.uptime = millis() / 1000;
         metrics.valid = true;
-    }
-
-    String getSystemOverviewJSON() {
-        String json = "{";
-        json += "\"uptime\":\"" + getFormattedUptime() + "\",";
-        json += "\"heap\":\"" + formatBytes(metrics.freeHeap) + "\",";
-        json += "\"cpu\":\"" + String(metrics.cpuFreq) + " MHz\",";
-        json += "\"status\":\"running\"";
-        json += "}";
-        return json;
-    }
-
-    String getMemoryInfoJSON() {
-        float heapUsage = ((float)(metrics.totalHeap - metrics.freeHeap) / metrics.totalHeap) * 100;
-        
-        String json = "{";
-        json += "\"heap_usage\":" + String(heapUsage, 1) + ",";
-        json += "\"free_heap\":\"" + formatBytes(metrics.freeHeap) + "\",";
-        json += "\"total_heap\":\"" + formatBytes(metrics.totalHeap) + "\",";
-        json += "\"min_free\":\"" + formatBytes(metrics.minFreeHeap) + "\",";
-        json += "\"max_alloc\":\"" + formatBytes(metrics.maxAllocHeap) + "\"";
-        json += "}";
-        return json;
-    }
-
-    String getHardwareInfoJSON() {
-        String json = "{";
-        json += "\"chip_model\":\"" + metrics.chipModel + "\",";
-        json += "\"chip_revision\":\"Rev " + String(metrics.chipRevision) + "\",";
-        json += "\"flash_size\":\"" + String(metrics.flashSize / (1024 * 1024)) + " MB\",";
-        json += "\"sketch_size\":\"" + formatBytes(metrics.sketchSize) + "\",";
-        json += "\"free_sketch\":\"" + formatBytes(metrics.freeSketchSpace) + "\"";
-        json += "}";
-        return json;
-    }
-
-    String formatBytes(uint32_t bytes) {
-        if (bytes < 1024) {
-            return String(bytes) + " B";
-        } else if (bytes < 1024 * 1024) {
-            return String(bytes / 1024.0, 1) + " KB";
-        } else {
-            return String(bytes / (1024.0 * 1024.0), 1) + " MB";
-        }
     }
 };
 
