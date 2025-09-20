@@ -130,6 +130,11 @@ class DomoticsApp {
                 sidebar.classList.remove('open');
             }
         });
+
+        const deviceNameEl = document.getElementById('deviceName');
+        if (deviceNameEl) {
+            deviceNameEl.addEventListener('click', () => this.makeDeviceNameEditable(deviceNameEl));
+        }
     }
 
     setupWebSocket() {
@@ -180,9 +185,29 @@ class DomoticsApp {
     handleWebSocketMessage(data) {
         if (data.system) {
             this.updateSystemInfo(data.system);
+            this.updateSystemOverviewCard(data.system);
         }
         if (data.contexts) {
             this.updateDashboard(data.contexts);
+        }
+    }
+
+    updateSystemOverviewCard(system) {
+        const card = document.querySelector(`.card[data-context-id='system_overview']`);
+        if (!card) return;
+
+        const uptimeEl = card.querySelector(`[data-field-name='uptime']`);
+        if (uptimeEl) {
+            const uptime = Math.floor((Date.now() - this.systemStartTime) / 1000);
+            const hours = Math.floor(uptime / 3600).toString().padStart(2, '0');
+            const minutes = Math.floor((uptime % 3600) / 60).toString().padStart(2, '0');
+            const seconds = (uptime % 60).toString().padStart(2, '0');
+            uptimeEl.textContent = `${hours}:${minutes}:${seconds}`;
+        }
+
+        const heapEl = card.querySelector(`[data-field-name='heap']`);
+        if (heapEl && typeof system.heap === 'number') {
+            heapEl.textContent = `${(system.heap / 1024).toFixed(1)} KB`;
         }
     }
 
@@ -244,7 +269,27 @@ class DomoticsApp {
             indicator = document.createElement('span');
             indicator.className = 'status-indicator';
             indicator.dataset.contextId = contextId;
-            indicator.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><use href="#dc-components"/></svg>`; // Generic icon
+            if (contextSchema.icon === 'led' || contextId.includes('led')) {
+                indicator.innerHTML = `<svg class="icon" viewBox="0 0 1024 1024"><use href="#bulb-twotone"/></svg>`;
+            } else {
+                indicator.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><use href="#dc-components"/></svg>`; // Generic icon
+            }
+            indicator.addEventListener('click', () => {
+                // Find the settings context for this provider
+                const providerId = contextSchema.contextId.split('_')[0];
+                const settingsContext = this.uiSchema.find(ctx => 
+                    ctx.contextId.startsWith(providerId) && ctx.location === this.WebUILocation.Settings
+                );
+
+                if (settingsContext) {
+                    this.showSection('settings');
+                    // Optional: scroll to the specific card
+                    setTimeout(() => {
+                        const card = document.querySelector(`.card[data-context-id='${settingsContext.contextId}']`);
+                        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 100);
+                }
+            });
             statusContainer.appendChild(indicator);
         }
 
@@ -342,6 +387,43 @@ class DomoticsApp {
                 this.sendUICommand(context.contextId, field.name, value);
             });
         });
+    }
+
+    makeDeviceNameEditable(element) {
+        if (element.querySelector('input')) return; // Already editing
+
+        const currentName = element.textContent;
+        element.innerHTML = ''; // Clear the h1
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentName;
+        input.className = 'device-name-input';
+        
+        const saveName = () => {
+            const newName = input.value.trim();
+            if (newName && newName !== currentName) {
+                element.textContent = newName;
+                // The WebUI component is the provider for its own settings
+                this.sendUICommand('webui_settings', 'device_name', newName);
+            } else {
+                element.textContent = currentName; // Revert if empty or unchanged
+            }
+        };
+
+        input.addEventListener('blur', saveName);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                input.blur();
+            } else if (e.key === 'Escape') {
+                element.textContent = currentName;
+                input.removeEventListener('blur', saveName); // prevent saving on blur
+            }
+        });
+
+        element.appendChild(input);
+        input.focus();
+        input.select();
     }
 
     sendUICommand(contextId, fieldName, value) {
