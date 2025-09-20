@@ -29,6 +29,10 @@ class DomoticsApp {
             }
             this.uiSchema = await response.json();
             console.log('UI Schema loaded:', this.uiSchema);
+            
+            // Inject custom CSS and JS from components
+            this.injectCustomStyles();
+            this.injectCustomScripts();
         } catch (error) {
             console.error('Failed to load UI schema:', error);
             // You could render an error message to the user here
@@ -64,17 +68,22 @@ class DomoticsApp {
         card.className = 'card';
         card.dataset.contextId = context.contextId;
 
-        let fieldsHtml = '';
-        context.fields.forEach(field => {
-            fieldsHtml += this.renderField(field);
-        });
+        // Use custom HTML if provided, otherwise use default structure
+        if (context.customHtml) {
+            card.innerHTML = context.customHtml;
+        } else {
+            let fieldsHtml = '';
+            context.fields.forEach(field => {
+                fieldsHtml += this.renderField(field);
+            });
 
-        card.innerHTML = `
-            <div class="card-header">
-                <h3 class="card-title">${context.title}</h3>
-            </div>
-            <div class="card-content">${fieldsHtml}</div>
-        `;
+            card.innerHTML = `
+                <div class="card-header">
+                    <h3 class="card-title">${context.title}</h3>
+                </div>
+                <div class="card-content">${fieldsHtml}</div>
+            `;
+        }
 
         this.attachFieldEventListeners(card, context);
         return card;
@@ -269,8 +278,9 @@ class DomoticsApp {
             indicator = document.createElement('span');
             indicator.className = 'status-indicator';
             indicator.dataset.contextId = contextId;
-            if (contextSchema.icon === 'led' || contextId.includes('led')) {
-                indicator.innerHTML = `<svg class="icon" viewBox="0 0 1024 1024"><use href="#bulb-twotone"/></svg>`;
+            // Use custom HTML if provided, otherwise use generic icon
+            if (contextSchema.customHtml) {
+                indicator.innerHTML = contextSchema.customHtml;
             } else {
                 indicator.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><use href="#dc-components"/></svg>`; // Generic icon
             }
@@ -437,6 +447,52 @@ class DomoticsApp {
             this.ws.send(JSON.stringify(command));
         } else {
             console.warn('WebSocket not connected. UI command not sent.');
+        }
+    }
+
+    injectCustomStyles() {
+        // Remove any existing custom styles
+        const existingStyle = document.getElementById('component-custom-styles');
+        if (existingStyle) {
+            existingStyle.remove();
+        }
+
+        // Collect all custom CSS from components
+        let combinedCss = '';
+        this.uiSchema.forEach(context => {
+            if (context.customCss) {
+                combinedCss += `/* ${context.contextId} */\n${context.customCss}\n\n`;
+            }
+        });
+
+        if (combinedCss) {
+            const styleElement = document.createElement('style');
+            styleElement.id = 'component-custom-styles';
+            styleElement.textContent = combinedCss;
+            document.head.appendChild(styleElement);
+        }
+    }
+
+    injectCustomScripts() {
+        // Remove any existing custom scripts
+        const existingScript = document.getElementById('component-custom-scripts');
+        if (existingScript) {
+            existingScript.remove();
+        }
+
+        // Collect all custom JS from components
+        let combinedJs = '';
+        this.uiSchema.forEach(context => {
+            if (context.customJs) {
+                combinedJs += `/* ${context.contextId} */\n${context.customJs}\n\n`;
+            }
+        });
+
+        if (combinedJs) {
+            const scriptElement = document.createElement('script');
+            scriptElement.id = 'component-custom-scripts';
+            scriptElement.textContent = combinedJs;
+            document.head.appendChild(scriptElement);
         }
     }
 }
