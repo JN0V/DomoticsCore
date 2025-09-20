@@ -36,10 +36,7 @@ public:
     }
     
     void loop() override {
-        if (!manualControl && demoBlinkTimer.isReady()) {
-            demoLedState = !demoLedState;
-            digitalWrite(demoLedPin, demoLedState ? HIGH : LOW);
-        }
+        // The loop is now empty to prevent automatic blinking and respect manual control.
     }
     
     ComponentStatus shutdown() override {
@@ -53,7 +50,7 @@ public:
 
         // Dashboard context with a toggle switch for direct control
         contexts.push_back(WebUIContext::dashboard("led_dashboard", "LED Control")
-            .withField(WebUIField("state_toggle", "LED", WebUIFieldType::Boolean, demoLedState ? "true" : "false"))
+            .withField(WebUIField("state_toggle_dashboard", "LED", WebUIFieldType::Boolean, demoLedState ? "true" : "false"))
             .withRealTime(1000));
 
         // Header status badge for at-a-glance status
@@ -63,7 +60,7 @@ public:
 
         // Settings context (for configuration/control)
         contexts.push_back(WebUIContext::settings("led_settings", "LED Controller")
-            .withField(WebUIField("state_toggle", "LED", WebUIFieldType::Boolean, demoLedState ? "true" : "false"))
+            .withField(WebUIField("state_toggle_settings", "LED", WebUIFieldType::Boolean, demoLedState ? "true" : "false"))
             .withField(WebUIField("pin_display", "GPIO Pin", WebUIFieldType::Display, String(demoLedPin), "", true)));
 
         return contexts;
@@ -76,7 +73,7 @@ public:
             auto valueIt = params.find("value");
 
             if (fieldIt != params.end() && valueIt != params.end()) {
-                if (fieldIt->second == "state_toggle") {
+                if (fieldIt->second == "state_toggle_dashboard" || fieldIt->second == "state_toggle_settings") {
                     manualControl = true; // User has taken control
                     demoLedState = (valueIt->second == "true");
                     digitalWrite(demoLedPin, demoLedState ? HIGH : LOW);
@@ -89,9 +86,17 @@ public:
     }
     
     String getWebUIData(const String& contextId) override {
-        return "{\"state\":" + String(demoLedState ? "true" : "false") + 
-               ",\"pin\":" + String(demoLedPin) + 
-               ",\"status\":\"" + String(demoLedState ? "ON" : "OFF") + "\"}";
+        JsonDocument doc;
+        if (contextId == "led_dashboard") {
+            doc["state_toggle_dashboard"] = demoLedState;
+        } else if (contextId == "led_settings") {
+            doc["state_toggle_settings"] = demoLedState;
+        } else if (contextId == "led_status") {
+            doc["state"] = demoLedState ? "ON" : "OFF";
+        }
+        String json;
+        serializeJson(doc, json);
+        return json;
     }
 
     String getWebUIName() const override { return metadata.name; }
@@ -161,6 +166,7 @@ void setup() {
     }
     
     // Register WebUI providers
+    webUIComponent->registerProvider(webUIComponent.get()); // Register itself
     webUIComponent->registerProvider(demoLedController.get());
     webUIComponent->registerProvider(systemInfoComponent.get());
     

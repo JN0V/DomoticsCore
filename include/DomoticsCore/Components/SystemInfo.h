@@ -109,7 +109,7 @@ public:
         if (config.enableDetailedInfo) {
             contexts.push_back(WebUIContext::dashboard("system_overview", "System Overview")
                 .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Display))
-                .withField(WebUIField("cpu", "CPU", WebUIFieldType::Display))
+                .withField(WebUIField("heap", "Free Heap", WebUIFieldType::Display, "", "KB"))
                 .withRealTime(config.updateInterval));
             
             contexts.push_back(WebUIContext::settings("hardware_info", "Hardware")
@@ -131,7 +131,7 @@ public:
         if (contextId == "system_overview") {
             JsonDocument doc;
             doc["uptime"] = getFormattedUptime();
-            doc["cpu"] = String(metrics.cpuFreq) + " MHz";
+            doc["heap"] = formatBytes(metrics.freeHeap);
             String json;
             serializeJson(doc, json);
             return json;

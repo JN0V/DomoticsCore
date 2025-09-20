@@ -61,7 +61,7 @@ struct WebUIConfig {
  * Optimized WebUI Component with PROGMEM content storage and crash resistance
  * Uses IWebUIProvider interface for modern multi-context support
  */
-class WebUIComponent : public IComponent {
+class WebUIComponent : public IComponent, public virtual IWebUIProvider {
 private:
     WebUIConfig config;
     AsyncWebServer* server = nullptr;
@@ -164,6 +164,35 @@ public:
 
     uint16_t getPort() const { 
         return config.port; 
+    }
+
+    // IWebUIProvider implementation for self-registration
+    String getWebUIName() const override { return "WebUI"; }
+    String getWebUIVersion() const override { return "2.0.0"; }
+
+    std::vector<WebUIContext> getWebUIContexts() override {
+        std::vector<WebUIContext> contexts;
+        contexts.push_back(WebUIContext::settings("webui_settings", "Web Interface")
+            .withField(WebUIField("device_name", "Device Name", WebUIFieldType::Text, config.deviceName))
+            .withField(WebUIField("theme", "Theme", WebUIFieldType::Select, config.theme, "dark,light,auto"))
+        );
+        return contexts;
+    }
+
+    String getWebUIData(const String& contextId) override { return "{}"; }
+
+    String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params) override {
+        if (contextId == "webui_settings" && method == "POST") {
+            auto fieldIt = params.find("field");
+            auto valueIt = params.find("value");
+            if (fieldIt != params.end() && valueIt != params.end()) {
+                if (fieldIt->second == "device_name") {
+                    config.deviceName = valueIt->second;
+                    return "{\"success\":true}";
+                }
+            }
+        }
+        return "{\"success\":false, \"error\":\"Invalid request\"}";
     }
 
 private:

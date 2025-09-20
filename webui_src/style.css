@@ -292,3 +292,14 @@ input:checked + .slider:before {
 .status-indicator .icon-connection {
   font-size: 0.9em;
 }
+
+.status-indicator.active svg {
+    color: var(--primary-color);
+}
+
+/* --- Two-Tone Bulb Icon Styling --- */
+
+/* When the indicator is active, set the CSS variable to make the inner path fully opaque. */
+.status-indicator.active {
+    --bulb-inner-opacity: 1;
+}
