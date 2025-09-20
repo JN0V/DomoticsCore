@@ -94,6 +94,11 @@ struct WebUIContext {
     WebUIPresentation presentation; // How to display
     int priority = 0;               // Display order (higher = first)
     
+    // Component-provided custom UI elements
+    String customHtml;              // Custom HTML structure for this context
+    String customCss;               // Custom CSS styling for this context  
+    String customJs;                // Custom JavaScript behavior for this context
+    
     std::vector<WebUIField> fields; // Context fields
     String apiEndpoint;             // API endpoint for this context
     bool realTime = false;          // Enable real-time updates
@@ -134,6 +139,21 @@ struct WebUIContext {
     WebUIContext& configure(const String& key, const JsonVariant& value) { 
         contextConfig[key] = value; 
         return *this; 
+    }
+    
+    WebUIContext& withCustomHtml(const String& html) {
+        customHtml = html;
+        return *this;
+    }
+    
+    WebUIContext& withCustomCss(const String& css) {
+        customCss = css;
+        return *this;
+    }
+    
+    WebUIContext& withCustomJs(const String& js) {
+        customJs = js;
+        return *this;
     }
     
     // Factory methods for common contexts

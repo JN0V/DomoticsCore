@@ -504,6 +504,17 @@ private:
         obj["presentation"] = (int)context.presentation;
         obj["priority"] = context.priority;
         obj["apiEndpoint"] = context.apiEndpoint;
+        
+        // Include custom UI elements if provided
+        if (!context.customHtml.isEmpty()) {
+            obj["customHtml"] = context.customHtml;
+        }
+        if (!context.customCss.isEmpty()) {
+            obj["customCss"] = context.customCss;
+        }
+        if (!context.customJs.isEmpty()) {
+            obj["customJs"] = context.customJs;
+        }
 
         JsonArray fields = obj["fields"].to<JsonArray>();
         for (const auto& field : context.fields) {
