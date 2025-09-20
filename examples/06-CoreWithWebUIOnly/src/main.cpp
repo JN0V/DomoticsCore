@@ -48,20 +48,173 @@ public:
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
 
-        // Dashboard context with a toggle switch for direct control
+        // Dashboard context with custom bulb visualization
         contexts.push_back(WebUIContext::dashboard("led_dashboard", "LED Control")
             .withField(WebUIField("state_toggle_dashboard", "LED", WebUIFieldType::Boolean, demoLedState ? "true" : "false"))
-            .withRealTime(1000));
+            .withRealTime(1000)
+            .withCustomHtml(R"(
+                <div class="card-header">
+                    <h3 class="card-title">LED Control</h3>
+                </div>
+                <div class="card-content led-dashboard">
+                    <div class="led-bulb-container">
+                        <svg class="led-bulb" viewBox="0 0 1024 1024">
+                            <use href="#bulb-twotone"/>
+                        </svg>
+                    </div>
+                    <div class="field-row">
+                        <span class="field-label">LED:</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="state_toggle_dashboard">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            )")
+            .withCustomCss(R"(
+                .led-dashboard .led-bulb-container {
+                    display: flex;
+                    justify-content: center;
+                    margin-bottom: 1rem;
+                }
+                .led-dashboard .led-bulb {
+                    width: 64px;
+                    height: 64px;
+                    transition: all 0.3s ease;
+                    filter: drop-shadow(0 0 8px rgba(255, 193, 7, 0.3));
+                }
+                .led-dashboard .led-bulb.on {
+                    color: #ffc107;
+                    filter: drop-shadow(0 0 16px rgba(255, 193, 7, 0.8));
+                }
+                .led-dashboard .led-bulb.off {
+                    color: #6c757d;
+                    filter: none;
+                }
+            )")
+            .withCustomJs(R"(
+                // Update bulb appearance based on LED state
+                function updateLEDBulb() {
+                    const bulb = document.querySelector('.led-dashboard .led-bulb');
+                    const toggle = document.querySelector('#state_toggle_dashboard');
+                    if (bulb && toggle) {
+                        bulb.classList.toggle('on', toggle.checked);
+                        bulb.classList.toggle('off', !toggle.checked);
+                    }
+                }
+                // Update on toggle change
+                document.addEventListener('change', function(e) {
+                    if (e.target.id === 'state_toggle_dashboard') {
+                        updateLEDBulb();
+                    }
+                });
+                // Initial update
+                setTimeout(updateLEDBulb, 100);
+            )"));
 
-        // Header status badge for at-a-glance status
+        // Header status badge with custom bulb icon
         contexts.push_back(WebUIContext::statusBadge("led_status", "LED")
             .withField(WebUIField("state", "State", WebUIFieldType::Status, demoLedState ? "ON" : "OFF"))
-            .withRealTime(1000));
+            .withRealTime(1000)
+            .withCustomHtml(R"(<svg class="icon led-status-icon" viewBox="0 0 1024 1024"><use href="#bulb-twotone"/></svg>)")
+            .withCustomCss(R"(
+                .led-status-icon {
+                    transition: all 0.3s ease;
+                }
+                .status-indicator.active .led-status-icon {
+                    color: #ffc107;
+                    filter: drop-shadow(0 0 8px rgba(255, 193, 7, 0.6));
+                }
+                .status-indicator:not(.active) .led-status-icon {
+                    color: #6c757d;
+                }
+            )"));
 
-        // Settings context (for configuration/control)
+        // Settings context with detailed controls
         contexts.push_back(WebUIContext::settings("led_settings", "LED Controller")
             .withField(WebUIField("state_toggle_settings", "LED", WebUIFieldType::Boolean, demoLedState ? "true" : "false"))
-            .withField(WebUIField("pin_display", "GPIO Pin", WebUIFieldType::Display, String(demoLedPin), "", true)));
+            .withField(WebUIField("pin_display", "GPIO Pin", WebUIFieldType::Display, String(demoLedPin), "", true))
+            .withCustomHtml(R"(
+                <div class="card-header">
+                    <h3 class="card-title">LED Controller</h3>
+                </div>
+                <div class="card-content led-settings">
+                    <div class="led-status-display">
+                        <svg class="led-bulb-small" viewBox="0 0 1024 1024">
+                            <use href="#bulb-twotone"/>
+                        </svg>
+                        <span class="led-status-text">OFF</span>
+                    </div>
+                    <div class="field-row">
+                        <span class="field-label">LED:</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="state_toggle_settings">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="field-row">
+                        <span class="field-label">GPIO Pin:</span>
+                        <span class="field-value" data-field-name="pin_display">)" + String(demoLedPin) + R"(</span>
+                    </div>
+                </div>
+            )")
+            .withCustomCss(R"(
+                .led-settings .led-status-display {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    margin-bottom: 1rem;
+                    padding: 0.5rem;
+                    background: rgba(255, 255, 255, 0.05);
+                    border-radius: 0.5rem;
+                }
+                .led-settings .led-bulb-small {
+                    width: 24px;
+                    height: 24px;
+                    transition: all 0.3s ease;
+                }
+                .led-settings .led-bulb-small.on {
+                    color: #ffc107;
+                    filter: drop-shadow(0 0 4px rgba(255, 193, 7, 0.6));
+                }
+                .led-settings .led-bulb-small.off {
+                    color: #6c757d;
+                }
+                .led-settings .led-status-text {
+                    font-weight: 600;
+                    font-size: 0.9rem;
+                }
+                .led-settings .led-status-text.on {
+                    color: #ffc107;
+                }
+                .led-settings .led-status-text.off {
+                    color: #6c757d;
+                }
+            )")
+            .withCustomJs(R"(
+                // Update settings display based on LED state
+                function updateLEDSettings() {
+                    const bulb = document.querySelector('.led-settings .led-bulb-small');
+                    const statusText = document.querySelector('.led-settings .led-status-text');
+                    const toggle = document.querySelector('#state_toggle_settings');
+                    if (bulb && statusText && toggle) {
+                        const isOn = toggle.checked;
+                        bulb.classList.toggle('on', isOn);
+                        bulb.classList.toggle('off', !isOn);
+                        statusText.classList.toggle('on', isOn);
+                        statusText.classList.toggle('off', !isOn);
+                        statusText.textContent = isOn ? 'ON' : 'OFF';
+                    }
+                }
+                // Update on toggle change
+                document.addEventListener('change', function(e) {
+                    if (e.target.id === 'state_toggle_settings') {
+                        updateLEDSettings();
+                    }
+                });
+                // Initial update
+                setTimeout(updateLEDSettings, 100);
+            )"));
 
         return contexts;
     }
