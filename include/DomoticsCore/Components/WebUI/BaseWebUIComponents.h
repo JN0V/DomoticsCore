@@ -120,7 +120,9 @@ private:
                 ctx.beginPath();
                 
                 const stepX = width / Math.max(validData.length - 1, 1);
-                const maxValue = Math.max(...validData, 1); // Avoid division by zero
+                const dataMax = Math.max(...validData, 1);
+                // If values look like percentages, use fixed 0-100 scale for stability
+                const maxValue = (dataMax <= 100 ? 100 : dataMax);
                 
                 for (let i = 0; i < validData.length; i++) {
                     const x = i * stepX;
@@ -171,16 +173,30 @@ public:
      * @return WebUI context for status badge
      */
     static WebUIContext createStatusBadge(const String& contextId, const String& title, const String& icon) {
-        return WebUIContext::statusBadge(contextId, title, icon)
-            .withCustomHtml(String(R"(<svg class="icon status-icon" viewBox="0 0 1024 1024"><use href="#)") + icon + R"("/></svg>)")
-            .withCustomCss(R"(
+        // Determine active color based on context for better visibility
+        String activeColor = "var(--primary-color)"; // default
+        if (contextId.indexOf("websocket") >= 0) {
+            activeColor = "#28a745"; // green when connected
+        } else if (contextId.indexOf("led") >= 0) {
+            activeColor = "#ffc107"; // yellow for LED
+        }
+
+        String css = String(R"(
                 .status-icon {
                     transition: all 0.3s ease;
                 }
-                .status-indicator.active .status-icon {
-                    color: var(--primary-color);
+                .status-indicator[data-context-id='")") + contextId + String(R"('] .status-icon {
+                    color: var(--text-secondary);
+                }
+                .status-indicator[data-context-id='")") + contextId + String(R"('].active .status-icon {
+                    color: )") + activeColor + String(R"(; 
+                    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.25));
                 }
             )");
+
+        return WebUIContext::statusBadge(contextId, title, icon)
+            .withCustomHtml(String(R"(<svg class=\"icon status-icon\" viewBox=\"0 0 1024 1024\"><use href=\"#)") + icon + R"(\"/></svg>)")
+            .withCustomCss(css);
     }
 };
 

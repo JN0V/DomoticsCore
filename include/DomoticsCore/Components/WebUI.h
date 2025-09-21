@@ -469,7 +469,7 @@ private:
             IWebUIProvider* provider = pair.second;
             
             String contextData = provider->getWebUIData(contextId);
-            if (!contextData.isEmpty() && contextData != "{}" && contextData.length() < 128) {
+            if (!contextData.isEmpty() && contextData != "{}") {
                 if (contextCount > 0) message += ",";
                 message += "\"" + contextId + "\":" + contextData;
                 contextCount++;
@@ -505,7 +505,7 @@ private:
             IWebUIProvider* provider = pair.second;
             
             String contextData = provider->getWebUIData(contextId);
-            if (!contextData.isEmpty() && contextData != "{}" && contextData.length() < 64) {
+            if (!contextData.isEmpty() && contextData != "{}") {
                 if (contextCount > 0) message += ",";
                 message += "\"" + contextId + "\":" + contextData;
                 contextCount++;
