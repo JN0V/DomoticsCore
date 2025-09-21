@@ -174,7 +174,7 @@ public:
      */
     static WebUIContext createStatusBadge(const String& contextId, const String& title, const String& icon) {
         return WebUIContext::statusBadge(contextId, title, icon)
-            .withCustomHtml(String(R"(<svg class=\"icon status-icon\" viewBox=\"0 0 1024 1024\"><use href=\"#)") + icon + R"(\"/></svg>)")
+            .withCustomHtml(String(R"(<svg class="icon status-icon" viewBox="0 0 1024 1024"><use href="#)") + icon + R"("/></svg>)")
             .withCustomCss(R"(
                 .status-icon {
                     transition: all 0.3s ease;
