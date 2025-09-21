@@ -131,20 +131,20 @@ public:
         }
         
         if (contextId == "system_overview") {
-            JsonDocument doc;
+            StaticJsonDocument<256> doc;
             doc["uptime"] = getFormattedUptimePublic();
             doc["heap"] = formatBytesPublic(metrics.freeHeap);
             String json;
             serializeJson(doc, json);
             return json;
         } else if (contextId == "heap_chart") {
-            JsonDocument doc;
+            StaticJsonDocument<256> doc;
             doc["heap_chart_data"] = getChartDataJson(heapHistory, CHART_DATA_SIZE);
             String json;
             serializeJson(doc, json);
             return json;
         } else if (contextId == "cpu_chart") {
-            JsonDocument doc;
+            StaticJsonDocument<256> doc;
             doc["cpu_chart_data"] = getChartDataJson(cpuHistory, CHART_DATA_SIZE);
             String json;
             serializeJson(doc, json);
