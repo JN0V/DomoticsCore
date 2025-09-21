@@ -3,7 +3,8 @@
 // Enable WebUI features when this component is included
 #define DOMOTICSCORE_WEBUI_ENABLED 1
 
-#include <Arduino.h>
+#include "IWebUIProvider.h"
+#include "WebUI/BaseWebUIComponents.h"
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
@@ -172,6 +173,13 @@ public:
 
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
+        
+        // WebSocket connection status badge
+        contexts.push_back(DomoticsCore::Components::WebUI::BaseWebUIComponents::createStatusBadge("websocket_status", "Connection", "dc-plug")
+            .withField(WebUIField("state", "State", WebUIFieldType::Status, (webSocket && webSocket->count() > 0) ? "ON" : "OFF"))
+            .withRealTime(2000));
+        
+        // Settings context
         contexts.push_back(WebUIContext::settings("webui_settings", "Web Interface")
             .withField(WebUIField("device_name", "Device Name", WebUIFieldType::Text, config.deviceName))
             .withField(WebUIField("theme", "Theme", WebUIFieldType::Select, config.theme, "dark,light,auto"))
@@ -179,7 +187,16 @@ public:
         return contexts;
     }
 
-    String getWebUIData(const String& contextId) override { return "{}"; }
+    String getWebUIData(const String& contextId) override { 
+        if (contextId == "websocket_status") {
+            JsonDocument doc;
+            doc["state"] = (webSocket && webSocket->count() > 0) ? "ON" : "OFF";
+            String json;
+            serializeJson(doc, json);
+            return json;
+        }
+        return "{}"; 
+    }
 
     String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params) override {
         if (contextId == "webui_settings" && method == "POST") {
@@ -442,7 +459,11 @@ private:
         
         int contextCount = 0;
         for (const auto& pair : contextProviders) {
-            if (contextCount >= 3) break; // Strict limit
+            // Smart limit: Stop if message gets too large (prevent ESP32 memory issues)
+            if (message.length() > 800) {
+                log_w("WebSocket message size limit reached (%d bytes), skipping remaining contexts", message.length());
+                break;
+            }
             
             const String& contextId = pair.first;
             IWebUIProvider* provider = pair.second;
@@ -474,7 +495,11 @@ private:
         
         int contextCount = 0;
         for (const auto& pair : contextProviders) {
-            if (contextCount >= 2) break; // Very strict limit for single client
+            // Smart limit: Stop if message gets too large (prevent ESP32 memory issues)
+            if (message.length() > 512) {
+                log_w("Single client message size limit reached (%d bytes), skipping remaining contexts", message.length());
+                break;
+            }
             
             const String& contextId = pair.first;
             IWebUIProvider* provider = pair.second;

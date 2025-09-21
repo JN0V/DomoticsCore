@@ -153,7 +153,6 @@ class DomoticsApp {
 
         this.ws.onopen = () => {
             console.log('WebSocket connected');
-            this.updateConnectionStatus(true);
             this.clearReconnectInterval();
         };
 
@@ -168,7 +167,6 @@ class DomoticsApp {
 
         this.ws.onclose = () => {
             console.log('WebSocket disconnected');
-            this.updateConnectionStatus(false);
             this.scheduleReconnect();
         };
 
@@ -198,6 +196,7 @@ class DomoticsApp {
         }
         if (data.contexts) {
             this.updateDashboard(data.contexts);
+            this.updateCharts(data.contexts);
         }
     }
 
@@ -319,10 +318,6 @@ class DomoticsApp {
         return String(value);
     }
 
-    updateConnectionStatus(connected) {
-        const wsStatus = document.getElementById('wsStatus');
-        if (wsStatus) wsStatus.classList.toggle('connected', connected);
-    }
 
     updateDateTime() {
         const now = Date.now();
@@ -434,6 +429,33 @@ class DomoticsApp {
         element.appendChild(input);
         input.focus();
         input.select();
+    }
+
+    updateCharts(contexts) {
+        // Generic chart update logic - works with any chart context
+        Object.entries(contexts).forEach(([contextId, contextData]) => {
+            // Look for chart data fields (ending with '_data')
+            Object.entries(contextData).forEach(([fieldName, fieldValue]) => {
+                if (fieldName.endsWith('_data')) {
+                    try {
+                        const chartData = JSON.parse(fieldValue);
+                        if (!window.systemChartData) window.systemChartData = {};
+                        
+                        // Store chart data using the base field name (remove '_data' suffix)
+                        const chartName = fieldName.replace('_data', '');
+                        window.systemChartData[chartName] = chartData;
+                        
+                        // Try to call the chart-specific update function
+                        const updateFunctionName = `update${contextId}Chart`;
+                        if (typeof window[updateFunctionName] === 'function') {
+                            window[updateFunctionName]();
+                        }
+                    } catch (e) {
+                        console.warn(`Failed to parse chart data for ${contextId}.${fieldName}:`, e);
+                    }
+                }
+            });
+        });
     }
 
     sendUICommand(contextId, fieldName, value) {
