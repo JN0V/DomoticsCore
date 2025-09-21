@@ -2,14 +2,15 @@
 #include <WiFi.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Components/WebUI.h>
-#include <DomoticsCore/Components/IComponent.h>
+#include <DomoticsCore/Components/WebUI/SystemInfoWebUI.h>
+#include <DomoticsCore/Components/WebUI/BaseWebUIComponents.h>
 #include <DomoticsCore/Components/IWebUIProvider.h>
 #include <DomoticsCore/Utils/Timer.h>
-#include <DomoticsCore/Components/SystemInfo.h>
 #include <memory>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
+using namespace DomoticsCore::Components::WebUI;
 
 /**
  * Simple Demo LED Controller Component
@@ -47,8 +48,8 @@ public:
     // WebUI Provider methods
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
-
-        // Dashboard context with custom bulb visualization
+        
+        // Dashboard card with custom bulb visualization
         contexts.push_back(WebUIContext::dashboard("led_dashboard", "LED Control")
             .withField(WebUIField("state_toggle_dashboard", "LED", WebUIFieldType::Boolean, demoLedState ? "true" : "false"))
             .withRealTime(1000)
@@ -112,23 +113,10 @@ public:
                 setTimeout(updateLEDBulb, 100);
             )"));
 
-        // Header status badge with custom bulb icon
-        contexts.push_back(WebUIContext::statusBadge("led_status", "LED")
+        // Header status badge using BaseWebUIComponents
+        contexts.push_back(DomoticsCore::Components::WebUI::BaseWebUIComponents::createStatusBadge("led_status", "LED", "bulb-twotone")
             .withField(WebUIField("state", "State", WebUIFieldType::Status, demoLedState ? "ON" : "OFF"))
-            .withRealTime(1000)
-            .withCustomHtml(R"(<svg class="icon led-status-icon" viewBox="0 0 1024 1024"><use href="#bulb-twotone"/></svg>)")
-            .withCustomCss(R"(
-                .led-status-icon {
-                    transition: all 0.3s ease;
-                }
-                .status-indicator.active .led-status-icon {
-                    color: #ffc107;
-                    filter: drop-shadow(0 0 8px rgba(255, 193, 7, 0.6));
-                }
-                .status-indicator:not(.active) .led-status-icon {
-                    color: #6c757d;
-                }
-            )"));
+            .withRealTime(1000));
 
         // Settings context with detailed controls
         contexts.push_back(WebUIContext::settings("led_settings", "LED Controller")
@@ -239,28 +227,35 @@ public:
     }
     
     String getWebUIData(const String& contextId) override {
-        JsonDocument doc;
-        if (contextId == "led_dashboard") {
+        if (contextId == "led_dashboard" || contextId == "led_settings") {
+            JsonDocument doc;
             doc["state_toggle_dashboard"] = demoLedState;
-        } else if (contextId == "led_settings") {
             doc["state_toggle_settings"] = demoLedState;
+            doc["gpio_pin"] = demoLedPin;
+            String json;
+            serializeJson(doc, json);
+            return json;
         } else if (contextId == "led_status") {
+            JsonDocument doc;
             doc["state"] = demoLedState ? "ON" : "OFF";
+            String json;
+            serializeJson(doc, json);
+            return json;
         }
-        String json;
-        serializeJson(doc, json);
-        return json;
+        return "{}";
     }
 
     String getWebUIName() const override { return metadata.name; }
     String getWebUIVersion() const override { return metadata.version; }
 };
 
+// No wrapper needed! SystemInfoComponent now includes WebUI functionality by default
+
 
 // Global component storage
 std::unique_ptr<DomoticsCore::Components::WebUIComponent> webUIComponent;
 std::unique_ptr<DemoLEDController> demoLedController;
-std::unique_ptr<SystemInfoComponent> systemInfoComponent;
+std::unique_ptr<WebUI::SystemInfoWebUI> systemInfoWebUI;
 
 void setup() {
     Serial.begin(115200);
@@ -295,9 +290,7 @@ void setup() {
     
     // Create demo components
     demoLedController.reset(new DemoLEDController(2));
-    systemInfoComponent.reset(new SystemInfoComponent());
-    
-    // Initialize components
+    systemInfoWebUI.reset(new WebUI::SystemInfoWebUI());
     DLOG_I(LOG_CORE, "Initializing components...");
     
     DomoticsCore::Components::ComponentStatus status = webUIComponent->begin();
@@ -312,7 +305,7 @@ void setup() {
         return;
     }
     
-    status = systemInfoComponent->begin();
+    status = systemInfoWebUI->begin();
     if (status != DomoticsCore::Components::ComponentStatus::Success) {
         DLOG_E(LOG_CORE, "System Info initialization failed");
         return;
@@ -321,7 +314,7 @@ void setup() {
     // Register WebUI providers
     webUIComponent->registerProvider(webUIComponent.get()); // Register itself
     webUIComponent->registerProvider(demoLedController.get());
-    webUIComponent->registerProvider(systemInfoComponent.get());
+    webUIComponent->registerProvider(systemInfoWebUI.get());
     
     DLOG_I(LOG_CORE, "=== Setup Complete ===");
     DLOG_I(LOG_CORE, "WebUI available at: http://192.168.4.1");
@@ -335,8 +328,8 @@ void loop() {
     if (demoLedController) {
         demoLedController->loop();
     }
-    if (systemInfoComponent) {
-        systemInfoComponent->loop();
+    if (systemInfoWebUI) {
+        systemInfoWebUI->loop();
     }
     
     // System status reporting
