@@ -116,7 +116,11 @@ public:
         // Header status badge using BaseWebUIComponents
         contexts.push_back(DomoticsCore::Components::WebUI::BaseWebUIComponents::createStatusBadge("led_status", "LED", "bulb-twotone")
             .withField(WebUIField("state", "State", WebUIFieldType::Status, demoLedState ? "ON" : "OFF"))
-            .withRealTime(1000));
+            .withRealTime(1000)
+            .withCustomCss(R"(
+                .status-indicator[data-context-id='led_status'] .status-icon { color: var(--text-secondary); }
+                .status-indicator[data-context-id='led_status'].active .status-icon { color: #ffc107; filter: drop-shadow(0 0 6px rgba(255,193,7,0.6)); }
+            )"));
 
         // Settings context with detailed controls
         contexts.push_back(WebUIContext::settings("led_settings", "LED Controller")
