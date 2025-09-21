@@ -283,7 +283,7 @@ void setup() {
     webUIConfig.copyright = "© 2024 DomoticsCore";
     webUIConfig.port = 80;
     webUIConfig.enableWebSocket = true;
-    webUIConfig.wsUpdateInterval = 5000;
+    webUIConfig.wsUpdateInterval = 2000;
     webUIConfig.useFileSystem = false;
     
     webUIComponent.reset(new DomoticsCore::Components::WebUIComponent(webUIConfig));

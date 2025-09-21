@@ -44,7 +44,7 @@ protected:
     // CPU load estimation variables
     unsigned long lastHeapCheck = 0;
     uint32_t lastHeapValue = 0;
-    
+    float cpuLoadEma = 0.0f; // Exponential moving average for smoother CPU load
 
     String formatBytes(uint32_t bytes) {
         if (bytes < 1024) {
@@ -73,29 +73,33 @@ protected:
             return String(minutes) + "m " + String(seconds) + "s";
         }
     }
-    
-    float calculateCpuLoad() {
-        // Simplified CPU load estimation based on heap allocation patterns
-        // This is a rough approximation since ESP32 doesn't provide direct CPU usage
+        float calculateCpuLoad() {
+        // Heuristic CPU load estimation based on heap allocation activity.
+        // On ESP32 Arduino, direct CPU usage isn't available without special FreeRTOS config.
+        // We therefore estimate activity over time and smooth it with an EMA.
         unsigned long currentTime = millis();
         uint32_t currentHeap = ESP.getFreeHeap();
-        
-        if (lastHeapCheck > 0 && (currentTime - lastHeapCheck) > 1000) {
-            // Estimate load based on heap allocation activity and time since last update
-            uint32_t heapDiff = abs((int32_t)(currentHeap - lastHeapValue));
-            float activity = (float)heapDiff / 1024.0; // KB of heap activity
-            
-            // Simple heuristic: more heap activity = higher CPU usage
-            metrics.cpuLoad = constrain(activity * 2.0, 0.0, 100.0);
-            
-            // Add some randomness to simulate realistic CPU usage patterns
-            metrics.cpuLoad += random(-5, 15);
-            metrics.cpuLoad = constrain(metrics.cpuLoad, 0.0, 100.0);
+
+        if (lastHeapCheck > 0) {
+            unsigned long dt = currentTime - lastHeapCheck;
+            if (dt > 0) {
+                // Heap activity in KB per second
+                float heapDiffKB = fabsf((float)((int32_t)currentHeap - (int32_t)lastHeapValue)) / 1024.0f;
+                float activityPerSec = heapDiffKB * (1000.0f / (float)dt);
+
+                // Map activity to an arbitrary 0-100 range
+                // Tuned scale: 10 KB/s ~ 100% load (cap at 100)
+                float instantLoad = constrain(activityPerSec * 10.0f, 0.0f, 100.0f);
+
+                // Exponential moving average for stability
+                const float alpha = 0.3f; // smoothing factor
+                cpuLoadEma = (alpha * instantLoad) + ((1.0f - alpha) * cpuLoadEma);
+                metrics.cpuLoad = constrain(cpuLoadEma, 0.0f, 100.0f);
+            }
         }
-        
+
         lastHeapCheck = currentTime;
         lastHeapValue = currentHeap;
-        
         return metrics.cpuLoad;
     }
 

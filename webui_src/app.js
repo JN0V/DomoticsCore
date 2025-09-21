@@ -248,9 +248,18 @@ class DomoticsApp {
                         const inputEl = card.querySelector(`#${fieldName}`);
                         if (inputEl) {
                             if (inputEl.type === 'checkbox') {
-                                inputEl.checked = (value === 'true' || value === true);
+                                const newChecked = (value === 'true' || value === true);
+                                if (inputEl.checked !== newChecked) {
+                                    inputEl.checked = newChecked;
+                                    // Trigger UI update listeners (e.g., custom JS updating bulbs)
+                                    inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+                                }
                             } else {
-                                inputEl.value = value;
+                                if (inputEl.value !== String(value)) {
+                                    inputEl.value = value;
+                                    // For sliders or other inputs, also trigger change to refresh visuals
+                                    inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+                                }
                             }
                         } else {
                             // Otherwise, find a display span
@@ -388,6 +397,8 @@ class DomoticsApp {
             const eventType = (field.type === this.WebUIFieldType.Slider) ? 'input' : 'change';
 
             el.addEventListener(eventType, (e) => {
+                // Ignore programmatically dispatched events to prevent feedback loops
+                if (!e.isTrusted) return;
                 let value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
                 this.sendUICommand(context.contextId, field.name, value);
             });
