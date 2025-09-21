@@ -174,10 +174,14 @@ public:
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
         
-        // WebSocket connection status badge
+        // WebSocket connection status badge (provider-specific styling)
         contexts.push_back(DomoticsCore::Components::WebUI::BaseWebUIComponents::createStatusBadge("websocket_status", "Connection", "dc-plug")
             .withField(WebUIField("state", "State", WebUIFieldType::Status, (webSocket && webSocket->count() > 0) ? "ON" : "OFF"))
-            .withRealTime(2000));
+            .withRealTime(2000)
+            .withCustomCss(R"(
+                .status-indicator[data-context-id='websocket_status'] .status-icon { color: var(--text-secondary); }
+                .status-indicator[data-context-id='websocket_status'].active .status-icon { color: #28a745; filter: drop-shadow(0 0 6px rgba(40,167,69,0.6)); }
+            )"));
         
         // Settings context
         contexts.push_back(WebUIContext::settings("webui_settings", "Web Interface")
