@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Components/WebUI.h>
+#include <DomoticsCore/Components/SystemInfo.h>
 #include <DomoticsCore/Components/WebUI/SystemInfoWebUI.h>
 #include <DomoticsCore/Components/WebUI/BaseWebUIComponents.h>
 #include <DomoticsCore/Components/IWebUIProvider.h>
@@ -13,9 +14,9 @@ using namespace DomoticsCore::Components;
 using namespace DomoticsCore::Components::WebUI;
 
 /**
- * Simple Demo LED Controller Component
+ * Simple Demo LED Component (no WebUI here)
  */
-class DemoLEDController : public IComponent, public virtual IWebUIProvider {
+class DemoLEDComponent : public IComponent {
 private:
     int demoLedPin;
     bool demoLedState;
@@ -23,12 +24,13 @@ private:
     DomoticsCore::Utils::NonBlockingDelay demoBlinkTimer;
     
 public:
-    DemoLEDController(int pin = 2) : demoLedPin(pin), demoLedState(false), demoBlinkTimer(1000) {
+    DemoLEDComponent(int pin = 2) : demoLedPin(pin), demoLedState(false), demoBlinkTimer(1000) {
         metadata.name = "Demo LED Controller";
         metadata.version = "1.0.0";
     }
     
     String getName() const override { return metadata.name; }
+    const char* getTypeKey() const override { return "demo_led"; }
     
     ComponentStatus begin() override {
         pinMode(demoLedPin, OUTPUT);
@@ -44,14 +46,34 @@ public:
         digitalWrite(demoLedPin, LOW);
         return ComponentStatus::Success;
     }
-    
-    // WebUI Provider methods
+    // Simple API for UI wrapper
+    void setState(bool on) {
+        manualControl = true;
+        demoLedState = on;
+        digitalWrite(demoLedPin, demoLedState ? HIGH : LOW);
+        DLOG_I(LOG_CORE, "[LED Demo] Manual state change to: %s", demoLedState ? "ON" : "OFF");
+    }
+    bool isOn() const { return demoLedState; }
+    int getPin() const { return demoLedPin; }
+};
+
+// LED WebUI (composition)
+class LEDWebUI : public IWebUIProvider {
+private:
+    DemoLEDComponent* led; // non-owning
+public:
+    explicit LEDWebUI(DemoLEDComponent* comp) : led(comp) {}
+
+    String getWebUIName() const override { return "LED"; }
+    String getWebUIVersion() const override { return "1.0.0"; }
+
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
-        
+        if (!led) return contexts;
+
         // Dashboard card with custom bulb visualization
         contexts.push_back(WebUIContext::dashboard("led_dashboard", "LED Control")
-            .withField(WebUIField("state_toggle_dashboard", "LED", WebUIFieldType::Boolean, demoLedState ? "true" : "false"))
+            .withField(WebUIField("state_toggle_dashboard", "LED", WebUIFieldType::Boolean, led->isOn() ? "true" : "false"))
             .withRealTime(1000)
             .withCustomHtml(R"(
                 <div class="card-header">
@@ -94,7 +116,6 @@ public:
                 }
             )")
             .withCustomJs(R"(
-                // Update bulb appearance based on LED state
                 function updateLEDBulb() {
                     const bulb = document.querySelector('.led-dashboard .led-bulb');
                     const toggle = document.querySelector('#state_toggle_dashboard');
@@ -103,19 +124,17 @@ public:
                         bulb.classList.toggle('off', !toggle.checked);
                     }
                 }
-                // Update on toggle change
                 document.addEventListener('change', function(e) {
                     if (e.target.id === 'state_toggle_dashboard') {
                         updateLEDBulb();
                     }
                 });
-                // Initial update
                 setTimeout(updateLEDBulb, 100);
             )"));
 
         // Header status badge using BaseWebUIComponents
         contexts.push_back(DomoticsCore::Components::WebUI::BaseWebUIComponents::createStatusBadge("led_status", "LED", "bulb-twotone")
-            .withField(WebUIField("state", "State", WebUIFieldType::Status, demoLedState ? "ON" : "OFF"))
+            .withField(WebUIField("state", "State", WebUIFieldType::Status, led->isOn() ? "ON" : "OFF"))
             .withRealTime(1000)
             .withCustomCss(R"(
                 .status-indicator[data-context-id='led_status'] .status-icon { color: var(--text-secondary); }
@@ -124,8 +143,8 @@ public:
 
         // Settings context with detailed controls
         contexts.push_back(WebUIContext::settings("led_settings", "LED Controller")
-            .withField(WebUIField("state_toggle_settings", "LED", WebUIFieldType::Boolean, demoLedState ? "true" : "false"))
-            .withField(WebUIField("pin_display", "GPIO Pin", WebUIFieldType::Display, String(demoLedPin), "", true))
+            .withField(WebUIField("state_toggle_settings", "LED", WebUIFieldType::Boolean, led->isOn() ? "true" : "false"))
+            .withField(WebUIField("pin_display", "GPIO Pin", WebUIFieldType::Display, String(led->getPin()), "", true))
             .withCustomHtml(R"(
                 <div class="card-header">
                     <h3 class="card-title">LED Controller</h3>
@@ -146,7 +165,7 @@ public:
                     </div>
                     <div class="field-row">
                         <span class="field-label">GPIO Pin:</span>
-                        <span class="field-value" data-field-name="pin_display">)" + String(demoLedPin) + R"(</span>
+                        <span class="field-value" data-field-name="pin_display">)" + String(0) + R"(</span>
                     </div>
                 </div>
             )")
@@ -184,7 +203,6 @@ public:
                 }
             )")
             .withCustomJs(R"(
-                // Update settings display based on LED state
                 function updateLEDSettings() {
                     const bulb = document.querySelector('.led-settings .led-bulb-small');
                     const statusText = document.querySelector('.led-settings .led-status-text');
@@ -198,73 +216,47 @@ public:
                         statusText.textContent = isOn ? 'ON' : 'OFF';
                     }
                 }
-                // Update on toggle change
                 document.addEventListener('change', function(e) {
                     if (e.target.id === 'state_toggle_settings') {
                         updateLEDSettings();
                     }
                 });
-                // Initial update
                 setTimeout(updateLEDSettings, 100);
             )"));
 
         return contexts;
     }
-    
-    String handleWebUIRequest(const String& contextId, const String& endpoint, 
-                             const String& method, const std::map<String, String>& params) override {
-        if ((contextId == "led_settings" || contextId == "led_dashboard") && method == "POST") {
-            auto fieldIt = params.find("field");
-            auto valueIt = params.find("value");
 
+    String getWebUIData(const String& contextId) override {
+        if (!led) return "{}";
+        if (contextId == "led_dashboard" || contextId == "led_settings") {
+            JsonDocument doc; doc["state_toggle_dashboard"] = led->isOn(); doc["state_toggle_settings"] = led->isOn(); doc["gpio_pin"] = led->getPin(); String json; serializeJson(doc, json); return json;
+        } else if (contextId == "led_status") {
+            JsonDocument doc; doc["state"] = led->isOn() ? "ON" : "OFF"; String json; serializeJson(doc, json); return json;
+        }
+        return "{}";
+    }
+
+    String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params) override {
+        if (!led) return "{\"success\":false}";
+        if ((contextId == "led_settings" || contextId == "led_dashboard") && method == "POST") {
+            auto fieldIt = params.find("field"); auto valueIt = params.find("value");
             if (fieldIt != params.end() && valueIt != params.end()) {
                 if (fieldIt->second == "state_toggle_dashboard" || fieldIt->second == "state_toggle_settings") {
-                    manualControl = true; // User has taken control
-                    demoLedState = (valueIt->second == "true");
-                    digitalWrite(demoLedPin, demoLedState ? HIGH : LOW);
-                    DLOG_I(LOG_CORE, "[LED Demo] Manual state change to: %s", demoLedState ? "ON" : "OFF");
+                    led->setState(valueIt->second == "true");
                     return "{\"success\":true}";
                 }
             }
         }
         return "{\"success\":false, \"error\":\"Invalid request\"}";
     }
-    
-    String getWebUIData(const String& contextId) override {
-        if (contextId == "led_dashboard" || contextId == "led_settings") {
-            JsonDocument doc;
-            doc["state_toggle_dashboard"] = demoLedState;
-            doc["state_toggle_settings"] = demoLedState;
-            doc["gpio_pin"] = demoLedPin;
-            String json;
-            serializeJson(doc, json);
-            return json;
-        } else if (contextId == "led_status") {
-            JsonDocument doc;
-            doc["state"] = demoLedState ? "ON" : "OFF";
-            String json;
-            serializeJson(doc, json);
-            return json;
-        }
-        return "{}";
-    }
-
-    String getWebUIName() const override { return metadata.name; }
-    String getWebUIVersion() const override { return metadata.version; }
 };
 
-// No wrapper needed! SystemInfoComponent now includes WebUI functionality by default
 
-
-// Global component storage
-std::unique_ptr<DomoticsCore::Components::WebUIComponent> webUIComponent;
-std::unique_ptr<DemoLEDController> demoLedController;
-std::unique_ptr<WebUI::SystemInfoWebUI> systemInfoWebUI;
+// Global Core
+std::unique_ptr<Core> core;
 
 void setup() {
-    Serial.begin(115200);
-    delay(1000);
-    
     DLOG_I(LOG_CORE, "=== DomoticsCore WebUI Demo Starting ===");
     
     // Setup WiFi in AP mode
@@ -279,6 +271,9 @@ void setup() {
         return;
     }
     
+    // Create Core
+    core.reset(new Core());
+
     // Create WebUI component
     DomoticsCore::Components::WebUIConfig webUIConfig;
     webUIConfig.deviceName = "DomoticsCore WebUI Demo";
@@ -290,51 +285,34 @@ void setup() {
     webUIConfig.wsUpdateInterval = 2000;
     webUIConfig.useFileSystem = false;
     
-    webUIComponent.reset(new DomoticsCore::Components::WebUIComponent(webUIConfig));
-    
-    // Create demo components
-    demoLedController.reset(new DemoLEDController(2));
-    systemInfoWebUI.reset(new WebUI::SystemInfoWebUI());
-    DLOG_I(LOG_CORE, "Initializing components...");
-    
-    DomoticsCore::Components::ComponentStatus status = webUIComponent->begin();
-    if (status != DomoticsCore::Components::ComponentStatus::Success) {
-        DLOG_E(LOG_CORE, "WebUI initialization failed");
+    // Register components in Core (WebUI + demo components)
+    core->addComponent(std::make_unique<DomoticsCore::Components::WebUIComponent>(webUIConfig));
+    core->addComponent(std::make_unique<DemoLEDComponent>(2));
+    core->addComponent(std::make_unique<SystemInfoComponent>());
+
+    // Register LED UI wrapper factory before core->begin (composition)
+    auto* webui = core->getComponent<DomoticsCore::Components::WebUIComponent>("WebUI");
+    if (webui) {
+        webui->registerProviderFactory("demo_led", [](IComponent* c) -> IWebUIProvider* {
+            return new LEDWebUI(static_cast<DemoLEDComponent*>(c));
+        });
+        webui->registerProviderFactory("system_info", [](IComponent* c) -> IWebUIProvider* {
+            return new WebUI::SystemInfoWebUI(static_cast<SystemInfoComponent*>(c));
+        });
+    }
+
+    CoreConfig cfg; cfg.deviceName = "DomoticsCore WebUI Demo"; cfg.logLevel = 3;
+    if (!core->begin(cfg)) {
+        DLOG_E(LOG_CORE, "Core initialization failed");
         return;
     }
-    
-    status = demoLedController->begin();
-    if (status != DomoticsCore::Components::ComponentStatus::Success) {
-        DLOG_E(LOG_CORE, "LED Controller initialization failed");
-        return;
-    }
-    
-    status = systemInfoWebUI->begin();
-    if (status != DomoticsCore::Components::ComponentStatus::Success) {
-        DLOG_E(LOG_CORE, "System Info initialization failed");
-        return;
-    }
-    
-    // Register WebUI providers
-    webUIComponent->registerProvider(webUIComponent.get()); // Register itself
-    webUIComponent->registerProvider(demoLedController.get());
-    webUIComponent->registerProvider(systemInfoWebUI.get());
-    
+
     DLOG_I(LOG_CORE, "=== Setup Complete ===");
     DLOG_I(LOG_CORE, "WebUI available at: http://192.168.4.1");
 }
 
 void loop() {
-    // Run component loops
-    if (webUIComponent) {
-        webUIComponent->loop();
-    }
-    if (demoLedController) {
-        demoLedController->loop();
-    }
-    if (systemInfoWebUI) {
-        systemInfoWebUI->loop();
-    }
+    if (core) core->loop();
     
     // System status reporting
     static DomoticsCore::Utils::NonBlockingDelay statusTimer(30000);
@@ -342,9 +320,7 @@ void loop() {
         DLOG_I(LOG_CORE, "=== System Status ===");
         DLOG_I(LOG_CORE, "Uptime: %lu seconds", millis() / 1000);
         DLOG_I(LOG_CORE, "Free heap: %d bytes", ESP.getFreeHeap());
-        if (webUIComponent) {
-            DLOG_I(LOG_CORE, "WebSocket clients: %d", webUIComponent->getWebSocketClients());
-        }
+        // WebSocket client count can be retrieved from WebUI provider if needed
         DLOG_I(LOG_CORE, "AP clients: %d", WiFi.softAPgetStationNum());
     }
 }
