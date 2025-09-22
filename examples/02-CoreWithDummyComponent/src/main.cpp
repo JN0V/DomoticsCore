@@ -60,6 +60,7 @@ void loop() {
     
     // Demonstrate runtime component interaction
     static unsigned long lastInteraction = 0;
+    static bool removedC = false;
     if (millis() - lastInteraction >= 15000) { // Every 15 seconds
         lastInteraction = millis();
         
@@ -75,6 +76,14 @@ void loop() {
             if (interactionCount % 2 == 0) {
                 compA->resetCounter();
             }
+        }
+
+        // After ~30 seconds, remove ComponentC to demonstrate runtime removal
+        if (!removedC && millis() > 30000) {
+            DLOG_I(LOG_CORE, "Attempting to remove ComponentC at runtime...");
+            bool ok = core->removeComponent("ComponentC");
+            DLOG_I(LOG_CORE, "%s", ok ? "ComponentC removed successfully" : "ComponentC remove failed");
+            removedC = true;
         }
     }
 }

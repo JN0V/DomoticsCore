@@ -66,6 +66,11 @@ public:
         return componentRegistry.getComponentCount();
     }
     
+    // Runtime removal support
+    bool removeComponent(const String& name) {
+        return componentRegistry.removeComponent(name);
+    }
+    
     // Utility functions - convenience factory for timers
     static Utils::NonBlockingDelay createTimer(unsigned long intervalMs) {
         return Utils::NonBlockingDelay(intervalMs);

@@ -4,6 +4,7 @@
 #define DOMOTICSCORE_WEBUI_ENABLED 1
 
 #include "IWebUIProvider.h"
+#include "ComponentRegistry.h"
 #include "WebUI/BaseWebUIComponents.h"
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
@@ -14,6 +15,7 @@
 #include <memory>
 #include <algorithm>
 #include <pgmspace.h>
+#include <functional>
 
 #include "IComponent.h"
 #include "IWebUIProvider.h"
@@ -62,7 +64,7 @@ struct WebUIConfig {
  * Optimized WebUI Component with PROGMEM content storage and crash resistance
  * Uses IWebUIProvider interface for modern multi-context support
  */
-class WebUIComponent : public IComponent, public virtual IWebUIProvider {
+class WebUIComponent : public IComponent, public virtual IWebUIProvider, public Components::ComponentRegistry::IComponentLifecycleListener {
 private:
     WebUIConfig config;
     AsyncWebServer* server = nullptr;
@@ -70,6 +72,14 @@ private:
     
     // Provider support
     std::map<String, IWebUIProvider*> contextProviders;
+    // Enable/disable state per provider (keyed by provider ptr)
+    std::map<IWebUIProvider*, bool> providerEnabled;
+    // Optional mapping to owning component to allow begin()/shutdown()
+    std::map<IWebUIProvider*, IComponent*> providerComponent;
+    // Provider factory registry (typeKey -> factory)
+    std::map<String, std::function<IWebUIProvider*(IComponent*)>> providerFactories;
+    // Owned providers created via factories (to manage lifetime)
+    std::vector<std::unique_ptr<IWebUIProvider>> ownedProviders;
     
     unsigned long lastWebSocketUpdate = 0;
 
@@ -146,6 +156,18 @@ public:
             contextProviders[context.contextId] = provider;
             DLOG_I(LOG_CORE, "[WebUI] Registered provider for context: %s", context.contextId.c_str());
         }
+        // Default to enabled if not already tracked
+        if (providerEnabled.find(provider) == providerEnabled.end()) {
+            providerEnabled[provider] = true;
+        }
+    }
+
+    // Overload to explicitly associate a provider with its component for lifecycle control
+    void registerProviderWithComponent(IWebUIProvider* provider, IComponent* component) {
+        registerProvider(provider);
+        if (provider && component) {
+            providerComponent[provider] = component;
+        }
     }
 
     void unregisterProvider(IWebUIProvider* provider) {
@@ -157,6 +179,7 @@ public:
                 ++it;
             }
         }
+        // Keep providerEnabled and providerComponent entries so we can re-enable later
     }
 
     int getWebSocketClients() const {
@@ -167,9 +190,58 @@ public:
         return config.port; 
     }
 
+    // Allow applications to register factories for their own components (composition-based UI)
+    void registerProviderFactory(const String& typeKey, std::function<IWebUIProvider*(IComponent*)> factory) {
+        if (!typeKey.isEmpty() && factory) {
+            providerFactories[typeKey] = factory;
+        }
+    }
+
+    // Auto-discovery: register providers for all components exposing a WebUI provider
+    void discoverProviders(const Components::ComponentRegistry& registry) {
+        auto comps = registry.getAllComponents();
+        for (auto* comp : comps) {
+            if (!comp) continue;
+            IWebUIProvider* provider = comp->getWebUIProvider();
+            if (provider) {
+                // Avoid duplicate registration
+                bool already = false;
+                for (const auto& pair : contextProviders) {
+                    if (pair.second == provider) { already = true; break; }
+                }
+                if (!already) {
+                    registerProviderWithComponent(provider, comp);
+                }
+            } else {
+                // Try factory by typeKey for composition-based providers
+                const char* key = comp->getTypeKey();
+                auto it = providerFactories.find(String(key));
+                if (it != providerFactories.end()) {
+                    // Create and own the provider instance
+                    std::unique_ptr<IWebUIProvider> created(it->second(comp));
+                    if (created) {
+                        IWebUIProvider* raw = created.get();
+                        ownedProviders.push_back(std::move(created));
+                        registerProviderWithComponent(raw, comp);
+                    }
+                }
+            }
+        }
+    }
+
+    // IComponent override: post-initialization hook
+    void onComponentsReady(const Components::ComponentRegistry& registry) override {
+        discoverProviders(registry);
+        // Subscribe to future add/remove events
+        auto& reg = const_cast<Components::ComponentRegistry&>(registry);
+        reg.addListener(this);
+    }
+
     // IWebUIProvider implementation for self-registration
     String getWebUIName() const override { return "WebUI"; }
     String getWebUIVersion() const override { return "2.0.0"; }
+    // Expose as provider for auto-discovery
+    IWebUIProvider* getWebUIProvider() override { return this; }
 
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
@@ -202,6 +274,33 @@ public:
         return "{}"; 
     }
 
+    // Registry listener events
+    void onComponentAdded(IComponent* comp) override {
+        if (!comp) return;
+        IWebUIProvider* provider = comp->getWebUIProvider();
+        if (provider) {
+            registerProviderWithComponent(provider, comp);
+        }
+    }
+    void onComponentRemoved(IComponent* comp) override {
+        if (!comp) return;
+        // Unregister any providers belonging to this component
+        std::vector<IWebUIProvider*> toRemove;
+        for (const auto& kv : providerComponent) {
+            if (kv.second == comp) {
+                toRemove.push_back(kv.first);
+            }
+        }
+        for (auto* prov : toRemove) {
+            // Remove all contexts owned by this provider
+            for (auto it = contextProviders.begin(); it != contextProviders.end(); ) {
+                if (it->second == prov) it = contextProviders.erase(it); else ++it;
+            }
+            providerEnabled.erase(prov);
+            providerComponent.erase(prov);
+        }
+    }
+
     String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params) override {
         if (contextId == "webui_settings" && method == "POST") {
             auto fieldIt = params.find("field");
@@ -230,7 +329,7 @@ private:
                 auto* resp = request->beginResponse(200, "text/html",
                     WebUIContent::htmlGz(), WebUIContent::htmlGzLen());
                 resp->addHeader("Content-Encoding", "gzip");
-                resp->addHeader("Cache-Control", "public, max-age=3600");
+                resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
                 request->send(resp);
             }
         });
@@ -243,7 +342,7 @@ private:
                 auto* resp = request->beginResponse(200, "text/css",
                     WebUIContent::cssGz(), WebUIContent::cssGzLen());
                 resp->addHeader("Content-Encoding", "gzip");
-                resp->addHeader("Cache-Control", "public, max-age=86400");
+                resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
                 request->send(resp);
             }
         });
@@ -279,22 +378,119 @@ private:
             JsonDocument doc;
             JsonArray comps = doc["components"].to<JsonArray>();
 
-            std::vector<IWebUIProvider*> uniqueProviders;
+            // Build a unique list from providerEnabled to include disabled providers as well
+            std::vector<IWebUIProvider*> providers;
+            providers.reserve(providerEnabled.size());
+            for (const auto& kv : providerEnabled) {
+                if (kv.first && std::find(providers.begin(), providers.end(), kv.first) == providers.end()) {
+                    providers.push_back(kv.first);
+                }
+            }
+            // Also include any provider currently present in contexts but missing from map (safety)
             for (const auto& pair : contextProviders) {
-                if (std::find(uniqueProviders.begin(), uniqueProviders.end(), pair.second) == uniqueProviders.end()) {
-                    uniqueProviders.push_back(pair.second);
+                IWebUIProvider* prov = pair.second;
+                if (prov && std::find(providers.begin(), providers.end(), prov) == providers.end()) {
+                    providers.push_back(prov);
                 }
             }
 
-            for (IWebUIProvider* provider : uniqueProviders) {
+            for (IWebUIProvider* provider : providers) {
                 JsonObject compObj = comps.add<JsonObject>();
                 compObj["name"] = provider->getWebUIName();
                 compObj["version"] = provider->getWebUIVersion();
-                compObj["status"] = "Active"; // Placeholder
+                bool enabled = (providerEnabled.find(provider) != providerEnabled.end()) ? providerEnabled[provider] : true;
+                compObj["status"] = enabled ? "Enabled" : "Disabled";
+                compObj["enabled"] = enabled;
+                compObj["canDisable"] = (provider->getWebUIName() != "WebUI");
             }
             
             serializeJson(doc, *response);
             request->send(response);
+        });
+
+        // Enable/disable component
+        server->on("/api/components/enable", HTTP_POST, [this](AsyncWebServerRequest* request) {
+            if (config.enableAuth && !authenticate(request)) {
+                return request->requestAuthentication();
+            }
+
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            JsonDocument doc;
+            String name;
+            bool enabled = true;
+            if (request->hasParam("name", true)) {
+                name = request->getParam("name", true)->value();
+            }
+            if (request->hasParam("enabled", true)) {
+                String v = request->getParam("enabled", true)->value();
+                enabled = (v == "true" || v == "1" || v == "on");
+            }
+
+            bool found = false;
+            // Collect matching providers first from current contexts and tracked providers
+            std::vector<IWebUIProvider*> matched;
+            for (const auto& kv : contextProviders) {
+                if (kv.second && kv.second->getWebUIName() == name) {
+                    if (std::find(matched.begin(), matched.end(), kv.second) == matched.end()) {
+                        matched.push_back(kv.second);
+                    }
+                }
+            }
+            for (const auto& kv : providerEnabled) {
+                IWebUIProvider* prov = kv.first;
+                if (prov && prov->getWebUIName() == name) {
+                    if (std::find(matched.begin(), matched.end(), prov) == matched.end()) {
+                        matched.push_back(prov);
+                    }
+                }
+            }
+
+            for (IWebUIProvider* provider : matched) {
+                // Disallow disabling WebUI to avoid losing access
+                if (name == "WebUI" && enabled == false) {
+                    doc["success"] = false;
+                    doc["warning"] = "Disabling WebUI may make the UI inaccessible until reboot/reset.";
+                    serializeJson(doc, *response);
+                    request->send(response);
+                    return;
+                }
+
+                providerEnabled[provider] = enabled;
+                found = true;
+
+                // If we know its owning component, call lifecycle methods
+                auto itComp = providerComponent.find(provider);
+                if (itComp != providerComponent.end() && itComp->second) {
+                    if (!enabled) {
+                        itComp->second->shutdown();
+                    } else {
+                        itComp->second->begin();
+                    }
+                }
+
+                // Keep server-side context index in sync so UI can hide/show without reload
+                if (!enabled) {
+                    unregisterProvider(provider);
+                } else {
+                    registerProviderWithComponent(provider, (providerComponent.find(provider) != providerComponent.end()) ? providerComponent[provider] : nullptr);
+                }
+            }
+
+            doc["success"] = found;
+            doc["name"] = name;
+            doc["enabled"] = enabled;
+            if (name == "WebUI" && enabled == false) {
+                doc["warning"] = "Disabling WebUI may make the UI inaccessible until reboot/reset.";
+            }
+            serializeJson(doc, *response);
+            request->send(response);
+            // Broadcast schema change so clients re-fetch /api/ui/schema
+            if (found && webSocket && webSocket->count() > 0) {
+                String msg = String("{\"type\":\"schema_changed\",\"name\":\"") + name + "\"}";
+                if (msg.length() < 128) {
+                    webSocket->textAll(msg);
+                }
+            }
         });
 
         server->on("/api/ui/schema", HTTP_GET, [this](AsyncWebServerRequest* request) {
@@ -306,15 +502,24 @@ private:
             JsonDocument doc;
             JsonArray schema = doc.to<JsonArray>();
 
-            std::vector<IWebUIProvider*> uniqueProviders;
+            // Prefer provider list from providerEnabled, merge any active context providers
+            std::vector<IWebUIProvider*> providers;
+            for (const auto& kv : providerEnabled) {
+                if (kv.first && std::find(providers.begin(), providers.end(), kv.first) == providers.end()) {
+                    providers.push_back(kv.first);
+                }
+            }
             for (const auto& pair : contextProviders) {
-                if (std::find(uniqueProviders.begin(), uniqueProviders.end(), pair.second) == uniqueProviders.end()) {
-                    uniqueProviders.push_back(pair.second);
+                if (pair.second && std::find(providers.begin(), providers.end(), pair.second) == providers.end()) {
+                    providers.push_back(pair.second);
                 }
             }
 
-            for (IWebUIProvider* provider : uniqueProviders) {
-                if (provider && provider->isWebUIEnabled()) {
+            for (IWebUIProvider* provider : providers) {
+                bool enabled = true;
+                auto enIt = providerEnabled.find(provider);
+                if (enIt != providerEnabled.end()) enabled = enIt->second;
+                if (provider && provider->isWebUIEnabled() && enabled) {
                     auto contexts = provider->getWebUIContexts();
                     for (const auto& context : contexts) {
                         JsonObject contextObj = schema.add<JsonObject>();
@@ -353,7 +558,7 @@ private:
                     auto* resp = request->beginResponse(200, "text/html",
                         WebUIContent::htmlGz(), WebUIContent::htmlGzLen());
                     resp->addHeader("Content-Encoding", "gzip");
-                    resp->addHeader("Cache-Control", "public, max-age=3600");
+                    resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
                     request->send(resp);
                 }
             }
@@ -471,6 +676,9 @@ private:
             
             const String& contextId = pair.first;
             IWebUIProvider* provider = pair.second;
+            if (providerEnabled.find(provider) != providerEnabled.end() && providerEnabled[provider] == false) {
+                continue;
+            }
             
             String contextData = provider->getWebUIData(contextId);
             if (!contextData.isEmpty() && contextData != "{}") {
@@ -507,6 +715,9 @@ private:
             
             const String& contextId = pair.first;
             IWebUIProvider* provider = pair.second;
+            if (providerEnabled.find(provider) != providerEnabled.end() && providerEnabled[provider] == false) {
+                continue;
+            }
             
             String contextData = provider->getWebUIData(contextId);
             if (!contextData.isEmpty() && contextData != "{}") {
