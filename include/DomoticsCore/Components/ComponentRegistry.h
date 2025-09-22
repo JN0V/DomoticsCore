@@ -8,6 +8,7 @@
 #include "IComponent.h"
 #include "ComponentConfig.h"
 #include "../Logger.h"
+#include "../Utils/EventBus.h"
 
 namespace DomoticsCore {
 namespace Components {
@@ -28,6 +29,8 @@ private:
     bool initialized = false;
     // Lifecycle listeners
     std::vector<IComponentLifecycleListener*> listeners;
+    // Event bus for cross-component communication
+    DomoticsCore::Utils::EventBus eventBus;
     
 public:
     /**
@@ -122,6 +125,8 @@ public:
                 component->loop();
             }
         }
+        // Dispatch queued events
+        eventBus.poll();
     }
     
     /**
@@ -233,6 +238,12 @@ public:
     bool isInitialized() const {
         return initialized;
     }
+
+    /**
+     * Access the EventBus for publishing/subscribing to events.
+     */
+    DomoticsCore::Utils::EventBus& getEventBus() { return eventBus; }
+    const DomoticsCore::Utils::EventBus& getEventBus() const { return eventBus; }
 
 private:
     /**
