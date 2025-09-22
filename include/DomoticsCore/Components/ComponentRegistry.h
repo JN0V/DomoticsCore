@@ -4,6 +4,7 @@
 #include <vector>
 #include <map>
 #include <memory>
+#include <algorithm>
 #include "IComponent.h"
 #include "ComponentConfig.h"
 #include "../Logger.h"
@@ -16,11 +17,17 @@ namespace Components {
  * Handles registration, dependency resolution, and coordinated initialization
  */
 class ComponentRegistry {
+public:
+    // Forward declaration of nested listener interface
+    class IComponentLifecycleListener;
+
 private:
     std::vector<std::unique_ptr<IComponent>> components;
     std::map<String, IComponent*> componentMap;
     std::vector<IComponent*> initializationOrder;
     bool initialized = false;
+    // Lifecycle listeners
+    std::vector<IComponentLifecycleListener*> listeners;
     
 public:
     /**
@@ -46,6 +53,10 @@ public:
         
         DLOG_I(LOG_CORE, "Registered component: %s v%s", 
                name.c_str(), ptr->getVersion().c_str());
+        // Notify listeners about addition
+        for (auto* l : listeners) {
+            if (l) l->onComponentAdded(ptr);
+        }
         return true;
     }
     
@@ -92,6 +103,11 @@ public:
         
         initialized = true;
         DLOG_I(LOG_CORE, "All components initialized successfully (%d components)", initializationOrder.size());
+
+        // Post-initialization hook for components
+        for (auto* component : initializationOrder) {
+            component->onComponentsReady(*this);
+        }
         return ComponentStatus::Success;
     }
     
@@ -130,6 +146,66 @@ public:
         
         initialized = false;
         DLOG_I(LOG_CORE, "All components shut down");
+    }
+
+    /**
+     * Remove a component by name at runtime. Will shutdown the component and notify listeners.
+     */
+    bool removeComponent(const String& name) {
+        auto itMap = componentMap.find(name);
+        if (itMap == componentMap.end()) return false;
+        IComponent* comp = itMap->second;
+        // Shutdown if active
+        if (comp->isActive()) {
+            DLOG_I(LOG_CORE, "Shutting down component (remove): %s", name.c_str());
+            comp->shutdown();
+            comp->setActive(false);
+        }
+        // Notify listeners
+        for (auto* l : listeners) {
+            if (l) l->onComponentRemoved(comp);
+        }
+        // Erase from containers
+        componentMap.erase(itMap);
+        // Remove from initialization order
+        initializationOrder.erase(std::remove(initializationOrder.begin(), initializationOrder.end(), comp), initializationOrder.end());
+        // Remove from components vector
+        for (auto it = components.begin(); it != components.end(); ++it) {
+            if (it->get() == comp) {
+                components.erase(it);
+                break;
+            }
+        }
+        DLOG_I(LOG_CORE, "Component removed: %s", name.c_str());
+        return true;
+    }
+
+    /**
+     * Return raw pointers to all registered components.
+     */
+    std::vector<IComponent*> getAllComponents() const {
+        std::vector<IComponent*> out;
+        out.reserve(components.size());
+        for (const auto& up : components) out.push_back(up.get());
+        return out;
+    }
+
+public:
+    /**
+     * Listener interface to observe component lifecycle events.
+     */
+    class IComponentLifecycleListener {
+    public:
+        virtual ~IComponentLifecycleListener() = default;
+        virtual void onComponentAdded(IComponent* /*comp*/) {}
+        virtual void onComponentRemoved(IComponent* /*comp*/) {}
+    };
+
+    void addListener(IComponentLifecycleListener* listener) {
+        if (listener) listeners.push_back(listener);
+    }
+    void removeListener(IComponentLifecycleListener* listener) {
+        listeners.erase(std::remove(listeners.begin(), listeners.end(), listener), listeners.end());
     }
     
     /**

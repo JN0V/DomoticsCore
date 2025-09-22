@@ -23,7 +23,7 @@ class DomoticsApp {
 
     async loadUISchema() {
         try {
-            const response = await fetch('/api/ui/schema');
+            const response = await fetch(`/api/ui/schema?t=${Date.now()}`);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -43,6 +43,7 @@ class DomoticsApp {
         this.renderSection(this.WebUILocation.Dashboard, 'dashboardGrid');
         this.renderSection(this.WebUILocation.ComponentDetail, 'componentsGrid'); // Using ComponentDetail for the 'Components' tab for now
         this.renderSection(this.WebUILocation.Settings, 'settingsGrid');
+        this.renderHeaderStatus();
     }
 
     renderSection(location, gridId) {
@@ -87,6 +88,27 @@ class DomoticsApp {
 
         this.attachFieldEventListeners(card, context);
         return card;
+    }
+
+    renderHeaderStatus() {
+        const container = document.querySelector('.status-indicators');
+        if (!container) return;
+        // Clear all to match schema exactly (prevents stale badges after disable)
+        container.innerHTML = '';
+        const statuses = this.uiSchema
+            .filter(ctx => ctx.location === this.WebUILocation.HeaderStatus)
+            .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+        statuses.forEach(ctx => {
+            const indicator = document.createElement('span');
+            indicator.className = 'status-indicator';
+            indicator.dataset.contextId = ctx.contextId;
+            if (ctx.customHtml) {
+                indicator.innerHTML = ctx.customHtml;
+            } else {
+                indicator.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><use href="#dc-components"/></svg>`;
+            }
+            container.appendChild(indicator);
+        });
     }
 
     renderField(field) {
@@ -190,6 +212,18 @@ class DomoticsApp {
     }
 
     handleWebSocketMessage(data) {
+        // Schema change notification from server: re-fetch schema and re-render
+        if (data && data.type === 'schema_changed') {
+            this.loadUISchema().then(() => {
+                this.renderUI();
+                // If the Components tab is currently active, refresh it as well
+                const compSection = document.getElementById('components-section');
+                if (compSection && compSection.classList.contains('active')) {
+                    this.loadComponents();
+                }
+            });
+            return;
+        }
         if (data.system) {
             this.updateSystemInfo(data.system);
             this.updateSystemOverviewCard(data.system);
@@ -365,10 +399,17 @@ class DomoticsApp {
                 card.className = 'card';
                 let fieldsHtml = '';
                 data.components.forEach(comp => {
+                    const isWebUI = comp.name === 'WebUI';
+                    const checked = comp.enabled ? 'checked' : '';
+                    const statusClass = comp.enabled ? 'status-success' : 'status-warning';
                     fieldsHtml += `
-                        <div class="field-row">
+                        <div class="field-row" data-comp-name="${comp.name}">
                             <span class="field-label">${comp.name} (v${comp.version}):</span>
-                            <span class="field-value status-${comp.status.toLowerCase()}">${comp.status}</span>
+                            <span class="field-value ${statusClass}">${comp.enabled ? 'Enabled' : 'Disabled'}</span>
+                            <label class="toggle-switch" title="Enable/Disable">
+                                <input type="checkbox" class="comp-toggle" ${checked}>
+                                <span class="slider"></span>
+                            </label>
                         </div>`;
                 });
                 card.innerHTML = `
@@ -378,6 +419,49 @@ class DomoticsApp {
                     <div class="card-content">${fieldsHtml}</div>
                 `;
                 grid.appendChild(card);
+
+                // Attach listeners for component enable/disable toggles
+                card.querySelectorAll('.field-row').forEach(row => {
+                    const name = row.dataset.compName;
+                    const toggle = row.querySelector('.comp-toggle');
+                    const valueEl = row.querySelector('.field-value');
+                    if (!toggle) return;
+                    toggle.addEventListener('change', async (e) => {
+                        // Confirmation for disabling WebUI
+                        if (name === 'WebUI' && e.target.checked === false) {
+                            const ok = window.confirm('Disabling WebUI may make the UI inaccessible until reboot/reset. Continue?');
+                            if (!ok) {
+                                e.target.checked = true; // revert
+                                return;
+                            }
+                        }
+                        const enabled = e.target.checked;
+                        try {
+                            const body = new URLSearchParams({ name, enabled: String(enabled) }).toString();
+                            const resp = await fetch('/api/components/enable', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                                body
+                            });
+                            const result = await resp.json();
+                            if (!result.success) {
+                                throw new Error('Operation failed');
+                            }
+                            // Update row status text
+                            valueEl.textContent = enabled ? 'Enabled' : 'Disabled';
+                            valueEl.classList.toggle('status-success', enabled);
+                            valueEl.classList.toggle('status-warning', !enabled);
+                            // Refresh schema and re-render UI to reflect contexts
+                            await this.loadUISchema();
+                            this.renderUI();
+                        } catch (err) {
+                            console.error('Failed to change component state:', err);
+                            // Revert toggle on failure
+                            e.target.checked = !enabled;
+                            alert('Failed to change component state');
+                        }
+                    });
+                });
             } else {
                 grid.innerHTML = '<div class="loading-message">No components registered.</div>';
             }

@@ -5,6 +5,9 @@
 #include <memory>
 #include "ComponentConfig.h"
 
+// Forward declarations to avoid circular includes
+namespace DomoticsCore { namespace Components { class ComponentRegistry; class IWebUIProvider; } }
+
 namespace DomoticsCore {
 namespace Components {
 
@@ -112,6 +115,24 @@ public:
     virtual String getVersion() const { 
         return metadata.version.isEmpty() ? "1.0.0" : metadata.version; 
     }
+
+    /**
+     * Optional: Stable type key to identify component kind (e.g., "system_info").
+     * Used by WebUI to attach composition-based UI wrappers automatically.
+     */
+    virtual const char* getTypeKey() const { return ""; }
+
+    /**
+     * Optional: If this component also provides a WebUI, return the provider pointer.
+     * Default returns nullptr (no WebUI).
+     */
+    virtual IWebUIProvider* getWebUIProvider() { return nullptr; }
+
+    /**
+     * Optional: Called by the registry after all components have been initialized.
+     * Components may perform cross-component discovery here.
+     */
+    virtual void onComponentsReady(const ComponentRegistry& /*registry*/) {}
 
 protected:
     /**
