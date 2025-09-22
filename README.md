@@ -76,6 +76,49 @@ void loop() {
 ### Advanced Usage
 For MQTT, Home Assistant, storage, and relay control, see `examples/AdvancedApp/`.
 
+## 🧩 EventBus (topic-based, decoupled)
+
+DomoticsCore provides a lightweight, topic-based EventBus to enable cross-component communication without tight coupling.
+
+- Publish/subscribe by topic strings (e.g., `"wifi.connected"`, `"storage.mounted"`).
+- Payloads are plain structs defined by the publishing component.
+- Dispatch is queued and processed in the main loop (non-ISR safe).
+
+Basic usage:
+
+```cpp
+#include <DomoticsCore/Utils/EventBus.h>
+
+// Define topics and payloads inside your component (recommended)
+namespace WifiEvents {
+  static constexpr const char* Connected = "wifi.connected";
+  struct ConnectedPayload { String ssid; IPAddress ip; int rssi; };
+}
+
+// Publisher (e.g., WiFi component)
+auto& bus = registry.getEventBus();
+bus.publish(WifiEvents::Connected, WifiEvents::ConnectedPayload{ ssid, WiFi.localIP(), WiFi.RSSI() });
+
+// Subscriber (e.g., LED component)
+subscriptionId_ = registry.getEventBus().subscribe(
+  WifiEvents::Connected,
+  [this](const void* p){
+    auto* payload = static_cast<const WifiEvents::ConnectedPayload*>(p);
+    this->setOn(true);
+  },
+  this
+);
+
+// Cleanup on shutdown
+registry.getEventBus().unsubscribeOwner(this);
+```
+
+Notes:
+
+- The core no longer defines domain-specific events. Each component owns its event topics and payloads.
+- A minimal enum `EventType::Custom` remains for rare global signals; most apps should prefer topics.
+- The bus is available via `ComponentRegistry::getEventBus()` and is polled automatically in `loop()`.
+
 ## 📖 Documentation
 
 ### Core Configuration
