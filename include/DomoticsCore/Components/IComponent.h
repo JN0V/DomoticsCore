@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <vector>
+#include <functional>
 #include <memory>
 #include "ComponentConfig.h"
 #include "../Utils/EventBus.h"
@@ -164,6 +165,25 @@ protected:
     friend class ComponentRegistry;
     // Called by ComponentRegistry prior to begin()
     void __dc_setEventBus(DomoticsCore::Utils::EventBus* eb) { __dc_eventBus = eb; }
+
+public:
+    // Typed helper: subscribe to a topic and receive a const T& payload. Owner is this component by default.
+    template<typename T>
+    uint32_t on(const String& topic, std::function<void(const T&)> cb, bool replayLast = false) {
+        if (!__dc_eventBus || topic.length() == 0 || !cb) return 0;
+        return __dc_eventBus->subscribe(topic, [cb](const void* p){
+            const T* tp = static_cast<const T*>(p);
+            if (tp) cb(*tp);
+        }, this, replayLast);
+    }
+
+    // Typed helper: publish or publishSticky a payload of type T
+    template<typename T>
+    void emit(const String& topic, const T& payload, bool sticky = false) {
+        if (!__dc_eventBus || topic.length() == 0) return;
+        if (sticky) __dc_eventBus->publishSticky(topic, payload);
+        else __dc_eventBus->publish(topic, payload);
+    }
 };
 
 } // namespace Components
