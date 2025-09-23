@@ -32,6 +32,7 @@ private:
     // Event bus for cross-component communication
     DomoticsCore::Utils::EventBus eventBus;
     
+    
 public:
     /**
      * Register a component with the registry
@@ -93,6 +94,11 @@ public:
         for (auto* component : initializationOrder) {
             DLOG_I(LOG_CORE, "Initializing component: %s", component->getName().c_str());
             
+            // Provide framework services (EventBus) to the component before begin()
+            if (component) {
+                component->__dc_setEventBus(&eventBus);
+            }
+
             ComponentStatus status = component->begin();
             if (status != ComponentStatus::Success) {
                 DLOG_E(LOG_CORE, "Failed to initialize component %s: %s", 
@@ -239,11 +245,6 @@ public:
         return initialized;
     }
 
-    /**
-     * Access the EventBus for publishing/subscribing to events.
-     */
-    DomoticsCore::Utils::EventBus& getEventBus() { return eventBus; }
-    const DomoticsCore::Utils::EventBus& getEventBus() const { return eventBus; }
 
 private:
     /**
