@@ -84,7 +84,7 @@ DomoticsCore provides a lightweight, topic-based EventBus to enable cross-compon
 - Payloads are plain structs defined by the publishing component.
 - Dispatch is queued and processed in the main loop (non-ISR safe).
 
-Basic usage:
+Basic usage inside a component (framework injects EventBus):
 
 ```cpp
 #include <DomoticsCore/Utils/EventBus.h>
@@ -95,12 +95,12 @@ namespace WifiEvents {
   struct ConnectedPayload { String ssid; IPAddress ip; int rssi; };
 }
 
-// Publisher (e.g., WiFi component)
-auto& bus = registry.getEventBus();
-bus.publish(WifiEvents::Connected, WifiEvents::ConnectedPayload{ ssid, WiFi.localIP(), WiFi.RSSI() });
+// Publisher (e.g., in loop())
+WifiEvents::ConnectedPayload payload{ ssid, WiFi.localIP(), WiFi.RSSI() };
+eventBus().publish(WifiEvents::Connected, payload);
 
-// Subscriber (e.g., LED component)
-subscriptionId_ = registry.getEventBus().subscribe(
+// Subscriber (e.g., in begin())
+subscriptionId_ = eventBus().subscribe(
   WifiEvents::Connected,
   [this](const void* p){
     auto* payload = static_cast<const WifiEvents::ConnectedPayload*>(p);
@@ -110,14 +110,14 @@ subscriptionId_ = registry.getEventBus().subscribe(
 );
 
 // Cleanup on shutdown
-registry.getEventBus().unsubscribeOwner(this);
+eventBus().unsubscribeOwner(this);
 ```
 
 Notes:
 
 - The core no longer defines domain-specific events. Each component owns its event topics and payloads.
 - A minimal enum `EventType::Custom` remains for rare global signals; most apps should prefer topics.
-- The bus is available via `ComponentRegistry::getEventBus()` and is polled automatically in `loop()`.
+- The bus is injected into components by the framework and is polled automatically during Core.loop().
 
 ## 📖 Documentation
 

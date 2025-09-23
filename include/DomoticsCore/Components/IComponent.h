@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include "ComponentConfig.h"
+#include "../Utils/EventBus.h"
 
 // Forward declarations to avoid circular includes
 namespace DomoticsCore { namespace Components { class ComponentRegistry; class IWebUIProvider; } }
@@ -21,6 +22,8 @@ protected:
     ComponentStatus lastStatus = ComponentStatus::Success;
     ComponentConfig config;
     ComponentMetadata metadata;
+    // Set by ComponentRegistry before begin(); framework services
+    DomoticsCore::Utils::EventBus* __dc_eventBus = nullptr; // preferred injection
     
 public:
     virtual ~IComponent() = default;
@@ -144,6 +147,12 @@ protected:
             active = false;
         }
     }
+    /**
+     * Framework-injected access to EventBus. Valid after begin().
+     */
+    DomoticsCore::Utils::EventBus& eventBus() {
+        return *__dc_eventBus;
+    }
     
     /**
      * Mark component as active (called by ComponentRegistry)
@@ -153,6 +162,8 @@ protected:
     }
     
     friend class ComponentRegistry;
+    // Called by ComponentRegistry prior to begin()
+    void __dc_setEventBus(DomoticsCore::Utils::EventBus* eb) { __dc_eventBus = eb; }
 };
 
 } // namespace Components
