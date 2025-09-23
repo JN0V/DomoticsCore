@@ -119,6 +119,21 @@ Notes:
 - A minimal enum `EventType::Custom` remains for rare global signals; most apps should prefer topics.
 - The bus is injected into components by the framework and is polled automatically during Core.loop().
 
+### Wildcards and Sticky Events
+
+- Wildcards: subscribe to a family of topics using a simple prefix pattern with `*`.
+  - Example: `eventBus().subscribe("sensor.*", handler, this);`
+  - Matches `sensor.update`, `sensor.temp`, etc.
+
+- Sticky events: retain last payload per topic so late subscribers can immediately receive the latest value.
+  - Publisher: `eventBus().publishSticky("sensor.update", value);`
+  - Subscriber with replay: `eventBus().subscribe("sensor.update", handler, this, true);`
+
+See `examples/03a-EventBusBasics/` for a minimal demo using:
+- `sensor.update` topic with an `int` payload
+- A consumer that toggles an LED, requesting sticky replay on subscribe
+- A wildcard consumer subscribing to `sensor.*`
+
 ## 📖 Documentation
 
 ### Core Configuration
