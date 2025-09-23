@@ -41,10 +41,32 @@ public:
     }
 
     // Subscribe to a topic string (e.g., "wifi.connected"). Returns a subscription id.
-    uint32_t subscribe(const String& topic, Handler handler, void* owner = nullptr) {
+    // If replayLast is true and a sticky event exists for this topic, the handler is invoked immediately once.
+    uint32_t subscribe(const String& topic, Handler handler, void* owner = nullptr, bool replayLast = false) {
         if (!handler || topic.length() == 0) return 0;
         uint32_t id = nextId++;
-        topicSubscriptions[topic].push_back({id, owner, std::move(handler)});
+        if (isWildcard(topic)) {
+            wildcardTopicSubscriptions[topic].push_back({id, owner, std::move(handler)});
+        } else {
+            topicSubscriptions[topic].push_back({id, owner, std::move(handler)});
+            if (replayLast) {
+                auto it = lastByTopic.find(topic);
+                if (it != lastByTopic.end()) {
+                    // Avoid duplicate if there are pending queued events for this topic
+                    int pending = 0;
+                    auto itp = pendingByTopic.find(topic);
+                    if (itp != pendingByTopic.end()) pending = itp->second;
+                    if (pending <= 0) {
+                        const void* payloadPtr = it->second.empty() ? nullptr : it->second.data();
+                        // Call immediately
+                        auto& vec = topicSubscriptions[topic];
+                        for (const auto& sub : vec) {
+                            if (sub.id == id && sub.handler) { sub.handler(payloadPtr); break; }
+                        }
+                    }
+                }
+            }
+        }
         return id;
     }
 
@@ -109,6 +131,20 @@ public:
         enqueue(std::move(qe));
     }
 
+    // Sticky publish: store last payload for the topic and publish as usual
+    template<typename PayloadT>
+    void publishSticky(const String& topic, const PayloadT& payload) {
+        if (topic.length() == 0) return;
+        const uint8_t* p = reinterpret_cast<const uint8_t*>(&payload);
+        lastByTopic[topic] = std::vector<uint8_t>(p, p + sizeof(PayloadT));
+        publish(topic, payload);
+    }
+    void publishSticky(const String& topic) {
+        if (topic.length() == 0) return;
+        lastByTopic[topic].clear();
+        publish(topic);
+    }
+
     // Dispatch queued events; call from main loop
     void poll(size_t maxPerPoll = 8) {
         size_t processed = 0;
@@ -121,17 +157,32 @@ public:
             if (!qe.data.empty()) payloadPtr = qe.data.data();
 
             if (qe.topic.length() > 0) {
+                // Exact topic subscribers
                 auto itT = topicSubscriptions.find(qe.topic);
                 if (itT != topicSubscriptions.end()) {
-                    auto handlers = itT->second;
+                    auto handlers = itT->second; // copy for safe iteration
                     for (const auto& sub : handlers) {
                         if (sub.handler) sub.handler(payloadPtr);
                     }
                 }
+                // Wildcard subscribers (prefix match e.g., "sensor.*")
+                for (const auto& kv : wildcardTopicSubscriptions) {
+                    if (matchesWildcard(qe.topic, kv.first)) {
+                        auto handlers = kv.second; // copy for safe iteration
+                        for (const auto& sub : handlers) {
+                            if (sub.handler) sub.handler(payloadPtr);
+                        }
+                    }
+                }
+                // Decrement pending counter for this topic
+                auto itp = pendingByTopic.find(qe.topic);
+                if (itp != pendingByTopic.end() && itp->second > 0) {
+                    itp->second -= 1;
+                }
             } else {
                 auto it = subscriptions.find(qe.type);
                 if (it != subscriptions.end()) {
-                    auto handlers = it->second;
+                    auto handlers = it->second; // copy for safe iteration
                     for (const auto& sub : handlers) {
                         if (sub.handler) sub.handler(payloadPtr);
                     }
@@ -158,12 +209,43 @@ private:
             queue.pop();
             queue.push(std::move(qe));
         }
+        // Track pending by topic to help skip duplicate sticky replay
+        if (!queue.empty()) {
+            const QueuedEvent& back = queue.back();
+            if (back.topic.length() > 0) {
+                pendingByTopic[back.topic] = pendingByTopic[back.topic] + 1;
+            }
+        }
+    }
+
+    static bool isWildcard(const String& topic) {
+        // Support prefix wildcard: e.g., "sensor.*"
+        int idx = topic.indexOf('*');
+        return (idx >= 0);
+    }
+
+    static bool matchesWildcard(const String& concrete, const String& pattern) {
+        int star = pattern.indexOf('*');
+        if (star < 0) return false; // not a wildcard pattern
+        // Allow only prefix+"*" patterns for simplicity
+        String prefix = pattern.substring(0, star);
+        if (star != (int)pattern.length() - 1) {
+            // If pattern has chars after '*', require full match (very simple contains)
+            String suffix = pattern.substring(star + 1);
+            return concrete.startsWith(prefix) && concrete.endsWith(suffix);
+        }
+        return concrete.startsWith(prefix);
     }
 
     std::map<EventType, std::vector<Subscription>> subscriptions;
     std::map<String, std::vector<Subscription>> topicSubscriptions;
+    std::map<String, std::vector<Subscription>> wildcardTopicSubscriptions;
     std::queue<QueuedEvent> queue;
     uint32_t nextId;
+    // Sticky last payload per topic
+    std::map<String, std::vector<uint8_t>> lastByTopic;
+    // Pending counts per topic to prevent duplicate sticky replay
+    std::map<String, int> pendingByTopic;
 };
 
 } // namespace Utils
