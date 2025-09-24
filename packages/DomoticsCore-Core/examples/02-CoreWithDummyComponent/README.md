@@ -27,7 +27,7 @@ This example demonstrates how to build **custom components** using the DomoticsC
 - **Hardware**: Uses `LED_BUILTIN` pin with 500ms blink interval
 
 ### Library Components (Optional)
-- **WiFiComponent**: Uncomment in main.cpp to add WiFi from library
+- **WifiComponent**: Uncomment in main.cpp to add Wifi from library
 
 ## Expected Output
 

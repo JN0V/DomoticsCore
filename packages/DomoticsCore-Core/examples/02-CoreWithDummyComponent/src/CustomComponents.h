@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Arduino.h>
-#include <DomoticsCore/Components/IComponent.h>
+#include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
-#include <DomoticsCore/Utils/Timer.h>
+#include <DomoticsCore/Timer.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
