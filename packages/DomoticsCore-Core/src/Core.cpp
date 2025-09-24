@@ -1,6 +1,6 @@
 #include "DomoticsCore/Core.h"
 #include "DomoticsCore/Logger.h"
-#include "DomoticsCore/Components/ComponentConfig.h"
+#include "DomoticsCore/ComponentConfig.h"
 
 namespace DomoticsCore {
 

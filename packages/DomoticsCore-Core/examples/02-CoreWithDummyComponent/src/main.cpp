@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <DomoticsCore/Core.h>
-#include <DomoticsCore/Components/ComponentRegistry.h>
-#include <DomoticsCore/Components/IComponent.h>
-#include <DomoticsCore/Utils/Timer.h>
+#include <DomoticsCore/ComponentRegistry.h>
+#include <DomoticsCore/IComponent.h>
+#include <DomoticsCore/Timer.h>
 #include <memory>
 #include "CustomComponents.h"
 
@@ -33,9 +33,6 @@ void setup() {
     
     // Add LED blinker component (hardware interaction example)
     core->addComponent(createLEDBlinker(LED_BUILTIN, 500)); // Fast blink
-    
-    // Uncomment to test WiFi component from library:
-    // core->addComponent(std::make_unique<WiFiComponent>("YourWifiSSID", "YourPassword"));
     
     DLOG_I(LOG_CORE, "Starting core with %d components...", core->getComponentCount());
     

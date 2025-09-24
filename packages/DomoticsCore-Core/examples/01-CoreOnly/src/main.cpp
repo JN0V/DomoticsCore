@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <DomoticsCore/Core.h>
-#include <DomoticsCore/Utils/Timer.h>
+#include <DomoticsCore/Timer.h>
 #include <memory>
 
 using namespace DomoticsCore;

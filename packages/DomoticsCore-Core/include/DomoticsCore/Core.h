@@ -3,8 +3,8 @@
 #include <Arduino.h>
 #include <memory>
 #include "Logger.h"
-#include "Utils/Timer.h"
-#include "Components/ComponentRegistry.h"
+#include "Timer.h"
+#include "ComponentRegistry.h"
 
 namespace DomoticsCore {
 
