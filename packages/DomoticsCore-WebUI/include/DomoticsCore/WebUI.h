@@ -3,9 +3,9 @@
 // Enable WebUI features when this component is included
 #define DOMOTICSCORE_WEBUI_ENABLED 1
 
-#include "IWebUIProvider.h"
-#include "ComponentRegistry.h"
-#include "WebUI/BaseWebUIComponents.h"
+#include "DomoticsCore/IWebUIProvider.h"
+#include "DomoticsCore/ComponentRegistry.h"
+#include "DomoticsCore/BaseWebUIComponents.h"
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
@@ -17,10 +17,10 @@
 #include <pgmspace.h>
 #include <functional>
 
-#include "IComponent.h"
-#include "IWebUIProvider.h"
-#include "../Logger.h"
-#include "WebUIContent.h"
+#include "DomoticsCore/IComponent.h"
+#include "DomoticsCore/IWebUIProvider.h"
+#include "DomoticsCore/Logger.h"
+#include "DomoticsCore/WebUIContent.h"
 
 namespace DomoticsCore {
 namespace Components {

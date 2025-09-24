@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include "../IWebUIProvider.h"
+#include "DomoticsCore/IWebUIProvider.h"
 
 namespace DomoticsCore {
 namespace Components {

@@ -11,7 +11,7 @@
   "build": {"includeDir": "include", "srcDir": "src", "lib_archive": false},
   "dependencies": [
     { "owner": "ESP32Async", "name": "ESPAsyncWebServer", "version": ">=3.8.0" },
-    { "owner": "ESP32Async", "name": "AsyncTCP", "version": ">=3.4.7" },
+    { "owner": "ESP32Async", "name": "AsyncTCP", "version": ">=3.4.8" },
     { "name": "ArduinoJson", "version": ">=7.0.0" }
   ]
 }
