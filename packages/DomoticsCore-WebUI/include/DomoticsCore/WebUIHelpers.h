@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IWebUIProvider.h"
+#include "DomoticsCore/IWebUIProvider.h"
 
 namespace DomoticsCore {
 namespace Components {

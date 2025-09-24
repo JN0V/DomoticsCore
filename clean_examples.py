@@ -52,14 +52,18 @@ if current_project_dir is not None:
         filtered.append(d)
     pio_dirs = filtered
 
-    # However, we do want to clear dependency cache for the current project
-    current_libdeps = current_pio / 'libdeps'
+    # Only clean libdeps containing DomoticsCore-*
+    current_libdeps = current_pio / 'libdeps' / 'esp32dev'
     if current_libdeps.exists():
         try:
-            print(f"🧹 Removing current project's libdeps: {current_libdeps.relative_to(root_dir)}")
-            shutil.rmtree(current_libdeps, ignore_errors=True)
+            has_domotics_libs = any('DomoticsCore-' in d.name for d in current_libdeps.iterdir() if d.is_dir())
+            if has_domotics_libs:
+                print(f"🧹 Removing current project's libdeps (contains DomoticsCore libraries): {current_libdeps.relative_to(root_dir)}")
+                shutil.rmtree(current_libdeps, ignore_errors=True)
+            else:
+                print(f"ℹ️  Skipping libdeps (no DomoticsCore libraries found): {current_libdeps.relative_to(root_dir)}")
         except Exception as e:
-            print(f"⚠️  Error cleaning current libdeps {current_libdeps}: {e}")
+            print(f"⚠️  Error checking/cleaning libdeps {current_libdeps}: {e}")
 
 if not pio_dirs:
     print("ℹ️  No .pio directories found. Nothing to clean.")
