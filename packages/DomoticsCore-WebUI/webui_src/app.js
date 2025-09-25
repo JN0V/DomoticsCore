@@ -121,8 +121,23 @@ class DomoticsApp {
                         <span class="slider"></span>
                     </label>`;
                 break;
+            case this.WebUIFieldType.Select:
+                {
+                    const options = (field.options || []).length ? field.options : (typeof field.unit === 'string' && field.unit.includes(',')) ? field.unit.split(',') : [];
+                    const current = String(field.value || '');
+                    const optsHtml = options.map(opt => {
+                        const sel = (String(opt) === current) ? 'selected' : '';
+                        return `<option value="${opt}" ${sel}>${opt}</option>`;
+                    }).join('');
+                    fieldHtml = `<select id="${field.name}" ${field.readOnly ? 'disabled' : ''}>${optsHtml}</select>`;
+                }
+                break;
             case this.WebUIFieldType.Slider:
-                 fieldHtml = `<input type="range" id="${field.name}" min="${field.minValue}" max="${field.maxValue}" value="${field.value}" ${field.readOnly ? 'disabled' : ''}>`;
+                {
+                    const min = (field.minValue !== undefined && field.minValue !== null) ? field.minValue : 0;
+                    const max = (field.maxValue !== undefined && field.maxValue !== null) ? field.maxValue : 255;
+                    fieldHtml = `<input type="range" id="${field.name}" min="${min}" max="${max}" value="${field.value}" ${field.readOnly ? 'disabled' : ''}>`;
+                }
                  break;
             case this.WebUIFieldType.Display:
             default:
