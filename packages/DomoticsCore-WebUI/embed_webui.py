@@ -4,28 +4,50 @@ from pathlib import Path
 
 Import("env")
 
-# Project dir for the example (e.g., .../examples/06-CoreWithWebUIOnly)
+# Project dir for the example (e.g., .../examples/LEDWithWebUI)
 example_dir = Path(env["PROJECT_DIR"])  # current environment project dir
-# Library root: go up one level from examples/<name> to reach DomoticsCore/
-lib_root = example_dir.parents[1]
 
-src_dir = lib_root / "webui_src"
-out_dir_src = lib_root / "include" / "DomoticsCore" / "Generated"
+# Resolve assets relative to the repository 'packages/DomoticsCore-WebUI' folder
+# Walk up from the example dir to find a 'packages' directory
+packages_root = None
+for parent in example_dir.parents:
+    if parent.name == "packages":
+        packages_root = parent
+        break
+
+if packages_root is None:
+    # Fallback: assume this script is inside the package when __file__ is available
+    try:
+        package_root = Path(__file__).resolve().parent
+    except NameError:
+        raise RuntimeError("Unable to locate 'packages' directory and __file__ is unavailable to resolve package root")
+else:
+    package_root = packages_root / "DomoticsCore-WebUI"
+
+src_dir = package_root / "webui_src"
+out_dir_src = package_root / "include" / "DomoticsCore" / "Generated"
 out_dir_src.mkdir(parents=True, exist_ok=True)
 
 out_header_src = out_dir_src / "WebUIAssets.h"
 out_header_libdeps = None
 
-# Also mirror into libdeps/DomoticsCore if available for this env
+# Also mirror into libdeps for this env (prefer DomoticsCore-WebUI package folder if present)
 libdeps_dir = Path(env.get("PROJECT_LIBDEPS_DIR", ""))
 pioenv = env.get("PIOENV", "")
 if libdeps_dir and pioenv:
-    out_dir_libdeps = libdeps_dir / pioenv / "DomoticsCore" / "include" / "DomoticsCore" / "Generated"
-    try:
-        out_dir_libdeps.mkdir(parents=True, exist_ok=True)
-        out_header_libdeps = out_dir_libdeps / "WebUIAssets.h"
-    except Exception:
-        out_header_libdeps = None
+    # Try DomoticsCore-WebUI first
+    candidates = [
+        libdeps_dir / pioenv / "DomoticsCore-WebUI" / "include" / "DomoticsCore" / "Generated",
+        libdeps_dir / pioenv / "DomoticsCore" / "include" / "DomoticsCore" / "Generated",
+    ]
+    out_header_libdeps = None
+    for out_dir in candidates:
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_header_libdeps = out_dir / "WebUIAssets.h"
+            break
+        except Exception:
+            continue
 
 assets = [
     ("index.html", "WEBUI_HTML_GZ"),
@@ -45,7 +67,11 @@ def example_uses_webui() -> bool:
             text = p.read_text(errors="ignore")
         except Exception:
             continue
-        if "DomoticsCore/Components/WebUI.h" in text:
+        # Support both include paths and class name usage
+        if (
+            "DomoticsCore/WebUI.h" in text
+            or "WebUIComponent" in text
+        ):
             return True
     return False
 
