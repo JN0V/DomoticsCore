@@ -35,6 +35,11 @@ public:
     ComponentStatus begin() override {
         pinMode(demoLedPin, OUTPUT);
         digitalWrite(demoLedPin, LOW);
+        // Publish initial sticky state so late subscribers receive current value
+        emit<bool>("led/state", demoLedState, /*sticky=*/true);
+        // Subscribe to EventBus command to allow cross-component control
+        // Any component can publish "led/set" with a bool payload to change LED state
+        on<bool>("led/set", [this](const bool& desired){ this->setState(desired); }, /*replayLast=*/false);
         return ComponentStatus::Success;
     }
     
@@ -52,6 +57,13 @@ public:
         demoLedState = on;
         digitalWrite(demoLedPin, demoLedState ? HIGH : LOW);
         DLOG_I(LOG_CORE, "[LED Demo] Manual state change to: %s", demoLedState ? "ON" : "OFF");
+        // Publish sticky state so newcomers can immediately get the latest value
+        emit<bool>("led/state", demoLedState, /*sticky=*/true);
+    }
+    // Event-driven API: publish command to the bus (used by WebUI to decouple)
+    void requestSet(bool on) {
+        // Do not change state directly here; let the EventBus subscription handle it
+        emit<bool>("led/set", on, /*sticky=*/false);
     }
     bool isOn() const { return demoLedState; }
     int getPin() const { return demoLedPin; }
@@ -243,7 +255,8 @@ public:
             auto fieldIt = params.find("field"); auto valueIt = params.find("value");
             if (fieldIt != params.end() && valueIt != params.end()) {
                 if (fieldIt->second == "state_toggle_dashboard" || fieldIt->second == "state_toggle_settings") {
-                    led->setState(valueIt->second == "true");
+                    // Decoupled: publish command on EventBus; LED component will handle via subscription
+                    led->requestSet(valueIt->second == "true");
                     return "{\"success\":true}";
                 }
             }
