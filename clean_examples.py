@@ -7,19 +7,44 @@ import os
 import shutil
 from pathlib import Path
 
+"""Clean all PlatformIO build directories (.pio) across the repo, except the current project's .pio.
+Also clean current project's libdeps if it contains DomoticsCore-* libs.
+
+We must set root_dir to the repository root, not the current example's project dir,
+otherwise we only ever see the current .pio and end up skipping everything.
+"""
+
 # Determine repository root in a way compatible with PlatformIO pre-scripts
 root_dir = None
+env_available = False
 try:
     # PlatformIO provides the build environment via SCons
     Import('env')  # type: ignore  # Provided by PlatformIO
-    root_dir = Path(env['PROJECT_DIR']).resolve()  # type: ignore
+    env_available = True
+    current_project_dir = Path(env['PROJECT_DIR']).resolve()  # type: ignore
+    # Walk up until we find the repo root (folder containing multiple DomoticsCore-* packages)
+    probe = current_project_dir
+    max_up = 6
+    for _ in range(max_up):
+        # Heuristic: repo root has these subfolders
+        if (probe / 'DomoticsCore-Core').exists() and (probe / 'DomoticsCore-WebUI').exists():
+            root_dir = probe
+            break
+        if probe.parent == probe:
+            break
+        probe = probe.parent
+    if root_dir is None:
+        # Fallback to current project dir
+        root_dir = current_project_dir
 except Exception:
     # Fallback: use current working directory
     try:
         root_dir = Path(os.getcwd()).resolve()
+        current_project_dir = None
     except Exception:
         # Last resort: use relative path
         root_dir = Path('.')
+        current_project_dir = None
 deleted_count = 0
 
 print(f"🔍 Searching for all .pio directories under: {root_dir}")
@@ -27,28 +52,17 @@ print(f"🔍 Searching for all .pio directories under: {root_dir}")
 # Find every directory named '.pio' anywhere under the repo root
 pio_dirs = [p for p in root_dir.rglob('.pio') if p.is_dir()]
 
-# Do NOT delete the current project's working .pio during this build
-current_project_dir = None
-try:
-    current_project_dir = Path(env['PROJECT_DIR']).resolve()  # type: ignore
-except Exception:
-    current_project_dir = None
-
-def is_within(child: Path, parent: Path) -> bool:
-    try:
-        child.resolve()
-        parent.resolve()
-    except Exception:
-        return False
-    return parent == child or parent in child.parents
-
 if current_project_dir is not None:
-    current_pio = current_project_dir / '.pio'
+    # Do NOT delete the current project's working .pio during this build
+    current_pio = (current_project_dir / '.pio').resolve()
     filtered = []
     for d in pio_dirs:
-        if is_within(d, current_pio):
-            print(f"⏭️  Skipping current build directory: {d.relative_to(root_dir)}")
-            continue
+        try:
+            if d.resolve() == current_pio:
+                print(f"⏭️  Skipping current build directory: {d.relative_to(root_dir)}")
+                continue
+        except Exception:
+            pass
         filtered.append(d)
     pio_dirs = filtered
 
