@@ -1,38 +1,44 @@
 # DomoticsCore-Core
 
-Minimal core runtime for DomoticsCore.
+Core runtime for DomoticsCore: component model, registry, lifecycle, configuration, logging, timers, and the event bus.
 
-- Components registry and lifecycle
-- Base interfaces (`IComponent`)
-- Utilities (`EventBus`, `Timer`)
-- Logging helpers (`Logger`)
+## Features
+
+- Component base class and lifecycle (`begin`, `loop`, `shutdown`)
+- Central `ComponentRegistry` for add/lookup by name and type
+- `ComponentConfig` for strongly-typed parameters
+- `EventBus` (publish/subscribe) for decoupled communication
+- Utilities: `Logger`, `Timer` (non-blocking delay)
+
+## Installation
+
+Include headers with the prefix `DomoticsCore/` from this package in your PlatformIO project.
+
+## Quickstart
+
+```cpp
+#include <DomoticsCore/Core.h>
+using namespace DomoticsCore;
+using namespace DomoticsCore::Components;
+
+Core core;
+
+void setup() {
+  core.addComponent(std::make_unique<MyComponent>());
+  CoreConfig cfg; cfg.deviceName = "MyDevice"; cfg.logLevel = 3;
+  core.begin(cfg);
+}
+
+void loop() {
+  core.loop();
+}
+```
 
 ## Public Headers
 
-Include path prefix: `DomoticsCore/`
+- `Core.h`, `IComponent.h`, `ComponentRegistry.h`
+- `ComponentConfig.h`, `EventBus.h`, `Timer.h`, `Logger.h`
 
-- `Core.h`
-- `IComponent.h`
-- `ComponentRegistry.h`
-- `ComponentConfig.h`
-- `EventBus.h`
-- `Timer.h`
-- `Logger.h`
+## License
 
-## Examples
-
-Located under `packages/DomoticsCore-Core/examples/`.
-
-- `01-CoreOnly`
-- `02-CoreWithDummyComponent`
-- `03-EventBusBasics`
-- `04-EventBusCoordinators`
-- `05-EventBusTests`
-
-## Build
-
-Use PlatformIO from an example directory:
-
-```
-pio run -d packages/DomoticsCore-Core/examples/01-CoreOnly
-```
+MIT
