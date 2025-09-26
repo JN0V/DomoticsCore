@@ -4,6 +4,7 @@ class DomoticsApp {
         this.wsReconnectInterval = null;
         this.systemStartTime = Date.now();
         this.uiSchema = [];
+        this.isEditingDeviceName = false;
 
         // Enum mappings from C++ backend
         this.WebUILocation = { Dashboard: 0, ComponentDetail: 1, HeaderStatus: 2, QuickControls: 3, Settings: 4 };
@@ -18,6 +19,8 @@ class DomoticsApp {
         this.updateDateTime();
         setInterval(() => this.updateDateTime(), 1000);
         await this.loadUISchema();
+        // Apply initial theme from schema if available
+        this.applyThemeFromSchema();
         this.renderUI();
     }
 
@@ -44,6 +47,27 @@ class DomoticsApp {
         this.renderSection(this.WebUILocation.ComponentDetail, 'componentsGrid'); // Using ComponentDetail for the 'Components' tab for now
         this.renderSection(this.WebUILocation.Settings, 'settingsGrid');
         this.renderHeaderStatus();
+    }
+
+    applyTheme(theme) {
+        // theme: 'dark' | 'light' | 'auto'
+        const root = document.documentElement;
+        const body = document.body;
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        let mode = theme || 'dark';
+        if (mode === 'auto') mode = prefersDark ? 'dark' : 'light';
+        body.classList.toggle('light', mode === 'light');
+        body.classList.toggle('dark', mode === 'dark');
+    }
+
+    applyThemeFromSchema() {
+        // Look for webui_settings context theme field default
+        const settings = this.uiSchema.find(ctx => ctx.contextId === 'webui_settings');
+        if (!settings) return;
+        const themeField = settings.fields && settings.fields.find(f => f.name === 'theme');
+        if (themeField && themeField.value) {
+            this.applyTheme(themeField.value);
+        }
     }
 
     renderSection(location, gridId) {
@@ -121,6 +145,25 @@ class DomoticsApp {
                         <span class="slider"></span>
                     </label>`;
                 break;
+            case this.WebUIFieldType.Text:
+                {
+                    const inputType = field.name === 'password' ? 'password' : 'text';
+                    const val = (field.value != null) ? String(field.value) : '';
+                    fieldHtml = `<input type="${inputType}" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
+                }
+                break;
+            case this.WebUIFieldType.Number:
+                {
+                    const val = (field.value != null) ? String(field.value) : '';
+                    fieldHtml = `<input type="number" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
+                }
+                break;
+            case this.WebUIFieldType.Float:
+                {
+                    const val = (field.value != null) ? String(field.value) : '';
+                    fieldHtml = `<input type="number" step="any" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
+                }
+                break;
             case this.WebUIFieldType.Select:
                 {
                     const options = (field.options || []).length ? field.options : (typeof field.unit === 'string' && field.unit.includes(',')) ? field.unit.split(',') : [];
@@ -139,6 +182,15 @@ class DomoticsApp {
                     fieldHtml = `<input type="range" id="${field.name}" min="${min}" max="${max}" value="${field.value}" ${field.readOnly ? 'disabled' : ''}>`;
                 }
                  break;
+            case this.WebUIFieldType.Color:
+                {
+                    const val = (field.value != null) ? String(field.value) : '#000000';
+                    fieldHtml = `<input type="color" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
+                }
+                break;
+            case this.WebUIFieldType.Button:
+                fieldHtml = `<button class="btn" id="${field.name}" ${field.readOnly ? 'disabled' : ''}>${field.label}</button>`;
+                break;
             case this.WebUIFieldType.Display:
             default:
                 // Add a data-attribute to uniquely identify the value span for WS updates
@@ -273,7 +325,9 @@ class DomoticsApp {
             this.systemStartTime = Date.now() - system.uptime;
         }
         const deviceNameEl = document.getElementById('deviceName');
-        if (deviceNameEl && system.device_name) deviceNameEl.textContent = system.device_name;
+        if (!this.isEditingDeviceName && deviceNameEl && system.device_name) {
+            deviceNameEl.textContent = system.device_name;
+        }
 
         const footerTextEl = document.getElementById('footerText');
         if (footerTextEl && system.manufacturer && system.version) {
@@ -304,6 +358,8 @@ class DomoticsApp {
                                     inputEl.dispatchEvent(new Event('change', { bubbles: true }));
                                 }
                             } else {
+                                // Do not overwrite if user is currently editing this input
+                                if (document.activeElement === inputEl) return;
                                 if (inputEl.value !== String(value)) {
                                     inputEl.value = value;
                                     // For sliders or other inputs, also trigger change to refresh visuals
@@ -411,22 +467,25 @@ class DomoticsApp {
             if (data.components && data.components.length > 0) {
                 grid.innerHTML = '';
                 const card = document.createElement('div');
-                card.className = 'card';
-                let fieldsHtml = '';
+                card.className = 'card components-card';
+                let fieldsHtml = '<div class="components-list">';
                 data.components.forEach(comp => {
                     const isWebUI = comp.name === 'WebUI';
                     const checked = comp.enabled ? 'checked' : '';
                     const statusClass = comp.enabled ? 'status-success' : 'status-warning';
                     fieldsHtml += `
-                        <div class="field-row" data-comp-name="${comp.name}">
-                            <span class="field-label">${comp.name} (v${comp.version}):</span>
-                            <span class="field-value ${statusClass}">${comp.enabled ? 'Enabled' : 'Disabled'}</span>
-                            <label class="toggle-switch" title="Enable/Disable">
-                                <input type="checkbox" class="comp-toggle" ${checked}>
-                                <span class="slider"></span>
-                            </label>
+                        <div class="field-row comp-row" data-comp-name="${comp.name}">
+                            <div class="comp-col comp-name">${comp.name} <span class="comp-version">v${comp.version}</span></div>
+                            <div class="comp-col comp-status"><span class="field-value ${statusClass}">${comp.enabled ? 'Enabled' : 'Disabled'}</span></div>
+                            <div class="comp-col comp-toggle">
+                                <label class="toggle-switch" title="Enable/Disable">
+                                    <input type="checkbox" class="comp-toggle" ${checked}>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
                         </div>`;
                 });
+                fieldsHtml += '</div>';
                 card.innerHTML = `
                     <div class="card-header">
                         <h3 class="card-title">Registered Components</h3>
@@ -447,6 +506,14 @@ class DomoticsApp {
                             const ok = window.confirm('Disabling WebUI may make the UI inaccessible until reboot/reset. Continue?');
                             if (!ok) {
                                 e.target.checked = true; // revert
+                                return;
+                            }
+                        }
+                        // Confirmation for disabling Wifi
+                        if (name === 'Wifi' && e.target.checked === false) {
+                            const ok = window.confirm('Disabling Wifi will stop network connectivity (except AP if enabled). Continue?');
+                            if (!ok) {
+                                e.target.checked = true;
                                 return;
                             }
                         }
@@ -493,13 +560,22 @@ class DomoticsApp {
             const el = card.querySelector(`#${field.name}`);
             if (!el) return;
 
-            const eventType = (field.type === this.WebUIFieldType.Slider) ? 'input' : 'change';
+            const eventType = (field.type === this.WebUIFieldType.Slider) ? 'input' : (field.type === this.WebUIFieldType.Button ? 'click' : 'change');
 
             el.addEventListener(eventType, (e) => {
                 // Ignore programmatically dispatched events to prevent feedback loops
                 if (!e.isTrusted) return;
-                let value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+                let value;
+                if (field.type === this.WebUIFieldType.Button) {
+                    value = 'clicked';
+                } else {
+                    value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+                }
                 this.sendUICommand(context.contextId, field.name, value);
+                // Apply theme immediately on client side when changed from settings
+                if (context.contextId === 'webui_settings' && field.name === 'theme') {
+                    this.applyTheme(value);
+                }
             });
         });
     }
@@ -514,6 +590,7 @@ class DomoticsApp {
         input.type = 'text';
         input.value = currentName;
         input.className = 'device-name-input';
+        this.isEditingDeviceName = true;
         
         const saveName = () => {
             const newName = input.value.trim();
@@ -524,6 +601,7 @@ class DomoticsApp {
             } else {
                 element.textContent = currentName; // Revert if empty or unchanged
             }
+            this.isEditingDeviceName = false;
         };
 
         input.addEventListener('blur', saveName);
@@ -533,6 +611,7 @@ class DomoticsApp {
             } else if (e.key === 'Escape') {
                 element.textContent = currentName;
                 input.removeEventListener('blur', saveName); // prevent saving on blur
+                this.isEditingDeviceName = false;
             }
         });
 

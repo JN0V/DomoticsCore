@@ -271,6 +271,12 @@ public:
             serializeJson(doc, json);
             return json;
         }
+        if (contextId == "webui_settings") {
+            JsonDocument doc;
+            doc["device_name"] = config.deviceName;
+            doc["theme"] = config.theme;
+            String json; serializeJson(doc, json); return json;
+        }
         return "{}"; 
     }
 

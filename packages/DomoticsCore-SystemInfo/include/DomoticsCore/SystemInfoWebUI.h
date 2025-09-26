@@ -77,6 +77,19 @@ public:
 
         const auto& metrics = sys->getMetrics();
         if (sys->isDetailedInfoEnabled()) {
+            // Component detail card so it shows in the Components tab
+            WebUIContext detail;
+            detail.contextId = "system_component";
+            detail.title = "System Info";
+            detail.icon = "fas fa-microchip";
+            detail.location = WebUILocation::ComponentDetail;
+            detail.presentation = WebUIPresentation::Card;
+            detail
+                .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Display, sys->getFormattedUptimePublic(), ""))
+                .withField(WebUIField("heap", "Free Heap", WebUIFieldType::Display, sys->formatBytesPublic(metrics.freeHeap), ""))
+                .withRealTime(sys->getUpdateInterval());
+            contexts.push_back(detail);
+
             contexts.push_back(WebUIContext::dashboard("system_overview", "System Overview")
                 .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Display))
                 .withField(WebUIField("heap", "Free Heap", WebUIFieldType::Display, "", "KB"))
@@ -109,6 +122,13 @@ public:
         if (!sys) return "{}";
         const auto& metrics = sys->getMetrics();
         updateChartData();
+
+        if (contextId == "system_component") {
+            JsonDocument doc;
+            doc["uptime"] = sys->getFormattedUptimePublic();
+            doc["heap"] = sys->formatBytesPublic(metrics.freeHeap);
+            String json; serializeJson(doc, json); return json;
+        }
 
         if (contextId == "system_overview") {
             JsonDocument doc;
