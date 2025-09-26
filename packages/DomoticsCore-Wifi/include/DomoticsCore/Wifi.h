@@ -33,6 +33,9 @@ private:
     bool apEnabled;
     String apSSID_;
     String apPassword_;
+    // Non-blocking scan state
+    bool scanInProgress = false;
+    String lastScanSummary_;
     static const unsigned long CONNECTION_TIMEOUT = 15000; // 15 seconds
     
 public:
@@ -80,7 +83,7 @@ public:
     void loop() override {
         // Skip Wifi connection logic if in AP mode (empty SSID)
         if (ssid.isEmpty()) {
-            return; // AP mode - no connection attempts needed
+            return; // AP-only mode handled; flags set in connectToWifi()
         }
         
         // Handle ongoing connection attempt
@@ -117,6 +120,26 @@ public:
             } else {
                 DLOG_D(LOG_CORE, "Wifi disconnected - status: %s", 
                       getConnectionStatusString().c_str());
+            }
+        }
+
+        // Poll async scan completion without blocking
+        if (scanInProgress) {
+            int res = WiFi.scanComplete();
+            if (res == WIFI_SCAN_FAILED) {
+                DLOG_W(LOG_CORE, "Wifi async scan failed");
+                lastScanSummary_ = "Scan failed";
+                scanInProgress = false;
+            } else if (res >= 0) {
+                String summary;
+                for (int i = 0; i < res && i < 10; ++i) {
+                    if (i) summary += ", ";
+                    summary += WiFi.SSID(i) + " (" + String(WiFi.RSSI(i)) + " dBm)";
+                }
+                lastScanSummary_ = summary;
+                WiFi.scanDelete();
+                scanInProgress = false;
+                DLOG_I(LOG_CORE, "Async scan complete: %d networks", res);
             }
         }
     }
@@ -172,6 +195,8 @@ public:
         // In station mode, return station SSID
         return WiFi.SSID();
     }
+    // Configured (target) SSID string (not necessarily connected)
+    String getConfiguredSSID() const { return ssid; }
     
     int32_t getRSSI() const {
         return WiFi.RSSI();
@@ -179,6 +204,18 @@ public:
     
     String getMacAddress() const {
         return WiFi.macAddress();
+    }
+
+    // Update credentials and (optionally) start reconnecting
+    void setCredentials(const String& newSsid, const String& newPassword, bool reconnectNow = true) {
+        ssid = newSsid;
+        password = newPassword;
+        if (reconnectNow) {
+            shouldConnect = true;
+            isConnecting = false;
+            reconnectTimer.reset();
+            startConnection();
+        }
     }
     
     // INetworkProvider interface implementation
@@ -278,6 +315,17 @@ public:
         
         return true;
     }
+
+    // Start non-blocking scan (returns immediately)
+    void startScanAsync() {
+        if (scanInProgress) return;
+        WiFi.scanNetworks(true /* async */);
+        scanInProgress = true;
+        lastScanSummary_ = "Scanning...";
+        DLOG_I(LOG_CORE, "Started async WiFi scan");
+    }
+
+    String getLastScanSummary() const { return lastScanSummary_; }
     
     bool isSTAAPMode() const {
         return WiFi.getMode() == WIFI_AP_STA;
@@ -353,6 +401,10 @@ private:
             WiFi.softAP(apSSID.c_str()); // No password for easy access
             DLOG_I(LOG_CORE, "AP mode started: %s (open network)", apSSID.c_str());
             DLOG_I(LOG_CORE, "AP IP address: %s", WiFi.softAPIP().toString().c_str());
+            // Reflect state in internal flags so UI initial values are correct
+            apEnabled = true;
+            wifiEnabled = false;
+            apSSID_ = apSSID;
             return ComponentStatus::Success;
         }
         
