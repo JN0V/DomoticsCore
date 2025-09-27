@@ -1,0 +1,96 @@
+var namespaceDomoticsCore_1_1Components =
+[
+    [ "WebUI", "namespaceDomoticsCore_1_1Components_1_1WebUI.html", "namespaceDomoticsCore_1_1Components_1_1WebUI" ],
+    [ "ConfigParam", "structDomoticsCore_1_1Components_1_1ConfigParam.html", "structDomoticsCore_1_1Components_1_1ConfigParam" ],
+    [ "ComponentMetadata", "structDomoticsCore_1_1Components_1_1ComponentMetadata.html", "structDomoticsCore_1_1Components_1_1ComponentMetadata" ],
+    [ "ValidationResult", "structDomoticsCore_1_1Components_1_1ValidationResult.html", "structDomoticsCore_1_1Components_1_1ValidationResult" ],
+    [ "ComponentConfig", "classDomoticsCore_1_1Components_1_1ComponentConfig.html", "classDomoticsCore_1_1Components_1_1ComponentConfig" ],
+    [ "ComponentRegistry", "classDomoticsCore_1_1Components_1_1ComponentRegistry.html", "classDomoticsCore_1_1Components_1_1ComponentRegistry" ],
+    [ "IComponent", "classDomoticsCore_1_1Components_1_1IComponent.html", "classDomoticsCore_1_1Components_1_1IComponent" ],
+    [ "WebUIField", "structDomoticsCore_1_1Components_1_1WebUIField.html", "structDomoticsCore_1_1Components_1_1WebUIField" ],
+    [ "WebUIContext", "structDomoticsCore_1_1Components_1_1WebUIContext.html", "structDomoticsCore_1_1Components_1_1WebUIContext" ],
+    [ "IWebUIProvider", "classDomoticsCore_1_1Components_1_1IWebUIProvider.html", "classDomoticsCore_1_1Components_1_1IWebUIProvider" ],
+    [ "WebUIConfig", "structDomoticsCore_1_1Components_1_1WebUIConfig.html", "structDomoticsCore_1_1Components_1_1WebUIConfig" ],
+    [ "WebUIComponent", "classDomoticsCore_1_1Components_1_1WebUIComponent.html", "classDomoticsCore_1_1Components_1_1WebUIComponent" ],
+    [ "WebUIContent", "classDomoticsCore_1_1Components_1_1WebUIContent.html", null ],
+    [ "INetworkProvider", "classDomoticsCore_1_1Components_1_1INetworkProvider.html", "classDomoticsCore_1_1Components_1_1INetworkProvider" ],
+    [ "WifiComponent", "classDomoticsCore_1_1Components_1_1WifiComponent.html", "classDomoticsCore_1_1Components_1_1WifiComponent" ],
+    [ "StorageEntry", "structDomoticsCore_1_1Components_1_1StorageEntry.html", "structDomoticsCore_1_1Components_1_1StorageEntry" ],
+    [ "StorageConfig", "structDomoticsCore_1_1Components_1_1StorageConfig.html", "structDomoticsCore_1_1Components_1_1StorageConfig" ],
+    [ "StorageComponent", "classDomoticsCore_1_1Components_1_1StorageComponent.html", "classDomoticsCore_1_1Components_1_1StorageComponent" ],
+    [ "SystemInfoConfig", "structDomoticsCore_1_1Components_1_1SystemInfoConfig.html", "structDomoticsCore_1_1Components_1_1SystemInfoConfig" ],
+    [ "SystemInfoComponent", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html", "classDomoticsCore_1_1Components_1_1SystemInfoComponent" ],
+    [ "LEDColor", "structDomoticsCore_1_1Components_1_1LEDColor.html", "structDomoticsCore_1_1Components_1_1LEDColor" ],
+    [ "LEDConfig", "structDomoticsCore_1_1Components_1_1LEDConfig.html", "structDomoticsCore_1_1Components_1_1LEDConfig" ],
+    [ "LEDState", "structDomoticsCore_1_1Components_1_1LEDState.html", "structDomoticsCore_1_1Components_1_1LEDState" ],
+    [ "LEDComponent", "classDomoticsCore_1_1Components_1_1LEDComponent.html", "classDomoticsCore_1_1Components_1_1LEDComponent" ],
+    [ "LEDWebUI", "classDomoticsCore_1_1Components_1_1LEDWebUI.html", "classDomoticsCore_1_1Components_1_1LEDWebUI" ],
+    [ "ComponentStatus", "namespaceDomoticsCore_1_1Components.html#a14cd1d73544a2113003897ac9901e68f", [
+      [ "Success", "namespaceDomoticsCore_1_1Components.html#a14cd1d73544a2113003897ac9901e68fa505a83f220c02df2f85c3810cd9ceb38", null ],
+      [ "ConfigError", "namespaceDomoticsCore_1_1Components.html#a14cd1d73544a2113003897ac9901e68fa1053efdc7a34708782767df3ed95cded", null ],
+      [ "HardwareError", "namespaceDomoticsCore_1_1Components.html#a14cd1d73544a2113003897ac9901e68fa4852946e074a1f48ed7de9a024b10c03", null ],
+      [ "DependencyError", "namespaceDomoticsCore_1_1Components.html#a14cd1d73544a2113003897ac9901e68fa18d3f9583cabb21bf67be189f4e0669d", null ],
+      [ "NetworkError", "namespaceDomoticsCore_1_1Components.html#a14cd1d73544a2113003897ac9901e68fa47423b8444592efbe331550c5620e821", null ],
+      [ "MemoryError", "namespaceDomoticsCore_1_1Components.html#a14cd1d73544a2113003897ac9901e68facedcbd07d779d35295f55a5b5de1e855", null ],
+      [ "TimeoutError", "namespaceDomoticsCore_1_1Components.html#a14cd1d73544a2113003897ac9901e68fa2ce01afd7e833fc13c63448689ea762a", null ],
+      [ "InvalidState", "namespaceDomoticsCore_1_1Components.html#a14cd1d73544a2113003897ac9901e68faedf260198e4d75d1cb3c7588f7380120", null ],
+      [ "NotSupported", "namespaceDomoticsCore_1_1Components.html#a14cd1d73544a2113003897ac9901e68fa9ed2d871602556951e39f3cebd08d6cb", null ]
+    ] ],
+    [ "ConfigType", "namespaceDomoticsCore_1_1Components.html#a69ef7647de0d429619dc2baa956ca24e", [
+      [ "String", "namespaceDomoticsCore_1_1Components.html#a69ef7647de0d429619dc2baa956ca24ea27118326006d3829667a400ad23d5d98", null ],
+      [ "Integer", "namespaceDomoticsCore_1_1Components.html#a69ef7647de0d429619dc2baa956ca24eaa0faef0851b4294c06f2b94bb1cb2044", null ],
+      [ "Float", "namespaceDomoticsCore_1_1Components.html#a69ef7647de0d429619dc2baa956ca24ea22ae0e2b89e5e3d477f988cc36d3272b", null ],
+      [ "Boolean", "namespaceDomoticsCore_1_1Components.html#a69ef7647de0d429619dc2baa956ca24ea27226c864bac7454a8504f8edb15d95b", null ],
+      [ "IPAddress", "namespaceDomoticsCore_1_1Components.html#a69ef7647de0d429619dc2baa956ca24ea75421680cf281bbdcd7897f4506943b8", null ],
+      [ "Port", "namespaceDomoticsCore_1_1Components.html#a69ef7647de0d429619dc2baa956ca24ea60aaf44d4b562252c04db7f98497e9aa", null ]
+    ] ],
+    [ "LEDEffect", "namespaceDomoticsCore_1_1Components.html#a1c7bd4cb2d9dd454afe268c126fedcd3", [
+      [ "Solid", "namespaceDomoticsCore_1_1Components.html#a1c7bd4cb2d9dd454afe268c126fedcd3ae41480b6bbfbf7407974a88d3d34f4fa", null ],
+      [ "Blink", "namespaceDomoticsCore_1_1Components.html#a1c7bd4cb2d9dd454afe268c126fedcd3acfad0a7419f44ea0c64db24197abbf70", null ],
+      [ "Fade", "namespaceDomoticsCore_1_1Components.html#a1c7bd4cb2d9dd454afe268c126fedcd3a04e0385c10aefee8e4681617d2f3ef40", null ],
+      [ "Pulse", "namespaceDomoticsCore_1_1Components.html#a1c7bd4cb2d9dd454afe268c126fedcd3aec8374db32bacb4cd9760199ec42819e", null ],
+      [ "Rainbow", "namespaceDomoticsCore_1_1Components.html#a1c7bd4cb2d9dd454afe268c126fedcd3a4aca5ee9a087fb9218bfb662fe92605c", null ],
+      [ "Breathing", "namespaceDomoticsCore_1_1Components.html#a1c7bd4cb2d9dd454afe268c126fedcd3abd287902a5fab6250f112d5312368348", null ]
+    ] ],
+    [ "StorageValueType", "namespaceDomoticsCore_1_1Components.html#a1922b619324d61a0207aec256a910910", [
+      [ "String", "namespaceDomoticsCore_1_1Components.html#a1922b619324d61a0207aec256a910910a27118326006d3829667a400ad23d5d98", null ],
+      [ "Integer", "namespaceDomoticsCore_1_1Components.html#a1922b619324d61a0207aec256a910910aa0faef0851b4294c06f2b94bb1cb2044", null ],
+      [ "Float", "namespaceDomoticsCore_1_1Components.html#a1922b619324d61a0207aec256a910910a22ae0e2b89e5e3d477f988cc36d3272b", null ],
+      [ "Boolean", "namespaceDomoticsCore_1_1Components.html#a1922b619324d61a0207aec256a910910a27226c864bac7454a8504f8edb15d95b", null ],
+      [ "Blob", "namespaceDomoticsCore_1_1Components.html#a1922b619324d61a0207aec256a910910ae8016c85ada38bdc5fac616ec1318047", null ]
+    ] ],
+    [ "WebUIFieldType", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175", [
+      [ "Text", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175a9dffbf69ffba8bc38bc4e01abf4b1675", null ],
+      [ "Number", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175ab2ee912b91d69b435159c7c3f6df7f5f", null ],
+      [ "Float", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175a22ae0e2b89e5e3d477f988cc36d3272b", null ],
+      [ "Boolean", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175a27226c864bac7454a8504f8edb15d95b", null ],
+      [ "Select", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175ae0626222614bdee31951d84c64e5e9ff", null ],
+      [ "Slider", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175a2d9b9a764fb0be4be10e1b2fce63f561", null ],
+      [ "Color", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175acb5feb1b7314637725a2e73bdc9f7295", null ],
+      [ "Button", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175a87b7760f14fbff78d8819291f36ab9a0", null ],
+      [ "Display", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175ab9987a246a537f4fe86f1f2e3d10dbdb", null ],
+      [ "Chart", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175a1d36783e12317ed400ebeddeb072a27b", null ],
+      [ "Status", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175aec53a8c4f07baed5d8825072c89799be", null ],
+      [ "Progress", "namespaceDomoticsCore_1_1Components.html#adf8f2807aecb91f0b0a002d59f65e175a46b5f8c58b679b4243cbdb5749642c86", null ]
+    ] ],
+    [ "WebUILocation", "namespaceDomoticsCore_1_1Components.html#aeeabf15d07f6a51a9ad3e47e27cd1d16", [
+      [ "Dashboard", "namespaceDomoticsCore_1_1Components.html#aeeabf15d07f6a51a9ad3e47e27cd1d16a2938c7f7e560ed972f8a4f68e80ff834", null ],
+      [ "ComponentDetail", "namespaceDomoticsCore_1_1Components.html#aeeabf15d07f6a51a9ad3e47e27cd1d16ae11b00e9d47fb02c70189bf52382fa9d", null ],
+      [ "HeaderStatus", "namespaceDomoticsCore_1_1Components.html#aeeabf15d07f6a51a9ad3e47e27cd1d16adf4799007b5adae1ff2fe5dca3bddae9", null ],
+      [ "QuickControls", "namespaceDomoticsCore_1_1Components.html#aeeabf15d07f6a51a9ad3e47e27cd1d16ae12c8db23aac34f2ebfdd879d3192399", null ],
+      [ "Settings", "namespaceDomoticsCore_1_1Components.html#aeeabf15d07f6a51a9ad3e47e27cd1d16af4f70727dc34561dfde1a3c529b6205c", null ]
+    ] ],
+    [ "WebUIPresentation", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448", [
+      [ "Card", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448a1d565b9e5303987bb1b1938d5d458bca", null ],
+      [ "Gauge", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448a948f0edf37b92d0717053d38e5ea12c2", null ],
+      [ "Graph", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448a4cdbd2bafa8193091ba09509cedf94fd", null ],
+      [ "StatusBadge", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448af7adf0eda49c9b32a307b04c3458adcf", null ],
+      [ "ProgressBar", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448a0af8128a43d9b5e2b1d76084b5163ce4", null ],
+      [ "Table", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448a51c45b795d5d18a3e4e0c37e8b20a141", null ],
+      [ "Toggle", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448aa8875bbe4272c0bdd786cfaaedf77921", null ],
+      [ "Slider", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448a2d9b9a764fb0be4be10e1b2fce63f561", null ],
+      [ "Text", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448a9dffbf69ffba8bc38bc4e01abf4b1675", null ],
+      [ "Button", "namespaceDomoticsCore_1_1Components.html#ace4f36f4fae0b78f5a6a6ae2eba8a448a87b7760f14fbff78d8819291f36ab9a0", null ]
+    ] ],
+    [ "statusToString", "namespaceDomoticsCore_1_1Components.html#a3d2d7021b445ffd42109174a9ad41cdb", null ]
+];

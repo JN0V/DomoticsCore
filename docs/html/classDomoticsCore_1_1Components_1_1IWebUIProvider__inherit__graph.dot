@@ -1,0 +1,18 @@
+digraph "DomoticsCore::Components::IWebUIProvider"
+{
+ // LATEX_PDF_SIZE
+  edge [fontname="Helvetica",fontsize="10",labelfontname="Helvetica",labelfontsize="10"];
+  node [fontname="Helvetica",fontsize="10",shape=record];
+  rankdir="LR";
+  Node1 [label="DomoticsCore::Components\l::IWebUIProvider",height=0.2,width=0.4,color="black", fillcolor="grey75", style="filled", fontcolor="black",tooltip="WebUI Provider interface Components implement this to provide multi-context UI integration."];
+  Node1 -> Node2 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node2 [label="DomoticsCore::Components\l::LEDWebUI",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$classDomoticsCore_1_1Components_1_1LEDWebUI.html",tooltip=" "];
+  Node1 -> Node3 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node3 [label="DomoticsCore::Components\l::WebUI::StorageWebUI",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$classDomoticsCore_1_1Components_1_1WebUI_1_1StorageWebUI.html",tooltip=" "];
+  Node1 -> Node4 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node4 [label="DomoticsCore::Components\l::WebUI::SystemInfoWebUI",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$classDomoticsCore_1_1Components_1_1WebUI_1_1SystemInfoWebUI.html",tooltip=" "];
+  Node1 -> Node5 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node5 [label="DomoticsCore::Components\l::WebUI::WifiWebUI",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$classDomoticsCore_1_1Components_1_1WebUI_1_1WifiWebUI.html",tooltip=" "];
+  Node1 -> Node6 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node6 [label="DomoticsCore::Components\l::WebUIComponent",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$classDomoticsCore_1_1Components_1_1WebUIComponent.html",tooltip="Async web server + WebSocket frontend that aggregates IWebUIProvider contexts."];
+}

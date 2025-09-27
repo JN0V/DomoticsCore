@@ -61,6 +61,15 @@ if (webui && wifi) {
 - `void setCredentials(const String& ssid, const String& password, bool reconnectNow=true)`
 - `void startScanAsync()` and `String getLastScanSummary()`
 
+Integration tips:
+- Combine with `DomoticsCore-Storage` to persist WiFi credentials; listen for storage events to reapply.
+- Register the optional WebUI provider wrapper (`WifiWebUI`) via `registerProviderWithComponent()` to keep networking logic decoupled from UI.
+
+## Examples
+
+- `DomoticsCore-Wifi/examples/WifiNoWebUI` – CLI-only control and logging.
+- `DomoticsCore-Wifi/examples/WifiWithWebUI` – demonstrates WebUI settings card, async scanning, and status badges.
+
 ## License
 
 MIT

@@ -1,0 +1,16 @@
+digraph "include/DomoticsCore" {
+  compound=true
+  node [ fontsize="10", fontname="Helvetica"];
+  edge [ labelfontsize="10", labelfontname="Helvetica"];
+  subgraph clusterdir_77e607773e9567a5f422031d324d0fbe {
+    graph [ bgcolor="#ddddee", pencolor="black", label="include" fontname="Helvetica", fontsize="10", URL="dir_77e607773e9567a5f422031d324d0fbe.html"]
+  subgraph clusterdir_3cea6b3def0eec57e482a0967da6b4f8 {
+    graph [ bgcolor="#eeeeff", pencolor="black", label="" URL="dir_3cea6b3def0eec57e482a0967da6b4f8.html"];
+    dir_3cea6b3def0eec57e482a0967da6b4f8 [shape=plaintext label="DomoticsCore"];
+  dir_f4c0420a23bda5f6ce625289ca1826ef [shape=box label="Generated" fillcolor="white" style="filled" URL="dir_f4c0420a23bda5f6ce625289ca1826ef.html"];
+  }
+  }
+  dir_ad1bc51aa286b8e42c9263538f50c9cf [shape=box label="include" fillcolor="white" style="filled" color="red" URL="dir_ad1bc51aa286b8e42c9263538f50c9cf.html"];
+  dir_3cea6b3def0eec57e482a0967da6b4f8->dir_ad1bc51aa286b8e42c9263538f50c9cf [headlabel="3", labeldistance=1.5 headhref="dir_000003_000000.html"];
+  dir_3cea6b3def0eec57e482a0967da6b4f8->dir_f4c0420a23bda5f6ce625289ca1826ef [headlabel="1", labeldistance=1.5 headhref="dir_000003_000013.html"];
+}

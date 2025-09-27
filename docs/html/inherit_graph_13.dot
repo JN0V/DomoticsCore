@@ -1,0 +1,8 @@
+digraph "Graphical Class Hierarchy"
+{
+ // LATEX_PDF_SIZE
+  edge [fontname="Helvetica",fontsize="10",labelfontname="Helvetica",labelfontsize="10"];
+  node [fontname="Helvetica",fontsize="10",shape=record];
+  rankdir="LR";
+  Node0 [label="DomoticsCore::Components\l::WebUI::BaseWebUIComponents",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$classDomoticsCore_1_1Components_1_1WebUI_1_1BaseWebUIComponents.html",tooltip="Base WebUI Components - Reusable UI elements Provides common chart, gauge, switch implementations to ..."];
+}

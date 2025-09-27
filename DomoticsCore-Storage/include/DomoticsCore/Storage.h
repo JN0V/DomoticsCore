@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file Storage.h
+ * @brief Declares the DomoticsCore Storage component built on ESP32 Preferences.
+ */
+
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Timer.h"
 #include <Arduino.h>
@@ -42,9 +47,12 @@ struct StorageConfig {
 };
 
 /**
- * Storage management component for preferences and application data
- * Provides key-value storage using ESP32 Preferences library
- * Header-only implementation - only compiled when included
+ * @class DomoticsCore::Components::StorageComponent
+ * @brief Key-value storage manager wrapping ESP32 Preferences with caching and maintenance.
+ *
+ * Opens an ESP32 Preferences namespace, provides typed getters/setters, optional auto-commit,
+ * and periodic maintenance/status reporting. Can be paired with a WebUI provider to expose
+ * diagnostic data and CRUD helpers.
  */
 class StorageComponent : public IComponent {
 private:

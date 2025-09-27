@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file LED.h
+ * @brief Declares the DomoticsCore LED component for single-color and RGB LED control.
+ */
+
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Timer.h>
 #include <Arduino.h>
@@ -64,6 +69,13 @@ struct LEDState {
     bool effectDirection = true;
 };
 
+/**
+ * @class DomoticsCore::Components::LEDComponent
+ * @brief Drives one or more LEDs (single-color or RGB) with PWM brightness and effects.
+ *
+ * Manages pin initialization, supports named LEDs, and provides built-in effects updated via a
+ * non-blocking timer. Can be paired with a WebUI provider to expose UI controls.
+ */
 class LEDComponent : public IComponent {
 private:
     std::vector<LEDConfig> ledConfigs;
@@ -71,6 +83,9 @@ private:
     Utils::NonBlockingDelay updateTimer;
 
 public:
+    /**
+     * @brief Construct a new LEDComponent with a 20 Hz update timer.
+     */
     LEDComponent() : updateTimer(50) {  // 20Hz update rate
         // Set component metadata
         metadata.name = "LEDComponent";
@@ -87,6 +102,9 @@ public:
     }
     
     // Component lifecycle
+    /**
+     * @brief Validate pin assignments, initialize hardware, and reset state.
+     */
     ComponentStatus begin() override {
         DLOG_I(LOG_CORE, "[LED] Initializing LED component...");
         
@@ -114,17 +132,23 @@ public:
         return ComponentStatus::Success;
     }
     
+    /**
+     * @brief Update LED effects when the non-blocking timer fires.
+     */
     void loop() override {
         if (getLastStatus() != ComponentStatus::Success) return;
-        
+
         if (updateTimer.isReady()) {
             updateEffects();
         }
     }
     
+    /**
+     * @brief Turn off all LEDs and release resources.
+     */
     ComponentStatus shutdown() override {
         DLOG_I(LOG_CORE, "[LED] Shutting down LED component...");
-        
+
         // Turn off all LEDs
         for (size_t i = 0; i < ledConfigs.size(); i++) {
             setLEDOutput(i, LEDColor::Off(), 0);
@@ -135,10 +159,16 @@ public:
     }
     
     // Configuration setup
+    /**
+     * @brief Add a fully-specified LED configuration (single or RGB).
+     */
     void addLED(const LEDConfig& config) {
         ledConfigs.push_back(config);
     }
-    
+
+    /**
+     * @brief Convenience helper to register a single-channel LED.
+     */
     void addSingleLED(int pin, const String& name = "", uint8_t maxBrightness = 255, bool invertLogic = false) {
         LEDConfig config;
         config.pin = pin;
@@ -148,7 +178,10 @@ public:
         config.invertLogic = invertLogic;
         addLED(config);
     }
-    
+
+    /**
+     * @brief Register a three-channel RGB LED using discrete GPIO pins.
+     */
     void addRGBLED(int redPin, int greenPin, int bluePin, const String& name = "", 
                    uint8_t maxBrightness = 255, bool invertLogic = false) {
         LEDConfig config;
@@ -163,15 +196,21 @@ public:
     }
     
     // LED control methods
+    /**
+     * @brief Set LED color/brightness and clear any active effect.
+     */
     bool setLED(size_t ledIndex, const LEDColor& color, uint8_t brightness = 255) {
         if (ledIndex >= ledStates.size()) return false;
-        
+
         ledStates[ledIndex].currentColor = color;
         ledStates[ledIndex].brightness = brightness;
         ledStates[ledIndex].effect = LEDEffect::Solid;
         return true;
     }
-    
+
+    /**
+     * @brief Lookup an LED by name and assign color/brightness.
+     */
     bool setLED(const String& name, const LEDColor& color, uint8_t brightness = 255) {
         for (size_t i = 0; i < ledConfigs.size(); i++) {
             if (ledConfigs[i].name == name) {
@@ -180,17 +219,23 @@ public:
         }
         return false;
     }
-    
+
+    /**
+     * @brief Apply an animated effect to an LED by index.
+     */
     bool setLEDEffect(size_t ledIndex, LEDEffect effect, unsigned long speed = 1000) {
         if (ledIndex >= ledStates.size()) return false;
-        
+
         ledStates[ledIndex].effect = effect;
         ledStates[ledIndex].effectSpeed = speed;
         ledStates[ledIndex].effectPhase = 0.0;
         ledStates[ledIndex].lastUpdate = millis();
         return true;
     }
-    
+
+    /**
+     * @brief Apply an animated effect to an LED by name.
+     */
     bool setLEDEffect(const String& name, LEDEffect effect, unsigned long speed = 1000) {
         for (size_t i = 0; i < ledConfigs.size(); i++) {
             if (ledConfigs[i].name == name) {
@@ -199,7 +244,10 @@ public:
         }
         return false;
     }
-    
+
+    /**
+     * @brief Enable or disable an LED by index (disabled LEDs are forced off).
+     */
     bool enableLED(size_t ledIndex, bool enabled = true) {
         if (ledIndex >= ledStates.size()) return false;
         ledStates[ledIndex].enabled = enabled;
@@ -208,7 +256,10 @@ public:
         }
         return true;
     }
-    
+
+    /**
+     * @brief Enable or disable an LED by name.
+     */
     bool enableLED(const String& name, bool enabled = true) {
         for (size_t i = 0; i < ledConfigs.size(); i++) {
             if (ledConfigs[i].name == name) {
@@ -217,10 +268,15 @@ public:
         }
         return false;
     }
-    
-    // Status and information
+
+    /**
+     * @brief Number of configured LEDs (single or RGB entries).
+     */
     size_t getLEDCount() const { return ledConfigs.size(); }
-    
+
+    /**
+     * @brief Retrieve friendly names for all configured LEDs.
+     */
     std::vector<String> getLEDNames() const {
         std::vector<String> names;
         for (const auto& config : ledConfigs) {
@@ -228,10 +284,13 @@ public:
         }
         return names;
     }
-    
+
+    /**
+     * @brief Compose a human-readable description of an LED state.
+     */
     String getLEDStatus(size_t ledIndex) const {
         if (ledIndex >= ledStates.size()) return "Invalid index";
-        
+
         const auto& state = ledStates[ledIndex];
         const auto& config = ledConfigs[ledIndex];
         

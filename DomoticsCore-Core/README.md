@@ -12,7 +12,13 @@ Core runtime for DomoticsCore: component model, registry, lifecycle, configurati
 
 ## Installation
 
-Include headers with the prefix `DomoticsCore/` from this package in your PlatformIO project.
+- Designed for the Arduino-ESP32 toolchain (C++14). No additional libraries beyond the ESP32 core are required.
+- Include headers with the prefix `DomoticsCore/` from this package in your PlatformIO project:
+
+```cpp
+#include <DomoticsCore/Core.h>
+#include <DomoticsCore/IComponent.h>
+```
 
 ## Quickstart
 
@@ -34,10 +40,24 @@ void loop() {
 }
 ```
 
+Main behaviors:
+- **Component lifecycle**: each component gets `begin()`, `loop()`, `shutdown()` calls from the `Core`.
+- **Registry**: components can be resolved by type or name via `ComponentRegistry`.
+- **Configuration**: components declare typed configuration parameters through `ComponentConfig`.
+- **Event bus**: publish/subscribe enables decoupled messaging between components.
+- **Diagnostics**: `Logger` and `Timer` utilities help with non-blocking work and instrumentation.
+
 ## Public Headers
 
 - `Core.h`, `IComponent.h`, `ComponentRegistry.h`
 - `ComponentConfig.h`, `EventBus.h`, `Timer.h`, `Logger.h`
+
+## Examples
+
+Example projects live under `DomoticsCore-Core/examples/`:
+- `01-CoreOnly` – minimal setup with timers.
+- `02-CoreWithDummyComponent` – demonstrates registering custom components.
+- `03-05` series – event bus basics, coordinators, and testing patterns.
 
 ## License
 
