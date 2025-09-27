@@ -1,0 +1,58 @@
+# Doxyfile for DomoticsCore
+
+PROJECT_NAME           = "DomoticsCore"
+PROJECT_NUMBER         = "1.0"
+OUTPUT_DIRECTORY       = docs/html
+CREATE_SUBDIRS         = NO
+GENERATE_LATEX         = NO
+GENERATE_HTML          = YES
+GENERATE_XML           = NO
+GENERATE_MAN           = NO
+GENERATE_RTF           = NO
+
+INPUT                  = \
+    DomoticsCore-Core/include \
+    DomoticsCore-Core/src \
+    DomoticsCore-WebUI/include \
+    DomoticsCore-Wifi/include \
+    DomoticsCore-Storage/include \
+    DomoticsCore-SystemInfo/include \
+    DomoticsCore-LED/include
+RECURSIVE              = YES
+EXCLUDE_SYMLINKS       = YES
+
+QUIET                  = NO
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+
+INLINE_SOURCES         = NO
+SOURCE_BROWSER         = NO
+REFERENCED_BY_RELATION = NO
+REFERENCES_RELATION    = NO
+
+JAVADOC_AUTOBRIEF      = YES
+OPTIMIZE_OUTPUT_FOR_C  = NO
+OPTIMIZE_OUTPUT_JAVA   = NO
+OPTIMIZE_FOR_FORTRAN   = NO
+OPTIMIZE_OUTPUT_VHDL   = NO
+MARKDOWN_SUPPORT       = YES
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = NO
+
+TAB_SIZE               = 4
+
+HTML_OUTPUT            = .
+HTML_TIMESTAMP         = NO
+GENERATE_TREEVIEW      = YES
+HAVE_DOT              = NO
+
+STRIP_FROM_PATH        = \
+    DomoticsCore-Core \
+    DomoticsCore-WebUI \
+    DomoticsCore-Wifi \
+    DomoticsCore-Storage \
+    DomoticsCore-SystemInfo \
+    DomoticsCore-LED

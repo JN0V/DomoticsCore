@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file SystemInfo.h
+ * @brief Declares the DomoticsCore SystemInfo component for runtime diagnostics.
+ */
+
 #include <Arduino.h>
 #include "DomoticsCore/IComponent.h"
 
@@ -15,6 +20,13 @@ struct SystemInfoConfig {
     int updateInterval = 5000;          // Update interval in ms
 };
 
+/**
+ * @class DomoticsCore::Components::SystemInfoComponent
+ * @brief Collects ESP32 system metrics (uptime, heap, chip info) for dashboards and logs.
+ *
+ * Designed as a lightweight diagnostic component. When paired with a WebUI provider it exposes
+ * real-time metrics across dashboard sections and WebSocket updates.
+ */
 /**
  * Core System Information Component
  * Provides system metrics and hardware information without WebUI dependencies
