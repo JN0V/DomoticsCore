@@ -5,9 +5,6 @@
  * @brief Declares the DomoticsCore WebUI component and supporting types for dashboard integration.
  */
 
-// Enable WebUI features when this component is included
-#define DOMOTICSCORE_WEBUI_ENABLED 1
-
 #include "DomoticsCore/IWebUIProvider.h"
 #include "DomoticsCore/ComponentRegistry.h"
 #include "DomoticsCore/BaseWebUIComponents.h"
@@ -23,9 +20,8 @@
 #include <functional>
 
 #include "DomoticsCore/IComponent.h"
-#include "DomoticsCore/IWebUIProvider.h"
 #include "DomoticsCore/Logger.h"
-#include "DomoticsCore/WebUIContent.h"
+#include "DomoticsCore/Generated/WebUIAssets.h"
 
 namespace DomoticsCore {
 namespace Components {
@@ -392,7 +388,7 @@ private:
                 serveFromFileSystem(request, "/webui/index.html", "text/html");
             } else {
                 auto* resp = request->beginResponse(200, "text/html",
-                    WebUIContent::htmlGz(), WebUIContent::htmlGzLen());
+                    WEBUI_HTML_GZ, WEBUI_HTML_GZ_LEN);
                 resp->addHeader("Content-Encoding", "gzip");
                 resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
                 request->send(resp);
@@ -405,7 +401,7 @@ private:
                 serveFromFileSystem(request, "/webui/style.css", "text/css");
             } else {
                 auto* resp = request->beginResponse(200, "text/css",
-                    WebUIContent::cssGz(), WebUIContent::cssGzLen());
+                    WEBUI_CSS_GZ, WEBUI_CSS_GZ_LEN);
                 resp->addHeader("Content-Encoding", "gzip");
                 resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
                 request->send(resp);
@@ -418,7 +414,7 @@ private:
                 serveFromFileSystem(request, "/webui/app.js", "application/javascript");
             } else {
                 auto* resp = request->beginResponse(200, "application/javascript",
-                    WebUIContent::jsGz(), WebUIContent::jsGzLen());
+                    WEBUI_JS_GZ, WEBUI_JS_GZ_LEN);
                 resp->addHeader("Content-Encoding", "gzip");
                 resp->addHeader("Cache-Control", "public, max-age=86400");
                 request->send(resp);
@@ -621,7 +617,7 @@ private:
                     serveFromFileSystem(request, "/webui/index.html", "text/html");
                 } else {
                     auto* resp = request->beginResponse(200, "text/html",
-                        WebUIContent::htmlGz(), WebUIContent::htmlGzLen());
+                        WEBUI_HTML_GZ, WEBUI_HTML_GZ_LEN);
                     resp->addHeader("Content-Encoding", "gzip");
                     resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
                     request->send(resp);
