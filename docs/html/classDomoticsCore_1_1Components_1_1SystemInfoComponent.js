@@ -1,0 +1,28 @@
+var classDomoticsCore_1_1Components_1_1SystemInfoComponent =
+[
+    [ "SystemMetrics", "structDomoticsCore_1_1Components_1_1SystemInfoComponent_1_1SystemMetrics.html", "structDomoticsCore_1_1Components_1_1SystemInfoComponent_1_1SystemMetrics" ],
+    [ "SystemInfoComponent", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a2f9a8e999f995fef6be7cd9e9eda5afd", null ],
+    [ "begin", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a966fa662beda3fd47a08573147b8948f", null ],
+    [ "calculateCpuLoad", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a1c0065aab86ca385774a67799c48eabd", null ],
+    [ "forceUpdateMetrics", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a7527f41502cd9dc34898a9011820c2b4", null ],
+    [ "formatBytes", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a1710c3e8aff5e7c07019ae1af562edfb", null ],
+    [ "formatBytesPublic", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#acbb6de4aaddc4bad21fc1d12ee9cb7fd", null ],
+    [ "getFormattedUptime", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a5916011b7bac1e57ee65eb2902b8be15", null ],
+    [ "getFormattedUptimePublic", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a8e37eb711ffd55f9a085af85fd978358", null ],
+    [ "getMetrics", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a46849c89ecb14feaf1cde532ec05d77f", null ],
+    [ "getName", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a7880884d2ed1650b87d974a57beeaac7", null ],
+    [ "getSystemConfig", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a99e9a18bfb59845d65ed734b928534f0", null ],
+    [ "getTypeKey", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a28023c718ef78174fae26404156a69e5", null ],
+    [ "getUpdateInterval", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a1270673b641cafed6e5c9f2638af04ce", null ],
+    [ "getVersion", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a391214ee0a49512ead0da73cbba5b4a3", null ],
+    [ "isDetailedInfoEnabled", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a828e90d9272e06944e0d78ba74c9d59a", null ],
+    [ "isMemoryInfoEnabled", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#afdc0df2fcf3d0867d8beddcdb04f31bd", null ],
+    [ "loop", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a22d1e32d3a68b19f7688f01fad1f8e80", null ],
+    [ "shutdown", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a9dd8243266f66930fc8172207c52288b", null ],
+    [ "config", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a5653cb961c9210d40c162f5cb4f638d6", null ],
+    [ "cpuLoadEma", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#ad37c3694a964e6fb33a03732e1faf85f", null ],
+    [ "lastHeapCheck", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#a5d215d04862f3009630cf7affaf7d69e", null ],
+    [ "lastHeapValue", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#ad29d58f199cc1bd06310c787128f808f", null ],
+    [ "lastUpdate", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#af512f4299f6f5d5fb6567f659ab1a3d4", null ],
+    [ "metrics", "classDomoticsCore_1_1Components_1_1SystemInfoComponent.html#ae999e1e3cbf2a131cc8325f7f630bdd8", null ]
+];

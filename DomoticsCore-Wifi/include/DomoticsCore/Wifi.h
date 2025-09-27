@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file Wifi.h
+ * @brief Declares the DomoticsCore WiFi component providing STA/AP management and async scanning.
+ */
+
 #include <Arduino.h>
 #include <WiFi.h>
 #include "INetworkProvider.h"
@@ -12,9 +17,12 @@ namespace DomoticsCore {
 namespace Components {
 
 /**
- * Wifi connectivity component
- * Provides Wifi connection management with automatic reconnection
- * Header-only implementation - only compiled when included
+ * @class DomoticsCore::Components::WifiComponent
+ * @brief Manages WiFi connectivity for ESP32, including STA/AP modes and async scanning.
+ *
+ * Handles connection lifecycle, reconnection strategies, and exposes helpers for enabling AP,
+ * switching credentials, and collecting scan results without blocking the event loop. Can be
+ * paired with a WebUI provider to expose runtime settings.
  */
 class WifiComponent : public IComponent, public INetworkProvider {
 private:

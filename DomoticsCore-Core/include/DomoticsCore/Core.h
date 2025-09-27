@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file Core.h
+ * @brief Declares the DomoticsCore::Core runtime responsible for component lifecycle and registry.
+ */
+
 #include <Arduino.h>
 #include <memory>
 #include "Logger.h"
@@ -18,8 +23,12 @@ struct CoreConfig {
 };
 
 /**
- * DomoticsCore framework with modular component system
- * Provides logging, device configuration, and component management
+ * @class DomoticsCore::Core
+ * @brief Central runtime for the DomoticsCore framework.
+ *
+ * Manages configuration, logging, and registration/lifecycle of components stored in the
+ * `Components::ComponentRegistry`. Provides convenience helpers for accessing components by name
+ * or type and drives their `begin()`, `loop()`, and `shutdown()` methods.
  */
 class Core {
 private:
@@ -28,12 +37,29 @@ private:
     Components::ComponentRegistry componentRegistry;
     
 public:
+    /**
+     * @brief Construct a new Core runtime with default configuration.
+     */
     Core();
+    /**
+     * @brief Clean up and ensure `shutdown()` has been called.
+     */
     ~Core();
     
     // Core lifecycle
+    /**
+     * @brief Initialize logging, store configuration, and start all registered components.
+     * @param cfg Configuration block (device name, ID, log level).
+     * @return true on success, false if any component fails to initialize.
+     */
     bool begin(const CoreConfig& cfg = CoreConfig());
+    /**
+     * @brief Drive the `loop()` method of each registered component.
+     */
     void loop();
+    /**
+     * @brief Stop all components and release resources.
+     */
     void shutdown();
     
     // Configuration access
@@ -45,6 +71,12 @@ public:
     String getDeviceName() const { return config.deviceName; }
     
     // Component management
+    /**
+     * @brief Register a component with the internal registry.
+     * @tparam T Concrete type deriving from `Components::IComponent`.
+     * @param component Ownership of the component to register.
+     * @return true if registration succeeds, false if a duplicate name exists.
+     */
     template<typename T>
     bool addComponent(std::unique_ptr<T> component) {
         static_assert(std::is_base_of<Components::IComponent, T>::value, 
@@ -52,26 +84,48 @@ public:
         return componentRegistry.registerComponent(std::move(component));
     }
     
+    /**
+     * @brief Fetch a component by name regardless of type.
+     * @param name Registered component name.
+     * @return Pointer to the component or nullptr if not found.
+     */
     Components::IComponent* getComponent(const String& name) {
         return componentRegistry.getComponent(name);
     }
     
     template<typename T>
+    /**
+     * @brief Fetch a component by name and cast to the desired type.
+     * @tparam T Target component type deriving from `IComponent`.
+     * @param name Registered component name.
+     * @return Pointer to component cast to T or nullptr if not found.
+     */
     T* getComponent(const String& name) {
         auto* component = componentRegistry.getComponent(name);
         return component ? static_cast<T*>(component) : nullptr;
     }
     
+    /**
+     * @brief Current number of registered components.
+     */
     size_t getComponentCount() const {
         return componentRegistry.getComponentCount();
     }
     
     // Runtime removal support
+    /**
+     * @brief Remove a component by name and invoke its `shutdown()`.
+     * @param name Registered component name.
+     * @return true if a component was removed.
+     */
     bool removeComponent(const String& name) {
         return componentRegistry.removeComponent(name);
     }
     
     // Utility functions - convenience factory for timers
+    /**
+     * @brief Helper to create a `Utils::NonBlockingDelay` with the given interval.
+     */
     static Utils::NonBlockingDelay createTimer(unsigned long intervalMs) {
         return Utils::NonBlockingDelay(intervalMs);
     }

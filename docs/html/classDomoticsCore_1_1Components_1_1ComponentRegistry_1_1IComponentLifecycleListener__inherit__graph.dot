@@ -1,0 +1,9 @@
+digraph "DomoticsCore::Components::ComponentRegistry::IComponentLifecycleListener"
+{
+ // LATEX_PDF_SIZE
+  edge [fontname="Helvetica",fontsize="10",labelfontname="Helvetica",labelfontsize="10"];
+  node [fontname="Helvetica",fontsize="10",shape=record];
+  Node1 [label="DomoticsCore::Components\l::ComponentRegistry::IComponent\lLifecycleListener",height=0.2,width=0.4,color="black", fillcolor="grey75", style="filled", fontcolor="black",tooltip="Listener interface to observe component lifecycle events."];
+  Node1 -> Node2 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node2 [label="DomoticsCore::Components\l::WebUIComponent",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$classDomoticsCore_1_1Components_1_1WebUIComponent.html",tooltip="Async web server + WebSocket frontend that aggregates IWebUIProvider contexts."];
+}

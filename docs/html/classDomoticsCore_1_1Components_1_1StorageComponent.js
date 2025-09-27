@@ -1,0 +1,27 @@
+var classDomoticsCore_1_1Components_1_1StorageComponent =
+[
+    [ "StorageComponent", "classDomoticsCore_1_1Components_1_1StorageComponent.html#aa18dbd244f435ef28275bb3b3a27f099", null ],
+    [ "begin", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a304336a959cbe0db3ae87d442cb74432", null ],
+    [ "clear", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a61c28aeadec0c96ae81b37d3bd71c096", null ],
+    [ "exists", "classDomoticsCore_1_1Components_1_1StorageComponent.html#aeaeded06e9c3265bb0fd989530388076", null ],
+    [ "getBlob", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a58300c39f452f2b68bea80aad7025a6d", null ],
+    [ "getBool", "classDomoticsCore_1_1Components_1_1StorageComponent.html#aae0185cb51e638e8a502e716707c1fc5", null ],
+    [ "getEntryCount", "classDomoticsCore_1_1Components_1_1StorageComponent.html#aa7d26c4ab37ca130e15b55555b0b0e19", null ],
+    [ "getFloat", "classDomoticsCore_1_1Components_1_1StorageComponent.html#ae19e219f05edf3a733f404f252336998", null ],
+    [ "getFreeEntries", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a55ae4673358d071f7dd9ff5a9eb04b7f", null ],
+    [ "getInt", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a20540b10d69a9730a8211363aa3edd37", null ],
+    [ "getKeys", "classDomoticsCore_1_1Components_1_1StorageComponent.html#aa676fa0ba54bc40053852364896c9ff7", null ],
+    [ "getName", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a41cb6e966cce605b8f4c91b060adceab", null ],
+    [ "getNamespace", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a24500576ea8b1a90e9bea3a52887f296", null ],
+    [ "getStorageInfo", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a02f0e9466d9a8a111a2b59b4a53aeba1", null ],
+    [ "getString", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a0839a16cd360b8fc52d0079eb13e7b99", null ],
+    [ "isOpenStorage", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a3a77c6b96273cfec409990e9af0d28c2", null ],
+    [ "loop", "classDomoticsCore_1_1Components_1_1StorageComponent.html#ace78c2e67b7bfbf587a77cf090919433", null ],
+    [ "putBlob", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a8a10a7eea30072eb6530e37d0513316d", null ],
+    [ "putBool", "classDomoticsCore_1_1Components_1_1StorageComponent.html#af3a0afa9d6fa702953e51cf16df9f46c", null ],
+    [ "putFloat", "classDomoticsCore_1_1Components_1_1StorageComponent.html#aaaaf1a516538a12f202cded99f48bc49", null ],
+    [ "putInt", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a5040942d7595f5c6db58097ab7d99e8f", null ],
+    [ "putString", "classDomoticsCore_1_1Components_1_1StorageComponent.html#aa779b971f6dfe089b1e539e69f2fc1d9", null ],
+    [ "remove", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a009877d3d3a0474572a985bc55c672ce", null ],
+    [ "shutdown", "classDomoticsCore_1_1Components_1_1StorageComponent.html#a0e8aad66a6797340d32ea0b120b9121a", null ]
+];

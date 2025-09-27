@@ -83,9 +83,18 @@ This pattern keeps library code clean and lets examples/apps decide how to expos
 - Assets are embedded via `DomoticsCore-WebUI/embed_webui.py` (pre-script). Rebuild examples to refresh embedded files.
 - No extra configuration is required to serve the dashboard.
 
+## Main behaviors
+
+- **Auto discovery**: any component implementing `IWebUIProvider` (or registered via `registerProviderWithComponent()`) is detected during `onComponentsReady()`.
+- **Schema + data**: providers define contexts (`WebUIContext`) while real-time values come from `getWebUIData()`.
+- **WebSocket updates**: system summary plus provider contexts are pushed every `wsUpdateInterval` milliseconds.
+- **Lifecycle awareness**: providers tied to components via `registerProviderWithComponent()` can be enabled/disabled and trigger component `begin()/shutdown()`.
+
 ## Examples
 
 See the examples in each package (e.g. `DomoticsCore-Wifi` → `WifiWithWebUI`) for concrete usage of providers and composed UIs.
+- `DomoticsCore-WebUI/examples/WebUIOnly` – minimal demo showing WebUI without other components.
+- `DomoticsCore-Wifi/examples/WifiWithWebUI` – WiFi component with a dedicated WebUI provider wrapper.
 
 ## License
 

@@ -14,12 +14,14 @@ namespace WebUI {
 class BaseWebUIComponents {
 public:
     /**
-     * Generate a real-time line chart with scrolling data
-     * @param canvasId Canvas element ID
-     * @param title Chart title
-     * @param color Chart line color
-     * @param unit Value unit (%, KB, etc.)
-     * @return Complete HTML/CSS/JS for the chart
+     * Generate a real-time line chart with scrolling data.
+     * @param contextId Unique identifier used for WebSocket updates and DOM hooks.
+     * @param title Card title displayed above the chart.
+     * @param canvasId DOM ID of the `<canvas>` element used for drawing.
+     * @param valueId DOM ID of the `<span>` displaying the current numeric value.
+     * @param color CSS color of the plotted line (defaults to `#007acc`).
+     * @param unit Unit suffix appended to the numeric value (defaults to `%`).
+     * @return WebUI context containing HTML/CSS/JS snippets for the chart.
      */
     static WebUIContext createLineChart(const String& contextId, const String& title, 
                                       const String& canvasId, const String& valueId, 
@@ -32,6 +34,9 @@ public:
     }
 
 private:
+    /**
+     * @brief Build the HTML snippet for the chart card.
+     */
     static String generateChartHtml(const String& title, const String& canvasId, 
                                   const String& valueId, const String& unit) {
         return String(R"(
@@ -48,6 +53,9 @@ private:
         )";
     }
 
+    /**
+     * @brief Provide scoped CSS styles for the chart card.
+     */
     static String generateChartCss() {
         return R"(
             .system-chart {
@@ -80,6 +88,9 @@ private:
         )";
     }
 
+    /**
+     * @brief Produce JavaScript helper functions for rendering and updating the chart.
+     */
     static String generateChartJs(const String& canvasId, const String& color, 
                                 const String& valueId, const String& contextId) {
         return String(R"(

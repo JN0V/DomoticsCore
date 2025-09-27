@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file WebUI.h
+ * @brief Declares the DomoticsCore WebUI component and supporting types for dashboard integration.
+ */
+
 // Enable WebUI features when this component is included
 #define DOMOTICSCORE_WEBUI_ENABLED 1
 
@@ -61,8 +66,11 @@ struct WebUIConfig {
 // WebUIContent is now provided by WebUIContent.h as the single source of truth
 
 /**
- * Optimized WebUI Component with PROGMEM content storage and crash resistance
- * Uses IWebUIProvider interface for modern multi-context support
+ * @class DomoticsCore::Components::WebUIComponent
+ * @brief Async web server + WebSocket frontend that aggregates `IWebUIProvider` contexts.
+ *
+ * Serves embedded HTML/CSS/JS assets, registers component providers, and pushes real-time updates
+ * to connected clients. Acts as both a component and a provider to expose global WebUI settings.
  */
 class WebUIComponent : public IComponent, public virtual IWebUIProvider, public Components::ComponentRegistry::IComponentLifecycleListener {
 private:
@@ -84,9 +92,15 @@ private:
     unsigned long lastWebSocketUpdate = 0;
 
 public:
+    /**
+     * @brief Construct a WebUI component with the provided configuration.
+     */
     WebUIComponent(const WebUIConfig& cfg = WebUIConfig()) 
         : config(cfg) {}
 
+    /**
+     * @brief Release the AsyncWebServer and WebSocket instances.
+     */
     ~WebUIComponent() {
         if (webSocket) {
             delete webSocket;
@@ -97,6 +111,9 @@ public:
     }
 
     // IComponent interface
+    /**
+     * @brief Initialize the AsyncWebServer, register websocket handler, and configure routes.
+     */
     ComponentStatus begin() override {
         server = new AsyncWebServer(config.port);
         
@@ -115,6 +132,9 @@ public:
         return ComponentStatus::Success;
     }
 
+    /**
+     * @brief Pump periodic websocket updates and clean up disconnected clients.
+     */
     void loop() override {
         if (config.enableWebSocket && webSocket && 
             millis() - lastWebSocketUpdate >= config.wsUpdateInterval) {
@@ -127,6 +147,9 @@ public:
         }
     }
 
+    /**
+     * @brief Stop the web server but keep configuration for potential restart.
+     */
     ComponentStatus shutdown() override {
         if (server) {
             server->end();
@@ -143,6 +166,9 @@ public:
     }
 
     // Provider management
+    /**
+     * @brief Register an `IWebUIProvider` and index all of its contexts.
+     */
     void registerProvider(IWebUIProvider* provider) {
         if (!provider) return;
 
@@ -163,6 +189,9 @@ public:
     }
 
     // Overload to explicitly associate a provider with its component for lifecycle control
+    /**
+     * @brief Register a provider and remember the owning component for lifecycle callbacks.
+     */
     void registerProviderWithComponent(IWebUIProvider* provider, IComponent* component) {
         registerProvider(provider);
         if (provider && component) {
@@ -170,6 +199,9 @@ public:
         }
     }
 
+    /**
+     * @brief Remove all contexts contributed by the given provider without deleting it.
+     */
     void unregisterProvider(IWebUIProvider* provider) {
         if (!provider) return;
         for (auto it = contextProviders.begin(); it != contextProviders.end(); ) {
@@ -182,15 +214,24 @@ public:
         // Keep providerEnabled and providerComponent entries so we can re-enable later
     }
 
+    /**
+     * @brief Number of websocket clients currently connected.
+     */
     int getWebSocketClients() const {
         return webSocket ? webSocket->count() : 0;
     }
 
+    /**
+     * @brief HTTP port used by the AsyncWebServer instance.
+     */
     uint16_t getPort() const { 
         return config.port; 
     }
 
     // Allow applications to register factories for their own components (composition-based UI)
+    /**
+     * @brief Register a factory that can create providers for components with a matching type key.
+     */
     void registerProviderFactory(const String& typeKey, std::function<IWebUIProvider*(IComponent*)> factory) {
         if (!typeKey.isEmpty() && factory) {
             providerFactories[typeKey] = factory;
@@ -198,6 +239,9 @@ public:
     }
 
     // Auto-discovery: register providers for all components exposing a WebUI provider
+    /**
+     * @brief Iterate through the registry and register providers (direct or via factories).
+     */
     void discoverProviders(const Components::ComponentRegistry& registry) {
         auto comps = registry.getAllComponents();
         for (auto* comp : comps) {
@@ -230,6 +274,9 @@ public:
     }
 
     // IComponent override: post-initialization hook
+    /**
+     * @brief Called once all components are ready; auto-discovers providers and subscribes to changes.
+     */
     void onComponentsReady(const Components::ComponentRegistry& registry) override {
         discoverProviders(registry);
         // Subscribe to future add/remove events
@@ -243,6 +290,9 @@ public:
     // Expose as provider for auto-discovery
     IWebUIProvider* getWebUIProvider() override { return this; }
 
+    /**
+     * @brief Define built-in contexts (status badge + settings) for the WebUI component itself.
+     */
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
         
@@ -263,6 +313,9 @@ public:
         return contexts;
     }
 
+    /**
+     * @brief Provide real-time JSON data for the requested context identifier.
+     */
     String getWebUIData(const String& contextId) override { 
         if (contextId == "websocket_status") {
             JsonDocument doc;
@@ -281,6 +334,9 @@ public:
     }
 
     // Registry listener events
+    /**
+     * @brief React to components being added by registering any exposed WebUI provider.
+     */
     void onComponentAdded(IComponent* comp) override {
         if (!comp) return;
         IWebUIProvider* provider = comp->getWebUIProvider();
@@ -288,6 +344,9 @@ public:
             registerProviderWithComponent(provider, comp);
         }
     }
+    /**
+     * @brief When a component is removed, detach and disable its provider contexts.
+     */
     void onComponentRemoved(IComponent* comp) override {
         if (!comp) return;
         // Unregister any providers belonging to this component

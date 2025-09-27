@@ -1,0 +1,32 @@
+digraph "include/DomoticsCore/IComponent.h"
+{
+ // LATEX_PDF_SIZE
+  edge [fontname="Helvetica",fontsize="10",labelfontname="Helvetica",labelfontsize="10"];
+  node [fontname="Helvetica",fontsize="10",shape=record];
+  Node1 [label="include/DomoticsCore\l/IComponent.h",height=0.2,width=0.4,color="black", fillcolor="grey75", style="filled", fontcolor="black",tooltip=" "];
+  Node1 -> Node2 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node2 [label="include/DomoticsCore\l/ComponentRegistry.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$ComponentRegistry_8h.html",tooltip=" "];
+  Node2 -> Node3 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node3 [label="include/DomoticsCore\l/Core.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$Core_8h.html",tooltip="Declares the DomoticsCore::Core runtime responsible for component lifecycle and registry."];
+  Node3 -> Node4 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node4 [label="src/Core.cpp",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$Core_8cpp.html",tooltip=" "];
+  Node2 -> Node5 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node5 [label="include/DomoticsCore\l/WebUI.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$WebUI_8h.html",tooltip="Declares the DomoticsCore WebUI component and supporting types for dashboard integration."];
+  Node1 -> Node5 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node1 -> Node6 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node6 [label="include/DomoticsCore\l/Wifi.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$Wifi_8h.html",tooltip="Declares the DomoticsCore WiFi component providing STA/AP management and async scanning."];
+  Node6 -> Node7 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node7 [label="include/DomoticsCore\l/WifiWebUI.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$WifiWebUI_8h.html",tooltip=" "];
+  Node1 -> Node8 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node8 [label="include/DomoticsCore\l/Storage.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$Storage_8h.html",tooltip="Declares the DomoticsCore Storage component built on ESP32 Preferences."];
+  Node8 -> Node9 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node9 [label="include/DomoticsCore\l/StorageWebUI.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$StorageWebUI_8h.html",tooltip=" "];
+  Node1 -> Node10 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node10 [label="include/DomoticsCore\l/SystemInfo.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$SystemInfo_8h.html",tooltip="Declares the DomoticsCore SystemInfo component for runtime diagnostics."];
+  Node10 -> Node11 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node11 [label="include/DomoticsCore\l/SystemInfoWebUI.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$SystemInfoWebUI_8h.html",tooltip=" "];
+  Node1 -> Node12 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node12 [label="include/DomoticsCore\l/LED.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$LED_8h.html",tooltip="Declares the DomoticsCore LED component for single-color and RGB LED control."];
+  Node12 -> Node13 [dir="back",color="midnightblue",fontsize="10",style="solid",fontname="Helvetica"];
+  Node13 [label="include/DomoticsCore\l/LEDWebUI.h",height=0.2,width=0.4,color="black", fillcolor="white", style="filled",URL="$LEDWebUI_8h.html",tooltip=" "];
+}
