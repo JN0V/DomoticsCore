@@ -78,6 +78,61 @@ if (webui && my) {
 
 This pattern keeps library code clean and lets examples/apps decide how to expose UI.
 
+## Base UI Components
+
+The library provides reusable HTML generators in `BaseWebUIComponents.h` for consistent UI elements:
+
+```cpp
+#include <DomoticsCore/BaseWebUIComponents.h>
+using namespace DomoticsCore::Components::WebUI;
+
+// Progress bars
+html += BaseWebUIComponents::progressBar("myProgress", "Progress", true);
+
+// Toggle switches  
+html += BaseWebUIComponents::toggleSwitch("enabled", "Enabled", true);
+
+// Buttons
+html += BaseWebUIComponents::button("submitBtn", "Submit", true); // primary style
+
+// Text inputs
+html += BaseWebUIComponents::textInput("url", "URL", "https://...");
+
+// Radio groups
+String options[] = {"opt1|Option 1", "opt2|Option 2"};
+html += BaseWebUIComponents::radioGroup("myRadio", "Select", options, 2, 0);
+
+// Range sliders
+html += BaseWebUIComponents::rangeSlider("brightness", "Brightness", 0, 255, 128);
+
+// Select dropdowns
+String opts[] = {"wifi|WiFi", "eth|Ethernet"};
+html += BaseWebUIComponents::selectDropdown("mode", "Mode", opts, 2, 0);
+
+// Field rows (label + value display)
+html += BaseWebUIComponents::fieldRow("Status", "statusValue", "Ready");
+
+// File inputs with button
+html += BaseWebUIComponents::fileInput("fileInput", "selectBtn", "fileName", "Select File");
+
+// Button rows (multiple buttons)
+html += BaseWebUIComponents::buttonRow(
+    BaseWebUIComponents::button("btn1", "Cancel", false) +
+    BaseWebUIComponents::button("btn2", "OK", true)
+);
+
+// Line charts for real-time data
+WebUIContext chart = BaseWebUIComponents::createLineChart(
+    "cpu_chart", "CPU Usage", "cpuCanvas", "cpuValue", "#007acc", "%"
+);
+```
+
+**Benefits:**
+- Consistent styling across all components
+- Theme-aware (dark/light mode via CSS variables)
+- Automatic colon after labels (CSS `::after`)
+- Clean, maintainable code
+
 ## Build notes
 
 - Assets are embedded via `DomoticsCore-WebUI/embed_webui.py` (pre-script). Rebuild examples to refresh embedded files.
