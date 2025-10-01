@@ -376,6 +376,11 @@ class DomoticsApp {
                     });
                 }
             }
+
+            // Dispatch generic component status update event
+            document.dispatchEvent(new CustomEvent('component-status-update', {
+                detail: { contextId, data }
+            }));
         });
     }
 

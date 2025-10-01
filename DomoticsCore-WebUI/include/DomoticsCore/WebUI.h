@@ -234,6 +234,32 @@ public:
         }
     }
 
+    /**
+     * @brief Allow external components to register custom REST API routes served by the WebUI server.
+     * @param uri Request URI (e.g. "/api/custom")
+     * @param method HTTP method to match
+     * @param handler Callback invoked when the route is requested
+     */
+    void registerApiRoute(const String& uri, WebRequestMethod method, ArRequestHandlerFunction handler) {
+        if (!server || uri.isEmpty() || !handler) {
+            return;
+        }
+        server->on(uri.c_str(), method, handler);
+    }
+
+    /**
+     * @brief Register an API route that expects file uploads (multipart/form-data).
+     * @param uri Request URI (e.g. "/api/upload")
+     * @param handler Callback executed after upload completes
+     * @param uploadHandler Upload stream handler receiving file chunks
+     */
+    void registerApiUploadRoute(const String& uri, ArRequestHandlerFunction handler, ArUploadHandlerFunction uploadHandler) {
+        if (!server || uri.isEmpty() || !handler || !uploadHandler) {
+            return;
+        }
+        server->on(uri.c_str(), HTTP_POST, handler, uploadHandler);
+    }
+
     // Auto-discovery: register providers for all components exposing a WebUI provider
     /**
      * @brief Iterate through the registry and register providers (direct or via factories).
