@@ -18,7 +18,8 @@ enum class WebUILocation {
     ComponentDetail,    // Detailed component view  
     HeaderStatus,       // Top-right status indicators
     QuickControls,      // Sidebar quick actions
-    Settings           // Settings/configuration area
+    Settings,           // Settings/configuration area
+    HeaderInfo          // Main header info zone (time, uptime, etc.) - NEW: Added at end to preserve existing enum values
 };
 
 enum class WebUIPresentation {
@@ -183,6 +184,15 @@ struct WebUIContext {
             }
         )");
         
+        return ctx;
+    }
+    
+    /**
+     * Factory for header info items (time, uptime, etc.)
+     * Appears in main header as injectable info zone
+     */
+    static WebUIContext headerInfo(const String& id, const String& label, const String& icon = "dc-info") {
+        WebUIContext ctx(id, label, icon, WebUILocation::HeaderInfo, WebUIPresentation::Text);
         return ctx;
     }
     

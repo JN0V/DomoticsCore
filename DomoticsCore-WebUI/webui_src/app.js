@@ -2,12 +2,11 @@ class DomoticsApp {
     constructor() {
         this.ws = null;
         this.wsReconnectInterval = null;
-        this.systemStartTime = Date.now();
         this.uiSchema = [];
         this.isEditingDeviceName = false;
 
         // Enum mappings from C++ backend
-        this.WebUILocation = { Dashboard: 0, ComponentDetail: 1, HeaderStatus: 2, QuickControls: 3, Settings: 4 };
+        this.WebUILocation = { Dashboard: 0, ComponentDetail: 1, HeaderStatus: 2, QuickControls: 3, Settings: 4, HeaderInfo: 5 };
         this.WebUIFieldType = { Text: 0, Number: 1, Float: 2, Boolean: 3, Select: 4, Slider: 5, Color: 6, Button: 7, Display: 8, Chart: 9, Status: 10, Progress: 11 };
 
         this.init();
@@ -16,8 +15,6 @@ class DomoticsApp {
     async init() {
         this.setupEventListeners();
         this.setupWebSocket();
-        this.updateDateTime();
-        setInterval(() => this.updateDateTime(), 1000);
         await this.loadUISchema();
         // Apply initial theme from schema if available
         this.applyThemeFromSchema();
@@ -47,6 +44,7 @@ class DomoticsApp {
         this.renderSection(this.WebUILocation.ComponentDetail, 'componentsGrid'); // Using ComponentDetail for the 'Components' tab for now
         this.renderSection(this.WebUILocation.Settings, 'settingsGrid');
         this.renderHeaderStatus();
+        this.renderHeaderInfo();
     }
 
     applyTheme(theme) {
@@ -132,6 +130,31 @@ class DomoticsApp {
                 indicator.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><use href="#dc-components"/></svg>`;
             }
             container.appendChild(indicator);
+        });
+    }
+
+    renderHeaderInfo() {
+        const container = document.querySelector('.header-info');
+        if (!container) return;
+        // Clear all to match schema exactly
+        container.innerHTML = '';
+        const infos = this.uiSchema
+            .filter(ctx => ctx.location === this.WebUILocation.HeaderInfo)
+            .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+        infos.forEach(ctx => {
+            const infoItem = document.createElement('span');
+            infoItem.className = 'header-info-item';
+            infoItem.dataset.contextId = ctx.contextId;
+            
+            // Display first field value (time, uptime, etc.)
+            const field = ctx.fields && ctx.fields.length > 0 ? ctx.fields[0] : null;
+            if (field) {
+                infoItem.innerHTML = `
+                    <svg class="icon" viewBox="0 0 1024 1024"><use href="#${ctx.icon || 'dc-info'}"/></svg>
+                    <span class="header-info-value" data-field="${field.name}">${field.value || '--'}</span>
+                `;
+            }
+            container.appendChild(infoItem);
         });
     }
 
@@ -342,6 +365,8 @@ class DomoticsApp {
 
             if (contextSchema.location === this.WebUILocation.HeaderStatus) {
                 this.updateHeaderStatus(contextId, data);
+            } else if (contextSchema.location === this.WebUILocation.HeaderInfo) {
+                this.updateHeaderInfo(contextId, data);
             } else {
                 const card = document.querySelector(`.card[data-context-id='${contextId}']`);
                 if (card) {
@@ -381,6 +406,22 @@ class DomoticsApp {
             document.dispatchEvent(new CustomEvent('component-status-update', {
                 detail: { contextId, data }
             }));
+        });
+    }
+
+    updateHeaderInfo(contextId, data) {
+        const container = document.querySelector('.header-info');
+        if (!container) return;
+
+        let infoItem = container.querySelector(`[data-context-id='${contextId}']`);
+        if (!infoItem) return; // Item should already exist from renderHeaderInfo
+
+        // Update field values
+        Object.entries(data).forEach(([fieldName, value]) => {
+            const valueEl = infoItem.querySelector(`[data-field='${fieldName}']`);
+            if (valueEl) {
+                valueEl.textContent = value || '--';
+            }
         });
     }
 
@@ -437,18 +478,6 @@ class DomoticsApp {
         return String(value);
     }
 
-
-    updateDateTime() {
-        const now = Date.now();
-        const uptime = Math.floor((now - this.systemStartTime) / 1000);
-        const hours = Math.floor(uptime / 3600);
-        const minutes = Math.floor((uptime % 3600) / 60);
-        const seconds = uptime % 60;
-        const uptimeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        
-        const dt = document.getElementById('datetime');
-        if (dt) dt.textContent = `Uptime: ${uptimeStr}`;
-    }
 
     showSection(sectionName) {
         document.querySelectorAll('.content-section').forEach(section => section.classList.remove('active'));
