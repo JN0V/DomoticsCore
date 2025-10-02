@@ -318,14 +318,25 @@ public:
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
         
-        // WebSocket connection status badge (provider-specific styling)
-        contexts.push_back(WebUIContext::statusBadge("websocket_status", "Connection", "dc-plug")
-            .withField(WebUIField("state", "State", WebUIFieldType::Status, (webSocket && webSocket->count() > 0) ? "ON" : "OFF"))
-            .withRealTime(2000)
-            .withCustomCss(R"(
-                .status-indicator[data-context-id='websocket_status'] .status-icon { color: var(--text-secondary); }
-                .status-indicator[data-context-id='websocket_status'].active .status-icon { color: #28a745; filter: drop-shadow(0 0 6px rgba(40,167,69,0.6)); }
-            )"));
+        // Provide default uptime header info item
+        uint32_t seconds = millis() / 1000;
+        uint32_t days = seconds / 86400;
+        seconds %= 86400;
+        uint32_t hours = seconds / 3600;
+        seconds %= 3600;
+        uint32_t minutes = seconds / 60;
+        seconds %= 60;
+        
+        String uptimeStr;
+        if (days > 0) uptimeStr += String(days) + "d ";
+        if (hours > 0 || days > 0) uptimeStr += String(hours) + "h ";
+        if (minutes > 0 || hours > 0 || days > 0) uptimeStr += String(minutes) + "m ";
+        uptimeStr += String(seconds) + "s";
+        
+        contexts.push_back(WebUIContext::headerInfo("webui_uptime", "Uptime", "dc-info")
+            .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Display, uptimeStr, "", true))
+            .withRealTime(1000)
+            .withAPI("/api/webui/uptime"));
         
         // Settings context
         contexts.push_back(WebUIContext::settings("webui_settings", "Web Interface")
@@ -339,13 +350,28 @@ public:
      * @brief Provide real-time JSON data for the requested context identifier.
      */
     String getWebUIData(const String& contextId) override { 
-        if (contextId == "websocket_status") {
+        if (contextId == "webui_uptime") {
             JsonDocument doc;
-            doc["state"] = (webSocket && webSocket->count() > 0) ? "ON" : "OFF";
+            uint32_t seconds = millis() / 1000;
+            uint32_t days = seconds / 86400;
+            seconds %= 86400;
+            uint32_t hours = seconds / 3600;
+            seconds %= 3600;
+            uint32_t minutes = seconds / 60;
+            seconds %= 60;
+            
+            String uptimeStr;
+            if (days > 0) uptimeStr += String(days) + "d ";
+            if (hours > 0 || days > 0) uptimeStr += String(hours) + "h ";
+            if (minutes > 0 || hours > 0 || days > 0) uptimeStr += String(minutes) + "m ";
+            uptimeStr += String(seconds) + "s";
+            
+            doc["uptime"] = uptimeStr;
             String json;
             serializeJson(doc, json);
             return json;
         }
+        
         if (contextId == "webui_settings") {
             JsonDocument doc;
             doc["device_name"] = config.deviceName;
