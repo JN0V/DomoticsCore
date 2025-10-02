@@ -144,8 +144,8 @@ public:
                 setTimeout(updateLEDBulb, 100);
             )"));
 
-        // Header status badge using BaseWebUIComponents
-        contexts.push_back(DomoticsCore::Components::WebUI::BaseWebUIComponents::createStatusBadge("led_status", "LED", "bulb-twotone")
+        // Header status badge using WebUIContext
+        contexts.push_back(WebUIContext::statusBadge("led_status", "LED", "bulb-twotone")
             .withField(WebUIField("state", "State", WebUIFieldType::Status, led->isOn() ? "ON" : "OFF"))
             .withRealTime(1000)
             .withCustomCss(R"(
