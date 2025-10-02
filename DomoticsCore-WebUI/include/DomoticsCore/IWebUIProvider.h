@@ -165,8 +165,25 @@ struct WebUIContext {
         return WebUIContext(id, title, icon, WebUILocation::Dashboard, WebUIPresentation::Gauge);
     }
     
-    static WebUIContext statusBadge(const String& id, const String& title, const String& icon = "fas fa-info") {
-        return WebUIContext(id, title, icon, WebUILocation::HeaderStatus, WebUIPresentation::StatusBadge);
+    static WebUIContext statusBadge(const String& id, const String& title, const String& icon = "dc-info") {
+        WebUIContext ctx(id, title, icon, WebUILocation::HeaderStatus, WebUIPresentation::StatusBadge);
+        
+        // Add SVG rendering by default for custom icons (dc-mqtt, dc-wifi, etc.)
+        ctx.withCustomHtml(String(R"(<svg class="icon status-icon" viewBox="0 0 1024 1024"><use href="#)") + icon + R"("/></svg>)");
+        ctx.withCustomCss(R"(
+            .status-icon {
+                width: 1.2rem;
+                height: 1.2rem;
+                fill: currentColor;
+            }
+            .status-badge {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+        )");
+        
+        return ctx;
     }
     
     static WebUIContext graph(const String& id, const String& title, const String& icon = "fas fa-chart-line") {
