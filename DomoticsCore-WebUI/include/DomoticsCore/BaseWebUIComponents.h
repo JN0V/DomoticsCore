@@ -176,25 +176,6 @@ private:
     }
 
 public:
-    /**
-     * Generate a status badge for header display
-     * @param contextId Context identifier
-     * @param title Badge title
-     * @param icon SVG icon reference
-     * @return WebUI context for status badge
-     */
-    static WebUIContext createStatusBadge(const String& contextId, const String& title, const String& icon) {
-        return WebUIContext::statusBadge(contextId, title, icon)
-            .withCustomHtml(String(R"(<svg class="icon status-icon" viewBox="0 0 1024 1024"><use href="#)") + icon + R"("/></svg>)")
-            .withCustomCss(R"(
-                .status-icon {
-                    transition: all 0.3s ease;
-                }
-                .status-indicator.active .status-icon {
-                    color: var(--primary-color);
-                }
-            )");
-    }
 
     // ========== HTML Element Generators ==========
 

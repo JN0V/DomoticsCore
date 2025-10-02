@@ -264,7 +264,6 @@ body {
 
 .field-row:last-child { border-bottom: none; }
 .field-label { font-weight: 500; color: var(--text-secondary); }
-.field-label::after { content: ': '; }
 .field-value { color: var(--text-primary); font-weight: 600; }
 
 /* Inputs */
