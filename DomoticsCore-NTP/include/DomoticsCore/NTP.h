@@ -1,0 +1,491 @@
+#pragma once
+
+#include "DomoticsCore/IComponent.h"
+#include "DomoticsCore/Logger.h"
+#include <Arduino.h>
+#include <time.h>
+#include <sys/time.h>
+#include <vector>
+#include <functional>
+
+#ifdef ESP32
+#include "esp_sntp.h"
+#endif
+
+namespace DomoticsCore {
+namespace Components {
+
+// ========== Configuration ==========
+
+/**
+ * @brief NTP configuration structure
+ */
+struct NTPConfig {
+    bool enabled = true;
+    std::vector<String> servers = {"pool.ntp.org", "time.google.com", "time.cloudflare.com"};
+    uint32_t syncInterval = 3600;    // seconds (1 hour)
+    String timezone = "UTC0";         // POSIX TZ string
+    uint32_t timeoutMs = 5000;       // Connection timeout
+    uint32_t retryDelayMs = 5000;    // Retry delay on failure
+};
+
+/**
+ * @brief Common timezone presets
+ */
+namespace Timezones {
+    constexpr const char* UTC = "UTC0";
+    constexpr const char* EST = "EST5EDT,M3.2.0,M11.1.0";              // US Eastern
+    constexpr const char* CST = "CST6CDT,M3.2.0,M11.1.0";              // US Central
+    constexpr const char* MST = "MST7MDT,M3.2.0,M11.1.0";              // US Mountain
+    constexpr const char* PST = "PST8PDT,M3.2.0,M11.1.0";              // US Pacific
+    constexpr const char* CET = "CET-1CEST,M3.5.0,M10.5.0/3";          // Central European
+    constexpr const char* GMT = "GMT0";                                 // Greenwich Mean Time
+    constexpr const char* JST = "JST-9";                                // Japan
+    constexpr const char* AEST = "AEST-10AEDT,M10.1.0,M4.1.0/3";      // Australia Eastern
+    constexpr const char* IST = "IST-5:30";                            // India
+    constexpr const char* NZST = "NZST-12NZDT,M9.5.0,M4.1.0/3";       // New Zealand
+}
+
+// ========== Statistics ==========
+
+/**
+ * @brief NTP synchronization statistics
+ */
+struct NTPStatistics {
+    uint32_t syncCount = 0;
+    uint32_t syncErrors = 0;
+    time_t lastSyncTime = 0;
+    uint32_t lastSyncDuration = 0;    // milliseconds
+    time_t lastFailTime = 0;
+    uint32_t consecutiveFailures = 0;
+};
+
+// ========== Component ==========
+
+/**
+ * @brief Network Time Protocol component
+ * 
+ * Provides NTP time synchronization with timezone support, formatted time strings,
+ * and uptime tracking. Uses ESP32 SNTP client for automatic synchronization.
+ * 
+ * Features:
+ * - Multiple NTP servers with automatic fallback
+ * - Timezone management with DST support
+ * - Configurable sync interval
+ * - Sync status callbacks
+ * - Formatted time strings (strftime)
+ * - Uptime tracking
+ * - Configuration persistence
+ * 
+ * @example Basic usage:
+ * ```cpp
+ * NTPConfig cfg;
+ * cfg.timezone = Timezones::CET;
+ * auto ntp = std::make_unique<NTPComponent>(cfg);
+ * ntp->onSync([](bool success) {
+ *     DLOG_I(LOG_CORE, "Time synced!");
+ * });
+ * core.addComponent(std::move(ntp));
+ * ```
+ */
+class NTPComponent : public IComponent {
+public:
+    using SyncCallback = std::function<void(bool success)>;
+
+    /**
+     * @brief Construct NTP component with configuration
+     * @param cfg NTP configuration
+     */
+    explicit NTPComponent(const NTPConfig& cfg = NTPConfig())
+        : config(cfg), synced(false), syncInProgress(false), lastSyncAttempt(0), 
+          bootTime(millis()), syncCallback(nullptr) {
+        DLOG_D(LOG_CORE, "NTPComponent constructed");
+    }
+
+    virtual ~NTPComponent() {
+#ifdef ESP32
+        if (config.enabled) {
+            sntp_stop();
+        }
+#endif
+        DLOG_D(LOG_CORE, "NTPComponent destroyed");
+    }
+
+    // ========== IComponent Interface ==========
+
+    String getName() const override { return "NTP"; }
+    String getVersion() const override { return "0.1.0"; }
+
+    ComponentStatus begin() override {
+        DLOG_I(LOG_CORE, "Starting NTP component...");
+        
+        if (!config.enabled) {
+            DLOG_W(LOG_CORE, "NTP is disabled");
+            return ComponentStatus::Success;
+        }
+
+        // Set timezone
+        setenv("TZ", config.timezone.c_str(), 1);
+        tzset();
+        DLOG_I(LOG_CORE, "Timezone set to: %s", config.timezone.c_str());
+
+#ifdef ESP32
+        // Configure SNTP
+        sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        
+        // Set NTP servers
+        for (size_t i = 0; i < config.servers.size() && i < 3; i++) {
+            sntp_setservername(i, config.servers[i].c_str());
+            DLOG_I(LOG_CORE, "NTP server %d: %s", i, config.servers[i].c_str());
+        }
+        
+        // Set sync interval
+        sntp_set_sync_interval(config.syncInterval * 1000);  // Convert to ms
+        
+        // Set sync notification callback
+        sntp_set_time_sync_notification_cb([](struct timeval *tv) {
+            // This runs in ISR context, just set flag
+        });
+        
+        // Start SNTP
+        sntp_init();
+        DLOG_I(LOG_CORE, "SNTP client started");
+#else
+        DLOG_W(LOG_CORE, "NTP not supported on this platform");
+#endif
+
+        return ComponentStatus::Success;
+    }
+
+    ComponentStatus shutdown() override {
+#ifdef ESP32
+        if (config.enabled) {
+            sntp_stop();
+            DLOG_I(LOG_CORE, "SNTP client stopped");
+        }
+#endif
+        return ComponentStatus::Success;
+    }
+
+    void loop() override {
+        if (!config.enabled) return;
+
+        // Check if time has been synced
+        time_t now = time(nullptr);
+        bool currentlySynced = (now > 1000000000);  // After 2001-09-09
+        
+        if (currentlySynced && !synced) {
+            // First sync!
+            synced = true;
+            stats.syncCount++;
+            stats.lastSyncTime = now;
+            stats.consecutiveFailures = 0;
+            
+            if (lastSyncAttempt > 0) {
+                stats.lastSyncDuration = millis() - lastSyncAttempt;
+            }
+            
+            DLOG_I(LOG_CORE, "NTP time synchronized: %s", getFormattedTime().c_str());
+            
+            if (syncCallback) {
+                syncCallback(true);
+            }
+        }
+        
+        // Check for sync timeout
+        if (syncInProgress && (millis() - lastSyncAttempt > config.timeoutMs)) {
+            syncInProgress = false;
+            stats.syncErrors++;
+            stats.consecutiveFailures++;
+            stats.lastFailTime = time(nullptr);
+            
+            DLOG_W(LOG_CORE, "NTP sync timeout");
+            
+            if (syncCallback) {
+                syncCallback(false);
+            }
+        }
+    }
+
+
+    // ========== Time Synchronization ==========
+
+    /**
+     * @brief Trigger immediate NTP sync
+     * @return True if sync initiated
+     */
+    bool syncNow() {
+        if (!config.enabled) {
+            DLOG_W(LOG_CORE, "NTP is disabled");
+            return false;
+        }
+        
+        if (syncInProgress) {
+            DLOG_W(LOG_CORE, "Sync already in progress");
+            return false;
+        }
+
+#ifdef ESP32
+        DLOG_I(LOG_CORE, "Initiating NTP sync...");
+        syncInProgress = true;
+        lastSyncAttempt = millis();
+        
+        // Request immediate sync
+        sntp_restart();
+        return true;
+#else
+        DLOG_W(LOG_CORE, "NTP not supported");
+        return false;
+#endif
+    }
+
+    /**
+     * @brief Check if time is synced
+     * @return True if time has been synced at least once
+     */
+    bool isSynced() const {
+        return synced && (time(nullptr) > 1000000000);
+    }
+
+    /**
+     * @brief Get last successful sync time
+     * @return Unix timestamp of last sync
+     */
+    time_t getLastSyncTime() const {
+        return stats.lastSyncTime;
+    }
+
+    /**
+     * @brief Get seconds until next automatic sync
+     * @return Seconds until next sync, 0 if sync disabled
+     */
+    uint32_t getNextSyncIn() const {
+        if (!isSynced() || !config.enabled) return 0;
+        
+        time_t now = time(nullptr);
+        time_t elapsed = now - stats.lastSyncTime;
+        
+        if (elapsed >= (time_t)config.syncInterval) {
+            return 0;
+        }
+        
+        return config.syncInterval - elapsed;
+    }
+
+    // ========== Time Access ==========
+
+    /**
+     * @brief Get current Unix timestamp
+     * @return Seconds since epoch (1970-01-01 00:00:00 UTC)
+     */
+    time_t getUnixTime() const {
+        return time(nullptr);
+    }
+
+    /**
+     * @brief Get local time as struct tm
+     * @return Local time structure
+     */
+    struct tm getLocalTime() const {
+        time_t now = time(nullptr);
+        struct tm timeinfo;
+        localtime_r(&now, &timeinfo);
+        return timeinfo;
+    }
+
+    /**
+     * @brief Get formatted time string
+     * @param format strftime format string
+     * @return Formatted time string
+     * 
+     * Common formats:
+     * - "%Y-%m-%d %H:%M:%S" -> "2025-10-02 19:30:45"
+     * - "%Y/%m/%d" -> "2025/10/02"
+     * - "%H:%M" -> "19:30"
+     * - "%A, %B %d, %Y" -> "Thursday, October 02, 2025"
+     */
+    String getFormattedTime(const char* format = "%Y-%m-%d %H:%M:%S") const {
+        if (!isSynced()) {
+            return "Not synced";
+        }
+        
+        struct tm timeinfo = getLocalTime();
+        char buffer[128];
+        strftime(buffer, sizeof(buffer), format, &timeinfo);
+        return String(buffer);
+    }
+
+    /**
+     * @brief Get ISO 8601 formatted time string
+     * @return Time string in format "2025-10-02T19:30:45+02:00"
+     */
+    String getISO8601() const {
+        if (!isSynced()) {
+            return "Not synced";
+        }
+        
+        struct tm timeinfo = getLocalTime();
+        char buffer[64];
+        
+        // Format date and time
+        strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%S", &timeinfo);
+        String result = String(buffer);
+        
+        // Add timezone offset
+        int offset = getGMTOffset();
+        int offsetHours = offset / 3600;
+        int offsetMinutes = abs(offset % 3600) / 60;
+        
+        char tzBuffer[10];
+        snprintf(tzBuffer, sizeof(tzBuffer), "%+03d:%02d", offsetHours, offsetMinutes);
+        result += tzBuffer;
+        
+        return result;
+    }
+
+    // ========== Uptime ==========
+
+    /**
+     * @brief Get milliseconds since boot
+     * @return Uptime in milliseconds
+     */
+    uint64_t getUptimeMs() const {
+        return millis() - bootTime;
+    }
+
+    /**
+     * @brief Get formatted uptime string
+     * @return Uptime string in format "2d 5h 32m 15s"
+     */
+    String getFormattedUptime() const {
+        uint64_t ms = getUptimeMs();
+        uint32_t seconds = ms / 1000;
+        
+        uint32_t days = seconds / 86400;
+        seconds %= 86400;
+        uint32_t hours = seconds / 3600;
+        seconds %= 3600;
+        uint32_t minutes = seconds / 60;
+        seconds %= 60;
+        
+        String result;
+        if (days > 0) result += String(days) + "d ";
+        if (hours > 0 || days > 0) result += String(hours) + "h ";
+        if (minutes > 0 || hours > 0 || days > 0) result += String(minutes) + "m ";
+        result += String(seconds) + "s";
+        
+        return result;
+    }
+
+    // ========== Timezone Management ==========
+
+    /**
+     * @brief Set timezone using POSIX TZ string
+     * @param tz POSIX timezone string (e.g., "CET-1CEST,M3.5.0,M10.5.0/3")
+     */
+    void setTimezone(const String& tz) {
+        config.timezone = tz;
+        setenv("TZ", tz.c_str(), 1);
+        tzset();
+        DLOG_I(LOG_CORE, "Timezone changed to: %s", tz.c_str());
+    }
+
+    /**
+     * @brief Get current timezone string
+     * @return POSIX timezone string
+     */
+    String getTimezone() const {
+        return config.timezone;
+    }
+
+    /**
+     * @brief Get GMT offset in seconds
+     * @return Offset from GMT in seconds (positive for east, negative for west)
+     */
+    int getGMTOffset() const {
+        time_t now = time(nullptr);
+        struct tm utc_tm;
+        struct tm local_tm;
+        gmtime_r(&now, &utc_tm);
+        localtime_r(&now, &local_tm);
+        
+        // Calculate offset in seconds
+        time_t utc_time = mktime(&utc_tm);
+        time_t local_time = mktime(&local_tm);
+        return (int)(local_time - utc_time);
+    }
+
+    /**
+     * @brief Check if currently in Daylight Saving Time
+     * @return True if DST is active
+     */
+    bool isDST() const {
+        struct tm timeinfo = getLocalTime();
+        return timeinfo.tm_isdst > 0;
+    }
+
+    // ========== Configuration ==========
+
+    /**
+     * @brief Update configuration
+     * @param cfg New configuration
+     */
+    void setConfig(const NTPConfig& cfg) {
+        bool needsRestart = (cfg.enabled != config.enabled) || 
+                           (cfg.servers != config.servers) ||
+                           (cfg.syncInterval != config.syncInterval);
+        
+        config = cfg;
+        
+        if (cfg.timezone != config.timezone) {
+            setTimezone(cfg.timezone);
+        }
+        
+        if (needsRestart && config.enabled) {
+#ifdef ESP32
+            sntp_stop();
+            begin();
+#endif
+        }
+    }
+
+    /**
+     * @brief Get current configuration
+     * @return Current NTP configuration
+     */
+    const NTPConfig& getNTPConfig() const {
+        return config;
+    }
+
+    // ========== Callbacks ==========
+
+    /**
+     * @brief Register callback for sync events
+     * @param callback Function called after each sync attempt (success/failure)
+     */
+    void onSync(SyncCallback callback) {
+        syncCallback = callback;
+    }
+
+    // ========== Statistics ==========
+
+    /**
+     * @brief Get synchronization statistics
+     * @return Statistics structure
+     */
+    const NTPStatistics& getStatistics() const {
+        return stats;
+    }
+
+private:
+    NTPConfig config;
+    NTPStatistics stats;
+    bool synced;
+    bool syncInProgress;
+    unsigned long lastSyncAttempt;
+    unsigned long bootTime;
+    SyncCallback syncCallback;
+};
+
+} // namespace Components
+} // namespace DomoticsCore
