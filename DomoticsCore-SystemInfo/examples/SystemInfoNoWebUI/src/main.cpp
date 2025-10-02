@@ -2,12 +2,11 @@
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/SystemInfo.h>
 #include <DomoticsCore/Timer.h>
-#include <memory>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-std::unique_ptr<Core> core;
+Core core;
 
 class SystemInfoDemoComponent : public IComponent {
 private:
@@ -42,14 +41,14 @@ public:
 
 void setup() {
     CoreConfig cfg; cfg.deviceName = "SystemInfoDemo"; cfg.logLevel = 3;
-    core.reset(new Core());
-    core->addComponent(std::unique_ptr<SystemInfoDemoComponent>(new SystemInfoDemoComponent()));
-    if (!core->begin(cfg)) {
+    // Core initialized
+    core.addComponent(std::unique_ptr<SystemInfoDemoComponent>(new SystemInfoDemoComponent()));
+    if (!core.begin(cfg)) {
         DLOG_E(LOG_CORE, "Core initialization failed");
         return;
     }
 }
 
 void loop() {
-    if (core) core->loop();
+    core.loop();
 }

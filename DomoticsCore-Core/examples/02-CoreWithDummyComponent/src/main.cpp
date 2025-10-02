@@ -3,13 +3,12 @@
 #include <DomoticsCore/ComponentRegistry.h>
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Timer.h>
-#include <memory>
 #include "CustomComponents.h"
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-std::unique_ptr<Core> core;
+Core core;
 
 void setup() {
     // Create core with custom device name
@@ -17,26 +16,26 @@ void setup() {
     config.deviceName = "ComponentTestDevice";
     config.logLevel = 3; // INFO level
     
-    core.reset(new Core());
+    // Core initialized
     
     // Add custom components to demonstrate the system
     DLOG_I(LOG_CORE, "Adding custom components...");
     
     // Custom TestComponent instances - no dependencies
-    core->addComponent(createTestComponent("ComponentA", 3000));
+    core.addComponent(createTestComponent("ComponentA", 3000));
     
     // Component B - depends on A
-    core->addComponent(createTestComponent("ComponentB", 4000, {"ComponentA"}));
+    core.addComponent(createTestComponent("ComponentB", 4000, {"ComponentA"}));
     
     // Component C - depends on B (indirect dependency on A)
-    core->addComponent(createTestComponent("ComponentC", 6000, {"ComponentB"}));
+    core.addComponent(createTestComponent("ComponentC", 6000, {"ComponentB"}));
     
     // Add LED blinker component (hardware interaction example)
-    core->addComponent(createLEDBlinker(LED_BUILTIN, 500)); // Fast blink
+    core.addComponent(createLEDBlinker(LED_BUILTIN, 500)); // Fast blink
     
-    DLOG_I(LOG_CORE, "Starting core with %d components...", core->getComponentCount());
+    DLOG_I(LOG_CORE, "Starting core with %d components...", core.getComponentCount());
     
-    if (!core->begin(config)) {
+    if (!core.begin(config)) {
         DLOG_E(LOG_CORE, "Failed to initialize core!");
         return;
     }
@@ -44,16 +43,14 @@ void setup() {
     DLOG_I(LOG_CORE, "Setup complete - all components initialized");
     
     // Demonstrate component access
-    auto* testComp = core->getComponent<TestComponent>("ComponentA");
+    auto* testComp = core.getComponent<TestComponent>("ComponentA");
     if (testComp) {
         testComp->logStatus();
     }
 }
 
 void loop() {
-    if (core) {
-        core->loop();
-    }
+    core.loop();
     
     // Demonstrate runtime component interaction
     static unsigned long lastInteraction = 0;
@@ -62,7 +59,7 @@ void loop() {
         lastInteraction = millis();
         
         // Get and interact with ComponentA
-        auto* compA = core->getComponent<TestComponent>("ComponentA");
+        auto* compA = core.getComponent<TestComponent>("ComponentA");
         if (compA) {
             DLOG_I(LOG_CORE, "=== Component Interaction Demo ===");
             compA->logStatus();
@@ -78,7 +75,7 @@ void loop() {
         // After ~30 seconds, remove ComponentC to demonstrate runtime removal
         if (!removedC && millis() > 30000) {
             DLOG_I(LOG_CORE, "Attempting to remove ComponentC at runtime...");
-            bool ok = core->removeComponent("ComponentC");
+            bool ok = core.removeComponent("ComponentC");
             DLOG_I(LOG_CORE, "%s", ok ? "ComponentC removed successfully" : "ComponentC remove failed");
             removedC = true;
         }

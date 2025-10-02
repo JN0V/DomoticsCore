@@ -2,12 +2,11 @@
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Wifi.h>
 #include <DomoticsCore/Timer.h>
-#include <memory>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-std::unique_ptr<Core> core;
+Core core;
 
 /**
  * Wifi demonstration component showcasing enhanced Wifi functionality
@@ -318,15 +317,15 @@ void setup() {
     config.deviceName = "WifiDemoDevice";
     config.logLevel = 3; // INFO level
     
-    core.reset(new Core());
+    // Core initialized
     
     // Add Wifi demonstration component
     DLOG_I(LOG_CORE, "Adding Wifi demonstration component...");
-    core->addComponent(std::unique_ptr<WifiDemoComponent>(new WifiDemoComponent()));
+    core.addComponent(std::unique_ptr<WifiDemoComponent>(new WifiDemoComponent()));
     
-    DLOG_I(LOG_CORE, "Starting core with %d components...", core->getComponentCount());
+    DLOG_I(LOG_CORE, "Starting core with %d components...", core.getComponentCount());
     
-    if (!core->begin(config)) {
+    if (!core.begin(config)) {
         DLOG_E(LOG_CORE, "Failed to initialize core!");
         return;
     }
@@ -344,9 +343,7 @@ void setup() {
 }
 
 void loop() {
-    if (core) {
-        core->loop();
-    }
+    core.loop();
     
     // Status reporting using non-blocking delay
     static Utils::NonBlockingDelay statusTimer(60000); // 1 minute

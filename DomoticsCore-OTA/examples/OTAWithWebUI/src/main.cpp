@@ -13,7 +13,7 @@
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-std::unique_ptr<Core> core;
+Core core;
 
 void setup() {
     DLOG_I(LOG_CORE, "=== DomoticsCore OTAWithWebUI Starting ===");
@@ -23,22 +23,22 @@ void setup() {
     WiFi.softAP(apSSID.c_str());
     DLOG_I(LOG_CORE, "AP IP: %s", WiFi.softAPIP().toString().c_str());
 
-    core.reset(new Core());
+    // Core initialized
 
     // Web UI component
     WebUIConfig webCfg; webCfg.deviceName = "OTA With WebUI"; webCfg.wsUpdateInterval = 2000;
-    core->addComponent(std::make_unique<WebUIComponent>(webCfg));
+    core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 
     // OTA component with default config
     OTAConfig otaCfg;
-    core->addComponent(std::make_unique<OTAComponent>(otaCfg));
+    core.addComponent(std::make_unique<OTAComponent>(otaCfg));
 
     CoreConfig cfg; cfg.deviceName = "OTAWithWebUI"; cfg.logLevel = 3;
-    core->begin(cfg);
+    core.begin(cfg);
 
     // Register OTA WebUI provider AFTER core begin (so WebUI server is started)
-    auto* webui = core->getComponent<WebUIComponent>("WebUI");
-    auto* ota = core->getComponent<OTAComponent>("OTA");
+    auto* webui = core.getComponent<WebUIComponent>("WebUI");
+    auto* ota = core.getComponent<OTAComponent>("OTA");
     if (webui && ota) {
         // Provide transport-agnostic hooks implemented via HTTPClient here in the app layer
         ota->setManifestFetcher([ota](const String& manifestUrl, String& outJson) -> bool {
@@ -122,5 +122,5 @@ void setup() {
 }
 
 void loop() {
-    if (core) core->loop();
+    core.loop();
 }
