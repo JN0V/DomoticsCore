@@ -97,8 +97,11 @@ body {
 .device-name { font-size: 1.5rem; font-weight: 600; }
 @media (max-width: 767px) { .device-name { font-size: 1.2rem; } }
 
-.header-center { flex: 1; text-align: center; }
-.datetime { font-size: 0.9rem; color: var(--text-secondary); }
+.header-center { flex: 1; display: flex; justify-content: center; align-items: center; }
+.header-info { display: flex; align-items: center; gap: 1rem; font-size: 0.95rem; font-weight: 500; }
+.header-info-item { display: flex; align-items: center; gap: 0.3rem; }
+.header-info-item .icon { width: 1rem; height: 1rem; opacity: 0.7; }
+.header-info-value { color: var(--text-primary); }
 
 .header-right { display: flex; align-items: center; gap: 1rem; }
 .status-indicators { display: flex; gap: 0.5rem; }
