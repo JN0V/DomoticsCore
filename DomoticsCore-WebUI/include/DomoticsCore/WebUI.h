@@ -319,7 +319,7 @@ public:
         std::vector<WebUIContext> contexts;
         
         // WebSocket connection status badge (provider-specific styling)
-        contexts.push_back(DomoticsCore::Components::WebUI::BaseWebUIComponents::createStatusBadge("websocket_status", "Connection", "dc-plug")
+        contexts.push_back(WebUIContext::statusBadge("websocket_status", "Connection", "dc-plug")
             .withField(WebUIField("state", "State", WebUIFieldType::Status, (webSocket && webSocket->count() > 0) ? "ON" : "OFF"))
             .withRealTime(2000)
             .withCustomCss(R"(

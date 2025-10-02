@@ -27,9 +27,9 @@ public:
         if (!wifi) return ctxs;
 
         // Header badge for quick status
-        ctxs.push_back(BaseWebUIComponents::createStatusBadge("wifi_status", "WiFi", "dc-wifi").withRealTime(2000));
+        ctxs.push_back(WebUIContext::statusBadge("wifi_status", "WiFi", "dc-wifi").withRealTime(2000));
         // AP status badge with custom icon
-        ctxs.push_back(BaseWebUIComponents::createStatusBadge("ap_status", "AP", "antenna-radiowaves-left-right").withRealTime(2000));
+        ctxs.push_back(WebUIContext::statusBadge("ap_status", "AP", "antenna-radiowaves-left-right").withRealTime(2000));
 
         // Components tab card
         ctxs.push_back(WebUIContext{

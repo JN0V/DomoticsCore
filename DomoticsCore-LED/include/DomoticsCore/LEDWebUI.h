@@ -47,7 +47,7 @@ public:
         }
 
         // Status badge showing ON/OFF quickly at the top
-        contexts.push_back(DomoticsCore::Components::WebUI::BaseWebUIComponents::createStatusBadge("led_status", "LED", "bulb-twotone")
+        contexts.push_back(WebUIContext::statusBadge("led_status", "LED", "bulb-twotone")
             .withField(WebUIField("state", "State", WebUIFieldType::Status, enabled ? "ON" : "OFF"))
             .withRealTime(1000)
             .withCustomCss(R"(
