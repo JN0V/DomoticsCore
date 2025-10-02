@@ -3,7 +3,6 @@
 #include <DomoticsCore/ComponentRegistry.h>
 #include <DomoticsCore/EventBus.h>
 #include <DomoticsCore/Logger.h>
-#include <memory>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -109,31 +108,31 @@ private:
     uint32_t subId_ = 0;
 };
 
-std::unique_ptr<Core> core;
+Core core;
 
 void setup() {
     CoreConfig cfg;
     cfg.deviceName = "EventBusBasics";
     cfg.logLevel = 3;
 
-    core.reset(new Core());
+    // Core initialized
 
     // Register demo components that communicate via EventBus topics
     // Publisher: emits sensor.update every 2s (sawtooth value)
     std::unique_ptr<IComponent> pub(new PublisherComponent());
-    core->addComponent(std::move(pub));
+    core.addComponent(std::move(pub));
     // Consumer: listens to sensor.update and toggles LED when value >= threshold
     std::unique_ptr<IComponent> cons(new ConsumerComponent());
-    core->addComponent(std::move(cons));
+    core.addComponent(std::move(cons));
     // Wildcard consumer: logs any sensor.* topic
     std::unique_ptr<IComponent> wc(new WildcardConsumer());
-    core->addComponent(std::move(wc));
+    core.addComponent(std::move(wc));
 
-    if (!core->begin(cfg)) {
+    if (!core.begin(cfg)) {
         return;
     }
 }
 
 void loop() {
-    if (core) core->loop();
+    core.loop();
 }

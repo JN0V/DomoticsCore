@@ -4,12 +4,11 @@
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/SystemInfo.h>
 #include <DomoticsCore/SystemInfoWebUI.h>
-#include <memory>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-std::unique_ptr<Core> core;
+Core core;
 
 void setup() {
     DLOG_I(LOG_CORE, "=== DomoticsCore SystemInfoWithWebUI Starting ===");
@@ -24,7 +23,7 @@ void setup() {
         return;
     }
 
-    core.reset(new Core());
+    // Core initialized
 
     // WebUI configuration
     WebUIConfig webCfg;
@@ -33,20 +32,20 @@ void setup() {
     webCfg.enableWebSocket = true;
     webCfg.wsUpdateInterval = 2000;
 
-    core->addComponent(std::make_unique<WebUIComponent>(webCfg));
+    core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 
     // Add SystemInfo component
-    core->addComponent(std::make_unique<SystemInfoComponent>());
+    core.addComponent(std::make_unique<SystemInfoComponent>());
 
     // Register SystemInfo WebUI provider
-    auto* webui = core->getComponent<WebUIComponent>("WebUI");
-    auto* sys = core->getComponent<SystemInfoComponent>("System Info");
+    auto* webui = core.getComponent<WebUIComponent>("WebUI");
+    auto* sys = core.getComponent<SystemInfoComponent>("System Info");
     if (webui && sys) {
         webui->registerProviderWithComponent(new DomoticsCore::Components::WebUI::SystemInfoWebUI(sys), sys);
     }
 
     CoreConfig cfg; cfg.deviceName = "SystemInfoWithWebUI"; cfg.logLevel = 3;
-    if (!core->begin(cfg)) {
+    if (!core.begin(cfg)) {
         DLOG_E(LOG_CORE, "Core initialization failed");
         return;
     }
@@ -56,5 +55,5 @@ void setup() {
 }
 
 void loop() {
-    if (core) core->loop();
+    core.loop();
 }

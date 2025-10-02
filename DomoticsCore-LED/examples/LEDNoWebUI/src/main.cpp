@@ -1,12 +1,11 @@
 #include <Arduino.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/LED.h>
-#include <memory>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-std::unique_ptr<Core> core;
+Core core;
 
 // LED Test Component - demonstrates comprehensive LED functionality
 class LEDDemoComponent : public IComponent {
@@ -265,15 +264,15 @@ void setup() {
     config.deviceName = "LEDDemoDevice";
     config.logLevel = 3; // INFO level
     
-    core.reset(new Core());
+    // Core initialized
     
     // Add LED demonstration component
     DLOG_I(LOG_CORE, "Adding LED demonstration component...");
-    core->addComponent(std::unique_ptr<LEDDemoComponent>(new LEDDemoComponent()));
+    core.addComponent(std::unique_ptr<LEDDemoComponent>(new LEDDemoComponent()));
     
-    DLOG_I(LOG_CORE, "Starting core with %d components...", core->getComponentCount());
+    DLOG_I(LOG_CORE, "Starting core with %d components...", core.getComponentCount());
     
-    if (!core->begin(config)) {
+    if (!core.begin(config)) {
         DLOG_E(LOG_CORE, "Failed to initialize core!");
         return;
     }
@@ -290,9 +289,7 @@ void setup() {
 }
 
 void loop() {
-    if (core) {
-        core->loop();
-    }
+    core.loop();
     
     // Status reporting using non-blocking delay
     static Utils::NonBlockingDelay statusTimer(30000); // 30 seconds

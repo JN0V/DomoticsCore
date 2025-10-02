@@ -4,12 +4,11 @@
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/LED.h>
 #include <DomoticsCore/LEDWebUI.h>
-#include <memory>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-std::unique_ptr<Core> core;
+Core core;
 
 void setup() {
     DLOG_I(LOG_CORE, "=== DomoticsCore LEDWithWebUI Starting ===");
@@ -24,7 +23,7 @@ void setup() {
         return;
     }
 
-    core.reset(new Core());
+    // Core initialized
 
     // WebUI configuration
     WebUIConfig webCfg;
@@ -34,23 +33,23 @@ void setup() {
     webCfg.wsUpdateInterval = 2000;
 
     // Register core components: WebUI and LED
-    core->addComponent(std::make_unique<WebUIComponent>(webCfg));
+    core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 
     auto led = std::make_unique<LEDComponent>();
     // Single on-board LED on GPIO2 by default (change as needed)
     led->addSingleLED(2, "onboard");
-    core->addComponent(std::move(led));
+    core.addComponent(std::move(led));
 
     // Hook up LED WebUI provider
-    auto* webui = core->getComponent<WebUIComponent>("WebUI");
-    auto* ledComp = core->getComponent<LEDComponent>("LEDComponent");
+    auto* webui = core.getComponent<WebUIComponent>("WebUI");
+    auto* ledComp = core.getComponent<LEDComponent>("LEDComponent");
     if (webui && ledComp) {
         // Create provider wrapper and register it with owning component for lifecycle awareness
         webui->registerProviderWithComponent(new LEDWebUI(ledComp), ledComp);
     }
 
     CoreConfig cfg; cfg.deviceName = "LEDWithWebUI"; cfg.logLevel = 3;
-    if (!core->begin(cfg)) {
+    if (!core.begin(cfg)) {
         DLOG_E(LOG_CORE, "Core initialization failed");
         return;
     }
@@ -60,5 +59,5 @@ void setup() {
 }
 
 void loop() {
-    if (core) core->loop();
+    core.loop();
 }

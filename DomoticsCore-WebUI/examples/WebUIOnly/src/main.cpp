@@ -7,7 +7,6 @@
 #include <DomoticsCore/BaseWebUIComponents.h>
 #include <DomoticsCore/IWebUIProvider.h>
 #include <DomoticsCore/Timer.h>
-#include <memory>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -267,7 +266,7 @@ public:
 
 
 // Global Core
-std::unique_ptr<Core> core;
+Core core;
 
 void setup() {
     DLOG_I(LOG_CORE, "=== DomoticsCore WebUI Demo Starting ===");
@@ -285,7 +284,7 @@ void setup() {
     }
     
     // Create Core
-    core.reset(new Core());
+    // Core initialized
 
     // Create WebUI component
     DomoticsCore::Components::WebUIConfig webUIConfig;
@@ -299,12 +298,12 @@ void setup() {
     webUIConfig.useFileSystem = false;
     
     // Register components in Core (WebUI + demo components)
-    core->addComponent(std::make_unique<DomoticsCore::Components::WebUIComponent>(webUIConfig));
-    core->addComponent(std::make_unique<DemoLEDComponent>(2));
-    core->addComponent(std::make_unique<SystemInfoComponent>());
+    core.addComponent(std::make_unique<DomoticsCore::Components::WebUIComponent>(webUIConfig));
+    core.addComponent(std::make_unique<DemoLEDComponent>(2));
+    core.addComponent(std::make_unique<SystemInfoComponent>());
 
-    // Register LED UI wrapper factory before core->begin (composition)
-    auto* webui = core->getComponent<DomoticsCore::Components::WebUIComponent>("WebUI");
+    // Register LED UI wrapper factory before core.begin (composition)
+    auto* webui = core.getComponent<DomoticsCore::Components::WebUIComponent>("WebUI");
     if (webui) {
         webui->registerProviderFactory("demo_led", [](IComponent* c) -> IWebUIProvider* {
             return new LEDWebUI(static_cast<DemoLEDComponent*>(c));
@@ -315,7 +314,7 @@ void setup() {
     }
 
     CoreConfig cfg; cfg.deviceName = "DomoticsCore WebUI Demo"; cfg.logLevel = 3;
-    if (!core->begin(cfg)) {
+    if (!core.begin(cfg)) {
         DLOG_E(LOG_CORE, "Core initialization failed");
         return;
     }
@@ -325,7 +324,7 @@ void setup() {
 }
 
 void loop() {
-    if (core) core->loop();
+    core.loop();
     
     // System status reporting
     static DomoticsCore::Utils::NonBlockingDelay statusTimer(30000);

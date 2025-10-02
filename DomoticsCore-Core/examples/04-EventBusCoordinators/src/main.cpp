@@ -3,7 +3,6 @@
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/EventBus.h>
 #include <DomoticsCore/Logger.h>
-#include <memory>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -119,23 +118,23 @@ private:
   uint32_t sub_ = 0;
 };
 
-std::unique_ptr<Core> core;
+Core core;
 
 void setup() {
   CoreConfig cfg;
   cfg.deviceName = "EventBusCoordinators";
   cfg.logLevel = 3;
 
-  core.reset(new Core());
+  // Core initialized
 
-  core->addComponent(std::unique_ptr<IComponent>(new ServiceAComponent()));
-  core->addComponent(std::unique_ptr<IComponent>(new ServiceBComponent()));
-  core->addComponent(std::unique_ptr<IComponent>(new CoordinatorComponent()));
-  core->addComponent(std::unique_ptr<IComponent>(new ReadyLEDConsumer()));
+  core.addComponent(std::unique_ptr<IComponent>(new ServiceAComponent()));
+  core.addComponent(std::unique_ptr<IComponent>(new ServiceBComponent()));
+  core.addComponent(std::unique_ptr<IComponent>(new CoordinatorComponent()));
+  core.addComponent(std::unique_ptr<IComponent>(new ReadyLEDConsumer()));
 
-  core->begin(cfg);
+  core.begin(cfg);
 }
 
 void loop() {
-  if (core) core->loop();
+  core.loop();
 }
