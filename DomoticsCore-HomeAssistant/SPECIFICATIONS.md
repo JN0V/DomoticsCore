@@ -19,11 +19,11 @@ Home Assistant MQTT Discovery integration component providing automatic entity r
 
 ### 1.2 Dependencies
 - **Required:** 
-  - DomoticsCore-Core >= 0.2.0
+  - DomoticsCore-Core >= 0.2.5
   - DomoticsCore-MQTT >= 0.1.0
+  - ArduinoJson >= 7.0.0
 - **Optional:** 
   - DomoticsCore-WebUI >= 0.1.0
-  - DomoticsCore-NTP >= 0.1.0 (for timestamps)
 
 ---
 
@@ -37,14 +37,14 @@ Home Assistant MQTT Discovery integration component providing automatic entity r
 - Device registry grouping
 
 ### 2.2 Supported Entity Types
-- **Sensor**: Read-only numeric/text values
-- **Binary Sensor**: On/off states (motion, door, etc.)
-- **Switch**: Toggle control
-- **Light**: Brightness/color control
-- **Button**: Trigger actions
-- **Number**: Numeric input (sliders)
-- **Select**: Dropdown selection
-- **Text**: Text input
+- **Sensor**: Read-only numeric/text values ✅
+- **Binary Sensor**: On/off states (motion, door, etc.) ✅
+- **Switch**: Toggle control ✅
+- **Light**: Brightness control ✅
+- **Button**: Trigger actions ✅
+- **Number**: Numeric input (sliders) ⏳ Future
+- **Select**: Dropdown selection ⏳ Future
+- **Text**: Text input ⏳ Future
 
 ### 2.3 Device Information
 - Device name, model, manufacturer
@@ -74,6 +74,8 @@ struct HAConfig {
     bool retainDiscovery = true;
     String discoveryPrefix = "homeassistant";
     String availabilityTopic = "";      // Auto-generated if empty
+    String configUrl = "";              // Device configuration URL
+    String suggestedArea = "";          // Suggested area in HA
 };
 ```
 
@@ -87,9 +89,9 @@ public:
     // IComponent interface
     String getName() const override { return "HomeAssistant"; }
     String getVersion() const override { return "0.1.0"; }
-    bool begin() override;
+    ComponentStatus begin() override;
     void loop() override;
-    ComponentStatus getStatus() const override;
+    ComponentStatus shutdown() override;
     
     // Entity Management
     void addSensor(const String& id, const String& name, const String& unit = "", 
@@ -107,6 +109,7 @@ public:
     void publishState(const String& id, const String& state);
     void publishState(const String& id, float value);
     void publishState(const String& id, bool state);
+    void publishStateJson(const String& id, const JsonDocument& doc);
     void publishAttributes(const String& id, const JsonDocument& attributes);
     
     // Availability
@@ -403,15 +406,13 @@ DomoticsCore-HomeAssistant/
 └── examples/
     ├── BasicHA/
     │   ├── platformio.ini
-    │   └── src/main.cpp
-    ├── HAWithLED/
-    │   ├── platformio.ini
-    │   └── src/main.cpp
-    └── HAMultiSensor/
+    │   ├── src/main.cpp
+    │   └── README.md
+    └── HAWithWebUI/
         ├── platformio.ini
-        └── src/main.cpp
+        ├── src/main.cpp
+        └── README.md
 ```
 
 ---
 
-**Status:** Ready for implementation after NTP ✅
