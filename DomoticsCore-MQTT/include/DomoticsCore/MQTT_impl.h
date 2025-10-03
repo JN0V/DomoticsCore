@@ -64,6 +64,7 @@ inline ComponentStatus MQTTComponent::begin() {
     mqttClient.setServer(config.broker.c_str(), config.port);
     mqttClient.setCallback(mqttCallback);
     mqttClient.setKeepAlive(config.keepAlive);
+    mqttClient.setBufferSize(1024);  // Increase buffer for large payloads (HA discovery)
     
     if (config.autoReconnect) {
         connect();
