@@ -11,17 +11,20 @@
 #include <WiFiClientSecure.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
 Core core;
 
 void setup() {
-    DLOG_I(LOG_CORE, "=== DomoticsCore OTAWithWebUI Starting ===");
+    DLOG_I(LOG_APP, "=== DomoticsCore OTAWithWebUI Starting ===");
 
     // Start soft AP for easy access
     String apSSID = String("DomoticsCore-OTA-") + String((uint32_t)ESP.getEfuseMac(), HEX);
     WiFi.softAP(apSSID.c_str());
-    DLOG_I(LOG_CORE, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+    DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
 
     // Core initialized
 
@@ -118,7 +121,7 @@ void setup() {
         webui->registerProviderWithComponent(otaWebUI, ota);
     }
 
-    DLOG_I(LOG_CORE, "WebUI available at http://%s/", WiFi.softAPIP().toString().c_str());
+    DLOG_I(LOG_APP, "WebUI available at http://%s/", WiFi.softAPIP().toString().c_str());
 }
 
 void loop() {

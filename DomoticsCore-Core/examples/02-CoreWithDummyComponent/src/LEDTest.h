@@ -1,9 +1,13 @@
 #pragma once
 
 #include <DomoticsCore/Components/LED.h>
+#include <DomoticsCore/Logger.h>
 #include <memory>
 
 using namespace DomoticsCore::Components;
+
+// Custom application log tag
+#define LOG_APP "APP"
 
 // LED Test Component - demonstrates comprehensive LED functionality
 class LEDTestComponent : public IComponent {
@@ -26,7 +30,7 @@ public:
     }
     
     ComponentStatus begin() override {
-        Serial.println("[LEDTest] Initializing LED test component...");
+        DLOG_I(LOG_APP, "[LEDTest] Initializing LED test component...");
         
         // Create LED manager
         ledManager = std::make_unique<LEDComponent>("LEDManager");
@@ -46,18 +50,18 @@ public:
         // Initialize LED manager
         ComponentStatus status = ledManager->begin();
         if (status != ComponentStatus::Success) {
-            Serial.printf("[LEDTest] Failed to initialize LED manager: %s\n", 
+            DLOG_I(LOG_APP, "[LEDTest] Failed to initialize LED manager: %s\n", 
                          statusToString(status).c_str());
             setStatus(status);
             return status;
         }
         
-        Serial.printf("[LEDTest] Initialized with %d LEDs\n", ledManager->getLEDCount());
+        DLOG_I(LOG_APP, "[LEDTest] Initialized with %d LEDs\n", ledManager->getLEDCount());
         
         // List all configured LEDs
         auto ledNames = ledManager->getLEDNames();
         for (const auto& name : ledNames) {
-            Serial.printf("[LEDTest] - LED: %s\n", name.c_str());
+            DLOG_I(LOG_APP, "[LEDTest] - LED: %s\n", name.c_str());
         }
         
         // Start first demo
@@ -81,7 +85,7 @@ public:
     }
     
     ComponentStatus shutdown() override {
-        Serial.println("[LEDTest] Shutting down LED test component...");
+        DLOG_I(LOG_APP, "[LEDTest] Shutting down LED test component...");
         
         if (ledManager) {
             ledManager->shutdown();
@@ -95,7 +99,7 @@ private:
     void startDemo(int demoIndex) {
         if (!ledManager) return;
         
-        Serial.printf("[LEDTest] Starting demo %d/%d\n", demoIndex + 1, maxDemos);
+        DLOG_I(LOG_APP, "[LEDTest] Starting demo %d/%d\n", demoIndex + 1, maxDemos);
         
         switch (demoIndex) {
             case 0:
@@ -120,7 +124,7 @@ private:
     }
     
     void demoSolidColors() {
-        Serial.println("[LEDTest] Demo: Solid Colors");
+        DLOG_I(LOG_APP, "[LEDTest] Demo: Solid Colors");
         
         // Set single LEDs to different colors/brightness
         ledManager->setLED("StatusLED", LEDColor::Green(), 128);
@@ -133,7 +137,7 @@ private:
     }
     
     void demoBlinkingEffects() {
-        Serial.println("[LEDTest] Demo: Blinking Effects");
+        DLOG_I(LOG_APP, "[LEDTest] Demo: Blinking Effects");
         
         // Different blink speeds
         ledManager->setLED("StatusLED", LEDColor::White(), 255);
@@ -154,7 +158,7 @@ private:
     }
     
     void demoFadeEffects() {
-        Serial.println("[LEDTest] Demo: Fade Effects");
+        DLOG_I(LOG_APP, "[LEDTest] Demo: Fade Effects");
         
         // Smooth fading at different speeds
         ledManager->setLED("StatusLED", LEDColor::White(), 255);
@@ -175,7 +179,7 @@ private:
     }
     
     void demoPulseEffects() {
-        Serial.println("[LEDTest] Demo: Pulse Effects (Heartbeat)");
+        DLOG_I(LOG_APP, "[LEDTest] Demo: Pulse Effects (Heartbeat)");
         
         // Heartbeat-like pulse effects
         ledManager->setLED("StatusLED", LEDColor::White(), 255);
@@ -196,7 +200,7 @@ private:
     }
     
     void demoRainbowEffects() {
-        Serial.println("[LEDTest] Demo: Rainbow Effects (RGB only)");
+        DLOG_I(LOG_APP, "[LEDTest] Demo: Rainbow Effects (RGB only)");
         
         // Single LEDs stay white during rainbow demo
         ledManager->setLED("StatusLED", LEDColor::White(), 100);
@@ -212,7 +216,7 @@ private:
     }
     
     void demoBreathingEffects() {
-        Serial.println("[LEDTest] Demo: Breathing Effects");
+        DLOG_I(LOG_APP, "[LEDTest] Demo: Breathing Effects");
         
         // Smooth breathing effects at different speeds
         ledManager->setLED("StatusLED", LEDColor::White(), 255);

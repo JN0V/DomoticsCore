@@ -32,6 +32,9 @@
 #include <DomoticsCore/Timer.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 using namespace DomoticsCore::Components::WebUI;
 
@@ -56,13 +59,13 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
     
-    DLOG_I(LOG_CORE, "\n========================================");
-    DLOG_I(LOG_CORE, "DomoticsCore - MQTT with WebUI");
-    DLOG_I(LOG_CORE, "========================================\n");
+    DLOG_I(LOG_APP, "\n========================================");
+    DLOG_I(LOG_APP, "DomoticsCore - MQTT with WebUI");
+    DLOG_I(LOG_APP, "========================================\n");
     
     // Connect to WiFi (using ESP32 native WiFi for simplicity)
     // In production, use DomoticsCore-WiFi component
-    DLOG_I(LOG_CORE, "Connecting to WiFi: %s", WIFI_SSID);
+    DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     
@@ -73,12 +76,12 @@ void setup() {
     }
     
     if (WiFi.status() != WL_CONNECTED) {
-        DLOG_W(LOG_CORE, "✗ WiFi connection failed!");
-        DLOG_I(LOG_CORE, "Starting AP mode for configuration...");
+        DLOG_W(LOG_APP, "✗ WiFi connection failed!");
+        DLOG_I(LOG_APP, "Starting AP mode for configuration...");
         WiFi.softAP("ESP32-MQTT-Setup");
-        DLOG_I(LOG_CORE, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+        DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
     } else {
-        DLOG_I(LOG_CORE, "✓ WiFi connected! IP: %s\n", WiFi.localIP().toString().c_str());
+        DLOG_I(LOG_APP, "✓ WiFi connected! IP: %s\n", WiFi.localIP().toString().c_str());
     }
     
     // Configure WebUI
@@ -109,7 +112,7 @@ void setup() {
     // Register MQTT callbacks
     // Capture mqttPtr to avoid unnecessary getComponent() calls
     mqttPtr->onConnect([mqttPtr]() {
-        DLOG_I(LOG_CORE, "\n📡 MQTT Connected!");
+        DLOG_I(LOG_APP, "\n📡 MQTT Connected!");
         
         // Publish online status
         String statusTopic = mqttPtr->getMQTTConfig().clientId + "/status";
@@ -119,38 +122,38 @@ void setup() {
         String commandTopic = mqttPtr->getMQTTConfig().clientId + "/command/#";
         mqttPtr->subscribe(commandTopic, 1);
         
-        DLOG_I(LOG_CORE, "  ✓ Published online status");
-        DLOG_I(LOG_CORE, "  ✓ Subscribed to commands\n");
+        DLOG_I(LOG_APP, "  ✓ Published online status");
+        DLOG_I(LOG_APP, "  ✓ Subscribed to commands\n");
     });
     
     mqttPtr->onDisconnect([]() {
-        DLOG_W(LOG_CORE, "\n📡 MQTT Disconnected\n");
+        DLOG_W(LOG_APP, "\n📡 MQTT Disconnected\n");
     });
     
     mqttPtr->onMessage("+/command/#", [](const String& topic, const String& payload) {
-        DLOG_I(LOG_CORE, "📨 Command received: %s = %s", topic.c_str(), payload.c_str());
+        DLOG_I(LOG_APP, "📨 Command received: %s = %s", topic.c_str(), payload.c_str());
     });
     
     // Initialize components
-    DLOG_I(LOG_CORE, "Initializing components...");
+    DLOG_I(LOG_APP, "Initializing components...");
     core.begin();
     
     // Register WebUI provider for MQTT
     if (webuiPtr && mqttPtr) {
         webuiPtr->registerProviderWithComponent(new MQTTWebUI(mqttPtr), mqttPtr);
-        DLOG_I(LOG_CORE, "✓ MQTT WebUI provider registered");
+        DLOG_I(LOG_APP, "✓ MQTT WebUI provider registered");
     }
     
-    DLOG_I(LOG_CORE, "\n✓ Setup complete!\n");
+    DLOG_I(LOG_APP, "\n✓ Setup complete!\n");
     
     if (WiFi.status() == WL_CONNECTED) {
-        DLOG_I(LOG_CORE, "========================================");
-        DLOG_I(LOG_CORE, "WebUI: http://%s", WiFi.localIP().toString().c_str());
-        DLOG_I(LOG_CORE, "========================================\n");
+        DLOG_I(LOG_APP, "========================================");
+        DLOG_I(LOG_APP, "WebUI: http://%s", WiFi.localIP().toString().c_str());
+        DLOG_I(LOG_APP, "========================================\n");
     } else {
-        DLOG_I(LOG_CORE, "========================================");
-        DLOG_I(LOG_CORE, "WebUI: http://%s", WiFi.softAPIP().toString().c_str());
-        DLOG_I(LOG_CORE, "========================================\n");
+        DLOG_I(LOG_APP, "========================================");
+        DLOG_I(LOG_APP, "WebUI: http://%s", WiFi.softAPIP().toString().c_str());
+        DLOG_I(LOG_APP, "========================================\n");
     }
 }
 
@@ -172,7 +175,7 @@ void loop() {
             
             String telemetryTopic = mqtt->getMQTTConfig().clientId + "/telemetry";
             if (mqtt->publishJSON(telemetryTopic, doc, 0, false)) {
-                DLOG_I(LOG_CORE, "📤 Published telemetry");
+                DLOG_I(LOG_APP, "📤 Published telemetry");
             }
         }
     }

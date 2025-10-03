@@ -4,6 +4,9 @@
 #include <DomoticsCore/Timer.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
 Core core;
@@ -44,7 +47,7 @@ void setup() {
     // Core initialized
     core.addComponent(std::unique_ptr<SystemInfoDemoComponent>(new SystemInfoDemoComponent()));
     if (!core.begin(cfg)) {
-        DLOG_E(LOG_CORE, "Core initialization failed");
+        DLOG_E(LOG_APP, "Core initialization failed");
         return;
     }
 }

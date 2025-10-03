@@ -54,7 +54,7 @@ void OTAComponent::transition(State nextState, const String& reason) {
         lastResult = reason;
     }
     const String reasonSuffix = reason.isEmpty() ? String("") : String(" | ") + reason;
-    DLOG_I(LOG_CORE, "[OTA] State -> %s%s", stateToString(state), reasonSuffix.c_str());
+    DLOG_I(LOG_OTA, "State -> %s%s", stateToString(state), reasonSuffix.c_str());
 }
 
 bool OTAComponent::shouldCheckNow() const {
@@ -112,7 +112,7 @@ void OTAComponent::loop() {
 
     if (state == State::RebootPending && config.autoReboot) {
         if (now - stateChangeMillis > 2000UL) {  // 2 seconds to allow final UI update
-            DLOG_I(LOG_CORE, "[OTA] Rebooting to apply firmware update");
+            DLOG_I(LOG_OTA, "Rebooting to apply firmware update");
             delay(100);
             ESP.restart();
         }
@@ -162,9 +162,9 @@ bool OTAComponent::beginUpload(size_t expectedSize) {
     transition(State::Downloading, "Manual upload started");
     lastResult = "Uploading firmware";
     if (expectedSize > 0) {
-        DLOG_I(LOG_CORE, "[OTA] Upload started | expected bytes=%lu", static_cast<unsigned long>(expectedSize));
+        DLOG_I(LOG_OTA, "Upload started | expected bytes=%lu", static_cast<unsigned long>(expectedSize));
     } else {
-        DLOG_I(LOG_CORE, "[OTA] Upload started | expected bytes=unknown");
+        DLOG_I(LOG_OTA, "Upload started | expected bytes=unknown");
     }
     publishStatusEvent("info", [this](JsonDocument& doc){
         doc["success"] = true;
@@ -210,7 +210,7 @@ bool OTAComponent::acceptUploadChunk(const uint8_t* data, size_t length) {
     if (uploadSession.expected > 0) {
         float delta = fabs(progress - lastLoggedProgress);
         if (delta >= 10.0f || (downloadedBytes - lastLoggedBytes) >= 256 * 1024) {
-            DLOG_I(LOG_CORE, "[OTA] Upload progress: %.1f%% (%lu/%lu bytes)",
+            DLOG_I(LOG_OTA, "Upload progress: %.1f%% (%lu/%lu bytes)",
                    static_cast<double>(progress),
                    static_cast<unsigned long>(downloadedBytes),
                    static_cast<unsigned long>(uploadSession.expected));
@@ -218,7 +218,7 @@ bool OTAComponent::acceptUploadChunk(const uint8_t* data, size_t length) {
             lastLoggedBytes = downloadedBytes;
         }
     } else if ((downloadedBytes - lastLoggedBytes) >= 256 * 1024) {
-        DLOG_I(LOG_CORE, "[OTA] Upload received: %lu bytes (no size known)", static_cast<unsigned long>(downloadedBytes));
+        DLOG_I(LOG_OTA, "Upload received: %lu bytes (no size known)", static_cast<unsigned long>(downloadedBytes));
         lastLoggedBytes = downloadedBytes;
     }
     // Throttle progress broadcasts to avoid EventBus queue overflow (every 1 second)
@@ -258,7 +258,7 @@ bool OTAComponent::finalizeUpload() {
 
     uploadSession.success = true;
     uploadSession.active = false;
-    DLOG_I(LOG_CORE, "[OTA] Upload finalized | bytes=%lu", static_cast<unsigned long>(uploadSession.received));
+    DLOG_I(LOG_OTA, "Upload finalized | bytes=%lu", static_cast<unsigned long>(uploadSession.received));
     finalizeUpdateOperation("upload", config.autoReboot);
     return true;
 }
@@ -345,18 +345,18 @@ OTAComponent::ManifestInfo OTAComponent::fetchManifest() {
         return info;
     }
     if (!manifestFetcher) {
-        DLOG_E(LOG_CORE, "[OTA] No manifest fetcher set");
+        DLOG_E(LOG_OTA, "No manifest fetcher set");
         return info;
     }
     String payload;
     if (!manifestFetcher(config.manifestUrl, payload)) {
-        DLOG_E(LOG_CORE, "[OTA] Manifest fetch failed");
+        DLOG_E(LOG_OTA, "Manifest fetch failed");
         return info;
     }
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload);
     if (err) {
-        DLOG_E(LOG_CORE, "[OTA] Manifest JSON parse failed: %s", err.c_str());
+        DLOG_E(LOG_OTA, "Manifest JSON parse failed: %s", err.c_str());
         return info;
     }
 
@@ -510,11 +510,11 @@ bool OTAComponent::finalizeUpdateOperation(const String& source, bool autoReboot
     if (autoRebootPending) {
         transition(State::RebootPending, source + " complete");
         lastResult = "Update complete - rebooting in 2s";
-        DLOG_I(LOG_CORE, "[OTA] %s complete. Reboot scheduled in 2s.", source.c_str());
+        DLOG_I(LOG_OTA, "%s complete. Reboot scheduled in 2s.", source.c_str());
     } else {
         transition(State::Idle, source + " complete");
         lastResult = "Update applied. Reboot to finish.";
-        DLOG_I(LOG_CORE, "[OTA] %s complete. Manual reboot required.", source.c_str());
+        DLOG_I(LOG_OTA, "%s complete. Manual reboot required.", source.c_str());
     }
 
     publishStatusEvent("completed", [this, &source](JsonDocument& doc){

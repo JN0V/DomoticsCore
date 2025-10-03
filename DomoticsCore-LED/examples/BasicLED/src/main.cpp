@@ -3,6 +3,9 @@
 #include <DomoticsCore/LED.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
 Core core;
@@ -32,7 +35,7 @@ public:
     }
     
     ComponentStatus begin() override {
-        DLOG_I(LOG_CORE, "[LEDDemo] Initializing LED demonstration component...");
+        DLOG_I(LOG_APP, "[LEDDemo] Initializing LED demonstration component...");
         
         // Create LED manager
         ledManager.reset(new LEDComponent());
@@ -55,18 +58,18 @@ public:
         // Initialize LED manager
         ComponentStatus status = ledManager->begin();
         if (status != ComponentStatus::Success) {
-            DLOG_E(LOG_CORE, "[LEDDemo] Failed to initialize LED manager: %s", 
+            DLOG_E(LOG_APP, "[LEDDemo] Failed to initialize LED manager: %s", 
                          statusToString(status));
             setStatus(status);
             return status;
         }
         
-        DLOG_I(LOG_CORE, "[LEDDemo] Initialized with %d LEDs", ledManager->getLEDCount());
+        DLOG_I(LOG_APP, "[LEDDemo] Initialized with %d LEDs", ledManager->getLEDCount());
         
         // List all configured LEDs
         auto ledNames = ledManager->getLEDNames();
         for (const auto& name : ledNames) {
-            DLOG_I(LOG_CORE, "[LEDDemo] - LED: %s", name.c_str());
+            DLOG_I(LOG_APP, "[LEDDemo] - LED: %s", name.c_str());
         }
         
         // Start first demo
@@ -90,7 +93,7 @@ public:
     }
     
     ComponentStatus shutdown() override {
-        DLOG_I(LOG_CORE, "[LEDDemo] Shutting down LED demonstration component...");
+        DLOG_I(LOG_APP, "[LEDDemo] Shutting down LED demonstration component...");
         
         if (ledManager) {
             ledManager->shutdown();
@@ -104,7 +107,7 @@ private:
     void startDemo(int demoIndex) {
         if (!ledManager) return;
         
-        DLOG_I(LOG_CORE, "[LEDDemo] Starting demo %d/%d", demoIndex + 1, maxDemos);
+        DLOG_I(LOG_APP, "[LEDDemo] Starting demo %d/%d", demoIndex + 1, maxDemos);
         
         switch (demoIndex) {
             case 0:
@@ -129,7 +132,7 @@ private:
     }
     
     void demoSolidColors() {
-        DLOG_I(LOG_CORE, "[LEDDemo] Demo: Solid Colors");
+        DLOG_I(LOG_APP, "[LEDDemo] Demo: Solid Colors");
         
         // Set single LEDs to different brightness levels
         ledManager->setLED("BuiltinLED", LEDColor::White(), 255);
@@ -143,7 +146,7 @@ private:
     }
     
     void demoBlinkingEffects() {
-        DLOG_I(LOG_CORE, "[LEDDemo] Demo: Blinking Effects");
+        DLOG_I(LOG_APP, "[LEDDemo] Demo: Blinking Effects");
         
         // Different blink speeds
         ledManager->setLED("BuiltinLED", LEDColor::White(), 255);
@@ -167,7 +170,7 @@ private:
     }
     
     void demoFadeEffects() {
-        DLOG_I(LOG_CORE, "[LEDDemo] Demo: Fade Effects");
+        DLOG_I(LOG_APP, "[LEDDemo] Demo: Fade Effects");
         
         // Smooth fading at different speeds
         ledManager->setLED("BuiltinLED", LEDColor::White(), 255);
@@ -191,7 +194,7 @@ private:
     }
     
     void demoPulseEffects() {
-        DLOG_I(LOG_CORE, "[LEDDemo] Demo: Pulse Effects (Heartbeat)");
+        DLOG_I(LOG_APP, "[LEDDemo] Demo: Pulse Effects (Heartbeat)");
         
         // Heartbeat-like pulse effects
         ledManager->setLED("BuiltinLED", LEDColor::White(), 255);
@@ -215,7 +218,7 @@ private:
     }
     
     void demoRainbowEffects() {
-        DLOG_I(LOG_CORE, "[LEDDemo] Demo: Rainbow Effects (RGB LEDs only)");
+        DLOG_I(LOG_APP, "[LEDDemo] Demo: Rainbow Effects (RGB LEDs only)");
         
         // Single LEDs stay white during rainbow demo
         ledManager->setLED("BuiltinLED", LEDColor::White(), 100);
@@ -232,7 +235,7 @@ private:
     }
     
     void demoBreathingEffects() {
-        DLOG_I(LOG_CORE, "[LEDDemo] Demo: Breathing Effects");
+        DLOG_I(LOG_APP, "[LEDDemo] Demo: Breathing Effects");
         
         // Smooth breathing effects at different speeds
         ledManager->setLED("BuiltinLED", LEDColor::White(), 255);
@@ -267,25 +270,25 @@ void setup() {
     // Core initialized
     
     // Add LED demonstration component
-    DLOG_I(LOG_CORE, "Adding LED demonstration component...");
+    DLOG_I(LOG_APP, "Adding LED demonstration component...");
     core.addComponent(std::unique_ptr<LEDDemoComponent>(new LEDDemoComponent()));
     
-    DLOG_I(LOG_CORE, "Starting core with %d components...", core.getComponentCount());
+    DLOG_I(LOG_APP, "Starting core with %d components...", core.getComponentCount());
     
     if (!core.begin(config)) {
-        DLOG_E(LOG_CORE, "Failed to initialize core!");
+        DLOG_E(LOG_APP, "Failed to initialize core!");
         return;
     }
     
-    DLOG_I(LOG_CORE, "=== DomoticsCore LED Demo Ready ===");
-    DLOG_I(LOG_CORE, "Expected LED connections:");
-    DLOG_I(LOG_CORE, "- Pin 2:  Built-in LED");
-    DLOG_I(LOG_CORE, "- Pin 4:  Status LED");
-    DLOG_I(LOG_CORE, "- Pin 16: Activity LED");
-    DLOG_I(LOG_CORE, "- Pin 17: Error LED");
-    DLOG_I(LOG_CORE, "- Pins 18,19,21: RGB LED (common cathode)");
-    DLOG_I(LOG_CORE, "- Pins 22,23,25: RGB LED (common anode)");
-    DLOG_I(LOG_CORE, "Demo cycles every 5 seconds through 6 effects");
+    DLOG_I(LOG_APP, "=== DomoticsCore LED Demo Ready ===");
+    DLOG_I(LOG_APP, "Expected LED connections:");
+    DLOG_I(LOG_APP, "- Pin 2:  Built-in LED");
+    DLOG_I(LOG_APP, "- Pin 4:  Status LED");
+    DLOG_I(LOG_APP, "- Pin 16: Activity LED");
+    DLOG_I(LOG_APP, "- Pin 17: Error LED");
+    DLOG_I(LOG_APP, "- Pins 18,19,21: RGB LED (common cathode)");
+    DLOG_I(LOG_APP, "- Pins 22,23,25: RGB LED (common anode)");
+    DLOG_I(LOG_APP, "Demo cycles every 5 seconds through 6 effects");
 }
 
 void loop() {

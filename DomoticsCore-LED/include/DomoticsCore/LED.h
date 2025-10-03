@@ -106,7 +106,7 @@ public:
      * @brief Validate pin assignments, initialize hardware, and reset state.
      */
     ComponentStatus begin() override {
-        DLOG_I(LOG_CORE, "[LED] Initializing LED component...");
+        DLOG_I(LOG_LED, "Initializing...");
         
         // Validate LED pin assignments
         if (!validateLEDPins()) {
@@ -127,7 +127,7 @@ public:
             ledStates[i].enabled = true;
         }
         
-        DLOG_I(LOG_CORE, "[LED] Initialized %d LEDs successfully", ledConfigs.size());
+        DLOG_I(LOG_LED, "Initialized %d LEDs successfully", ledConfigs.size());
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
     }
@@ -147,7 +147,7 @@ public:
      * @brief Turn off all LEDs and release resources.
      */
     ComponentStatus shutdown() override {
-        DLOG_I(LOG_CORE, "[LED] Shutting down LED component...");
+        DLOG_I(LOG_LED, "Shutting down...");
 
         // Turn off all LEDs
         for (size_t i = 0; i < ledConfigs.size(); i++) {
@@ -327,13 +327,13 @@ private:
             
             if (config.isRGB) {
                 if (config.redPin < 0 || config.greenPin < 0 || config.bluePin < 0) {
-                    DLOG_E(LOG_CORE, "[LED] Invalid RGB pins for LED '%s': R=%d, G=%d, B=%d", 
+                    DLOG_E(LOG_LED, "Invalid RGB pins for LED '%s': R=%d, G=%d, B=%d", 
                                 config.name.c_str(), config.redPin, config.greenPin, config.bluePin);
                     return false;
                 }
             } else {
                 if (config.pin < 0) {
-                    DLOG_E(LOG_CORE, "[LED] Invalid pin for LED '%s': %d", config.name.c_str(), config.pin);
+                    DLOG_E(LOG_LED, "Invalid pin for LED '%s': %d", config.name.c_str(), config.pin);
                     return false;
                 }
             }

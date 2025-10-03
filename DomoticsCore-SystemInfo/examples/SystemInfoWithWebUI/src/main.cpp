@@ -6,20 +6,23 @@
 #include <DomoticsCore/SystemInfoWebUI.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
 Core core;
 
 void setup() {
-    DLOG_I(LOG_CORE, "=== DomoticsCore SystemInfoWithWebUI Starting ===");
+    DLOG_I(LOG_APP, "=== DomoticsCore SystemInfoWithWebUI Starting ===");
 
     // Bring up a simple AP for demo access
     String apSSID = String("DomoticsCore-Sys-") + String((uint32_t)ESP.getEfuseMac(), HEX);
     if (WiFi.softAP(apSSID.c_str())) {
-        DLOG_I(LOG_CORE, "AP started: %s", apSSID.c_str());
-        DLOG_I(LOG_CORE, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+        DLOG_I(LOG_APP, "AP started: %s", apSSID.c_str());
+        DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
     } else {
-        DLOG_E(LOG_CORE, "Failed to start AP mode");
+        DLOG_E(LOG_APP, "Failed to start AP mode");
         return;
     }
 
@@ -46,12 +49,12 @@ void setup() {
 
     CoreConfig cfg; cfg.deviceName = "SystemInfoWithWebUI"; cfg.logLevel = 3;
     if (!core.begin(cfg)) {
-        DLOG_E(LOG_CORE, "Core initialization failed");
+        DLOG_E(LOG_APP, "Core initialization failed");
         return;
     }
 
-    DLOG_I(LOG_CORE, "=== Setup Complete ===");
-    DLOG_I(LOG_CORE, "WebUI available at: http://192.168.4.1");
+    DLOG_I(LOG_APP, "=== Setup Complete ===");
+    DLOG_I(LOG_APP, "WebUI available at: http://192.168.4.1");
 }
 
 void loop() {

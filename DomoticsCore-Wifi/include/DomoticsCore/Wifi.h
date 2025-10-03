@@ -60,7 +60,7 @@ public:
     }
     
     ComponentStatus begin() override {
-        DLOG_I(LOG_CORE, "Wifi component initializing...");
+        DLOG_I(LOG_WIFI, "Initializing...");
         
         WiFi.mode(WIFI_STA);
         WiFi.setAutoReconnect(false); // We handle reconnection ourselves
@@ -102,13 +102,13 @@ public:
                 if (status == WL_CONNECTED) {
                     // Connection successful
                     isConnecting = false;
-                    DLOG_I(LOG_CORE, "Wifi connected successfully");
-                    DLOG_I(LOG_CORE, "IP address: %s", WiFi.localIP().toString().c_str());
+                    DLOG_I(LOG_WIFI, "Wifi connected successfully");
+                    DLOG_I(LOG_WIFI, "IP address: %s", WiFi.localIP().toString().c_str());
                     setStatus(ComponentStatus::Success);
                 } else if (millis() - connectionStartTime > CONNECTION_TIMEOUT) {
                     // Connection timeout
                     isConnecting = false;
-                    DLOG_E(LOG_CORE, "Wifi connection timeout - status: %d", status);
+                    DLOG_E(LOG_WIFI, "Wifi connection timeout - status: %d", status);
                     setStatus(ComponentStatus::TimeoutError);
                 }
             }
@@ -116,17 +116,17 @@ public:
         
         // Handle reconnection attempts
         if (shouldConnect && !isConnecting && !isConnected() && reconnectTimer.isReady()) {
-            DLOG_I(LOG_CORE, "Attempting Wifi reconnection...");
+            DLOG_I(LOG_WIFI, "Attempting Wifi reconnection...");
             startConnection();
         }
         
         // Periodic status updates
         if (statusTimer.isReady()) {
             if (isConnected()) {
-                DLOG_D(LOG_CORE, "Wifi connected - IP: %s, RSSI: %d dBm", 
+                DLOG_D(LOG_WIFI, "Wifi connected - IP: %s, RSSI: %d dBm", 
                       WiFi.localIP().toString().c_str(), WiFi.RSSI());
             } else {
-                DLOG_D(LOG_CORE, "Wifi disconnected - status: %s", 
+                DLOG_D(LOG_WIFI, "Wifi disconnected - status: %s", 
                       getConnectionStatusString().c_str());
             }
         }
@@ -135,7 +135,7 @@ public:
         if (scanInProgress) {
             int res = WiFi.scanComplete();
             if (res == WIFI_SCAN_FAILED) {
-                DLOG_W(LOG_CORE, "Wifi async scan failed");
+                DLOG_W(LOG_WIFI, "Wifi async scan failed");
                 lastScanSummary_ = "Scan failed";
                 scanInProgress = false;
             } else if (res >= 0) {
@@ -147,13 +147,13 @@ public:
                 lastScanSummary_ = summary;
                 WiFi.scanDelete();
                 scanInProgress = false;
-                DLOG_I(LOG_CORE, "Async scan complete: %d networks", res);
+                DLOG_I(LOG_WIFI, "Async scan complete: %d networks", res);
             }
         }
     }
     
     ComponentStatus shutdown() override {
-        DLOG_I(LOG_CORE, "Wifi component shutting down...");
+        DLOG_I(LOG_WIFI, "Wifi Shutting down component...");
         shouldConnect = false;
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
@@ -263,7 +263,7 @@ public:
     void disconnect() {
         shouldConnect = false;
         WiFi.disconnect();
-        DLOG_I(LOG_CORE, "Wifi manually disconnected");
+        DLOG_I(LOG_WIFI, "Wifi manually disconnected");
     }
     
     void reconnect() {
@@ -272,7 +272,7 @@ public:
         if (!isConnecting) {
             startConnection();
         }
-        DLOG_I(LOG_CORE, "Wifi reconnection requested");
+        DLOG_I(LOG_WIFI, "Wifi reconnection requested");
     }
     
     bool isConnectionInProgress() const {
@@ -310,15 +310,15 @@ public:
         networks.clear();
         
         if (n == -1) {
-            DLOG_E(LOG_CORE, "Wifi scan failed");
+            DLOG_E(LOG_WIFI, "Wifi scan failed");
             return false;
         }
         
-        DLOG_I(LOG_CORE, "Found %d Wifi networks", n);
+        DLOG_I(LOG_WIFI, "Found %d Wifi networks", n);
         for (int i = 0; i < n; i++) {
             String network = WiFi.SSID(i) + " (" + String(WiFi.RSSI(i)) + " dBm)";
             networks.push_back(network);
-            DLOG_D(LOG_CORE, "  %s", network.c_str());
+            DLOG_D(LOG_WIFI, "  %s", network.c_str());
         }
         
         return true;
@@ -330,7 +330,7 @@ public:
         WiFi.scanNetworks(true /* async */);
         scanInProgress = true;
         lastScanSummary_ = "Scanning...";
-        DLOG_I(LOG_CORE, "Started async WiFi scan");
+        DLOG_I(LOG_WIFI, "Started async WiFi scan");
     }
 
     String getLastScanSummary() const { return lastScanSummary_; }
@@ -398,7 +398,7 @@ public:
 private:
     ComponentStatus connectToWifi() {
         if (ssid.isEmpty()) {
-            DLOG_I(LOG_CORE, "Wifi SSID not configured - starting in AP mode");
+            DLOG_I(LOG_WIFI, "Wifi SSID not configured - starting in AP mode");
             
             // Generate AP SSID from MAC address for uniqueness
             String macAddress = WiFi.macAddress();
@@ -407,8 +407,8 @@ private:
             
             WiFi.mode(WIFI_AP);
             WiFi.softAP(apSSID.c_str()); // No password for easy access
-            DLOG_I(LOG_CORE, "AP mode started: %s (open network)", apSSID.c_str());
-            DLOG_I(LOG_CORE, "AP IP address: %s", WiFi.softAPIP().toString().c_str());
+            DLOG_I(LOG_WIFI, "AP mode started: %s (open network)", apSSID.c_str());
+            DLOG_I(LOG_WIFI, "AP IP address: %s", WiFi.softAPIP().toString().c_str());
             // Reflect state in internal flags so UI initial values are correct
             apEnabled = true;
             wifiEnabled = false;
@@ -426,7 +426,7 @@ private:
     void startConnection() {
         if (isConnecting) return; // Already connecting
         
-        DLOG_I(LOG_CORE, "Connecting to Wifi: %s", ssid.c_str());
+        DLOG_I(LOG_WIFI, "Connecting to Wifi: %s", ssid.c_str());
         WiFi.begin(ssid.c_str(), password.c_str());
         
         isConnecting = true;
@@ -450,13 +450,13 @@ private:
     
     // Internal method to update Wifi mode based on enabled features
     bool updateWifiMode() {
-        DLOG_I(LOG_CORE, "Updating Wifi mode - Wifi: %s, AP: %s", 
+        DLOG_I(LOG_WIFI, "Updating Wifi mode - Wifi: %s, AP: %s", 
                wifiEnabled ? "enabled" : "disabled", 
                apEnabled ? "enabled" : "disabled");
         
         if (wifiEnabled && apEnabled) {
             // Both Wifi and AP requested - use STA+AP mode
-            DLOG_I(LOG_CORE, "Enabling STA+AP mode");
+            DLOG_I(LOG_WIFI, "Enabling STA+AP mode");
             WiFi.mode(WIFI_AP_STA);
             delay(100);
             
@@ -469,7 +469,7 @@ private:
             }
             
             if (apSuccess) {
-                DLOG_I(LOG_CORE, "AP started: %s (IP: %s)", apSSID_.c_str(), WiFi.softAPIP().toString().c_str());
+                DLOG_I(LOG_WIFI, "AP started: %s (IP: %s)", apSSID_.c_str(), WiFi.softAPIP().toString().c_str());
             }
             
             // Enable station connection attempts
@@ -479,7 +479,7 @@ private:
             return apSuccess;
         } else if (wifiEnabled && !apEnabled) {
             // Only Wifi requested - use STA mode
-            DLOG_I(LOG_CORE, "Enabling station mode only");
+            DLOG_I(LOG_WIFI, "Enabling station mode only");
             WiFi.softAPdisconnect(true);
             delay(100);
             WiFi.mode(WIFI_STA);
@@ -489,7 +489,7 @@ private:
             return true;
         } else if (!wifiEnabled && apEnabled) {
             // Only AP requested - use AP mode
-            DLOG_I(LOG_CORE, "Enabling AP mode only");
+            DLOG_I(LOG_WIFI, "Enabling AP mode only");
             shouldConnect = false;
             isConnecting = false;
             WiFi.disconnect();
@@ -504,13 +504,13 @@ private:
             }
             
             if (success) {
-                DLOG_I(LOG_CORE, "AP-only mode started: %s (IP: %s)", apSSID_.c_str(), WiFi.softAPIP().toString().c_str());
+                DLOG_I(LOG_WIFI, "AP-only mode started: %s (IP: %s)", apSSID_.c_str(), WiFi.softAPIP().toString().c_str());
             }
             
             return success;
         } else {
             // Both disabled - turn off Wifi
-            DLOG_I(LOG_CORE, "Disabling all Wifi features");
+            DLOG_I(LOG_WIFI, "Disabling all Wifi features");
             shouldConnect = false;
             isConnecting = false;
             WiFi.softAPdisconnect(true);

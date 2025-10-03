@@ -78,7 +78,7 @@ public:
     }
     
     ComponentStatus begin() override {
-        DLOG_I(LOG_CORE, "Storage component initializing...");
+        DLOG_I(LOG_STORAGE, "Initializing...");
         
         // Initialize component metadata
         metadata.name = "Storage";
@@ -105,7 +105,7 @@ public:
         // Validate configuration
         auto validation = validateConfig();
         if (!validation.isValid()) {
-            DLOG_E(LOG_CORE, "Storage config validation failed: %s", validation.toString().c_str());
+            DLOG_E(LOG_STORAGE, "Config validation failed: %s", validation.toString().c_str());
             setStatus(ComponentStatus::ConfigError);
             return ComponentStatus::ConfigError;
         }
@@ -132,7 +132,7 @@ public:
     }
     
     ComponentStatus shutdown() override {
-        DLOG_I(LOG_CORE, "Storage component shutting down...");
+        DLOG_I(LOG_STORAGE, "Shutting down...");
         
         if (isOpen) {
             preferences.end();
@@ -151,7 +151,7 @@ public:
     // Storage operations
     bool putString(const String& key, const String& value) {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
         
@@ -164,7 +164,7 @@ public:
             entry.size = value.length();
             cache[key] = entry;
             
-            DLOG_D(LOG_CORE, "Stored string '%s' = '%s' (%d bytes)", key.c_str(), value.c_str(), written);
+            DLOG_D(LOG_STORAGE, "Stored string '%s' = '%s' (%d bytes)", key.c_str(), value.c_str(), written);
             return true;
         }
         return false;
@@ -172,7 +172,7 @@ public:
     
     bool putInt(const String& key, int32_t value) {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
         
@@ -185,7 +185,7 @@ public:
             entry.size = sizeof(int32_t);
             cache[key] = entry;
             
-            DLOG_D(LOG_CORE, "Stored int '%s' = %d", key.c_str(), value);
+            DLOG_D(LOG_STORAGE, "Stored int '%s' = %d", key.c_str(), value);
             return true;
         }
         return false;
@@ -193,7 +193,7 @@ public:
     
     bool putFloat(const String& key, float value) {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
         
@@ -206,7 +206,7 @@ public:
             entry.size = sizeof(float);
             cache[key] = entry;
             
-            DLOG_D(LOG_CORE, "Stored float '%s' = %.2f", key.c_str(), value);
+            DLOG_D(LOG_STORAGE, "Stored float '%s' = %.2f", key.c_str(), value);
             return true;
         }
         return false;
@@ -214,7 +214,7 @@ public:
     
     bool putBool(const String& key, bool value) {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
         
@@ -227,7 +227,7 @@ public:
             entry.size = sizeof(bool);
             cache[key] = entry;
             
-            DLOG_D(LOG_CORE, "Stored bool '%s' = %s", key.c_str(), value ? "true" : "false");
+            DLOG_D(LOG_STORAGE, "Stored bool '%s' = %s", key.c_str(), value ? "true" : "false");
             return true;
         }
         return false;
@@ -235,7 +235,7 @@ public:
     
     bool putBlob(const String& key, const uint8_t* data, size_t length) {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
         
@@ -248,7 +248,7 @@ public:
             entry.size = length;
             cache[key] = entry;
             
-            DLOG_D(LOG_CORE, "Stored blob '%s' (%d bytes)", key.c_str(), length);
+            DLOG_D(LOG_STORAGE, "Stored blob '%s' (%d bytes)", key.c_str(), length);
             return true;
         }
         return false;
@@ -256,98 +256,98 @@ public:
     
     String getString(const String& key, const String& defaultValue = "") {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return defaultValue;
         }
         
         String value = preferences.getString(key.c_str(), defaultValue);
-        DLOG_D(LOG_CORE, "Retrieved string '%s' = '%s'", key.c_str(), value.c_str());
+        DLOG_D(LOG_STORAGE, "Retrieved string '%s' = '%s'", key.c_str(), value.c_str());
         return value;
     }
     
     int32_t getInt(const String& key, int32_t defaultValue = 0) {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return defaultValue;
         }
         
         int32_t value = preferences.getInt(key.c_str(), defaultValue);
-        DLOG_D(LOG_CORE, "Retrieved int '%s' = %d", key.c_str(), value);
+        DLOG_D(LOG_STORAGE, "Retrieved int '%s' = %d", key.c_str(), value);
         return value;
     }
     
     float getFloat(const String& key, float defaultValue = 0.0f) {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return defaultValue;
         }
         
         float value = preferences.getFloat(key.c_str(), defaultValue);
-        DLOG_D(LOG_CORE, "Retrieved float '%s' = %.2f", key.c_str(), value);
+        DLOG_D(LOG_STORAGE, "Retrieved float '%s' = %.2f", key.c_str(), value);
         return value;
     }
     
     bool getBool(const String& key, bool defaultValue = false) {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return defaultValue;
         }
         
         bool value = preferences.getBool(key.c_str(), defaultValue);
-        DLOG_D(LOG_CORE, "Retrieved bool '%s' = %s", key.c_str(), value ? "true" : "false");
+        DLOG_D(LOG_STORAGE, "Retrieved bool '%s' = %s", key.c_str(), value ? "true" : "false");
         return value;
     }
     
     size_t getBlob(const String& key, uint8_t* buffer, size_t maxLength) {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return 0;
         }
         
         size_t length = preferences.getBytesLength(key.c_str());
         if (length == 0) {
-            DLOG_D(LOG_CORE, "Blob '%s' not found", key.c_str());
+            DLOG_D(LOG_STORAGE, "Blob '%s' not found", key.c_str());
             return 0;
         }
         
         if (length > maxLength) {
-            DLOG_W(LOG_CORE, "Blob '%s' too large (%d > %d)", key.c_str(), length, maxLength);
+            DLOG_W(LOG_STORAGE, "Blob '%s' too large (%d > %d)", key.c_str(), length, maxLength);
             length = maxLength;
         }
         
         size_t read = preferences.getBytes(key.c_str(), buffer, length);
-        DLOG_D(LOG_CORE, "Retrieved blob '%s' (%d bytes)", key.c_str(), read);
+        DLOG_D(LOG_STORAGE, "Retrieved blob '%s' (%d bytes)", key.c_str(), read);
         return read;
     }
     
     bool remove(const String& key) {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
         
         bool success = preferences.remove(key.c_str());
         if (success) {
             cache.erase(key);
-            DLOG_I(LOG_CORE, "Removed key: %s", key.c_str());
+            DLOG_I(LOG_STORAGE, "Removed key: %s", key.c_str());
         } else {
-            DLOG_E(LOG_CORE, "Failed to remove key: %s", key.c_str());
+            DLOG_E(LOG_STORAGE, "Failed to remove key: %s", key.c_str());
         }
         return success;
     }
     
     bool clear() {
         if (!isOpen) {
-            DLOG_E(LOG_CORE, "Storage not open");
+            DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
         
         bool success = preferences.clear();
         if (success) {
             cache.clear();
-            DLOG_I(LOG_CORE, "Cleared all storage entries");
+            DLOG_I(LOG_STORAGE, "Cleared all entries");
         } else {
-            DLOG_E(LOG_CORE, "Failed to clear storage");
+            DLOG_E(LOG_STORAGE, "Failed to clear");
         }
         return success;
     }
@@ -395,7 +395,7 @@ public:
 
 private:
     ComponentStatus initializePreferences() {
-        DLOG_I(LOG_CORE, "Initializing NVS preferences storage...");
+        DLOG_I(LOG_STORAGE, "Initializing NVS preferences...");
         
         // Open preferences with namespace
         bool success = preferences.begin(storageConfig.namespace_name.c_str(), storageConfig.readOnly);
@@ -403,11 +403,11 @@ private:
         if (success) {
             isOpen = true;
             updateStorageInfo();
-            DLOG_I(LOG_CORE, "Preferences storage opened successfully (namespace: %s)", 
+            DLOG_I(LOG_STORAGE, "Preferences opened successfully (namespace: %s)", 
                    storageConfig.namespace_name.c_str());
             return ComponentStatus::Success;
         } else {
-            DLOG_E(LOG_CORE, "Failed to open preferences storage");
+            DLOG_E(LOG_STORAGE, "Failed to open preferences");
             return ComponentStatus::HardwareError;
         }
     }
@@ -421,39 +421,39 @@ private:
         // Update entry count from cache
         entryCount = cache.size();
         
-        DLOG_D(LOG_CORE, "Storage info updated: %d entries cached", entryCount);
+        DLOG_D(LOG_STORAGE, "Info updated: %d entries cached", entryCount);
     }
 
     void reportStorageStatus() {
         if (!isOpen) {
-            DLOG_W(LOG_CORE, "Storage not open");
+            DLOG_W(LOG_STORAGE, "Not open");
             return;
         }
         
-        DLOG_I(LOG_CORE, "=== Storage Status ===");
-        DLOG_I(LOG_CORE, "%s", getStorageInfo().c_str());
+        DLOG_I(LOG_STORAGE, "=== Status ===");
+        DLOG_I(LOG_STORAGE, "%s", getStorageInfo().c_str());
         
         // Check storage usage
         float usagePercent = (float)entryCount / (float)storageConfig.maxEntries * 100.0f;
         if (usagePercent > 90.0f) {
-            DLOG_W(LOG_CORE, "Storage usage high: %.1f%%", usagePercent);
+            DLOG_W(LOG_STORAGE, "Usage high: %.1f%%", usagePercent);
         }
     }
 
     void performMaintenance() {
         if (!isOpen) return;
         
-        DLOG_D(LOG_CORE, "Performing storage maintenance...");
+        DLOG_D(LOG_STORAGE, "Performing maintenance...");
         
         // Update storage information
         updateStorageInfo();
         
         // Log cache statistics
-        DLOG_D(LOG_CORE, "Cache contains %d entries", cache.size());
+        DLOG_D(LOG_STORAGE, "Cache contains %d entries", cache.size());
         
         // Check for storage health
         if (entryCount >= storageConfig.maxEntries) {
-            DLOG_W(LOG_CORE, "Storage at maximum capacity (%d entries)", entryCount);
+            DLOG_W(LOG_STORAGE, "At maximum capacity (%d entries)", entryCount);
         }
     }
 
