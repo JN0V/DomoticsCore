@@ -45,9 +45,9 @@ void setup() {
     Serial.begin(115200);  // Required for ESP32 logging output
     delay(1000);  // Allow serial to initialize
     
-    DLOG_I(LOG_APP, "\n========================================");
+    DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "DomoticsCore - NTP with WebUI");
-    DLOG_I(LOG_APP, "========================================\n");
+    DLOG_I(LOG_APP, "========================================");
     
     // Connect to WiFi
     DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
@@ -59,7 +59,7 @@ void setup() {
         DLOG_D(LOG_APP, ".");
     }
     
-    DLOG_I(LOG_APP, "\nWiFi connected!");
+    DLOG_I(LOG_APP, "WiFi connected!");
     DLOG_I(LOG_APP, "IP address: %s", WiFi.localIP().toString().c_str());
     
     // Configure WebUI
@@ -105,10 +105,10 @@ void setup() {
         DLOG_I(LOG_APP, "NTP WebUI provider registered");
     }
     
-    DLOG_I(LOG_APP, "\n========================================");
+    DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "System ready!");
     DLOG_I(LOG_APP, "Web interface: http://%s", WiFi.localIP().toString().c_str());
-    DLOG_I(LOG_APP, "========================================\n");
+    DLOG_I(LOG_APP, "========================================");
 }
 
 // ========== Loop ==========

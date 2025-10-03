@@ -50,18 +50,18 @@ public:
         // Initialize LED manager
         ComponentStatus status = ledManager->begin();
         if (status != ComponentStatus::Success) {
-            DLOG_I(LOG_APP, "[LEDTest] Failed to initialize LED manager: %s\n", 
+            DLOG_I(LOG_APP, "[LEDTest] Failed to initialize LED manager: %s", 
                          statusToString(status).c_str());
             setStatus(status);
             return status;
         }
         
-        DLOG_I(LOG_APP, "[LEDTest] Initialized with %d LEDs\n", ledManager->getLEDCount());
+        DLOG_I(LOG_APP, "[LEDTest] Initialized with %d LEDs", ledManager->getLEDCount());
         
         // List all configured LEDs
         auto ledNames = ledManager->getLEDNames();
         for (const auto& name : ledNames) {
-            DLOG_I(LOG_APP, "[LEDTest] - LED: %s\n", name.c_str());
+            DLOG_I(LOG_APP, "[LEDTest] - LED: %s", name.c_str());
         }
         
         // Start first demo
@@ -99,7 +99,7 @@ private:
     void startDemo(int demoIndex) {
         if (!ledManager) return;
         
-        DLOG_I(LOG_APP, "[LEDTest] Starting demo %d/%d\n", demoIndex + 1, maxDemos);
+        DLOG_I(LOG_APP, "[LEDTest] Starting demo %d/%d", demoIndex + 1, maxDemos);
         
         switch (demoIndex) {
             case 0:
