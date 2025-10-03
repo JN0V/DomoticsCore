@@ -39,9 +39,9 @@ void setup() {
     Serial.begin(115200);  // Required for ESP32 logging output
     delay(1000);  // Allow serial to initialize
     
-    DLOG_I(LOG_APP, "\n========================================");
+    DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "DomoticsCore - Basic NTP Example");
-    DLOG_I(LOG_APP, "========================================\n");
+    DLOG_I(LOG_APP, "========================================");
     
     // Connect to WiFi
     DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
@@ -53,7 +53,7 @@ void setup() {
         DLOG_D(LOG_APP, ".");
     }
     
-    DLOG_I(LOG_APP, "\nWiFi connected!");
+    DLOG_I(LOG_APP, "WiFi connected!");
     DLOG_I(LOG_APP, "IP address: %s", WiFi.localIP().toString().c_str());
     
     // Configure NTP
@@ -76,13 +76,13 @@ void setup() {
     // Register sync callback
     ntpPtr->onSync([ntpPtr](bool success) {
         if (success) {
-            DLOG_I(LOG_APP, "\n✅ Time synchronized!");
+            DLOG_I(LOG_APP, "✅ Time synchronized!");
             DLOG_I(LOG_APP, "Current time: %s", ntpPtr->getFormattedTime().c_str());
             DLOG_I(LOG_APP, "ISO 8601: %s", ntpPtr->getISO8601().c_str());
             DLOG_I(LOG_APP, "Timezone: %s (GMT%+d)", 
                    ntpPtr->getTimezone().c_str(), 
                    ntpPtr->getGMTOffset() / 3600);
-            DLOG_I(LOG_APP, "DST active: %s\n", ntpPtr->isDST() ? "Yes" : "No");
+            DLOG_I(LOG_APP, "DST active: %s", ntpPtr->isDST() ? "Yes" : "No");
         } else {
             DLOG_E(LOG_APP, "❌ Time sync failed!");
         }

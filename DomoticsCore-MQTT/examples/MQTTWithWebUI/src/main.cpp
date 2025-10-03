@@ -59,9 +59,9 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
     
-    DLOG_I(LOG_APP, "\n========================================");
+    DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "DomoticsCore - MQTT with WebUI");
-    DLOG_I(LOG_APP, "========================================\n");
+    DLOG_I(LOG_APP, "========================================");
     
     // Connect to WiFi (using ESP32 native WiFi for simplicity)
     // In production, use DomoticsCore-WiFi component
@@ -81,7 +81,7 @@ void setup() {
         WiFi.softAP("ESP32-MQTT-Setup");
         DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
     } else {
-        DLOG_I(LOG_APP, "✓ WiFi connected! IP: %s\n", WiFi.localIP().toString().c_str());
+        DLOG_I(LOG_APP, "✓ WiFi connected! IP: %s", WiFi.localIP().toString().c_str());
     }
     
     // Configure WebUI
@@ -112,7 +112,7 @@ void setup() {
     // Register MQTT callbacks
     // Capture mqttPtr to avoid unnecessary getComponent() calls
     mqttPtr->onConnect([mqttPtr]() {
-        DLOG_I(LOG_APP, "\n📡 MQTT Connected!");
+        DLOG_I(LOG_APP, "📡 MQTT Connected!");
         
         // Publish online status
         String statusTopic = mqttPtr->getMQTTConfig().clientId + "/status";
@@ -123,11 +123,11 @@ void setup() {
         mqttPtr->subscribe(commandTopic, 1);
         
         DLOG_I(LOG_APP, "  ✓ Published online status");
-        DLOG_I(LOG_APP, "  ✓ Subscribed to commands\n");
+        DLOG_I(LOG_APP, "  ✓ Subscribed to commands");
     });
     
     mqttPtr->onDisconnect([]() {
-        DLOG_W(LOG_APP, "\n📡 MQTT Disconnected\n");
+        DLOG_W(LOG_APP, "📡 MQTT Disconnected");
     });
     
     mqttPtr->onMessage("+/command/#", [](const String& topic, const String& payload) {
@@ -144,16 +144,16 @@ void setup() {
         DLOG_I(LOG_APP, "✓ MQTT WebUI provider registered");
     }
     
-    DLOG_I(LOG_APP, "\n✓ Setup complete!\n");
+    DLOG_I(LOG_APP, "✓ Setup complete!");
     
     if (WiFi.status() == WL_CONNECTED) {
         DLOG_I(LOG_APP, "========================================");
         DLOG_I(LOG_APP, "WebUI: http://%s", WiFi.localIP().toString().c_str());
-        DLOG_I(LOG_APP, "========================================\n");
+        DLOG_I(LOG_APP, "========================================");
     } else {
         DLOG_I(LOG_APP, "========================================");
         DLOG_I(LOG_APP, "WebUI: http://%s", WiFi.softAPIP().toString().c_str());
-        DLOG_I(LOG_APP, "========================================\n");
+        DLOG_I(LOG_APP, "========================================");
     }
 }
 
