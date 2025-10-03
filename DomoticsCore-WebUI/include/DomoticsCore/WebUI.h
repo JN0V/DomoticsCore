@@ -170,13 +170,13 @@ public:
 
         auto contexts = provider->getWebUIContexts();
         if (contexts.empty()) {
-            DLOG_W(LOG_CORE, "[WebUI] Provider has no contexts to register.");
+            DLOG_W(LOG_WEB, "Provider has no contexts to register.");
             return;
         }
 
         for (const auto& context : contexts) {
             contextProviders[context.contextId] = provider;
-            DLOG_I(LOG_CORE, "[WebUI] Registered provider for context: %s", context.contextId.c_str());
+            DLOG_I(LOG_WEB, "Registered provider for context: %s", context.contextId.c_str());
         }
         // Default to enabled if not already tracked
         if (providerEnabled.find(provider) == providerEnabled.end()) {
@@ -685,13 +685,13 @@ private:
     
     bool initializeFileSystem() {
         if (LittleFS.begin()) {
-            DLOG_I(LOG_CORE, "LittleFS initialized for WebUI static files");
+            DLOG_I(LOG_WEB, "LittleFS initialized for WebUI static files");
             return true;
         } else if (SPIFFS.begin()) {
-            DLOG_I(LOG_CORE, "SPIFFS initialized for WebUI static files");
+            DLOG_I(LOG_WEB, "SPIFFS initialized for WebUI static files");
             return true;
         }
-        DLOG_W(LOG_CORE, "File system initialization failed");
+        DLOG_W(LOG_WEB, "File system initialization failed");
         return false;
     }
     
@@ -711,11 +711,11 @@ private:
         
         switch (type) {
             case WS_EVT_CONNECT:
-                DLOG_I(LOG_CORE, "[WebUI] WebSocket client connected: %u", client->id());
+                DLOG_I(LOG_WEB, "WebSocket client connected: %u", client->id());
                 break;
                 
             case WS_EVT_DISCONNECT:
-                DLOG_I(LOG_CORE, "[WebUI] WebSocket client disconnected: %u", client->id());
+                DLOG_I(LOG_WEB, "WebSocket client disconnected: %u", client->id());
                 break;
                 
             case WS_EVT_DATA: {
@@ -741,7 +741,7 @@ private:
         DeserializationError error = deserializeJson(doc, message);
 
         if (error) {
-            DLOG_W(LOG_CORE, "[WebUI] Failed to parse WebSocket message: %s", message.c_str());
+            DLOG_W(LOG_WEB, "Failed to parse WebSocket message: %s", message.c_str());
             return;
         }
 
@@ -761,7 +761,7 @@ private:
                 // Call the provider's handler
                 provider->handleWebUIRequest(contextId, "/", "POST", params);
             } else {
-                 DLOG_W(LOG_CORE, "[WebUI] No provider found for contextId: %s", contextId.c_str());
+                 DLOG_W(LOG_WEB, "No provider found for contextId: %s", contextId.c_str());
             }
         }
     }

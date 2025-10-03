@@ -114,7 +114,7 @@ struct MQTTStatistics {
  * auto* mqttPtr = core.getComponent<MQTTComponent>("MQTT");
  * mqttPtr->subscribe("home/sensors/#", 1);
  * mqttPtr->onMessage("home/sensors/+/temperature", [](const String& topic, const String& payload) {
- *     DLOG_I(LOG_CORE, "[App] Temperature: %s", payload.c_str());
+ *     DLOG_I(LOG_APP, "[App] Temperature: %s", payload.c_str());
  * });
  * ```
  */

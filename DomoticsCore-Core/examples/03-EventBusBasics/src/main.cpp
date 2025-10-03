@@ -5,6 +5,9 @@
 #include <DomoticsCore/Logger.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
 // We will use a literal topic and a plain integer payload for simplicity.
@@ -56,7 +59,7 @@ public:
         subId_ = eventBus().subscribe(String("sensor.*"), [this](const void* payload){
             auto* p = static_cast<const int*>(payload);
             if (!p) return;
-            DLOG_I(LOG_CORE, "[Wildcard] sensor.* value=%d", *p);
+            DLOG_I(LOG_APP, "[Wildcard] sensor.* value=%d", *p);
         }, this);
         return ComponentStatus::Success;
     }
@@ -88,7 +91,7 @@ public:
             auto* p = static_cast<const int*>(payload);
             if (!p) return;
             bool on = (*p >= threshold_);
-            DLOG_I(LOG_CORE, "[Consumer] sensor.update value=%d -> LED %s", *p, on ? "ON" : "OFF");
+            DLOG_I(LOG_APP, "[Consumer] sensor.update value=%d -> LED %s", *p, on ? "ON" : "OFF");
             digitalWrite(ledPin_, on ? HIGH : LOW);
         }, this, true);
         return ComponentStatus::Success;

@@ -4,6 +4,9 @@
 
 using namespace DomoticsCore;
 
+// Custom application log tag
+#define LOG_APP "APP"
+
 Core core;
 Utils::NonBlockingDelay heartbeatTimer(10000); // 10 second heartbeat
 Utils::NonBlockingDelay statusTimer(30000);    // 30 second status
@@ -17,14 +20,14 @@ void setup() {
     // Core initialized
     
     if (!core.begin(config)) {
-        DLOG_E(LOG_CORE, "Failed to initialize core!");
+        DLOG_E(LOG_APP, "Failed to initialize core!");
         return;
     }
     
-    DLOG_I(LOG_CORE, "Device configured: %s (ID: %s)", 
+    DLOG_I(LOG_APP, "Device configured: %s (ID: %s)", 
            core.getDeviceName().c_str(), 
            core.getDeviceId().c_str());
-    DLOG_I(LOG_CORE, "Setup complete - device ready");
+    DLOG_I(LOG_APP, "Setup complete - device ready");
 }
 
 void loop() {
@@ -32,7 +35,7 @@ void loop() {
     
     // Non-blocking heartbeat every 10 seconds
     if (heartbeatTimer.isReady()) {
-        DLOG_I(LOG_CORE, "Heartbeat - uptime: %lu seconds", millis() / 1000);
+        DLOG_I(LOG_APP, "Heartbeat - uptime: %lu seconds", millis() / 1000);
     }
     
     // Non-blocking status report every 30 seconds

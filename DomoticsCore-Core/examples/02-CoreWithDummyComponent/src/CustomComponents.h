@@ -8,6 +8,9 @@
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
+// Custom application log tag
+#define LOG_APP "APP"
+
 /**
  * Example custom component showing how to build new behaviors with DomoticsCore
  * This demonstrates the component development pattern for library users
@@ -40,7 +43,7 @@ public:
     }
     
     ComponentStatus begin() override {
-        DLOG_I(LOG_CORE, "TestComponent '%s' initializing...", componentName.c_str());
+        DLOG_I(LOG_APP, "TestComponent '%s' initializing...", componentName.c_str());
         
         // Initialize component metadata
         metadata.name = componentName;
@@ -58,7 +61,7 @@ public:
         // Validate configuration
         auto validation = validateConfig();
         if (!validation.isValid()) {
-            DLOG_E(LOG_CORE, "TestComponent '%s' config validation failed: %s", 
+            DLOG_E(LOG_APP, "TestComponent '%s' config validation failed: %s", 
                    componentName.c_str(), validation.toString().c_str());
             setStatus(ComponentStatus::ConfigError);
             return ComponentStatus::ConfigError;
@@ -69,41 +72,41 @@ public:
         
         counter = 0;
         setStatus(ComponentStatus::Success);
-        DLOG_I(LOG_CORE, "TestComponent '%s' initialized successfully", componentName.c_str());
+        DLOG_I(LOG_APP, "TestComponent '%s' initialized successfully", componentName.c_str());
         return ComponentStatus::Success;
     }
     
     void loop() override {
         // Heartbeat logging
         if (heartbeatTimer.isReady()) {
-            DLOG_I(LOG_CORE, "TestComponent '%s' heartbeat - counter: %d, uptime: %lu ms", 
+            DLOG_I(LOG_APP, "TestComponent '%s' heartbeat - counter: %d, uptime: %lu ms", 
                    componentName.c_str(), counter, millis());
         }
         
         // Simulate periodic work
         if (simulateWork && workTimer.isReady()) {
             counter++;
-            DLOG_D(LOG_CORE, "TestComponent '%s' doing work iteration %d", 
+            DLOG_D(LOG_APP, "TestComponent '%s' doing work iteration %d", 
                    componentName.c_str(), counter);
             
             // Simulate different work patterns
             if (counter % 10 == 0) {
-                DLOG_I(LOG_CORE, "TestComponent '%s' milestone reached: %d iterations", 
+                DLOG_I(LOG_APP, "TestComponent '%s' milestone reached: %d iterations", 
                        componentName.c_str(), counter);
             }
             
             if (counter % 25 == 0) {
-                DLOG_W(LOG_CORE, "TestComponent '%s' warning: high iteration count (%d)", 
+                DLOG_W(LOG_APP, "TestComponent '%s' warning: high iteration count (%d)", 
                        componentName.c_str(), counter);
             }
         }
     }
     
     ComponentStatus shutdown() override {
-        DLOG_I(LOG_CORE, "TestComponent '%s' shutting down...", componentName.c_str());
+        DLOG_I(LOG_APP, "TestComponent '%s' shutting down...", componentName.c_str());
         simulateWork = false;
         setStatus(ComponentStatus::Success);
-        DLOG_I(LOG_CORE, "TestComponent '%s' shutdown complete - final counter: %d", 
+        DLOG_I(LOG_APP, "TestComponent '%s' shutdown complete - final counter: %d", 
                componentName.c_str(), counter);
         return ComponentStatus::Success;
     }
@@ -127,40 +130,40 @@ public:
     
     void resetCounter() {
         counter = 0;
-        DLOG_I(LOG_CORE, "TestComponent '%s' counter reset", componentName.c_str());
+        DLOG_I(LOG_APP, "TestComponent '%s' counter reset", componentName.c_str());
     }
     
     void setWorkEnabled(bool enabled) {
         simulateWork = enabled;
-        DLOG_I(LOG_CORE, "TestComponent '%s' work %s", 
+        DLOG_I(LOG_APP, "TestComponent '%s' work %s", 
                componentName.c_str(), enabled ? "enabled" : "disabled");
     }
     
     void setHeartbeatInterval(unsigned long intervalMs) {
         heartbeatTimer.setInterval(intervalMs);
-        DLOG_I(LOG_CORE, "TestComponent '%s' heartbeat interval set to %lu ms", 
+        DLOG_I(LOG_APP, "TestComponent '%s' heartbeat interval set to %lu ms", 
                componentName.c_str(), intervalMs);
     }
     
     void setWorkInterval(unsigned long intervalMs) {
         workTimer.setInterval(intervalMs);
-        DLOG_I(LOG_CORE, "TestComponent '%s' work interval set to %lu ms", 
+        DLOG_I(LOG_APP, "TestComponent '%s' work interval set to %lu ms", 
                componentName.c_str(), intervalMs);
     }
     
     void triggerError() {
-        DLOG_E(LOG_CORE, "TestComponent '%s' simulated error triggered!", componentName.c_str());
+        DLOG_E(LOG_APP, "TestComponent '%s' simulated error triggered!", componentName.c_str());
     }
     
     void logStatus() {
-        DLOG_I(LOG_CORE, "TestComponent '%s' status:", componentName.c_str());
-        DLOG_I(LOG_CORE, "  - Counter: %d", counter);
-        DLOG_I(LOG_CORE, "  - Work enabled: %s", simulateWork ? "yes" : "no");
-        DLOG_I(LOG_CORE, "  - Heartbeat interval: %lu ms", heartbeatTimer.getInterval());
-        DLOG_I(LOG_CORE, "  - Work interval: %lu ms", workTimer.getInterval());
-        DLOG_I(LOG_CORE, "  - Dependencies: %d", dependencies.size());
+        DLOG_I(LOG_APP, "TestComponent '%s' status:", componentName.c_str());
+        DLOG_I(LOG_APP, "  - Counter: %d", counter);
+        DLOG_I(LOG_APP, "  - Work enabled: %s", simulateWork ? "yes" : "no");
+        DLOG_I(LOG_APP, "  - Heartbeat interval: %lu ms", heartbeatTimer.getInterval());
+        DLOG_I(LOG_APP, "  - Work interval: %lu ms", workTimer.getInterval());
+        DLOG_I(LOG_APP, "  - Dependencies: %d", dependencies.size());
         for (const auto& dep : dependencies) {
-            DLOG_I(LOG_CORE, "    - %s", dep.c_str());
+            DLOG_I(LOG_APP, "    - %s", dep.c_str());
         }
     }
 };
@@ -183,7 +186,7 @@ public:
     }
     
     ComponentStatus begin() override {
-        DLOG_I(LOG_CORE, "LEDBlinker initializing on pin %d...", ledPin);
+        DLOG_I(LOG_APP, "LEDBlinker initializing on pin %d...", ledPin);
         
         // Initialize component metadata
         metadata.name = "LEDBlinker";
@@ -202,7 +205,7 @@ public:
         digitalWrite(ledPin, LOW);
         ledState = false;
         setStatus(ComponentStatus::Success);
-        DLOG_I(LOG_CORE, "LEDBlinker initialized successfully");
+        DLOG_I(LOG_APP, "LEDBlinker initialized successfully");
         return ComponentStatus::Success;
     }
     
@@ -210,12 +213,12 @@ public:
         if (blinkEnabled && blinkTimer.isReady()) {
             ledState = !ledState;
             digitalWrite(ledPin, ledState ? HIGH : LOW);
-            DLOG_D(LOG_CORE, "LED %s", ledState ? "ON" : "OFF");
+            DLOG_D(LOG_APP, "LED %s", ledState ? "ON" : "OFF");
         }
     }
     
     ComponentStatus shutdown() override {
-        DLOG_I(LOG_CORE, "LEDBlinker shutting down...");
+        DLOG_I(LOG_APP, "LEDBlinker shutting down...");
         digitalWrite(ledPin, LOW);
         blinkEnabled = false;
         setStatus(ComponentStatus::Success);
@@ -228,7 +231,7 @@ public:
     
     void setBlinkInterval(unsigned long intervalMs) {
         blinkTimer.setInterval(intervalMs);
-        DLOG_I(LOG_CORE, "LED blink interval set to %lu ms", intervalMs);
+        DLOG_I(LOG_APP, "LED blink interval set to %lu ms", intervalMs);
     }
     
     void setEnabled(bool enabled) {
@@ -237,7 +240,7 @@ public:
             digitalWrite(ledPin, LOW);
             ledState = false;
         }
-        DLOG_I(LOG_CORE, "LED blinking %s", enabled ? "enabled" : "disabled");
+        DLOG_I(LOG_APP, "LED blinking %s", enabled ? "enabled" : "disabled");
     }
 };
 

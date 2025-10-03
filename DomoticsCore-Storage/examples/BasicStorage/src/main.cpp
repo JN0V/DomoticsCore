@@ -6,6 +6,9 @@
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
+// Custom application log tag
+#define LOG_APP "APP"
+
 Core core;
 
 /**
@@ -35,7 +38,7 @@ public:
     }
     
     ComponentStatus begin() override {
-        DLOG_I(LOG_CORE, "[StorageDemo] Initializing storage demonstration component...");
+        DLOG_I(LOG_APP, "[StorageDemo] Initializing storage demonstration component...");
         
         // Configure storage for preferences
         StorageConfig config;
@@ -50,7 +53,7 @@ public:
         // Initialize storage manager
         ComponentStatus status = storageManager->begin();
         if (status != ComponentStatus::Success) {
-            DLOG_E(LOG_CORE, "[StorageDemo] Failed to initialize storage manager: %s", 
+            DLOG_E(LOG_APP, "[StorageDemo] Failed to initialize storage manager: %s", 
                          statusToString(status));
             setStatus(status);
             return status;
@@ -61,13 +64,13 @@ public:
         sessionCounter++;
         storageManager->putInt("session_count", sessionCounter);
         
-        DLOG_I(LOG_CORE, "[StorageDemo] Storage manager initialized successfully");
-        DLOG_I(LOG_CORE, "[StorageDemo] Session #%d started", sessionCounter);
-        DLOG_I(LOG_CORE, "[StorageDemo] Demo phases:");
-        DLOG_I(LOG_CORE, "[StorageDemo] - Phase 1: Basic preferences (strings, integers)");
-        DLOG_I(LOG_CORE, "[StorageDemo] - Phase 2: Advanced data types (floats, booleans)");
-        DLOG_I(LOG_CORE, "[StorageDemo] - Phase 3: Binary data (blobs)");
-        DLOG_I(LOG_CORE, "[StorageDemo] - Phase 4: Data management (listing, cleanup)");
+        DLOG_I(LOG_APP, "[StorageDemo] Storage manager initialized successfully");
+        DLOG_I(LOG_APP, "[StorageDemo] Session #%d started", sessionCounter);
+        DLOG_I(LOG_APP, "[StorageDemo] Demo phases:");
+        DLOG_I(LOG_APP, "[StorageDemo] - Phase 1: Basic preferences (strings, integers)");
+        DLOG_I(LOG_APP, "[StorageDemo] - Phase 2: Advanced data types (floats, booleans)");
+        DLOG_I(LOG_APP, "[StorageDemo] - Phase 3: Binary data (blobs)");
+        DLOG_I(LOG_APP, "[StorageDemo] - Phase 4: Data management (listing, cleanup)");
         
         // Store initial app configuration
         storeInitialConfig();
@@ -94,7 +97,7 @@ public:
     }
     
     ComponentStatus shutdown() override {
-        DLOG_I(LOG_CORE, "[StorageDemo] Shutting down storage demonstration component...");
+        DLOG_I(LOG_APP, "[StorageDemo] Shutting down storage demonstration component...");
         
         if (storageManager) {
             // Store shutdown timestamp
@@ -115,38 +118,38 @@ private:
             storageManager->putBool("debug_enabled", true);
             storageManager->putFloat("update_interval", 5.0f);
             
-            DLOG_I(LOG_CORE, "Stored initial app configuration");
+            DLOG_I(LOG_APP, "Stored initial app configuration");
         }
         
         // Update boot count
         int bootCount = storageManager->getInt("boot_count", 0);
         bootCount++;
         storageManager->putInt("boot_count", bootCount);
-        DLOG_I(LOG_CORE, "Boot count: %d", bootCount);
+        DLOG_I(LOG_APP, "Boot count: %d", bootCount);
     }
     
     void reportStorageStatus() {
         if (!storageManager->isOpenStorage()) {
-            DLOG_W(LOG_CORE, "Storage not open");
+            DLOG_W(LOG_APP, "Storage not open");
             return;
         }
         
-        DLOG_I(LOG_CORE, "=== Storage Status ===");
-        DLOG_I(LOG_CORE, "%s", storageManager->getStorageInfo().c_str());
+        DLOG_I(LOG_APP, "=== Storage Status ===");
+        DLOG_I(LOG_APP, "%s", storageManager->getStorageInfo().c_str());
         
         // Show some key statistics
         String appName = storageManager->getString("app_name", "Unknown");
         int bootCount = storageManager->getInt("boot_count", 0);
         bool debugEnabled = storageManager->getBool("debug_enabled", false);
         
-        DLOG_I(LOG_CORE, "App: %s (boots: %d, debug: %s)", 
+        DLOG_I(LOG_APP, "App: %s (boots: %d, debug: %s)", 
                appName.c_str(), bootCount, debugEnabled ? "on" : "off");
     }
     
     void executeDemo() {
         demoPhase = (demoPhase % 4) + 1;
         
-        DLOG_I(LOG_CORE, "=== Demo Phase %d ===", demoPhase);
+        DLOG_I(LOG_APP, "=== Demo Phase %d ===", demoPhase);
         
         switch (demoPhase) {
             case 1:
@@ -165,7 +168,7 @@ private:
     }
     
     void demoBasicPreferences() {
-        DLOG_I(LOG_CORE, "Demo: Basic Preferences (Strings & Integers)");
+        DLOG_I(LOG_APP, "Demo: Basic Preferences (Strings & Integers)");
         
         // User preferences simulation
         String userName = "User_" + String(sessionCounter);
@@ -177,10 +180,10 @@ private:
         storageManager->putInt("user_level", userLevel);
         storageManager->putString("ui_theme", theme);
         
-        DLOG_I(LOG_CORE, "Stored user preferences:");
-        DLOG_I(LOG_CORE, "  Name: %s", userName.c_str());
-        DLOG_I(LOG_CORE, "  Level: %d", userLevel);
-        DLOG_I(LOG_CORE, "  Theme: %s", theme.c_str());
+        DLOG_I(LOG_APP, "Stored user preferences:");
+        DLOG_I(LOG_APP, "  Name: %s", userName.c_str());
+        DLOG_I(LOG_APP, "  Level: %d", userLevel);
+        DLOG_I(LOG_APP, "  Theme: %s", theme.c_str());
         
         // Device settings simulation
         int deviceId = 1000 + sessionCounter;
@@ -189,18 +192,18 @@ private:
         storageManager->putInt("device_id", deviceId);
         storageManager->putString("device_location", location);
         
-        DLOG_I(LOG_CORE, "Stored device settings:");
-        DLOG_I(LOG_CORE, "  ID: %d", deviceId);
-        DLOG_I(LOG_CORE, "  Location: %s", location.c_str());
+        DLOG_I(LOG_APP, "Stored device settings:");
+        DLOG_I(LOG_APP, "  ID: %d", deviceId);
+        DLOG_I(LOG_APP, "  Location: %s", location.c_str());
         
         // Read back and verify
         String readName = storageManager->getString("user_name");
         int readLevel = storageManager->getInt("user_level");
-        DLOG_I(LOG_CORE, "Verification: %s (level %d)", readName.c_str(), readLevel);
+        DLOG_I(LOG_APP, "Verification: %s (level %d)", readName.c_str(), readLevel);
     }
     
     void demoAdvancedDataTypes() {
-        DLOG_I(LOG_CORE, "Demo: Advanced Data Types (Floats & Booleans)");
+        DLOG_I(LOG_APP, "Demo: Advanced Data Types (Floats & Booleans)");
         
         // Sensor calibration data
         float tempOffset = (sessionCounter % 10) * 0.5f - 2.5f;
@@ -213,11 +216,11 @@ private:
         storageManager->putBool("sensor_enabled", sensorEnabled);
         storageManager->putBool("auto_calibrate", autoCalibrate);
         
-        DLOG_I(LOG_CORE, "Stored sensor calibration:");
-        DLOG_I(LOG_CORE, "  Temp offset: %.2f°C", tempOffset);
-        DLOG_I(LOG_CORE, "  Humidity scale: %.3f", humidityScale);
-        DLOG_I(LOG_CORE, "  Sensor enabled: %s", sensorEnabled ? "yes" : "no");
-        DLOG_I(LOG_CORE, "  Auto calibrate: %s", autoCalibrate ? "yes" : "no");
+        DLOG_I(LOG_APP, "Stored sensor calibration:");
+        DLOG_I(LOG_APP, "  Temp offset: %.2f°C", tempOffset);
+        DLOG_I(LOG_APP, "  Humidity scale: %.3f", humidityScale);
+        DLOG_I(LOG_APP, "  Sensor enabled: %s", sensorEnabled ? "yes" : "no");
+        DLOG_I(LOG_APP, "  Auto calibrate: %s", autoCalibrate ? "yes" : "no");
         
         // Network settings
         float signalThreshold = -70.0f + (sessionCounter % 20);
@@ -228,21 +231,21 @@ private:
         storageManager->putBool("wifi_auto", wifiAutoReconnect);
         storageManager->putFloat("conn_timeout", connectionTimeout);
         
-        DLOG_I(LOG_CORE, "Stored network settings:");
-        DLOG_I(LOG_CORE, "  Signal threshold: %.1f dBm", signalThreshold);
-        DLOG_I(LOG_CORE, "  Auto reconnect: %s", wifiAutoReconnect ? "yes" : "no");
-        DLOG_I(LOG_CORE, "  Timeout: %.1f seconds", connectionTimeout);
+        DLOG_I(LOG_APP, "Stored network settings:");
+        DLOG_I(LOG_APP, "  Signal threshold: %.1f dBm", signalThreshold);
+        DLOG_I(LOG_APP, "  Auto reconnect: %s", wifiAutoReconnect ? "yes" : "no");
+        DLOG_I(LOG_APP, "  Timeout: %.1f seconds", connectionTimeout);
         
         // Read back and verify
         float readOffset = storageManager->getFloat("temp_offset");
         bool readEnabled = storageManager->getBool("sensor_enabled");
         float readThresh = storageManager->getFloat("signal_thresh");
-        DLOG_I(LOG_CORE, "Verification: offset %.2f, enabled %s, threshold %.1f", 
+        DLOG_I(LOG_APP, "Verification: offset %.2f, enabled %s, threshold %.1f", 
                readOffset, readEnabled ? "yes" : "no", readThresh);
     }
     
     void demoBinaryData() {
-        DLOG_I(LOG_CORE, "Demo: Binary Data (Blobs)");
+        DLOG_I(LOG_APP, "Demo: Binary Data (Blobs)");
         
         // Create binary configuration data
         struct DeviceConfig {
@@ -264,10 +267,10 @@ private:
         
         // Store binary config
         if (storageManager->putBlob("dev_config", (uint8_t*)&config, sizeof(config))) {
-            DLOG_I(LOG_CORE, "Stored device config blob (%d bytes)", sizeof(config));
-            DLOG_I(LOG_CORE, "  Magic: 0x%08X", config.magic);
-            DLOG_I(LOG_CORE, "  Version: 0x%04X", config.version);
-            DLOG_I(LOG_CORE, "  Serial: %u", config.serialNumber);
+            DLOG_I(LOG_APP, "Stored device config blob (%d bytes)", sizeof(config));
+            DLOG_I(LOG_APP, "  Magic: 0x%08X", config.magic);
+            DLOG_I(LOG_APP, "  Version: 0x%04X", config.version);
+            DLOG_I(LOG_APP, "  Serial: %u", config.serialNumber);
         }
         
         // Create and store calibration matrix
@@ -277,8 +280,8 @@ private:
         }
         
         if (storageManager->putBlob("calib_mat", (uint8_t*)calibMatrix, sizeof(calibMatrix))) {
-            DLOG_I(LOG_CORE, "Stored calibration matrix (%d bytes)", sizeof(calibMatrix));
-            DLOG_I(LOG_CORE, "  Matrix[0]: %.2f, Matrix[4]: %.2f, Matrix[8]: %.2f", 
+            DLOG_I(LOG_APP, "Stored calibration matrix (%d bytes)", sizeof(calibMatrix));
+            DLOG_I(LOG_APP, "  Matrix[0]: %.2f, Matrix[4]: %.2f, Matrix[8]: %.2f", 
                    calibMatrix[0], calibMatrix[4], calibMatrix[8]);
         }
         
@@ -286,41 +289,41 @@ private:
         DeviceConfig readConfig;
         size_t bytesRead = storageManager->getBlob("dev_config", (uint8_t*)&readConfig, sizeof(readConfig));
         if (bytesRead == sizeof(readConfig)) {
-            DLOG_I(LOG_CORE, "Verification: magic 0x%08X, serial %u", 
+            DLOG_I(LOG_APP, "Verification: magic 0x%08X, serial %u", 
                    readConfig.magic, readConfig.serialNumber);
         }
     }
     
     void demoDataManagement() {
-        DLOG_I(LOG_CORE, "Demo: Data Management (Listing & Cleanup)");
+        DLOG_I(LOG_APP, "Demo: Data Management (Listing & Cleanup)");
         
         // Get all stored keys
         auto keys = storageManager->getKeys();
-        DLOG_I(LOG_CORE, "Stored keys (%d total):", keys.size());
+        DLOG_I(LOG_APP, "Stored keys (%d total):", keys.size());
         
         for (const auto& key : keys) {
             if (storageManager->exists(key)) {
-                DLOG_I(LOG_CORE, "  - %s", key.c_str());
+                DLOG_I(LOG_APP, "  - %s", key.c_str());
             }
         }
         
         // Demonstrate key existence checking
         String testKeys[] = {"user_name", "device_id", "temp_offset", "dev_config", "nonexistent_key"};
-        DLOG_I(LOG_CORE, "Key existence check:");
+        DLOG_I(LOG_APP, "Key existence check:");
         for (const auto& key : testKeys) {
             bool exists = storageManager->exists(key);
-            DLOG_I(LOG_CORE, "  %s: %s", key.c_str(), exists ? "EXISTS" : "NOT FOUND");
+            DLOG_I(LOG_APP, "  %s: %s", key.c_str(), exists ? "EXISTS" : "NOT FOUND");
         }
         
         // Cleanup old session data if we have too many sessions
         if (sessionCounter > 5) {
-            DLOG_I(LOG_CORE, "Performing cleanup (session %d)...", sessionCounter);
+            DLOG_I(LOG_APP, "Performing cleanup (session %d)...", sessionCounter);
             
             // Remove some temporary keys
             String tempKey = "temp_" + String(sessionCounter - 3);
             if (storageManager->exists(tempKey)) {
                 storageManager->remove(tempKey);
-                DLOG_I(LOG_CORE, "Removed old temporary key: %s", tempKey.c_str());
+                DLOG_I(LOG_APP, "Removed old temporary key: %s", tempKey.c_str());
             }
         }
         
@@ -328,14 +331,14 @@ private:
         String sessionKey = "temp_" + String(sessionCounter);
         String sessionData = "Session " + String(sessionCounter) + " at " + String(millis());
         storageManager->putString(sessionKey, sessionData);
-        DLOG_I(LOG_CORE, "Stored temporary session data: %s", sessionKey.c_str());
+        DLOG_I(LOG_APP, "Stored temporary session data: %s", sessionKey.c_str());
         
         // Demonstrate storage statistics
-        DLOG_I(LOG_CORE, "Storage statistics:");
-        DLOG_I(LOG_CORE, "  Entries: %d/%d", storageManager->getEntryCount(), 
+        DLOG_I(LOG_APP, "Storage statistics:");
+        DLOG_I(LOG_APP, "  Entries: %d/%d", storageManager->getEntryCount(), 
                storageManager->getEntryCount() + storageManager->getFreeEntries());
-        DLOG_I(LOG_CORE, "  Free entries: %d", storageManager->getFreeEntries());
-        DLOG_I(LOG_CORE, "  Namespace: %s", storageManager->getNamespace().c_str());
+        DLOG_I(LOG_APP, "  Free entries: %d", storageManager->getFreeEntries());
+        DLOG_I(LOG_APP, "  Namespace: %s", storageManager->getNamespace().c_str());
     }
 };
 
@@ -348,23 +351,23 @@ void setup() {
     // Core initialized
     
     // Add storage demonstration component
-    DLOG_I(LOG_CORE, "Adding storage demonstration component...");
+    DLOG_I(LOG_APP, "Adding storage demonstration component...");
     core.addComponent(std::unique_ptr<StorageDemoComponent>(new StorageDemoComponent()));
     
-    DLOG_I(LOG_CORE, "Starting core with %d components...", core.getComponentCount());
+    DLOG_I(LOG_APP, "Starting core with %d components...", core.getComponentCount());
     
     if (!core.begin(config)) {
-        DLOG_E(LOG_CORE, "Failed to initialize core!");
+        DLOG_E(LOG_APP, "Failed to initialize core!");
         return;
     }
     
-    DLOG_I(LOG_CORE, "=== DomoticsCore Storage Demo Ready ===");
-    DLOG_I(LOG_CORE, "Features demonstrated:");
-    DLOG_I(LOG_CORE, "- NVS preferences storage");
-    DLOG_I(LOG_CORE, "- String, integer, float, boolean data types");
-    DLOG_I(LOG_CORE, "- Binary blob storage");
-    DLOG_I(LOG_CORE, "- Key management and cleanup");
-    DLOG_I(LOG_CORE, "- Persistent app configuration");
+    DLOG_I(LOG_APP, "=== DomoticsCore Storage Demo Ready ===");
+    DLOG_I(LOG_APP, "Features demonstrated:");
+    DLOG_I(LOG_APP, "- NVS preferences storage");
+    DLOG_I(LOG_APP, "- String, integer, float, boolean data types");
+    DLOG_I(LOG_APP, "- Binary blob storage");
+    DLOG_I(LOG_APP, "- Key management and cleanup");
+    DLOG_I(LOG_APP, "- Persistent app configuration");
 }
 
 void loop() {

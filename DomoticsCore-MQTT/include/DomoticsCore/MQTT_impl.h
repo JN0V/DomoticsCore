@@ -47,17 +47,17 @@ inline MQTTComponent::~MQTTComponent() {
 
 // Lifecycle methods
 inline ComponentStatus MQTTComponent::begin() {
-    DLOG_I(LOG_CORE, "[MQTT] Initializing MQTT client");
+    DLOG_I(LOG_MQTT, "Initializing");
     
     loadConfiguration();
     
     if (!config.enabled) {
-        DLOG_I(LOG_CORE, "[MQTT] Component disabled in configuration");
+        DLOG_I(LOG_MQTT, "Component disabled in configuration");
         return ComponentStatus::ConfigError;
     }
     
     if (config.broker.isEmpty()) {
-        DLOG_W(LOG_CORE, "[MQTT] No broker configured");
+        DLOG_W(LOG_MQTT, "No broker configured");
         return ComponentStatus::ConfigError;
     }
     
@@ -69,7 +69,7 @@ inline ComponentStatus MQTTComponent::begin() {
         connect();
     }
     
-    DLOG_I(LOG_CORE, "[MQTT] Initialized with broker %s:%d, client ID: %s", 
+    DLOG_I(LOG_MQTT, "Initialized with broker %s:%d, client ID: %s", 
            config.broker.c_str(), config.port, config.clientId.c_str());
     
     return ComponentStatus::Success;
@@ -88,7 +88,7 @@ inline void MQTTComponent::loop() {
 }
 
 inline ComponentStatus MQTTComponent::shutdown() {
-    DLOG_I(LOG_CORE, "[MQTT] Shutting down");
+    DLOG_I(LOG_MQTT, "Shutting down");
     
     if (isConnected()) {
         disconnect();
@@ -100,7 +100,7 @@ inline ComponentStatus MQTTComponent::shutdown() {
 // Connection management
 inline bool MQTTComponent::connect() {
     if (isConnected()) {
-        DLOG_W(LOG_CORE, "[MQTT] Already connected");
+        DLOG_W(LOG_MQTT, "Already connected");
         return true;
     }
     
@@ -121,7 +121,7 @@ inline bool MQTTComponent::connect() {
         currentReconnectDelay = config.reconnectDelay;
         stats.connectCount++;
         
-        DLOG_I(LOG_CORE, "[MQTT] Connected to %s:%d", config.broker.c_str(), config.port);
+        DLOG_I(LOG_MQTT, "Connected to %s:%d", config.broker.c_str(), config.port);
         
         // Resubscribe to all topics
         for (const auto& sub : subscriptions) {
@@ -136,7 +136,7 @@ inline bool MQTTComponent::connect() {
         state = MQTTState::Error;
         stateChangeTime = millis();
         lastError = "Connection failed";
-        DLOG_E(LOG_CORE, "[MQTT] Connection failed");
+        DLOG_E(LOG_MQTT, "Connection failed");
     }
     
     return success;
@@ -145,7 +145,7 @@ inline bool MQTTComponent::connect() {
 inline void MQTTComponent::disconnect() {
     if (!isConnected()) return;
     
-    DLOG_I(LOG_CORE, "[MQTT] Disconnecting");
+    DLOG_I(LOG_MQTT, "Disconnecting");
     mqttClient.disconnect();
     state = MQTTState::Disconnected;
     stateChangeTime = millis();
@@ -226,7 +226,7 @@ inline bool MQTTComponent::subscribe(const String& topic, uint8_t qos) {
     if (success) {
         subscriptions.push_back({topic, qos});
         stats.subscriptionCount = subscriptions.size();
-        DLOG_I(LOG_CORE, "[MQTT] Subscribed to: %s (QoS %d)", topic.c_str(), qos);
+        DLOG_I(LOG_MQTT, "Subscribed to: %s (QoS %d)", topic.c_str(), qos);
     }
     
     return success;
@@ -246,7 +246,7 @@ inline bool MQTTComponent::unsubscribe(const String& topic) {
             }
         }
         stats.subscriptionCount = subscriptions.size();
-        DLOG_I(LOG_CORE, "[MQTT] Unsubscribed from: %s", topic.c_str());
+        DLOG_I(LOG_MQTT, "Unsubscribed from: %s", topic.c_str());
     }
     
     return success;
@@ -363,7 +363,7 @@ inline void MQTTComponent::handleReconnection() {
         }
     }
     
-    DLOG_I(LOG_CORE, "[MQTT] Attempting reconnection (delay: %lu ms)", currentReconnectDelay);
+    DLOG_I(LOG_MQTT, "Attempting reconnection (delay: %lu ms)", currentReconnectDelay);
     stats.reconnectCount++;
     connect();
 }

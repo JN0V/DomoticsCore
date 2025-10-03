@@ -6,12 +6,15 @@
 #include <DomoticsCore/WifiWebUI.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
 Core core;
 
 void setup() {
-    DLOG_I(LOG_CORE, "=== DomoticsCore WifiWithWebUI Starting ===");
+    DLOG_I(LOG_APP, "=== DomoticsCore WifiWithWebUI Starting ===");
 
     // Core initialized
 

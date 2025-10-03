@@ -5,6 +5,9 @@
 #include <DomoticsCore/Logger.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
 static constexpr const char* T_ORDER = "test.order";
@@ -21,7 +24,7 @@ public:
   ComponentStatus begin() override {
     Serial.begin(115200);
     delay(50);
-    DLOG_I(LOG_CORE, "[Tests] Starting EventBus tests...");
+    DLOG_I(LOG_APP, "[Tests] Starting EventBus tests...");
 
     bool ok = true;
     ok &= testOrder();
@@ -31,9 +34,9 @@ public:
     ok &= testBackpressure();
 
     if (ok) {
-      DLOG_I(LOG_CORE, "[Tests] ALL PASS");
+      DLOG_I(LOG_APP, "[Tests] ALL PASS");
     } else {
-      DLOG_I(LOG_CORE, "[Tests] SOME FAIL");
+      DLOG_I(LOG_APP, "[Tests] SOME FAIL");
     }
     done_ = true;
     return ComponentStatus::Success;
@@ -62,9 +65,9 @@ private:
     bool ok = (results_.size()==5);
     for (int i=0;i<5 && ok;i++) ok &= (results_[i] == i+1);
     if (ok) {
-      DLOG_I(LOG_CORE, "[Tests] Order: PASS");
+      DLOG_I(LOG_APP, "[Tests] Order: PASS");
     } else {
-      DLOG_I(LOG_CORE, "[Tests] Order: FAIL");
+      DLOG_I(LOG_APP, "[Tests] Order: FAIL");
     }
     return ok;
   }
@@ -79,9 +82,9 @@ private:
     eventBus().poll();
     bool ok = (count_ == 1);
     if (ok) {
-      DLOG_I(LOG_CORE, "[Tests] UnsubscribeOwner: PASS");
+      DLOG_I(LOG_APP, "[Tests] UnsubscribeOwner: PASS");
     } else {
-      DLOG_I(LOG_CORE, "[Tests] UnsubscribeOwner: FAIL");
+      DLOG_I(LOG_APP, "[Tests] UnsubscribeOwner: FAIL");
     }
     return ok;
   }
@@ -99,9 +102,9 @@ private:
     eventBus().unsubscribe(sub);
     bool ok = (results_.size()==2 && results_[0]==10 && results_[1]==20);
     if (ok) {
-      DLOG_I(LOG_CORE, "[Tests] Wildcards: PASS");
+      DLOG_I(LOG_APP, "[Tests] Wildcards: PASS");
     } else {
-      DLOG_I(LOG_CORE, "[Tests] Wildcards: FAIL");
+      DLOG_I(LOG_APP, "[Tests] Wildcards: FAIL");
     }
     return ok;
   }
@@ -121,9 +124,9 @@ private:
     eventBus().unsubscribe(sub);
     bool ok = (results_.size()==2 && results_[0]==42 && results_[1]==43);
     if (ok) {
-      DLOG_I(LOG_CORE, "[Tests] Sticky: PASS");
+      DLOG_I(LOG_APP, "[Tests] Sticky: PASS");
     } else {
-      DLOG_I(LOG_CORE, "[Tests] Sticky: FAIL");
+      DLOG_I(LOG_APP, "[Tests] Sticky: FAIL");
     }
     return ok;
   }
@@ -148,9 +151,9 @@ private:
       }
     }
     if (ok) {
-      DLOG_I(LOG_CORE, "[Tests] Backpressure: PASS");
+      DLOG_I(LOG_APP, "[Tests] Backpressure: PASS");
     } else {
-      DLOG_I(LOG_CORE, "[Tests] Backpressure: FAIL");
+      DLOG_I(LOG_APP, "[Tests] Backpressure: FAIL");
     }
     return ok;
   }

@@ -83,7 +83,7 @@ struct NTPStatistics {
  * cfg.timezone = Timezones::CET;
  * auto ntp = std::make_unique<NTPComponent>(cfg);
  * ntp->onSync([](bool success) {
- *     DLOG_I(LOG_CORE, "Time synced!");
+ *     DLOG_I(LOG_NTP, "Time synced!");
  * });
  * core.addComponent(std::move(ntp));
  * ```
@@ -99,7 +99,7 @@ public:
     explicit NTPComponent(const NTPConfig& cfg = NTPConfig())
         : config(cfg), synced(false), syncInProgress(false), lastSyncAttempt(0), 
           bootTime(millis()), syncCallback(nullptr) {
-        DLOG_D(LOG_CORE, "NTPComponent constructed");
+        DLOG_D(LOG_NTP, "Component constructed");
     }
 
     virtual ~NTPComponent() {
@@ -108,7 +108,7 @@ public:
             sntp_stop();
         }
 #endif
-        DLOG_D(LOG_CORE, "NTPComponent destroyed");
+        DLOG_D(LOG_NTP, "Component destroyed");
     }
 
     // ========== IComponent Interface ==========
@@ -117,17 +117,17 @@ public:
     String getVersion() const override { return "0.1.0"; }
 
     ComponentStatus begin() override {
-        DLOG_I(LOG_CORE, "Starting NTP component...");
+        DLOG_I(LOG_NTP, "Starting component...");
         
         if (!config.enabled) {
-            DLOG_W(LOG_CORE, "NTP is disabled");
+            DLOG_W(LOG_NTP, "Component disabled");
             return ComponentStatus::Success;
         }
 
         // Set timezone
         setenv("TZ", config.timezone.c_str(), 1);
         tzset();
-        DLOG_I(LOG_CORE, "Timezone set to: %s", config.timezone.c_str());
+        DLOG_I(LOG_NTP, "Timezone set to: %s", config.timezone.c_str());
 
 #ifdef ESP32
         // Configure SNTP
@@ -136,7 +136,7 @@ public:
         // Set NTP servers
         for (size_t i = 0; i < config.servers.size() && i < 3; i++) {
             sntp_setservername(i, config.servers[i].c_str());
-            DLOG_I(LOG_CORE, "NTP server %d: %s", i, config.servers[i].c_str());
+            DLOG_I(LOG_NTP, "NTP server %d: %s", i, config.servers[i].c_str());
         }
         
         // Set sync interval
@@ -149,9 +149,9 @@ public:
         
         // Start SNTP
         sntp_init();
-        DLOG_I(LOG_CORE, "SNTP client started");
+        DLOG_I(LOG_NTP, "SNTP client started");
 #else
-        DLOG_W(LOG_CORE, "NTP not supported on this platform");
+        DLOG_W(LOG_NTP, "Not supported on this platform");
 #endif
 
         return ComponentStatus::Success;
@@ -161,7 +161,7 @@ public:
 #ifdef ESP32
         if (config.enabled) {
             sntp_stop();
-            DLOG_I(LOG_CORE, "SNTP client stopped");
+            DLOG_I(LOG_NTP, "SNTP client stopped");
         }
 #endif
         return ComponentStatus::Success;
@@ -185,7 +185,7 @@ public:
                 stats.lastSyncDuration = millis() - lastSyncAttempt;
             }
             
-            DLOG_I(LOG_CORE, "NTP time synchronized: %s", getFormattedTime().c_str());
+            DLOG_I(LOG_NTP, "Time synchronized: %s", getFormattedTime().c_str());
             
             if (syncCallback) {
                 syncCallback(true);
@@ -199,7 +199,7 @@ public:
             stats.consecutiveFailures++;
             stats.lastFailTime = time(nullptr);
             
-            DLOG_W(LOG_CORE, "NTP sync timeout");
+            DLOG_W(LOG_NTP, "Sync timeout");
             
             if (syncCallback) {
                 syncCallback(false);
@@ -216,17 +216,17 @@ public:
      */
     bool syncNow() {
         if (!config.enabled) {
-            DLOG_W(LOG_CORE, "NTP is disabled");
+            DLOG_W(LOG_NTP, "Component disabled");
             return false;
         }
         
         if (syncInProgress) {
-            DLOG_W(LOG_CORE, "Sync already in progress");
+            DLOG_W(LOG_NTP, "Sync already in progress");
             return false;
         }
 
 #ifdef ESP32
-        DLOG_I(LOG_CORE, "Initiating NTP sync...");
+        DLOG_I(LOG_NTP, "Initiating sync...");
         syncInProgress = true;
         lastSyncAttempt = millis();
         
@@ -234,7 +234,7 @@ public:
         sntp_restart();
         return true;
 #else
-        DLOG_W(LOG_CORE, "NTP not supported");
+        DLOG_W(LOG_NTP, "Not supported");
         return false;
 #endif
     }
@@ -387,7 +387,7 @@ public:
         config.timezone = tz;
         setenv("TZ", tz.c_str(), 1);
         tzset();
-        DLOG_I(LOG_CORE, "Timezone changed to: %s", tz.c_str());
+        DLOG_I(LOG_NTP, "Timezone changed to: %s", tz.c_str());
     }
 
     /**

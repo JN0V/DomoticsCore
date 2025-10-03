@@ -5,6 +5,9 @@
 #include <DomoticsCore/Logger.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
 // Topics
@@ -25,7 +28,7 @@ public:
       done_ = true;
       bool ready = true;
       eventBus().publishSticky(TOPIC_A_READY, ready);
-      DLOG_I(LOG_CORE, "[A] published %s=true", TOPIC_A_READY);
+      DLOG_I(LOG_APP, "[A] published %s=true", TOPIC_A_READY);
     }
   }
   ComponentStatus shutdown() override { return ComponentStatus::Success; }
@@ -47,7 +50,7 @@ public:
       done_ = true;
       bool ready = true;
       eventBus().publishSticky(TOPIC_B_READY, ready);
-      DLOG_I(LOG_CORE, "[B] published %s=true", TOPIC_B_READY);
+      DLOG_I(LOG_APP, "[B] published %s=true", TOPIC_B_READY);
     }
   }
   ComponentStatus shutdown() override { return ComponentStatus::Success; }
@@ -87,7 +90,7 @@ private:
       sent_ = true;
       bool ready = true;
       eventBus().publishSticky(TOPIC_SYSTEM_READY, ready);
-      DLOG_I(LOG_CORE, "[Coordinator] published %s=true", TOPIC_SYSTEM_READY);
+      DLOG_I(LOG_APP, "[Coordinator] published %s=true", TOPIC_SYSTEM_READY);
     }
   }
   uint32_t subA_ = 0, subB_ = 0;
@@ -104,7 +107,7 @@ public:
       auto* v = static_cast<const bool*>(p);
       bool on = (v && *v);
       digitalWrite(LED_BUILTIN, on ? HIGH : LOW);
-      DLOG_I(LOG_CORE, "[ReadyLED] %s -> LED %s", TOPIC_SYSTEM_READY, on ? "ON" : "OFF");
+      DLOG_I(LOG_APP, "[ReadyLED] %s -> LED %s", TOPIC_SYSTEM_READY, on ? "ON" : "OFF");
     }, this, true); // replay in case already ready
     return ComponentStatus::Success;
   }

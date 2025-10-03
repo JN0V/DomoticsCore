@@ -22,6 +22,9 @@
 #include <DomoticsCore/Timer.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 using namespace DomoticsCore::Components::WebUI;
 
@@ -42,22 +45,22 @@ void setup() {
     Serial.begin(115200);  // Required for ESP32 logging output
     delay(1000);  // Allow serial to initialize
     
-    DLOG_I(LOG_CORE, "\n========================================");
-    DLOG_I(LOG_CORE, "DomoticsCore - NTP with WebUI");
-    DLOG_I(LOG_CORE, "========================================\n");
+    DLOG_I(LOG_APP, "\n========================================");
+    DLOG_I(LOG_APP, "DomoticsCore - NTP with WebUI");
+    DLOG_I(LOG_APP, "========================================\n");
     
     // Connect to WiFi
-    DLOG_I(LOG_CORE, "Connecting to WiFi: %s", WIFI_SSID);
+    DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
-        DLOG_D(LOG_CORE, ".");
+        DLOG_D(LOG_APP, ".");
     }
     
-    DLOG_I(LOG_CORE, "\nWiFi connected!");
-    DLOG_I(LOG_CORE, "IP address: %s", WiFi.localIP().toString().c_str());
+    DLOG_I(LOG_APP, "\nWiFi connected!");
+    DLOG_I(LOG_APP, "IP address: %s", WiFi.localIP().toString().c_str());
     
     // Configure WebUI
     WebUIConfig webuiCfg;
@@ -82,9 +85,9 @@ void setup() {
     // Register sync callback
     ntpPtr->onSync([ntpPtr](bool success) {
         if (success) {
-            DLOG_I(LOG_CORE, "✅ Time synced: %s", ntpPtr->getFormattedTime().c_str());
+            DLOG_I(LOG_APP, "✅ Time synced: %s", ntpPtr->getFormattedTime().c_str());
         } else {
-            DLOG_E(LOG_CORE, "❌ Time sync failed!");
+            DLOG_E(LOG_APP, "❌ Time sync failed!");
         }
     });
     
@@ -92,20 +95,20 @@ void setup() {
     
     // Initialize core
     if (!core.begin()) {
-        DLOG_E(LOG_CORE, "Failed to initialize core!");
+        DLOG_E(LOG_APP, "Failed to initialize core!");
         while (1) delay(1000);
     }
     
     // Register NTP WebUI provider (time will appear in header info zone automatically)
     if (webuiPtr && ntpPtr) {
         webuiPtr->registerProviderWithComponent(new NTPWebUI(ntpPtr), ntpPtr);
-        DLOG_I(LOG_CORE, "NTP WebUI provider registered");
+        DLOG_I(LOG_APP, "NTP WebUI provider registered");
     }
     
-    DLOG_I(LOG_CORE, "\n========================================");
-    DLOG_I(LOG_CORE, "System ready!");
-    DLOG_I(LOG_CORE, "Web interface: http://%s", WiFi.localIP().toString().c_str());
-    DLOG_I(LOG_CORE, "========================================\n");
+    DLOG_I(LOG_APP, "\n========================================");
+    DLOG_I(LOG_APP, "System ready!");
+    DLOG_I(LOG_APP, "Web interface: http://%s", WiFi.localIP().toString().c_str());
+    DLOG_I(LOG_APP, "========================================\n");
 }
 
 // ========== Loop ==========
@@ -118,7 +121,7 @@ void loop() {
         
         auto* ntp = core.getComponent<NTPComponent>("NTP");
         if (ntp && ntp->isSynced()) {
-            DLOG_I(LOG_CORE, "[%s] Uptime: %s", 
+            DLOG_I(LOG_APP, "[%s] Uptime: %s", 
                    ntp->getFormattedTime().c_str(),
                    ntp->getFormattedUptime().c_str());
         }
