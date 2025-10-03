@@ -9,6 +9,9 @@
 #include <DomoticsCore/Timer.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 using namespace DomoticsCore::Components::WebUI;
 
@@ -55,7 +58,7 @@ public:
         manualControl = true;
         demoLedState = on;
         digitalWrite(demoLedPin, demoLedState ? HIGH : LOW);
-        DLOG_I(LOG_CORE, "[LED Demo] Manual state change to: %s", demoLedState ? "ON" : "OFF");
+        DLOG_I(LOG_APP, "[LED Demo] Manual state change to: %s", demoLedState ? "ON" : "OFF");
         // Publish sticky state so newcomers can immediately get the latest value
         emit<bool>("led/state", demoLedState, /*sticky=*/true);
     }
@@ -269,17 +272,17 @@ public:
 Core core;
 
 void setup() {
-    DLOG_I(LOG_CORE, "=== DomoticsCore WebUI Demo Starting ===");
+    DLOG_I(LOG_APP, "=== DomoticsCore WebUI Demo Starting ===");
     
     // Setup WiFi in AP mode
     String apSSID = "DomoticsCore-" + String((uint32_t)ESP.getEfuseMac(), HEX);
     bool success = WiFi.softAP(apSSID.c_str());
     
     if (success) {
-        DLOG_I(LOG_CORE, "AP started: %s", apSSID.c_str());
-        DLOG_I(LOG_CORE, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+        DLOG_I(LOG_APP, "AP started: %s", apSSID.c_str());
+        DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
     } else {
-        DLOG_E(LOG_CORE, "Failed to start AP mode");
+        DLOG_E(LOG_APP, "Failed to start AP mode");
         return;
     }
     
@@ -315,12 +318,12 @@ void setup() {
 
     CoreConfig cfg; cfg.deviceName = "DomoticsCore WebUI Demo"; cfg.logLevel = 3;
     if (!core.begin(cfg)) {
-        DLOG_E(LOG_CORE, "Core initialization failed");
+        DLOG_E(LOG_APP, "Core initialization failed");
         return;
     }
 
-    DLOG_I(LOG_CORE, "=== Setup Complete ===");
-    DLOG_I(LOG_CORE, "WebUI available at: http://192.168.4.1");
+    DLOG_I(LOG_APP, "=== Setup Complete ===");
+    DLOG_I(LOG_APP, "WebUI available at: http://192.168.4.1");
 }
 
 void loop() {
@@ -329,10 +332,10 @@ void loop() {
     // System status reporting
     static DomoticsCore::Utils::NonBlockingDelay statusTimer(30000);
     if (statusTimer.isReady()) {
-        DLOG_I(LOG_CORE, "=== System Status ===");
-        DLOG_I(LOG_CORE, "Uptime: %lu seconds", millis() / 1000);
-        DLOG_I(LOG_CORE, "Free heap: %d bytes", ESP.getFreeHeap());
+        DLOG_I(LOG_APP, "=== System Status ===");
+        DLOG_I(LOG_APP, "Uptime: %lu seconds", millis() / 1000);
+        DLOG_I(LOG_APP, "Free heap: %d bytes", ESP.getFreeHeap());
         // WebSocket client count can be retrieved from WebUI provider if needed
-        DLOG_I(LOG_CORE, "AP clients: %d", WiFi.softAPgetStationNum());
+        DLOG_I(LOG_APP, "AP clients: %d", WiFi.softAPgetStationNum());
     }
 }

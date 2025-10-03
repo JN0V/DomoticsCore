@@ -32,6 +32,8 @@
 #define LOG_SECURITY "SECURITY"
 #define LOG_WEB      "WEB"
 #define LOG_SYSTEM   "SYSTEM"
+#define LOG_STORAGE  "STORAGE"
+#define LOG_NTP      "NTP"
 
 // Log levels (for reference - controlled by CORE_DEBUG_LEVEL):
 // 0 = None

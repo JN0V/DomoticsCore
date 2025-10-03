@@ -74,6 +74,8 @@ The library provides these predefined component tags:
 | `LOG_SECURITY` | Security | Authentication and security events |
 | `LOG_WEB` | Web Config | Web configuration interface |
 | `LOG_SYSTEM` | System Utils | System utilities and NTP |
+| `LOG_STORAGE` | Storage | Preferences and data storage |
+| `LOG_NTP` | NTP | Network time protocol synchronization |
 
 ## Custom Component Tags
 
@@ -186,8 +188,10 @@ Examples:
 ```
 [12345] I [CORE] System initialized
 [12678] W [WIFI] Connection unstable, RSSI: -78
-[12890] E [SENSOR] DHT22 read timeout
-[13001] D [ACTUATOR] Moving servo to position 90°
+[12890] E [MQTT] Connection failed
+[13001] D [HA] Command for switch: ON
+[13500] I [STORAGE] Initialized successfully
+[14000] I [LED] All LEDs configured
 ```
 
 ## Best Practices

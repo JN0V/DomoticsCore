@@ -28,6 +28,9 @@
 #include <DomoticsCore/Timer.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
 // ========== Configuration ==========
@@ -58,13 +61,13 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
     
-    DLOG_I(LOG_CORE, "\n========================================");
-    DLOG_I(LOG_CORE, "DomoticsCore - Basic MQTT Example");
-    DLOG_I(LOG_CORE, "========================================\n");
+    DLOG_I(LOG_APP, "\n========================================");
+    DLOG_I(LOG_APP, "DomoticsCore - Basic MQTT Example");
+    DLOG_I(LOG_APP, "========================================\n");
     
     // Connect to WiFi (using ESP32 native WiFi for simplicity)
     // In production, use DomoticsCore-WiFi component for full features
-    DLOG_I(LOG_CORE, "Connecting to WiFi: %s", WIFI_SSID);
+    DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     
@@ -75,9 +78,9 @@ void setup() {
     }
     
     if (WiFi.status() == WL_CONNECTED) {
-        DLOG_I(LOG_CORE, "✓ WiFi connected! IP: %s\n", WiFi.localIP().toString().c_str());
+        DLOG_I(LOG_APP, "✓ WiFi connected! IP: %s\n", WiFi.localIP().toString().c_str());
     } else {
-        DLOG_E(LOG_CORE, "✗ WiFi connection failed!");
+        DLOG_E(LOG_APP, "✗ WiFi connection failed!");
         return;
     }
     
@@ -96,11 +99,11 @@ void setup() {
     mqttConfig.lwtQoS = 1;
     mqttConfig.lwtRetain = true;
     
-    DLOG_I(LOG_CORE, "MQTT Configuration:");
-    DLOG_I(LOG_CORE, "  Broker: %s:%d", mqttConfig.broker.c_str(), mqttConfig.port);
-    DLOG_I(LOG_CORE, "  Client ID: %s", mqttConfig.clientId.c_str());
-    DLOG_I(LOG_CORE, "  Username: %s", mqttConfig.username.isEmpty() ? "(none)" : mqttConfig.username.c_str());
-    DLOG_I(LOG_CORE, "  LWT Topic: %s\n", mqttConfig.lwtTopic.c_str());
+    DLOG_I(LOG_APP, "MQTT Configuration:");
+    DLOG_I(LOG_APP, "  Broker: %s:%d", mqttConfig.broker.c_str(), mqttConfig.port);
+    DLOG_I(LOG_APP, "  Client ID: %s", mqttConfig.clientId.c_str());
+    DLOG_I(LOG_APP, "  Username: %s", mqttConfig.username.isEmpty() ? "(none)" : mqttConfig.username.c_str());
+    DLOG_I(LOG_APP, "  LWT Topic: %s\n", mqttConfig.lwtTopic.c_str());
     
     // Create and register MQTT component
     auto mqtt = std::make_unique<MQTTComponent>(mqttConfig);
@@ -113,51 +116,51 @@ void setup() {
     
     // On connect: publish online status and subscribe to commands
     mqttPtr->onConnect([mqttPtr]() {
-        DLOG_I(LOG_CORE, "\n📡 MQTT Connected!");
+        DLOG_I(LOG_APP, "\n📡 MQTT Connected!");
         
         // Publish online status
         mqttPtr->publish(TOPIC_STATUS, "online", 1, true);
-        DLOG_I(LOG_CORE, "  ✓ Published: %s = online", TOPIC_STATUS);
+        DLOG_I(LOG_APP, "  ✓ Published: %s = online", TOPIC_STATUS);
         
         // Subscribe to commands
         if (mqttPtr->subscribe(TOPIC_COMMAND, 1)) {
-            DLOG_I(LOG_CORE, "  ✓ Subscribed to: %s\n", TOPIC_COMMAND);
+            DLOG_I(LOG_APP, "  ✓ Subscribed to: %s\n", TOPIC_COMMAND);
         }
     });
     
     // On disconnect
     mqttPtr->onDisconnect([]() {
-        DLOG_W(LOG_CORE, "\n📡 MQTT Disconnected\n");
+        DLOG_W(LOG_APP, "\n📡 MQTT Disconnected\n");
     });
     
     // On message received
     mqttPtr->onMessage(TOPIC_COMMAND, [](const String& topic, const String& payload) {
-        DLOG_I(LOG_CORE, "📨 Received command");
-        DLOG_I(LOG_CORE, "  Topic: %s", topic.c_str());
-        DLOG_I(LOG_CORE, "  Payload: %s\n", payload.c_str());
+        DLOG_I(LOG_APP, "📨 Received command");
+        DLOG_I(LOG_APP, "  Topic: %s", topic.c_str());
+        DLOG_I(LOG_APP, "  Payload: %s\n", payload.c_str());
         
         // Parse command
         if (topic.endsWith("/led")) {
             if (payload == "on") {
-                DLOG_I(LOG_CORE, "💡 LED ON");
+                DLOG_I(LOG_APP, "💡 LED ON");
                 // digitalWrite(LED_PIN, HIGH);
             } else if (payload == "off") {
-                DLOG_I(LOG_CORE, "💡 LED OFF");
+                DLOG_I(LOG_APP, "💡 LED OFF");
                 // digitalWrite(LED_PIN, LOW);
             }
         } else if (topic.endsWith("/restart")) {
-            DLOG_I(LOG_CORE, "🔄 Restarting...");
+            DLOG_I(LOG_APP, "🔄 Restarting...");
             delay(1000);
             ESP.restart();
         }
     });
     
     // Initialize all components
-    DLOG_I(LOG_CORE, "Initializing components...");
+    DLOG_I(LOG_APP, "Initializing components...");
     core.begin();
     
-    DLOG_I(LOG_CORE, "\n✓ Setup complete!\n");
-    DLOG_I(LOG_CORE, "Waiting for MQTT connection...\n");
+    DLOG_I(LOG_APP, "\n✓ Setup complete!\n");
+    DLOG_I(LOG_APP, "Waiting for MQTT connection...\n");
 }
 
 // ========== Loop ==========
@@ -175,11 +178,11 @@ void loop() {
             // Publish as string
             String payload = String(temperature, 1);
             if (mqtt->publish(TOPIC_SENSOR, payload, 0, false)) {
-                DLOG_I(LOG_CORE, "📤 Published: %s = %.1f°C", TOPIC_SENSOR, temperature);
+                DLOG_I(LOG_APP, "📤 Published: %s = %.1f°C", TOPIC_SENSOR, temperature);
                 
                 // Show statistics
                 const auto& stats = mqtt->getStatistics();
-                DLOG_I(LOG_CORE, "   Stats: %lu sent, %lu received, uptime %lus\n",
+                DLOG_I(LOG_APP, "   Stats: %lu sent, %lu received, uptime %lus\n",
                              stats.publishCount, stats.receiveCount, stats.uptime);
             }
         }

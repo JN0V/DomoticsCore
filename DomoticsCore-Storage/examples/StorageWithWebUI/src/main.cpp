@@ -6,17 +6,20 @@
 #include <DomoticsCore/StorageWebUI.h>
 
 using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
 Core core;
 
 void setup() {
-    DLOG_I(LOG_CORE, "=== DomoticsCore StorageWithWebUI Starting ===");
+    DLOG_I(LOG_APP, "=== DomoticsCore StorageWithWebUI Starting ===");
 
     // AP mode for quick access
     String apSSID = String("DomoticsCore-Storage-") + String((uint32_t)ESP.getEfuseMac(), HEX);
     WiFi.softAP(apSSID.c_str());
-    DLOG_I(LOG_CORE, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+    DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
 
     // Core initialized
 
@@ -37,7 +40,7 @@ void setup() {
     CoreConfig cfg; cfg.deviceName = "StorageWithWebUI"; cfg.logLevel = 3;
     core.begin(cfg);
 
-    DLOG_I(LOG_CORE, "WebUI at http://192.168.4.1");
+    DLOG_I(LOG_APP, "WebUI at http://192.168.4.1");
 }
 
 void loop() {
