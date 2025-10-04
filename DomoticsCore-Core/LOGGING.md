@@ -9,6 +9,9 @@ Unified, decentralized logging with component tags and multiple log levels built
 - **Decentralized** - no central enum to modify
 - **Extensible** for custom application components
 - **Auto timestamps** (millis before NTP, real time after)
+- **Callback system** - Stream logs to RemoteConsole, files, etc.
+- **Compile-time filtering** - Remove debug code from production builds
+- **Runtime filtering** - Dynamic log level control via RemoteConsole
 
 ## Quick Start
 
@@ -76,6 +79,7 @@ The library provides these predefined component tags:
 | `LOG_SYSTEM` | System Utils | System utilities and NTP |
 | `LOG_STORAGE` | Storage | Preferences and data storage |
 | `LOG_NTP` | NTP | Network time protocol synchronization |
+| `LOG_CONSOLE` | RemoteConsole | Telnet-based remote console |
 
 ## Custom Component Tags
 
@@ -284,12 +288,123 @@ DLOG_I(LOG_CORE, "System started");
 DLOG_I(LOG_SENSOR, "Temperature: %.2f", temp);
 ```
 
+## Logger Callback System
+
+The logging system includes a callback mechanism that allows components to capture log messages in real-time.
+
+### How It Works
+
+Every log message is:
+1. Printed to Serial (as usual)
+2. Broadcast to all registered callbacks
+
+```cpp
+// Simplified flow
+DLOG_I(LOG_APP, "message")
+  ├─► Serial output (log_i)
+  └─► LoggerCallbacks::broadcast()
+      └─► RemoteConsole, File, etc.
+```
+
+### Registering Callbacks
+
+```cpp
+#include <DomoticsCore/Logger.h>
+
+// Register a callback
+LoggerCallbacks::addCallback([](LogLevel level, const char* tag, const char* msg) {
+    // Do something with the log
+    if (level == LOG_LEVEL_ERROR) {
+        sendAlertEmail(tag, msg);
+    }
+});
+```
+
+### Use Cases
+
+- **RemoteConsole**: Stream logs to telnet clients
+- **File Logging**: Write logs to SD card
+- **Syslog**: Send logs to remote syslog server
+- **Alerts**: Trigger notifications on errors
+- **Display**: Show logs on OLED/LCD screen
+
+### RemoteConsole Integration
+
+The `DomoticsCore-RemoteConsole` component uses callbacks to provide real-time log streaming via Telnet:
+
+```cpp
+#include <DomoticsCore/RemoteConsole.h>
+
+// Configure RemoteConsole
+RemoteConsoleConfig config;
+config.port = 23;
+config.bufferSize = 500;
+
+auto console = std::make_unique<RemoteConsoleComponent>(config);
+core.addComponent(std::move(console));
+core.begin();
+
+// Now connect via telnet to see logs in real-time
+// $ telnet 192.168.1.100 23
+```
+
+**Features:**
+- Real-time log streaming
+- Runtime log level control (`level 4`)
+- Tag filtering (`filter MQTT`)
+- Command execution
+- ANSI color output
+
+See `DomoticsCore-RemoteConsole` documentation for details.
+
+## Compile-Time vs Runtime Filtering
+
+The logging system provides two levels of control:
+
+### Compile-Time Filtering (`CORE_DEBUG_LEVEL`)
+
+**Purpose:** Remove debug code from production builds to save flash memory.
+
+```ini
+# platformio.ini
+build_flags = 
+    -DCORE_DEBUG_LEVEL=2  # Errors + Warnings only
+```
+
+**Effect:** Debug and verbose log calls are completely removed from the binary.
+
+### Runtime Filtering (RemoteConsole)
+
+**Purpose:** Dynamically change log verbosity without recompiling.
+
+```bash
+# Connect via telnet
+$ telnet 192.168.1.100 23
+> level 4  # Show all logs including debug
+> level 1  # Show only errors
+```
+
+**Effect:** Filters which logs are displayed, but code is still in the binary.
+
+### Best Practice: Use Both!
+
+```ini
+# Development build - include all logs
+build_flags = -DCORE_DEBUG_LEVEL=5
+
+# Production build - only errors and warnings
+build_flags = -DCORE_DEBUG_LEVEL=2
+```
+
+Then use RemoteConsole's runtime filtering when debugging production devices.
+
 ## Performance Considerations
 
 - Log macros are compiled out when `CORE_DEBUG_LEVEL` is set below their level
 - Format strings are more efficient than string concatenation
 - Verbose logging can impact performance in tight loops
 - Consider using conditional compilation for expensive debug operations
+- Callbacks add minimal overhead (~1-2µs per log call)
 
 ## Troubleshooting
 
