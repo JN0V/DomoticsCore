@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DomoticsCore/Components/LED.h>
+#include <DomoticsCore/LED.h>
 #include <DomoticsCore/Logger.h>
 #include <memory>
 
