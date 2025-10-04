@@ -102,8 +102,14 @@ public:
             return ComponentStatus::Success;
         }
         
-        if (WiFi.status() != WL_CONNECTED) {
-            DLOG_W(LOG_CONSOLE, "WiFi not connected, RemoteConsole cannot start");
+        // Check if WiFi is available (either connected in STA mode or running as AP)
+        wifi_mode_t mode = WiFi.getMode();
+        bool wifiAvailable = (WiFi.status() == WL_CONNECTED) || 
+                            (mode == WIFI_AP) || 
+                            (mode == WIFI_AP_STA);
+        
+        if (!wifiAvailable) {
+            DLOG_W(LOG_CONSOLE, "WiFi not available, RemoteConsole cannot start");
             setStatus(ComponentStatus::DependencyError);
             return ComponentStatus::DependencyError;
         }
