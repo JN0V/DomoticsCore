@@ -478,7 +478,9 @@ private:
             String sysInfo = "{\"uptime\":" + String(millis()) + 
                            ",\"heap\":" + String(ESP.getFreeHeap()) + 
                            ",\"clients\":" + String(getWebSocketClients()) + "}";
-            request->send(200, "application/json", sysInfo);
+            AsyncWebServerResponse* response = request->beginResponse(200, "application/json", sysInfo);
+            addCorsHeaders(response);
+            request->send(response);
         });
         
         // New UI Schema API endpoint
@@ -488,6 +490,7 @@ private:
             }
             
             AsyncResponseStream *response = request->beginResponseStream("application/json");
+            addCorsHeaders(response);
             JsonDocument doc;
             JsonArray comps = doc["components"].to<JsonArray>();
 
@@ -528,6 +531,7 @@ private:
             }
 
             AsyncResponseStream *response = request->beginResponseStream("application/json");
+            addCorsHeaders(response);
             JsonDocument doc;
             String name;
             bool enabled = true;
@@ -612,6 +616,7 @@ private:
             }
             
             AsyncResponseStream *response = request->beginResponseStream("application/json");
+            addCorsHeaders(response);
             JsonDocument doc;
             JsonArray schema = doc.to<JsonArray>();
 
@@ -662,8 +667,19 @@ private:
         
         // Fallback for SPA routing
         server->onNotFound([this](AsyncWebServerRequest* request) {
+            // Handle CORS preflight requests
+            if (config.enableCORS && request->method() == HTTP_OPTIONS) {
+                AsyncWebServerResponse* response = request->beginResponse(200);
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+            
             if (request->url().startsWith("/api/")) {
-                request->send(404, "application/json", "{\"error\":\"API endpoint not found\"}");
+                AsyncWebServerResponse* response = request->beginResponse(404, "application/json", 
+                    "{\"error\":\"API endpoint not found\"}");
+                addCorsHeaders(response);
+                request->send(response);
             } else {
                 if (config.useFileSystem) {
                     serveFromFileSystem(request, "/webui/index.html", "text/html");
@@ -681,6 +697,17 @@ private:
     bool authenticate(AsyncWebServerRequest* request) {
         if (!config.enableAuth) return true;
         return request->authenticate(config.username.c_str(), config.password.c_str());
+    }
+    
+    /**
+     * @brief Add CORS headers to response if enabled in config
+     */
+    void addCorsHeaders(AsyncWebServerResponse* response) {
+        if (config.enableCORS) {
+            response->addHeader("Access-Control-Allow-Origin", "*");
+            response->addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+            response->addHeader("Access-Control-Allow-Headers", "Content-Type, X-API-Key, Authorization");
+        }
     }
     
     bool initializeFileSystem() {

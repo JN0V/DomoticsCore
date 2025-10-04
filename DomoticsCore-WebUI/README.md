@@ -145,10 +145,83 @@ WebUIContext chart = BaseWebUIComponents::createLineChart(
 - **WebSocket updates**: system summary plus provider contexts are pushed every `wsUpdateInterval` milliseconds.
 - **Lifecycle awareness**: providers tied to components via `registerProviderWithComponent()` can be enabled/disabled and trigger component `begin()/shutdown()`.
 
+## API-Only Usage (No Web Interface)
+
+The WebUI component can be used as a pure REST API server without serving any web interface. This is useful for headless IoT devices, mobile app backends, or custom integrations.
+
+### Configuration
+
+```cpp
+WebUIConfig config;
+config.port = 80;
+config.useFileSystem = false;  // No UI assets needed
+config.enableAuth = false;     // Use custom API authentication
+config.enableCORS = true;      // Enable CORS for cross-origin requests
+
+auto webui = std::make_unique<WebUIComponent>(config);
+auto* webuiPtr = webui.get();
+```
+
+**CORS Support:**
+- Set `config.enableCORS = true` to enable Cross-Origin Resource Sharing
+- Automatically adds CORS headers to all responses
+- Handles OPTIONS preflight requests
+- Default headers: `Access-Control-Allow-Origin: *`
+- Allows methods: GET, POST, PUT, DELETE, OPTIONS
+- Allows headers: Content-Type, X-API-Key, Authorization
+
+### Register API Endpoints
+
+```cpp
+// Register endpoints using registerApiRoute()
+webuiPtr->registerApiRoute("/api/data", HTTP_GET, [](AsyncWebServerRequest* request) {
+    JsonDocument doc;
+    doc["value"] = getSensorValue();
+    
+    String json;
+    serializeJson(doc, json);
+    request->send(200, "application/json", json);
+});
+
+webuiPtr->registerApiRoute("/api/control", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (!request->hasParam("state", true)) {
+        return request->send(400, "application/json", 
+            "{\"error\":\"Missing state parameter\"}");
+    }
+    
+    String state = request->getParam("state", true)->value();
+    setDeviceState(state);
+    
+    request->send(200, "application/json", "{\"success\":true}");
+});
+```
+
+### Features
+
+- ✅ **Pure REST API** - No web interface overhead
+- ✅ **Custom Authentication** - API keys, bearer tokens, etc.
+- ✅ **CORS Support** - Cross-origin requests
+- ✅ **JSON Responses** - Standard API format
+- ✅ **Lightweight** - Minimal memory usage (~350KB flash, ~35KB RAM)
+
+### Use Cases
+
+- Headless sensor nodes
+- Mobile app backends
+- Custom dashboards (separate frontend)
+- Home Assistant REST sensors
+- Node-RED integration
+- Machine-to-machine communication
+
+See `DomoticsCore-WebUI/examples/HeadlessAPI` for a complete working example.
+
+---
+
 ## Examples
 
 See the examples in each package (e.g. `DomoticsCore-Wifi` → `WifiWithWebUI`) for concrete usage of providers and composed UIs.
 - `DomoticsCore-WebUI/examples/WebUIOnly` – minimal demo showing WebUI without other components.
+- `DomoticsCore-WebUI/examples/HeadlessAPI` – pure REST API server without web interface.
 - `DomoticsCore-Wifi/examples/WifiWithWebUI` – WiFi component with a dedicated WebUI provider wrapper.
 
 ## License
