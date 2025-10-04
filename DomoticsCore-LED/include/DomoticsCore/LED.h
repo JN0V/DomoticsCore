@@ -225,11 +225,32 @@ public:
      */
     bool setLEDEffect(size_t ledIndex, LEDEffect effect, unsigned long speed = 1000) {
         if (ledIndex >= ledStates.size()) return false;
+        
+        // Reference state and config for convenience
+        auto &state = ledStates[ledIndex];
+        const auto &config = ledConfigs[ledIndex];
 
-        ledStates[ledIndex].effect = effect;
-        ledStates[ledIndex].effectSpeed = speed;
-        ledStates[ledIndex].effectPhase = 0.0;
-        ledStates[ledIndex].lastUpdate = millis();
+        // Apply effect parameters
+        state.effect = effect;
+        state.effectSpeed = speed;
+        state.effectPhase = 0.0;
+        state.lastUpdate = millis();
+
+        // Ensure LED is enabled when an effect is applied
+        state.enabled = true;
+
+        // If no brightness has been set yet, default to the configured max brightness
+        // This fixes the issue where effects appear to do nothing because brightness was 0.
+        if (state.brightness == 0) {
+            state.brightness = config.maxBrightness;
+        }
+
+        // If color was never set (Off), default to White so single LEDs (non-RGB)
+        // actually emit light when effects run. For RGB, White is also a sensible default.
+        if (state.currentColor.red == 0 && state.currentColor.green == 0 && state.currentColor.blue == 0) {
+            state.currentColor = LEDColor::White();
+        }
+
         return true;
     }
 
