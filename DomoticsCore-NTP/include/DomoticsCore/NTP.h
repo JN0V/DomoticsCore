@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @file NTP.h
+ * @brief Declares the DomoticsCore NTP component for network time synchronization.
+ */
+
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Logger.h"
 #include <Arduino.h>
