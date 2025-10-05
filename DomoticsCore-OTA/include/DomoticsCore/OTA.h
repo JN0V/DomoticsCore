@@ -7,7 +7,6 @@
 
 #include <Arduino.h>
 #include <functional>
-#include <memory>
 
 #include "DomoticsCore/IComponent.h"
 #include <ArduinoJson.h>
