@@ -11,6 +11,16 @@ using namespace DomoticsCore;
 #define LOG_APP "APP"
 using namespace DomoticsCore::Components;
 
+/*
+ * WifiWithWebUI Example
+ * 
+ * Demonstrates WiFi component with WebUI interface:
+ * - AP mode for initial setup (accessible at http://192.168.4.1:8080)
+ * - Live WiFi network scanning and configuration
+ * - Real-time status badges (WiFi STA and AP status)
+ * - Settings panel for WiFi configuration
+ */
+
 Core core;
 
 void setup() {
@@ -18,7 +28,7 @@ void setup() {
 
     // Core initialized
 
-    WebUIConfig webCfg; webCfg.deviceName = "WiFi With WebUI"; webCfg.wsUpdateInterval = 2000;
+    WebUIConfig webCfg; webCfg.deviceName = "WiFi With WebUI"; webCfg.wsUpdateInterval = 5000; // 5 sec - WiFi state changes infrequently
     core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 
     // Start in AP mode for easy access (empty SSID means AP-only in WifiComponent implementation)

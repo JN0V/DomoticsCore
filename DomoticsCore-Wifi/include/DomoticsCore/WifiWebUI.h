@@ -14,9 +14,45 @@ class WifiWebUI : public IWebUIProvider {
     String pendingPassword;
     // Last scan results (comma-separated for simple display)
     String lastScanSummary;
+    
+    // State tracking using LazyState helper for timing-independent initialization
+    // Simple states
+    LazyState<bool> wifiStatusState;        // WiFi STA connection status
+    LazyState<bool> apStatusState;          // AP enabled status
+    LazyState<bool> wifiSTAEnabledState;    // WiFi STA enabled config
+    LazyState<bool> wifiAPEnabledState;     // WiFi AP enabled config
+    
+    // Composite states for contexts with multiple values
+    struct ComponentState {
+        bool connected;
+        String ssid;
+        String ip;
+        
+        bool operator==(const ComponentState& other) const {
+            return connected == other.connected && ssid == other.ssid && ip == other.ip;
+        }
+        bool operator!=(const ComponentState& other) const { return !(*this == other); }
+    };
+    LazyState<ComponentState> wifiComponentState;
+    
+    struct STASettingsState {
+        bool enabled;
+        String ssid;
+        
+        bool operator==(const STASettingsState& other) const {
+            return enabled == other.enabled && ssid == other.ssid;
+        }
+        bool operator!=(const STASettingsState& other) const { return !(*this == other); }
+    };
+    LazyState<STASettingsState> wifiSTASettingsState;
+    
 public:
     explicit WifiWebUI(WifiComponent* c) : wifi(c) {
-        if (wifi) pendingSsid = wifi->getConfiguredSSID();
+        if (wifi) {
+            pendingSsid = wifi->getConfiguredSSID();
+            // State will be lazily initialized on first hasDataChanged() call
+            // to ensure WiFi component is fully initialized
+        }
     }
 
     String getWebUIName() const override { return wifi ? wifi->getName() : String("Wifi"); }
@@ -35,7 +71,7 @@ public:
         ctxs.push_back(WebUIContext{
             "wifi_component", "WiFi", "fas fa-wifi", WebUILocation::ComponentDetail, WebUIPresentation::Card
         }
-        .withField(WebUIField("connected", "Connected", WebUIFieldType::Display, wifi->isConnected() ? "Yes" : "No", "", true))
+        .withField(WebUIField("connected", "Connected", WebUIFieldType::Display, wifi->isSTAConnected() ? "Yes" : "No", "", true))
         .withField(WebUIField("ssid_now", "SSID", WebUIFieldType::Display, wifi->getSSID(), "", true))
         .withField(WebUIField("ip", "IP", WebUIFieldType::Display, wifi->getLocalIP(), "", true))
         .withRealTime(2000));
@@ -123,7 +159,7 @@ public:
         if (!wifi) return "{}";
         if (contextId == "wifi_component") {
             JsonDocument doc;
-            doc["connected"] = wifi->isConnected() ? "Yes" : "No";
+            doc["connected"] = wifi->isSTAConnected() ? "Yes" : "No";
             doc["ssid_now"] = wifi->getSSID();
             doc["ip"] = wifi->getLocalIP();
             String json; serializeJson(doc, json); return json;
@@ -144,7 +180,7 @@ public:
         }
         if (contextId == "wifi_status") {
             JsonDocument doc;
-            doc["state"] = wifi->isConnected() ? "ON" : "OFF";
+            doc["state"] = wifi->isSTAConnected() ? "ON" : "OFF";
             String json; serializeJson(doc, json); return json;
         }
         if (contextId == "wifi_ap_settings") {
@@ -154,6 +190,40 @@ public:
             String json; serializeJson(doc, json); return json;
         }
         return "{}";
+    }
+    
+    bool hasDataChanged(const String& contextId) override {
+        if (!wifi) return false;
+        
+        // Use LazyState helper for timing-independent change tracking
+        if (contextId == "wifi_status") {
+            return wifiStatusState.hasChanged(wifi->isSTAConnected());
+        } 
+        else if (contextId == "ap_status") {
+            return apStatusState.hasChanged(wifi->isAPEnabled());
+        }
+        else if (contextId == "wifi_component") {
+            ComponentState current = {
+                wifi->isSTAConnected(),
+                wifi->getSSID(),
+                wifi->getLocalIP()
+            };
+            return wifiComponentState.hasChanged(current);
+        }
+        else if (contextId == "wifi_sta_settings" || contextId == "wifi_settings") {
+            STASettingsState current = {
+                wifi->isWifiEnabled(),
+                wifi->getConfiguredSSID()
+            };
+            return wifiSTASettingsState.hasChanged(current);
+        }
+        else if (contextId == "wifi_ap_settings") {
+            return wifiAPEnabledState.hasChanged(wifi->isAPEnabled());
+        }
+        else {
+            // Unknown context, always send
+            return true;
+        }
     }
 };
 

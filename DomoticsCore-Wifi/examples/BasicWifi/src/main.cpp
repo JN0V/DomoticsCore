@@ -132,7 +132,7 @@ private:
         
         DLOG_I(LOG_APP, "=== Wifi Status Report [%s] ===", currentPhase.c_str());
         
-        if (wifiComp->isConnected()) {
+        if (wifiComp->isSTAConnected() || wifiComp->isAPEnabled()) {
             String mode = "Station";
             if (wifiComp->isSTAAPMode()) mode = "STA+AP";
             else if (wifiComp->isAPMode()) mode = "AP Only";
@@ -215,7 +215,7 @@ private:
         
         DLOG_I(LOG_APP, "=== Phase 5: Reconnection Test Demo (Cycle %d) ===", demoPhase);
         
-        if (wifiComp->isConnected() && !wifiComp->isAPMode()) {
+        if (wifiComp->isSTAConnected() && !wifiComp->isAPMode()) {
             DLOG_I(LOG_APP, "🔄 Testing reconnection capability...");
             DLOG_I(LOG_APP, "⚡ Triggering manual reconnect (brief disconnect expected)");
             wifiComp->reconnect();
