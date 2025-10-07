@@ -74,14 +74,17 @@ private:
     AsyncWebServer* server = nullptr;
     AsyncWebSocket* webSocket = nullptr;
     
+    // Connection management
+    static const uint8_t MAX_WS_CLIENTS = 4;
+    std::vector<uint32_t> activeClientIds;
+    unsigned long lastConnectionCleanup = 0;
+    static const unsigned long CONNECTION_CLEANUP_INTERVAL = 30000; // 30 seconds
+    
     // Provider support
     std::map<String, IWebUIProvider*> contextProviders;
-    // Enable/disable state per provider (keyed by provider ptr)
     std::map<IWebUIProvider*, bool> providerEnabled;
-    // Optional mapping to owning component to allow begin()/shutdown()
-    std::map<IWebUIProvider*, IComponent*> providerComponent;
-    // Provider factory registry (typeKey -> factory)
-    std::map<String, std::function<IWebUIProvider*(IComponent*)>> providerFactories;
+    std::map<IWebUIProvider*, IComponent*> providerComponent;  // Track which component owns which provider
+    std::map<String, std::function<IWebUIProvider*(IComponent*)>> providerFactories;  // Provider factories by type key
     // Owned providers created via factories (to manage lifetime)
     std::vector<std::unique_ptr<IWebUIProvider>> ownedProviders;
     
@@ -115,11 +118,14 @@ public:
         
         if (config.enableWebSocket) {
             webSocket = new AsyncWebSocket("/ws");
+            
             webSocket->onEvent([this](AsyncWebSocket* server, AsyncWebSocketClient* client, 
                                      AwsEventType type, void* arg, uint8_t* data, size_t len) {
                 handleWebSocketEvent(client, type, arg, data, len);
             });
             server->addHandler(webSocket);
+            
+            DLOG_I(LOG_WEB, "WebSocket configured: max %d clients, queue-aware sending enabled", MAX_WS_CLIENTS);
         }
         
         setupRoutes();
@@ -136,6 +142,12 @@ public:
             millis() - lastWebSocketUpdate >= config.wsUpdateInterval) {
             sendWebSocketUpdates();
             lastWebSocketUpdate = millis();
+        }
+        
+        // Periodic connection cleanup
+        if (webSocket && millis() - lastConnectionCleanup >= CONNECTION_CLEANUP_INTERVAL) {
+            cleanupStaleConnections();
+            lastConnectionCleanup = millis();
         }
         
         if (webSocket) {
@@ -737,13 +749,40 @@ private:
         if (!client) return;
         
         switch (type) {
-            case WS_EVT_CONNECT:
-                DLOG_I(LOG_WEB, "WebSocket client connected: %u", client->id());
-                break;
+            case WS_EVT_CONNECT: {
+                uint32_t clientId = client->id();
                 
-            case WS_EVT_DISCONNECT:
-                DLOG_I(LOG_WEB, "WebSocket client disconnected: %u", client->id());
+                // Check connection limit
+                if (activeClientIds.size() >= MAX_WS_CLIENTS) {
+                    DLOG_W(LOG_WEB, "WebSocket connection limit reached (%d/%d), rejecting client %u", 
+                           activeClientIds.size(), MAX_WS_CLIENTS, clientId);
+                    client->close();
+                    return;
+                }
+                
+                // Add to active clients
+                activeClientIds.push_back(clientId);
+                DLOG_I(LOG_WEB, "WebSocket client connected: %u (%d/%d active)", 
+                       clientId, activeClientIds.size(), MAX_WS_CLIENTS);
+                
+                // Send initial data to new client
+                sendWebSocketUpdate(client);
                 break;
+            }
+                
+            case WS_EVT_DISCONNECT: {
+                uint32_t clientId = client->id();
+                
+                // Remove from active clients
+                auto it = std::find(activeClientIds.begin(), activeClientIds.end(), clientId);
+                if (it != activeClientIds.end()) {
+                    activeClientIds.erase(it);
+                }
+                
+                DLOG_I(LOG_WEB, "WebSocket client disconnected: %u (%d/%d active)", 
+                       clientId, activeClientIds.size(), MAX_WS_CLIENTS);
+                break;
+            }
                 
             case WS_EVT_DATA: {
                 if (!arg || !data || len == 0 || len > 512) break;
@@ -809,14 +848,21 @@ private:
         int contextCount = 0;
         for (const auto& pair : contextProviders) {
             // Smart limit: Stop if message gets too large (prevent ESP32 memory issues)
-            if (message.length() > 800) {
+            if (message.length() > 2048) {
                 log_w("WebSocket message size limit reached (%d bytes), skipping remaining contexts", message.length());
                 break;
             }
             
             const String& contextId = pair.first;
             IWebUIProvider* provider = pair.second;
+            
+            // Skip disabled providers
             if (providerEnabled.find(provider) != providerEnabled.end() && providerEnabled[provider] == false) {
+                continue;
+            }
+            
+            // Delta update optimization: Only send if provider reports changed data
+            if (!provider->hasDataChanged(contextId)) {
                 continue;
             }
             
@@ -830,9 +876,39 @@ private:
         
         message += "}}";
         
-        // Safety check
-        if (message.length() < 1024) {
-            webSocket->textAll(message);
+        // Only send if at least one context has changed (avoid flooding with no-op updates)
+        if (contextCount == 0) {
+            return; // Nothing changed, don't send
+        }
+        
+        // Safety check and queue-aware sending
+        if (message.length() < 4096 && webSocket->count() > 0) {
+            // Send to each client individually with queue checking to prevent overflow
+            int sent = 0;
+            int skipped = 0;
+            
+            for (uint32_t clientId : activeClientIds) {
+                AsyncWebSocketClient* client = webSocket->client(clientId);
+                if (client && client->status() == WS_CONNECTED) {
+                    // Check if client can receive (queue not full)
+                    if (client->canSend()) {
+                        client->text(message);
+                        sent++;
+                    } else {
+                        skipped++;
+                        DLOG_D(LOG_WEB, "Client %u queue full, will retry next cycle", clientId);
+                    }
+                }
+            }
+            
+            if (skipped > 0) {
+                DLOG_W(LOG_WEB, "WebSocket: %d clients skipped (queue full), %d sent", skipped, sent);
+            } else if (sent > 0) {
+                DLOG_D(LOG_WEB, "WebSocket update sent to %d clients (%d bytes, %d contexts)", 
+                       sent, message.length(), contextCount);
+            }
+        } else if (message.length() >= 4096) {
+            DLOG_W(LOG_WEB, "WebSocket message too large (%d bytes), not sending", message.length());
         }
     }
     
@@ -848,7 +924,7 @@ private:
         int contextCount = 0;
         for (const auto& pair : contextProviders) {
             // Smart limit: Stop if message gets too large (prevent ESP32 memory issues)
-            if (message.length() > 512) {
+            if (message.length() > 2048) {
                 log_w("Single client message size limit reached (%d bytes), skipping remaining contexts", message.length());
                 break;
             }
@@ -869,9 +945,34 @@ private:
         
         message += "}}";
         
-        // Safety check
-        if (message.length() < 512) {
+        // Safety check and queue check
+        if (message.length() < 4096 && client->canSend()) {
             client->text(message);
+        } else if (!client->canSend()) {
+            DLOG_W(LOG_WEB, "Client %u queue full, skipping update", client->id());
+        }
+    }
+    
+    /**
+     * Clean up stale connections from tracking list
+     */
+    void cleanupStaleConnections() {
+        if (!webSocket) return;
+        
+        // Remove client IDs that are no longer connected
+        std::vector<uint32_t> connectedIds;
+        for (uint32_t id : activeClientIds) {
+            AsyncWebSocketClient* client = webSocket->client(id);
+            if (client && client->status() == WS_CONNECTED) {
+                connectedIds.push_back(id);
+            } else {
+                DLOG_I(LOG_WEB, "Removed stale client from tracking: %u", id);
+            }
+        }
+        
+        if (connectedIds.size() != activeClientIds.size()) {
+            activeClientIds = connectedIds;
+            DLOG_I(LOG_WEB, "Connection cleanup complete: %d active clients", activeClientIds.size());
         }
     }
     

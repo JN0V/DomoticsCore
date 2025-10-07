@@ -24,6 +24,13 @@ namespace Components {
  * switching credentials, and collecting scan results without blocking the event loop. Can be
  * paired with a WebUI provider to expose runtime settings.
  */
+/**
+ * WiFi component providing network connectivity
+ * 
+ * Note: For WiFi-specific checks, use isSTAConnected() and isAPEnabled().
+ * The INetworkProvider::isConnected() method is implemented as hasConnectivity()
+ * which returns true if either STA or AP mode is active.
+ */
 class WifiComponent : public IComponent, public INetworkProvider {
 private:
     String ssid;
@@ -115,14 +122,14 @@ public:
         }
         
         // Handle reconnection attempts
-        if (shouldConnect && !isConnecting && !isConnected() && reconnectTimer.isReady()) {
+        if (shouldConnect && !isConnecting && !isSTAConnected() && reconnectTimer.isReady()) {
             DLOG_I(LOG_WIFI, "Attempting Wifi reconnection...");
             startConnection();
         }
         
         // Periodic status updates
         if (statusTimer.isReady()) {
-            if (isConnected()) {
+            if (isSTAConnected()) {
                 DLOG_D(LOG_WIFI, "Wifi connected - IP: %s, RSSI: %d dBm", 
                       WiFi.localIP().toString().c_str(), WiFi.RSSI());
             } else {
@@ -170,15 +177,49 @@ public:
     }
     
     // Wifi-specific methods
-    bool isConnected() const {
-        // In AP mode, consider "connected" if AP is active
-        if (isAPMode()) {
-            return true; // AP mode is considered "connected" for status purposes
-        }
+    
+    /**
+     * @brief Check if STA (station) mode is connected to a WiFi network
+     * @return true if connected as a station to a WiFi network, false otherwise
+     * 
+     * This checks actual WiFi network connectivity (STA mode).
+     */
+    bool isSTAConnected() const {
         return WiFi.status() == WL_CONNECTED;
     }
     
-    String getLocalIP() const {
+    /**
+     * @brief Alias for isAPEnabled() for semantic clarity
+     * @return true if AP mode is active, false otherwise
+     */
+    bool isAPConnected() const {
+        return isAPEnabled();
+    }
+    
+    /**
+     * @brief Check if either STA or AP mode is active
+     * @return true if STA connected OR AP enabled, false otherwise
+     * 
+     * Use this to check if WiFi subsystem has any connectivity.
+     * For specific checks, use isSTAConnected() or isAPEnabled().
+     */
+    bool hasConnectivity() const {
+        return isSTAConnected() || isAPEnabled();
+    }
+    
+    // INetworkProvider interface implementation
+    /**
+     * @brief INetworkProvider interface: Check if network is available
+     * @return true if WiFi has any connectivity (STA or AP), false otherwise
+     * 
+     * Note: For WiFi-specific checks, prefer isSTAConnected() or isAPEnabled().
+     * This generic method returns true if WiFi subsystem has any connectivity.
+     */
+    bool isConnected() const override {
+        return hasConnectivity();
+    }
+    
+    String getLocalIP() const override {
         // In STA+AP mode, prioritize station IP for connectivity
         if (isSTAAPMode() && WiFi.status() == WL_CONNECTED) {
             return WiFi.localIP().toString();
@@ -238,9 +279,10 @@ public:
     String getNetworkInfo() const override {
         JsonDocument info;
         info["type"] = "Wifi";
-        info["connected"] = isConnected();
+        info["sta_connected"] = isSTAConnected();
+        info["ap_enabled"] = isAPEnabled();
         
-        if (isConnected()) {
+        if (isSTAConnected()) {
             info["ssid"] = getSSID();
             info["ip_address"] = getLocalIP();
             info["signal_strength"] = getRSSI();

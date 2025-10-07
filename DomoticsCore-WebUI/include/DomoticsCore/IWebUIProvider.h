@@ -3,10 +3,87 @@
 #include <Arduino.h>
 #include <vector>
 #include <map>
+#include <functional>
 #include <ArduinoJson.h>
 
 namespace DomoticsCore {
 namespace Components {
+
+/**
+ * @brief Helper for lazy state initialization and change tracking
+ * 
+ * This template class provides timing-independent state tracking for WebUI providers.
+ * It handles the common pattern where providers may be created before components
+ * are fully initialized.
+ * 
+ * Usage:
+ * @code
+ * LazyState<bool> connectedState;
+ * 
+ * // In hasDataChanged():
+ * return connectedState.hasChanged(wifi->isConnected());
+ * @endcode
+ */
+template<typename T>
+struct LazyState {
+    T value;
+    bool initialized = false;
+    
+    /**
+     * @brief Initialize state on first access
+     * @param initializer Function that returns the initial value
+     * @return Reference to the stored value
+     */
+    T& get(std::function<T()> initializer) {
+        if (!initialized) {
+            value = initializer();
+            initialized = true;
+        }
+        return value;
+    }
+    
+    /**
+     * @brief Check if value has changed, update internal state
+     * @param current Current value to compare against
+     * @return true if value changed, false if unchanged or first call
+     * 
+     * On first call (uninitialized): stores value and returns false
+     * On subsequent calls: compares with stored value, updates, returns true if changed
+     */
+    bool hasChanged(const T& current) {
+        if (!initialized) {
+            value = current;
+            initialized = true;
+            return false;  // First check is not a change
+        }
+        bool changed = (current != value);
+        value = current;
+        return changed;
+    }
+    
+    /**
+     * @brief Get current stored value
+     * @return Stored value (undefined if not initialized)
+     */
+    const T& getValue() const {
+        return value;
+    }
+    
+    /**
+     * @brief Check if state has been initialized
+     * @return true if initialized
+     */
+    bool isInitialized() const {
+        return initialized;
+    }
+    
+    /**
+     * @brief Reset state to uninitialized
+     */
+    void reset() {
+        initialized = false;
+    }
+};
 
 /**
  * Enhanced WebUI system with multi-context support
@@ -240,6 +317,15 @@ public:
      * @return JSON string with current context data
      */
     virtual String getWebUIData(const String& contextId) { return "{}"; }
+    
+    /**
+     * Check if context data has changed since last query (for delta updates)
+     * @param contextId The context identifier
+     * @return true if data has changed and should be sent to clients
+     * @note Default implementation always returns true (always send updates)
+     *       Override to optimize bandwidth by only sending when data changes
+     */
+    virtual bool hasDataChanged(const String& contextId) { return true; }
 
     // Methods to get component metadata directly for the UI
     virtual String getWebUIName() const = 0;

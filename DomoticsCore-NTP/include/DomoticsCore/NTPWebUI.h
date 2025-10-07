@@ -26,7 +26,10 @@ public:
      * @brief Construct WebUI provider
      * @param ntp Pointer to NTP component (non-owning)
      */
-    explicit NTPWebUI(NTPComponent* ntp) : ntp(ntp) {}
+    explicit NTPWebUI(NTPComponent* ntp) : ntp(ntp) {
+        // State tracking uses LazyState helper - no manual initialization needed
+        // States will be initialized on first hasDataChanged() call
+    }
 
     // ========== IWebUIProvider Interface ==========
 
@@ -251,8 +254,64 @@ public:
         return "{\"success\":false,\"error\":\"Unknown request\"}";
     }
 
+    bool hasDataChanged(const String& contextId) override {
+        if (!ntp) return false;
+        
+        // Use LazyState helper for timing-independent change tracking
+        if (contextId == "ntp_time") {
+            return ntpTimeState.hasChanged(ntp->getUnixTime());
+        }
+        else if (contextId == "ntp_dashboard") {
+            return ntpDashboardState.hasChanged(ntp->getUnixTime());
+        }
+        else if (contextId == "ntp_settings") {
+            const NTPConfig& cfg = ntp->getNTPConfig();
+            NTPSettingsState current = {cfg.enabled, cfg.timezone};
+            return ntpSettingsState.hasChanged(current);
+        }
+        else if (contextId == "ntp_detail") {
+            NTPDetailState current = {
+                ntp->isSynced(),
+                ntp->getStatistics().syncCount
+            };
+            return ntpDetailState.hasChanged(current);
+        }
+        else {
+            // Unknown context, always send
+            return true;
+        }
+    }
+
 private:
     NTPComponent* ntp;  // Non-owning pointer
+    
+    // State tracking using LazyState helper for timing-independent initialization
+    LazyState<time_t> ntpTimeState;           // ntp_time context
+    LazyState<time_t> ntpDashboardState;      // ntp_dashboard context
+    
+    // Composite state for settings
+    struct NTPSettingsState {
+        bool enabled;
+        String timezone;
+        
+        bool operator==(const NTPSettingsState& other) const {
+            return enabled == other.enabled && timezone == other.timezone;
+        }
+        bool operator!=(const NTPSettingsState& other) const { return !(*this == other); }
+    };
+    LazyState<NTPSettingsState> ntpSettingsState;
+    
+    // Composite state for detail view
+    struct NTPDetailState {
+        bool synced;
+        uint32_t syncCount;
+        
+        bool operator==(const NTPDetailState& other) const {
+            return synced == other.synced && syncCount == other.syncCount;
+        }
+        bool operator!=(const NTPDetailState& other) const { return !(*this == other); }
+    };
+    LazyState<NTPDetailState> ntpDetailState;
 };
 
 } // namespace WebUI
