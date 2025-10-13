@@ -69,6 +69,7 @@ private:
     LogLevel currentLogLevel;
     std::vector<String> tagFilter;  // Empty = show all
     bool authenticated = false;
+    bool connectionInfoDisplayed = false;  // Track if we've shown connection info
     
 public:
     RemoteConsoleComponent(const RemoteConsoleConfig& cfg = RemoteConsoleConfig())
@@ -102,37 +103,34 @@ public:
             return ComponentStatus::Success;
         }
         
-        // Check if WiFi is available (either connected in STA mode or running as AP)
-        wifi_mode_t mode = WiFi.getMode();
-        bool wifiAvailable = (WiFi.status() == WL_CONNECTED) || 
-                            (mode == WIFI_AP) || 
-                            (mode == WIFI_AP_STA);
-        
-        if (!wifiAvailable) {
-            DLOG_W(LOG_CONSOLE, "WiFi not available, RemoteConsole cannot start");
-            setStatus(ComponentStatus::DependencyError);
-            return ComponentStatus::DependencyError;
-        }
-        
         // Register logger callback
         LoggerCallbacks::addCallback([this](LogLevel level, const char* tag, const char* msg) {
             this->log(level, tag, msg);
         });
         
+        // Start telnet server (doesn't require WiFi to be connected yet)
         telnetServer = new WiFiServer(config.port);
         telnetServer->begin();
         telnetServer->setNoDelay(true);
         
         DLOG_I(LOG_CONSOLE, "RemoteConsole started on port %d", config.port);
-        DLOG_I(LOG_CONSOLE, "Connect via: telnet %s %d", 
-               WiFi.localIP().toString().c_str(), config.port);
         
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
     }
     
+    void onComponentsReady(const ComponentRegistry& /*registry*/) override {
+        // Display connection info once WiFi is connected
+        displayConnectionInfo();
+    }
+    
     void loop() override {
         if (getLastStatus() != ComponentStatus::Success || !telnetServer) return;
+        
+        // Check if WiFi connected and we haven't displayed info yet
+        if (!connectionInfoDisplayed && WiFi.status() == WL_CONNECTED) {
+            displayConnectionInfo();
+        }
         
         // Accept new clients
         if (telnetServer->hasClient()) {
@@ -523,6 +521,16 @@ private:
             case LOG_LEVEL_INFO:  return "I";
             case LOG_LEVEL_DEBUG: return "D";
             default: return "?";
+        }
+    }
+    
+    void displayConnectionInfo() {
+        if (connectionInfoDisplayed) return;
+        
+        if (WiFi.status() == WL_CONNECTED) {
+            DLOG_I(LOG_CONSOLE, "Connect via: telnet %s %d", 
+                   WiFi.localIP().toString().c_str(), config.port);
+            connectionInfoDisplayed = true;
         }
     }
 };
