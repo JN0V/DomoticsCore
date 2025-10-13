@@ -144,23 +144,18 @@ protected:
      */
     void setStatus(ComponentStatus status) {
         lastStatus = status;
-        if (status != ComponentStatus::Success) {
-            active = false;
-        }
-    }
-    /**
-     * Framework-injected access to EventBus. Valid after begin().
-     */
-    DomoticsCore::Utils::EventBus& eventBus() {
-        return *__dc_eventBus;
+        // Components can override this for custom behavior
     }
     
+public:
     /**
-     * Mark component as active (called by ComponentRegistry)
+     * Mark component as active (can be called by ComponentRegistry or early init)
      */
     void setActive(bool state) { 
         active = state; 
     }
+    
+protected:
     
     friend class ComponentRegistry;
     // Called by ComponentRegistry prior to begin()
