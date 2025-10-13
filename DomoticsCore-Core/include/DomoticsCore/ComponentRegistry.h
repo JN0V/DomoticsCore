@@ -92,6 +92,12 @@ public:
         
         // Initialize components in dependency order
         for (auto* component : initializationOrder) {
+            // Skip if already initialized (e.g., early init by System)
+            if (component->getLastStatus() == ComponentStatus::Success && component->isActive()) {
+                DLOG_I(LOG_CORE, "Component already initialized, skipping: %s", component->getName().c_str());
+                continue;
+            }
+            
             DLOG_I(LOG_CORE, "Initializing component: %s", component->getName().c_str());
             
             // Provide framework services (EventBus) to the component before begin()
