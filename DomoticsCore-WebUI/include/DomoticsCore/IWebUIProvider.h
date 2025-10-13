@@ -45,16 +45,16 @@ struct LazyState {
     /**
      * @brief Check if value has changed, update internal state
      * @param current Current value to compare against
-     * @return true if value changed, false if unchanged or first call
+     * @return true if value changed OR first call (to ensure initial state is sent)
      * 
-     * On first call (uninitialized): stores value and returns false
+     * On first call (uninitialized): stores value and returns TRUE (initial state needs to be sent)
      * On subsequent calls: compares with stored value, updates, returns true if changed
      */
     bool hasChanged(const T& current) {
         if (!initialized) {
             value = current;
             initialized = true;
-            return false;  // First check is not a change
+            return true;  // First check returns true to ensure initial state is sent
         }
         bool changed = (current != value);
         value = current;
