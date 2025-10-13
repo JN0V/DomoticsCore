@@ -112,11 +112,14 @@ public:
                     DLOG_I(LOG_WIFI, "Wifi connected successfully");
                     DLOG_I(LOG_WIFI, "IP address: %s", WiFi.localIP().toString().c_str());
                     setStatus(ComponentStatus::Success);
+                    // Emit event to trigger immediate WebUI update
+                    emit("wifi/sta/connected", true);
                 } else if (millis() - connectionStartTime > CONNECTION_TIMEOUT) {
                     // Connection timeout
                     isConnecting = false;
                     DLOG_E(LOG_WIFI, "Wifi connection timeout - status: %d", status);
                     setStatus(ComponentStatus::TimeoutError);
+                    emit("wifi/sta/connected", false);
                 }
             }
         }
@@ -512,6 +515,7 @@ private:
             
             if (apSuccess) {
                 DLOG_I(LOG_WIFI, "AP started: %s (IP: %s)", apSSID_.c_str(), WiFi.softAPIP().toString().c_str());
+                emit("wifi/ap/enabled", true);
             }
             
             // Enable station connection attempts
@@ -523,6 +527,7 @@ private:
             // Only Wifi requested - use STA mode
             DLOG_I(LOG_WIFI, "Enabling station mode only");
             WiFi.softAPdisconnect(true);
+            emit("wifi/ap/enabled", false);
             delay(100);
             WiFi.mode(WIFI_STA);
             delay(100);
@@ -547,6 +552,7 @@ private:
             
             if (success) {
                 DLOG_I(LOG_WIFI, "AP-only mode started: %s (IP: %s)", apSSID_.c_str(), WiFi.softAPIP().toString().c_str());
+                emit("wifi/ap/enabled", true);
             }
             
             return success;
