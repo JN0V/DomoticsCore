@@ -2,6 +2,10 @@
 
 #include "DomoticsCore/Wifi.h"
 #include "DomoticsCore/IWebUIProvider.h"
+#include "DomoticsCore/Logger.h"
+#include <functional>
+
+#define LOG_WIFI_WEBUI "WIFI_WEBUI"
 
 namespace DomoticsCore {
 namespace Components {
@@ -9,42 +13,56 @@ namespace WebUI {
 
 class WifiWebUI : public IWebUIProvider {
     WifiComponent* wifi; // non-owning
+    std::function<void(const String&, const String&)> onCredentialsSaved; // callback for persistence
     // Keep pending credentials updated from UI
     String pendingSsid;
     String pendingPassword;
     // Last scan results (comma-separated for simple display)
     String lastScanSummary;
     
+    // ============================================================================
     // State tracking using LazyState helper for timing-independent initialization
-    // Simple states
-    LazyState<bool> wifiStatusState;        // WiFi STA connection status
-    LazyState<bool> apStatusState;          // AP enabled status
-    LazyState<bool> wifiSTAEnabledState;    // WiFi STA enabled config
-    LazyState<bool> wifiAPEnabledState;     // WiFi AP enabled config
+    // ============================================================================
     
-    // Composite states for contexts with multiple values
-    struct ComponentState {
+    // BADGE STATES (Simple bool for header badges)
+    LazyState<bool> wifiStatusState;     // STA badge: connected?
+    LazyState<bool> apStatusState;       // AP badge: active?
+    
+    // COMPONENT CARD STATES (Runtime details for Components tab)
+    struct STAComponentState {
         bool connected;
-        String ssid;
+        String ssid;      // Currently connected network
         String ip;
         
-        bool operator==(const ComponentState& other) const {
+        bool operator==(const STAComponentState& other) const {
             return connected == other.connected && ssid == other.ssid && ip == other.ip;
         }
-        bool operator!=(const ComponentState& other) const { return !(*this == other); }
+        bool operator!=(const STAComponentState& other) const { return !(*this == other); }
     };
-    LazyState<ComponentState> wifiComponentState;
+    LazyState<STAComponentState> staComponentState;
     
+    // SETTINGS CARD STATES (Configuration for Settings tab)
     struct STASettingsState {
         bool enabled;
-        String ssid;
+        String ssid;      // Configured/target network
         
         bool operator==(const STASettingsState& other) const {
             return enabled == other.enabled && ssid == other.ssid;
         }
         bool operator!=(const STASettingsState& other) const { return !(*this == other); }
     };
-    LazyState<STASettingsState> wifiSTASettingsState;
+    LazyState<STASettingsState> staSettingsState;
+    
+    struct APSettingsState {
+        bool enabled;
+        String ssid;      // Configured AP SSID
+        
+        bool operator==(const APSettingsState& other) const {
+            return enabled == other.enabled && ssid == other.ssid;
+        }
+        bool operator!=(const APSettingsState& other) const { return !(*this == other); }
+    };
+    LazyState<APSettingsState> apSettingsState;
     
 public:
     explicit WifiWebUI(WifiComponent* c) : wifi(c) {
@@ -53,6 +71,11 @@ public:
             // State will be lazily initialized on first hasDataChanged() call
             // to ensure WiFi component is fully initialized
         }
+    }
+    
+    // Set callback for credential persistence (optional)
+    void setCredentialsSaveCallback(std::function<void(const String&, const String&)> callback) {
+        onCredentialsSaved = callback;
     }
 
     String getWebUIName() const override { return wifi ? wifi->getName() : String("Wifi"); }
@@ -77,21 +100,20 @@ public:
         .withRealTime(2000));
 
         // Settings controls - STA section
-        ctxs.push_back(WebUIContext::settings("wifi_sta_settings", "WiFi (STA)")
-            .withField(WebUIField("wifi_enabled", "Enabled", WebUIFieldType::Boolean, wifi->isWifiEnabled() ? "true" : "false"))
-            .withField(WebUIField("ssid", "SSID", WebUIFieldType::Text, wifi->getConfiguredSSID()))
+        ctxs.push_back(WebUIContext::settings("wifi_sta_settings", "WiFi Network")
+            .withField(WebUIField("ssid", "Network SSID", WebUIFieldType::Text, wifi->getConfiguredSSID()))
             .withField(WebUIField("password", "Password", WebUIFieldType::Text, ""))
-            .withField(WebUIField("connect", "Connect", WebUIFieldType::Button, ""))
             .withField(WebUIField("scan_networks", "Scan Networks", WebUIFieldType::Button, ""))
-            .withField(WebUIField("networks", "Networks", WebUIFieldType::Display, ""))
+            .withField(WebUIField("networks", "Available Networks", WebUIFieldType::Display, ""))
+            .withField(WebUIField("wifi_enabled", "Enable WiFi", WebUIFieldType::Boolean, wifi->isWifiEnabled() ? "true" : "false"))
             .withAPI("/api/wifi")
             .withRealTime(2000)
         );
 
         // Settings controls - AP section
         ctxs.push_back(WebUIContext::settings("wifi_ap_settings", "Access Point (AP)")
-            .withField(WebUIField("ap_enabled", "AP Enabled", WebUIFieldType::Boolean, wifi->isAPEnabled() ? "true" : "false"))
             .withField(WebUIField("ap_ssid", "AP SSID", WebUIFieldType::Text, wifi->isAPEnabled() ? wifi->getAPSSID() : String("DomoticsCore-AP")))
+            .withField(WebUIField("ap_enabled", "Enable AP", WebUIFieldType::Boolean, wifi->isAPEnabled() ? "true" : "false"))
             .withAPI("/api/wifi")
             .withRealTime(2000)
         );
@@ -107,21 +129,38 @@ public:
             auto v = params.find("value");
             if (f == params.end() || v == params.end()) return "{\"success\":false}";
             String field = f->second; String value = v->second;
-            if (field == "wifi_enabled") {
-                bool en = (value == "true" || value == "1" || value == "on");
-                wifi->enableWifi(en);
-                if (en) wifi->reconnect();
-                return "{\"success\":true}";
-            } else if (field == "ssid") {
+            if (field == "ssid") {
+                DLOG_D(LOG_WIFI_WEBUI, "Updated SSID to: '%s'", value.c_str());
                 pendingSsid = value;
                 return "{\"success\":true}";
             } else if (field == "password") {
+                DLOG_D(LOG_WIFI_WEBUI, "Updated password (length: %d)", value.length());
                 pendingPassword = value;
                 return "{\"success\":true}";
-            } else if (field == "connect") {
-                wifi->setCredentials(pendingSsid, pendingPassword, true);
-                // clear password for safety
-                pendingPassword = "";
+            } else if (field == "wifi_enabled") {
+                bool enable = (value == "true" || value == "1" || value == "on");
+                
+                if (enable) {
+                    // Enabling: apply pending credentials and connect
+                    DLOG_I(LOG_WIFI_WEBUI, "Enabling WiFi with SSID='%s'", pendingSsid.c_str());
+                    wifi->setCredentials(pendingSsid, pendingPassword, true);
+                    
+                    // Invoke persistence callback if set
+                    if (onCredentialsSaved) {
+                        DLOG_I(LOG_WIFI_WEBUI, "Invoking credentials save callback");
+                        onCredentialsSaved(pendingSsid, pendingPassword);
+                    } else {
+                        DLOG_W(LOG_WIFI_WEBUI, "WARNING: No save callback set!");
+                    }
+                    
+                    // Clear password for safety
+                    pendingPassword = "";
+                } else {
+                    // Disabling: just disable WiFi
+                    DLOG_I(LOG_WIFI_WEBUI, "Disabling WiFi");
+                    wifi->enableWifi(false);
+                }
+                
                 return "{\"success\":true}";
             } else if (field == "scan_networks") {
                 wifi->startScanAsync();
@@ -203,22 +242,26 @@ public:
             return apStatusState.hasChanged(wifi->isAPEnabled());
         }
         else if (contextId == "wifi_component") {
-            ComponentState current = {
+            STAComponentState current = {
                 wifi->isSTAConnected(),
                 wifi->getSSID(),
                 wifi->getLocalIP()
             };
-            return wifiComponentState.hasChanged(current);
+            return staComponentState.hasChanged(current);
         }
         else if (contextId == "wifi_sta_settings" || contextId == "wifi_settings") {
             STASettingsState current = {
                 wifi->isWifiEnabled(),
                 wifi->getConfiguredSSID()
             };
-            return wifiSTASettingsState.hasChanged(current);
+            return staSettingsState.hasChanged(current);
         }
         else if (contextId == "wifi_ap_settings") {
-            return wifiAPEnabledState.hasChanged(wifi->isAPEnabled());
+            APSettingsState current = {
+                wifi->isAPEnabled(),
+                wifi->isAPEnabled() ? wifi->getAPSSID() : String("")
+            };
+            return apSettingsState.hasChanged(current);
         }
         else {
             // Unknown context, always send
