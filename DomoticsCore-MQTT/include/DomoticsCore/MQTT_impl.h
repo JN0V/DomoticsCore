@@ -53,12 +53,12 @@ inline ComponentStatus MQTTComponent::begin() {
     
     if (!config.enabled) {
         DLOG_I(LOG_MQTT, "Component disabled in configuration");
-        return ComponentStatus::ConfigError;
+        return ComponentStatus::Success;  // Success but inactive
     }
     
     if (config.broker.isEmpty()) {
-        DLOG_W(LOG_MQTT, "No broker configured");
-        return ComponentStatus::ConfigError;
+        DLOG_W(LOG_MQTT, "No broker configured - component inactive");
+        return ComponentStatus::Success;  // Success but not configured
     }
     
     mqttClient.setServer(config.broker.c_str(), config.port);
@@ -77,7 +77,7 @@ inline ComponentStatus MQTTComponent::begin() {
 }
 
 inline void MQTTComponent::loop() {
-    if (!config.enabled) return;
+    if (!config.enabled || config.broker.isEmpty()) return;
     
     if (isConnected()) {
         mqttClient.loop();
