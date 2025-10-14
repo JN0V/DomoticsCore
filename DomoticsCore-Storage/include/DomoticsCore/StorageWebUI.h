@@ -23,7 +23,7 @@ public:
 
         // Component detail
         ctxs.push_back(WebUIContext{
-            "storage_component", "Storage", "fas fa-database", WebUILocation::ComponentDetail, WebUIPresentation::Card
+            "storage_component", "Storage", "dc-info", WebUILocation::ComponentDetail, WebUIPresentation::Card
         }
         .withField(WebUIField("namespace", "Namespace", WebUIFieldType::Display, storage->getNamespace(), "", true))
         .withField(WebUIField("entries", "Used Entries", WebUIFieldType::Display, String(storage->getEntryCount()), "", true))
