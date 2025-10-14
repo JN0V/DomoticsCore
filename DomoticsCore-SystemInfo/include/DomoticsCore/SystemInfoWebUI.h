@@ -81,7 +81,7 @@ public:
             WebUIContext detail;
             detail.contextId = "system_component";
             detail.title = "System Info";
-            detail.icon = "fas fa-microchip";
+            detail.icon = "dc-info";
             detail.location = WebUILocation::ComponentDetail;
             detail.presentation = WebUIPresentation::Card;
             detail

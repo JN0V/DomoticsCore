@@ -92,7 +92,7 @@ public:
 
         // Components tab card
         ctxs.push_back(WebUIContext{
-            "wifi_component", "WiFi", "fas fa-wifi", WebUILocation::ComponentDetail, WebUIPresentation::Card
+            "wifi_component", "WiFi", "dc-wifi", WebUILocation::ComponentDetail, WebUIPresentation::Card
         }
         .withField(WebUIField("connected", "Connected", WebUIFieldType::Display, wifi->isSTAConnected() ? "Yes" : "No", "", true))
         .withField(WebUIField("ssid_now", "SSID", WebUIFieldType::Display, wifi->getSSID(), "", true))
