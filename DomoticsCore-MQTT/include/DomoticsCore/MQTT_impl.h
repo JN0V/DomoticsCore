@@ -12,8 +12,7 @@ inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
     : config(cfg)
     , mqttClient(config.useTLS ? (Client&)wifiClientSecure : (Client&)wifiClient)
     , state(MQTTState::Disconnected)
-    , lastConnectAttempt(0)
-    , currentReconnectDelay(config.reconnectDelay)
+    , reconnectTimer(cfg.reconnectDelay)
     , stateChangeTime(0)
     , lastPublishTime(0)
     , publishCountThisSecond(0)
@@ -51,14 +50,16 @@ inline ComponentStatus MQTTComponent::begin() {
     
     loadConfiguration();
     
-    if (!config.enabled) {
-        DLOG_I(LOG_MQTT, "Component disabled in configuration");
+    // Auto-disable if no broker configured (similar to WiFi auto-switching to AP)
+    if (config.broker.isEmpty()) {
+        config.enabled = false;
+        DLOG_W(LOG_MQTT, "No broker configured - component disabled (can be configured via WebUI)");
         return ComponentStatus::Success;  // Success but inactive
     }
     
-    if (config.broker.isEmpty()) {
-        DLOG_W(LOG_MQTT, "No broker configured - component inactive");
-        return ComponentStatus::Success;  // Success but not configured
+    if (!config.enabled) {
+        DLOG_I(LOG_MQTT, "Component disabled in configuration");
+        return ComponentStatus::Success;  // Success but inactive
     }
     
     mqttClient.setServer(config.broker.c_str(), config.port);
@@ -112,15 +113,15 @@ inline bool MQTTComponent::connect() {
     
     state = MQTTState::Connecting;
     stateChangeTime = millis();
-    lastConnectAttempt = millis();
     
     bool success = connectInternal();
     
     if (success) {
         state = MQTTState::Connected;
         stateChangeTime = millis();
-        currentReconnectDelay = config.reconnectDelay;
+        reconnectTimer.setInterval(config.reconnectDelay);  // Reset to initial delay
         stats.connectCount++;
+        stats.reconnectCount = 0;  // Reset failure counter on successful connection
         
         DLOG_I(LOG_MQTT, "Connected to %s:%d", config.broker.c_str(), config.port);
         
@@ -146,15 +147,26 @@ inline bool MQTTComponent::connect() {
 inline void MQTTComponent::disconnect() {
     if (!isConnected()) return;
     
-    DLOG_I(LOG_MQTT, "Disconnecting");
     mqttClient.disconnect();
     state = MQTTState::Disconnected;
     stateChangeTime = millis();
+    
+    DLOG_I(LOG_MQTT, "Disconnected from broker");
     
     // Call disconnect callbacks
     for (const auto& callback : disconnectCallbacks) {
         callback();
     }
+}
+
+inline void MQTTComponent::resetReconnect() {
+    stats.reconnectCount = 0;
+    reconnectTimer.setInterval(config.reconnectDelay);
+    reconnectTimer.enable();
+    reconnectTimer.reset();
+    state = MQTTState::Disconnected;
+    lastError = "";
+    DLOG_I(LOG_MQTT, "Reconnection reset - auto-retry re-enabled");
 }
 
 inline String MQTTComponent::getStateString() const {
@@ -352,19 +364,22 @@ inline bool MQTTComponent::connectInternal() {
 inline void MQTTComponent::handleReconnection() {
     if (state == MQTTState::Connecting) return;
     
-    unsigned long now = millis();
-    if (now - lastConnectAttempt < currentReconnectDelay) {
+    // Use NonBlockingDelay timer - check if reconnect interval has elapsed
+    if (!reconnectTimer.isReady()) {
         return;
     }
     
-    if (currentReconnectDelay < config.maxReconnectDelay) {
-        currentReconnectDelay *= 2;
-        if (currentReconnectDelay > config.maxReconnectDelay) {
-            currentReconnectDelay = config.maxReconnectDelay;
+    // Exponential backoff with max delay
+    unsigned long currentDelay = reconnectTimer.getInterval();
+    if (currentDelay < config.maxReconnectDelay) {
+        unsigned long newDelay = currentDelay * 2;
+        if (newDelay > config.maxReconnectDelay) {
+            newDelay = config.maxReconnectDelay;
         }
+        reconnectTimer.setInterval(newDelay);
     }
     
-    DLOG_I(LOG_MQTT, "Attempting reconnection (delay: %lu ms)", currentReconnectDelay);
+    DLOG_I(LOG_MQTT, "Attempting reconnection (delay: %lu ms)", reconnectTimer.getInterval());
     stats.reconnectCount++;
     connect();
 }

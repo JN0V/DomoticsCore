@@ -2,6 +2,7 @@
 
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
+#include <DomoticsCore/Timer.h>
 #include <Preferences.h>
 #include <PubSubClient.h>
 #include <WiFiClient.h>
@@ -165,6 +166,12 @@ public:
      * @brief Disconnect from MQTT broker
      */
     void disconnect();
+    
+    /**
+     * @brief Reset reconnection and enable auto-retry
+     * Call this after updating broker configuration via WebUI
+     */
+    void resetReconnect();
     
     /**
      * Check if connected to broker
@@ -350,8 +357,7 @@ private:
     // State management
     MQTTState state;
     String lastError;
-    unsigned long lastConnectAttempt;
-    unsigned long currentReconnectDelay;
+    Utils::NonBlockingDelay reconnectTimer;
     unsigned long stateChangeTime;
     
     // Statistics
