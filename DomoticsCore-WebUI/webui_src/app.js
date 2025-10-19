@@ -7,7 +7,7 @@ class DomoticsApp {
 
         // Enum mappings from C++ backend
         this.WebUILocation = { Dashboard: 0, ComponentDetail: 1, HeaderStatus: 2, QuickControls: 3, Settings: 4, HeaderInfo: 5 };
-        this.WebUIFieldType = { Text: 0, Number: 1, Float: 2, Boolean: 3, Select: 4, Slider: 5, Color: 6, Button: 7, Display: 8, Chart: 9, Status: 10, Progress: 11 };
+        this.WebUIFieldType = { Text: 0, Number: 1, Float: 2, Boolean: 3, Select: 4, Slider: 5, Color: 6, Button: 7, Display: 8, Chart: 9, Status: 10, Progress: 11, Password: 12 };
 
         this.init();
     }
@@ -173,6 +173,12 @@ class DomoticsApp {
                     const inputType = field.name === 'password' ? 'password' : 'text';
                     const val = (field.value != null) ? String(field.value) : '';
                     fieldHtml = `<input type="${inputType}" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
+                }
+                break;
+            case this.WebUIFieldType.Password:
+                {
+                    const val = (field.value != null) ? String(field.value) : '';
+                    fieldHtml = `<input type="password" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
                 }
                 break;
             case this.WebUIFieldType.Number:
