@@ -272,6 +272,11 @@ class DomoticsApp {
         this.ws.onopen = () => {
             console.log('WebSocket connected');
             this.clearReconnectInterval();
+            // After reconnect (e.g., AP -> AP+STA), refresh schema and UI to sync badges/cards
+            this.loadUISchema().then(() => {
+                this.renderUI();
+            });
+            // no polling/banner
         };
 
         this.ws.onmessage = event => {
@@ -284,11 +289,13 @@ class DomoticsApp {
         };
 
         this.ws.onclose = () => {
-            console.log('WebSocket disconnected');
+            console.warn('WebSocket disconnected');
             this.scheduleReconnect();
         };
 
-        this.ws.onerror = error => console.error('WebSocket error:', error);
+        this.ws.onerror = error => {
+            console.error('WebSocket error:', error);
+        };
     }
 
     scheduleReconnect() {
