@@ -4,15 +4,17 @@ ESP32 domotics framework with WiFi, MQTT, web interface, Home Assistant integrat
 
 ## 🚀 Features
 
+- **Modular Architecture**: Header-only component system with dependency resolution
 - **WiFi Management**: Custom WiFi management with web interface
-- **Web Interface**: Configuration portal with responsive UI
-- **MQTT Integration**: Full MQTT client with reconnection
+- **Web Interface**: Configuration portal with responsive UI (headless API mode available)
+- **MQTT Integration**: Full MQTT client with reconnection and QoS support
 - **Home Assistant**: Auto-discovery integration
 - **OTA Updates**: Over-the-air firmware updates
 - **Persistent Storage**: Application data storage with preferences separation
-- **LED Status**: Visual feedback system
-- **Unified Logging**: Decentralized, extensible logging system
-- **Modular Design**: Clean, extensible architecture
+- **LED Status**: Visual feedback system with effects
+- **Remote Console**: Telnet-based debugging with real-time log streaming
+- **Unified Logging**: Decentralized, extensible logging with callback system
+- **System Info**: Real-time monitoring with WebSocket updates
 
 ## 📦 Installation
 
@@ -36,45 +38,80 @@ lib_deps =
 
 ## 🔧 Quick Start
 
-### Basic Usage
+### Recommended: Use DomoticsCore-System (Batteries Included)
+
+**Everything automatic: WiFi, LED status, remote console!**
+
 ```cpp
-#include <DomoticsCore/DomoticsCore.h>
+#include <DomoticsCore/System.h>
 
-#define SENSOR_PIN A0
+using namespace DomoticsCore;
 
-DomoticsCore* core = nullptr;
-float sensorValue = 0.0;
+System* domotics = nullptr;
+
+// YOUR sensor code
+float readTemperature() {
+    // Your DHT22, DS18B20, etc.
+    return 22.5;
+}
 
 void setup() {
-  CoreConfig config;
-  config.deviceName = "BasicExample";
-  config.firmwareVersion = "1.0.0";
-  
-  core = new DomoticsCore(config);
-  
-  // Add REST API endpoint
-  core->webServer().on("/api/sensor", HTTP_GET, [](AsyncWebServerRequest *request){
-    String json = "{\"sensor_value\":" + String(sensorValue) + "}";
-    request->send(200, "application/json", json);
-  });
-  
-  core->begin();
+    Serial.begin(115200);
+    
+    // Simple configuration
+    SystemConfig config;
+    config.deviceName = "MyDevice";
+    config.wifiSSID = "YOUR_WIFI";
+    config.wifiPassword = "YOUR_PASSWORD";
+    config.enableLED = true;        // Automatic LED patterns
+    config.enableConsole = true;    // Telnet debugging
+    
+    domotics = new System(config);
+    
+    // Add YOUR custom commands
+    domotics->registerCommand("temp", [](const String& args) {
+        return String("Temp: ") + String(readTemperature(), 1) + "°C\n";
+    });
+    
+    // Initialize (automatic: WiFi, LED, Console, States)
+    if (!domotics->begin()) {
+        while (1) delay(1000);
+    }
+    
+    // YOUR custom initialization
+    pinMode(5, OUTPUT);  // Relay
 }
 
 void loop() {
-  core->loop();
-  
-  // Read sensor every 5 seconds
-  static unsigned long lastRead = 0;
-  if (millis() - lastRead > 5000) {
-    sensorValue = (analogRead(SENSOR_PIN) / 4095.0) * 100.0;
-    lastRead = millis();
-  }
+    domotics->loop();  // Handles everything
+    
+    // YOUR application code
+    static unsigned long lastRead = 0;
+    if (millis() - lastRead > 10000) {
+        float temp = readTemperature();
+        digitalWrite(5, temp > 25.0 ? HIGH : LOW);  // Control relay
+        lastRead = millis();
+    }
 }
 ```
 
-### Advanced Usage
-For MQTT, Home Assistant, storage, and relay control, see `examples/AdvancedApp/`.
+**That's it!** WiFi, LED patterns, telnet console - all automatic.
+
+**See:** `DomoticsCore-System/examples/SimpleApp/` and `ARCHITECTURE.md#system-component-batteries-included`
+
+### Advanced: Use Individual Components
+
+For custom orchestration, use components directly. See component-specific examples:
+- `DomoticsCore-RemoteConsole/examples/BasicRemoteConsole/`
+- `DomoticsCore-Coordinator/examples/BasicCoordinator/`
+- Each component has its own examples in its directory
+
+## 📖 Documentation
+
+- `GETTING_STARTED.md`
+- `ARCHITECTURE.md`
+- `docs/WebUI-Developer-Guide.md`
+- `docs/WebUI-State-Tracking.md`
 
 ## 🧩 EventBus (topic-based, decoupled)
 
