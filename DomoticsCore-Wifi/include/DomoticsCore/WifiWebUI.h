@@ -17,6 +17,8 @@ class WifiWebUI : public IWebUIProvider {
     // Keep pending credentials updated from UI
     String pendingSsid;
     String pendingPassword;
+    // Pending AP SSID typed while AP is disabled (applied on next enable)
+    String pendingApSsid;
     // Last scan results (comma-separated for simple display)
     String lastScanSummary;
     
@@ -112,7 +114,12 @@ public:
 
         // Settings controls - AP section
         ctxs.push_back(WebUIContext::settings("wifi_ap_settings", "Access Point (AP)")
-            .withField(WebUIField("ap_ssid", "AP SSID", WebUIFieldType::Text, wifi->isAPEnabled() ? wifi->getAPSSID() : String("DomoticsCore-AP")))
+            .withField(WebUIField(
+                "ap_ssid",
+                "AP SSID",
+                WebUIFieldType::Text,
+                (wifi->getAPSSID().length() ? wifi->getAPSSID() : (pendingApSsid.length() ? pendingApSsid : String("DomoticsCore-AP")))
+            ))
             .withField(WebUIField("ap_enabled", "Enable AP", WebUIFieldType::Boolean, wifi->isAPEnabled() ? "true" : "false"))
             .withAPI("/api/wifi")
             .withRealTime(2000)
@@ -187,8 +194,11 @@ public:
             if (field == "ap_enabled") {
                 bool en = (value == "true" || value == "1" || value == "on");
                 if (en) {
-                    String apName = pendingSsid.length() ? pendingSsid : (wifi->getAPSSID().length() ? wifi->getAPSSID() : String("DomoticsCore-AP"));
+                    // Use pending AP SSID if set; otherwise current configured AP SSID; else default
+                    String apName = pendingApSsid.length() ? pendingApSsid : (wifi->getAPSSID().length() ? wifi->getAPSSID() : String("DomoticsCore-AP"));
                     wifi->enableAP(apName);
+                    // Clear pending once applied
+                    pendingApSsid = "";
                 } else {
                     wifi->disableAP();
                 }
@@ -204,6 +214,9 @@ public:
                 if (newAp.isEmpty()) newAp = "DomoticsCore-AP";
                 if (wifi->isAPEnabled()) {
                     wifi->enableAP(newAp);
+                } else {
+                    // Store for when AP gets enabled later
+                    pendingApSsid = newAp;
                 }
                 return "{\"success\":true}";
             }
@@ -242,7 +255,8 @@ public:
         if (contextId == "wifi_ap_settings") {
             JsonDocument doc;
             doc["ap_enabled"] = wifi->isAPEnabled() ? "true" : "false";
-            doc["ap_ssid"] = wifi->isAPEnabled() ? wifi->getAPSSID() : String("DomoticsCore-AP");
+            // Prefer configured AP SSID; else pending; else default
+            doc["ap_ssid"] = wifi->getAPSSID().length() ? wifi->getAPSSID() : (pendingApSsid.length() ? pendingApSsid : String("DomoticsCore-AP"));
             String json; serializeJson(doc, json); return json;
         }
         return "{}";
