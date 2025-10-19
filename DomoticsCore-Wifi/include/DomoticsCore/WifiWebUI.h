@@ -102,7 +102,7 @@ public:
         // Settings controls - STA section
         ctxs.push_back(WebUIContext::settings("wifi_sta_settings", "WiFi Network")
             .withField(WebUIField("ssid", "Network SSID", WebUIFieldType::Text, wifi->getConfiguredSSID()))
-            .withField(WebUIField("sta_password", "Password", WebUIFieldType::Text, ""))
+            .withField(WebUIField("sta_password", "Password", WebUIFieldType::Password, ""))
             .withField(WebUIField("scan_networks", "Scan Networks", WebUIFieldType::Button, ""))
             .withField(WebUIField("networks", "Available Networks", WebUIFieldType::Display, ""))
             .withField(WebUIField("wifi_enabled", "Enable WiFi", WebUIFieldType::Boolean, wifi->isWifiEnabled() ? "true" : "false"))
