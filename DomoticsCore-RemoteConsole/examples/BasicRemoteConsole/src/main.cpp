@@ -20,8 +20,8 @@ using namespace DomoticsCore::Components;
 #define LOG_APP "APP"
 
 // WiFi credentials
-const char* WIFI_SSID = "YourWifiSSID";
-const char* WIFI_PASSWORD = "YourWifiPassword";
+const char* WIFI_SSID = "";
+const char* WIFI_PASSWORD = "";
 
 // Core and components
 Core core;
