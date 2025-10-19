@@ -157,10 +157,20 @@ public:
                     
                     // Clear password for safety
                     pendingPassword = "";
+                    // Force next delta update for header badges and cards
+                    wifiStatusState.reset();
+                    apStatusState.reset();
+                    staComponentState.reset();
+                    staSettingsState.reset();
                 } else {
                     // Disabling: just disable WiFi
                     DLOG_I(LOG_WIFI_WEBUI, "Disabling WiFi");
                     wifi->enableWifi(false);
+                    // Force next delta update for header badges and cards
+                    wifiStatusState.reset();
+                    apStatusState.reset();
+                    staComponentState.reset();
+                    staSettingsState.reset();
                 }
                 
                 return "{\"success\":true}";
@@ -182,6 +192,11 @@ public:
                 } else {
                     wifi->disableAP();
                 }
+                // Force next delta update for header badges and cards
+                wifiStatusState.reset();
+                apStatusState.reset();
+                staComponentState.reset();
+                apSettingsState.reset();
                 return "{\"success\":true}";
             } else if (field == "ap_ssid") {
                 // Update AP SSID immediately if AP enabled
