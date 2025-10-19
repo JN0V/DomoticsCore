@@ -26,7 +26,7 @@ public:
     static WebUIContext createLineChart(const String& contextId, const String& title, 
                                       const String& canvasId, const String& valueId, 
                                       const String& color = "#007acc", const String& unit = "%") {
-        return WebUIContext::dashboard(contextId, title, "fas fa-chart-line")
+        return WebUIContext::dashboard(contextId, title, "dc-chart")
             .withField(WebUIField(contextId + "_data", title + " Data", WebUIFieldType::Chart))
             .withCustomHtml(generateChartHtml(title, canvasId, valueId, unit))
             .withCustomCss(generateChartCss())

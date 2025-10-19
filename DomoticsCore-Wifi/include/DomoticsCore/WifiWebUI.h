@@ -88,7 +88,7 @@ public:
         // Header badge for quick status
         ctxs.push_back(WebUIContext::statusBadge("wifi_status", "WiFi", "dc-wifi").withRealTime(2000));
         // AP status badge with custom icon
-        ctxs.push_back(WebUIContext::statusBadge("ap_status", "AP", "antenna-radiowaves-left-right").withRealTime(2000));
+        ctxs.push_back(WebUIContext::statusBadge("ap_status", "AP", "dc-ap").withRealTime(2000));
 
         // Components tab card
         ctxs.push_back(WebUIContext{
@@ -102,7 +102,7 @@ public:
         // Settings controls - STA section
         ctxs.push_back(WebUIContext::settings("wifi_sta_settings", "WiFi Network")
             .withField(WebUIField("ssid", "Network SSID", WebUIFieldType::Text, wifi->getConfiguredSSID()))
-            .withField(WebUIField("password", "Password", WebUIFieldType::Text, ""))
+            .withField(WebUIField("sta_password", "Password", WebUIFieldType::Text, ""))
             .withField(WebUIField("scan_networks", "Scan Networks", WebUIFieldType::Button, ""))
             .withField(WebUIField("networks", "Available Networks", WebUIFieldType::Display, ""))
             .withField(WebUIField("wifi_enabled", "Enable WiFi", WebUIFieldType::Boolean, wifi->isWifiEnabled() ? "true" : "false"))
@@ -133,7 +133,7 @@ public:
                 DLOG_D(LOG_WIFI_WEBUI, "Updated SSID to: '%s'", value.c_str());
                 pendingSsid = value;
                 return "{\"success\":true}";
-            } else if (field == "password") {
+            } else if (field == "sta_password") {
                 DLOG_D(LOG_WIFI_WEBUI, "Updated password (length: %d)", value.length());
                 pendingPassword = value;
                 return "{\"success\":true}";
@@ -208,7 +208,7 @@ public:
             doc["wifi_enabled"] = wifi->isWifiEnabled() ? "true" : "false";
             // Prefer pending SSID if user typed one
             doc["ssid"] = pendingSsid.length() ? pendingSsid : wifi->getConfiguredSSID();
-            doc["password"] = ""; // never echo back
+            doc["sta_password"] = ""; // never echo back
             doc["networks"] = wifi->getLastScanSummary();
             String json; serializeJson(doc, json); return json;
         }

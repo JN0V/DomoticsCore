@@ -273,15 +273,15 @@ struct WebUIContext {
         return ctx;
     }
     
-    static WebUIContext graph(const String& id, const String& title, const String& icon = "fas fa-chart-line") {
+    static WebUIContext graph(const String& id, const String& title, const String& icon = "dc-chart") {
         return WebUIContext(id, title, icon, WebUILocation::ComponentDetail, WebUIPresentation::Graph);
     }
     
-    static WebUIContext quickControl(const String& id, const String& title, const String& icon = "fas fa-sliders") {
+    static WebUIContext quickControl(const String& id, const String& title, const String& icon = "dc-settings") {
         return WebUIContext(id, title, icon, WebUILocation::QuickControls, WebUIPresentation::Toggle);
     }
     
-    static WebUIContext settings(const String& id, const String& title, const String& icon = "fas fa-cog") {
+    static WebUIContext settings(const String& id, const String& title, const String& icon = "dc-cog") {
         return WebUIContext(id, title, icon, WebUILocation::Settings, WebUIPresentation::Card);
     }
 };
