@@ -143,6 +143,8 @@ public:
                 if (enable) {
                     // Enabling: apply pending credentials and connect
                     DLOG_I(LOG_WIFI_WEBUI, "Enabling WiFi with SSID='%s'", pendingSsid.c_str());
+                    // Ensure internal enabled flag is set so UI reflects correct state
+                    wifi->enableWifi(true);
                     wifi->setCredentials(pendingSsid, pendingPassword, true);
                     
                     // Invoke persistence callback if set
