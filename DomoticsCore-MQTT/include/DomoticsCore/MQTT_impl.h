@@ -303,6 +303,12 @@ inline bool MQTTComponent::onDisconnect(ConnectionCallback callback) {
 // Configuration
 inline void MQTTComponent::setConfig(const MQTTConfig& cfg) {
     config = cfg;
+    // Ensure PubSubClient stores a valid pointer to the current broker string.
+    // PubSubClient retains the const char* pointer passed to setServer without copying,
+    // so if our String storage changes (e.g., via WebUI updates), the old pointer becomes invalid.
+    if (!config.broker.isEmpty()) {
+        mqttClient.setServer(config.broker.c_str(), config.port);
+    }
     saveConfiguration();
 }
 
@@ -324,6 +330,10 @@ inline void MQTTComponent::setCredentials(const String& username, const String& 
 // Private methods
 inline bool MQTTComponent::connectInternal() {
     bool success = false;
+    // Defensive: refresh server pointer before attempting connection in case config changed recently
+    if (!config.broker.isEmpty()) {
+        mqttClient.setServer(config.broker.c_str(), config.port);
+    }
     
     if (config.enableLWT) {
         if (!config.username.isEmpty()) {
