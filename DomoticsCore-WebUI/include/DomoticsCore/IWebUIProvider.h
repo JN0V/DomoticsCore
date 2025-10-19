@@ -124,7 +124,8 @@ enum class WebUIFieldType {
     Display,           // Read-only display
     Chart,             // Chart data
     Status,            // Status indicator
-    Progress           // Progress value
+    Progress,          // Progress value
+    Password           // Password input (appended to preserve existing ordinals)
 };
 
 /**
