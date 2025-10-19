@@ -71,6 +71,7 @@ def example_uses_webui() -> bool:
         if (
             "DomoticsCore/WebUI.h" in text
             or "WebUIComponent" in text
+            or "DomoticsCore/System.h" in text  # System.h includes WebUI
         ):
             return True
     return False
