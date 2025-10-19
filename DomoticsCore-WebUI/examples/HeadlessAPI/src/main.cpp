@@ -35,8 +35,8 @@ using namespace DomoticsCore::Components::WebUI;
 
 // ========== Configuration ==========
 
-const char* WIFI_SSID = "YourWifiSSID";
-const char* WIFI_PASSWORD = "YourWifiPassword";
+const char* WIFI_SSID = "";
+const char* WIFI_PASSWORD = "";
 
 // API Configuration
 const uint16_t API_PORT = 80;
