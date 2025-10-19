@@ -89,6 +89,7 @@ private:
     std::vector<std::unique_ptr<IWebUIProvider>> ownedProviders;
     
     unsigned long lastWebSocketUpdate = 0;
+    bool forceNextUpdate = false; // force full contexts send on next tick (e.g., after WS reconnect)
 
 public:
     /**
@@ -480,7 +481,8 @@ private:
                 auto* resp = request->beginResponse(200, "application/javascript",
                     WEBUI_JS_GZ, WEBUI_JS_GZ_LEN);
                 resp->addHeader("Content-Encoding", "gzip");
-                resp->addHeader("Cache-Control", "public, max-age=86400");
+                // Disable caching so updated UI logic is always loaded after firmware updates
+                resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
                 request->send(resp);
             }
         });
@@ -772,6 +774,8 @@ private:
                 
                 // Send initial data to new client
                 sendWebSocketUpdate(client);
+                // Also force a full contexts push on next loop to refresh all clients
+                forceNextUpdate = true;
                 break;
             }
                 
@@ -866,8 +870,9 @@ private:
                 continue;
             }
             
-            // Delta update optimization: Only send if provider reports changed data
-            if (!provider->hasDataChanged(contextId)) {
+            // Delta update optimization: Only send if provider reports changed data,
+            // unless forceNextUpdate is set (e.g., right after WS reconnect)
+            if (!forceNextUpdate && !provider->hasDataChanged(contextId)) {
                 continue;
             }
             
@@ -881,10 +886,8 @@ private:
         
         message += "}}";
         
-        // Only send if at least one context has changed (avoid flooding with no-op updates)
-        if (contextCount == 0) {
-            return; // Nothing changed, don't send
-        }
+        // Always send system heartbeat even if no contexts changed
+        // This keeps uptime and other system info live after reconnects
         
         // Safety check and queue-aware sending
         if (message.length() < 4096 && webSocket->count() > 0) {
@@ -912,6 +915,8 @@ private:
                 DLOG_D(LOG_WEB, "WebSocket update sent to %d clients (%d bytes, %d contexts)", 
                        sent, message.length(), contextCount);
             }
+            // Clear force flag after first broadcast
+            forceNextUpdate = false;
         } else if (message.length() >= 4096) {
             DLOG_W(LOG_WEB, "WebSocket message too large (%d bytes), not sending", message.length());
         }
