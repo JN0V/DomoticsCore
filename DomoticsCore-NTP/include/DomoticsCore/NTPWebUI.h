@@ -60,7 +60,6 @@ public:
         dashboard.withField(WebUIField("time", "Time", WebUIFieldType::Display, ntp->getFormattedTime("%H:%M:%S"), "", true))
                  .withField(WebUIField("date", "Date", WebUIFieldType::Display, ntp->getFormattedTime("%Y-%m-%d"), "", true))
                  .withField(WebUIField("timezone", "Timezone", WebUIFieldType::Display, cfg.timezone, "", true))
-                 .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Display, ntp->getFormattedUptime(), "", true))
                  .withRealTime(1000)
                  .withAPI("/api/ntp/dashboard")
                  .withPriority(100);  // High priority for dashboard
@@ -109,7 +108,6 @@ public:
               .withField(WebUIField("last_sync", "Last Sync", WebUIFieldType::Text, 
                          stats.lastSyncTime > 0 ? ntp->getFormattedTime("%Y-%m-%d %H:%M:%S") : "Never"))
               .withField(WebUIField("next_sync", "Next Sync In", WebUIFieldType::Text, nextSyncStr))
-              .withField(WebUIField("uptime", "System Uptime", WebUIFieldType::Text, ntp->getFormattedUptime()))
               .withRealTime(2000)
               .withAPI("/api/ntp/detail");
 
@@ -131,7 +129,6 @@ public:
             doc["time"] = ntp->getFormattedTime("%H:%M:%S");
             doc["date"] = ntp->getFormattedTime("%Y-%m-%d");
             doc["timezone"] = ntp->getTimezone();
-            doc["uptime"] = ntp->getFormattedUptime();
 
         } else if (contextId == "ntp_settings") {
             const NTPConfig& cfg = ntp->getNTPConfig();
@@ -167,7 +164,6 @@ public:
             } else {
                 doc["next_sync"] = "N/A";
             }
-            doc["uptime"] = ntp->getFormattedUptime();
         }
 
         String json;
