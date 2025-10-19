@@ -627,8 +627,8 @@ private:
                 return request->requestAuthentication();
             }
             
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
-            addCorsHeaders(response);
+            // Build JSON in String to avoid AsyncResponseStream buffer OOM
+            // (schema can be very large with all components)
             JsonDocument doc;
             JsonArray schema = doc.to<JsonArray>();
 
@@ -658,7 +658,12 @@ private:
                 }
             }
             
-            serializeJson(doc, *response);
+            // Serialize to String first, then send (avoids stream buffer growing issues)
+            String output;
+            serializeJson(doc, output);
+            
+            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", output);
+            addCorsHeaders(response);
             request->send(response);
         });
         
