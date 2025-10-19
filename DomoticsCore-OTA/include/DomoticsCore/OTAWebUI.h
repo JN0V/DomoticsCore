@@ -135,25 +135,9 @@ public:
                             toggleMode(); // Initialize visibility
                         }
 
-                        // Auto-reboot checkbox handler - uses WebUI standard field POST
+                        // Auto-reboot is read-only (configured at compile time)
                         if (autoRebootCheckbox) {
-                            autoRebootCheckbox.addEventListener('change', async () => {
-                                try {
-                                    const contextId = 'ota_unified';
-                                    const endpoint = '/api/ota/unified';
-                                    const formData = new URLSearchParams();
-                                    formData.append('field', 'auto_reboot');
-                                    formData.append('value', autoRebootCheckbox.checked ? 'true' : 'false');
-                                    
-                                    await fetch(endpoint, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                                        body: formData.toString()
-                                    });
-                                } catch (err) {
-                                    console.error('Failed to update auto-reboot setting:', err);
-                                }
-                            });
+                            autoRebootCheckbox.disabled = true;
                         }
 
                         // Initialize URL field from config
@@ -457,6 +441,39 @@ private:
 
     void registerRoutes() {
         if (!webui) return;
+
+        // Unified API endpoint for OTA card (GET for current state, POST for updates)
+        webui->registerApiRoute("/api/ota/unified", HTTP_GET, [this](AsyncWebServerRequest* request) {
+            respondJson(request, [this](JsonDocument& doc) {
+                if (!ota) return;
+                doc["state"] = stateToString(ota->getState());
+                doc["message"] = ota->getLastResult();
+                doc["progress"] = ota->getProgress();
+                doc["bytes"] = ota->getDownloadedBytes();
+                doc["total"] = ota->getTotalBytes();
+                doc["update_url"] = ota->getOTAConfig().updateUrl;
+                doc["auto_reboot"] = ota->getOTAConfig().autoReboot;
+            });
+        });
+
+        webui->registerApiRoute("/api/ota/unified", HTTP_POST, [this](AsyncWebServerRequest* request) {
+            if (!ota) {
+                respondJson(request, [](JsonDocument& doc) {
+                    doc["success"] = false;
+                    doc["error"] = "OTA unavailable";
+                });
+                return;
+            }
+
+            // Return current state (auto_reboot is read-only from config)
+            respondJson(request, [this](JsonDocument& doc) {
+                doc["state"] = stateToString(ota->getState());
+                doc["message"] = ota->getLastResult();
+                doc["progress"] = ota->getProgress();
+                doc["bytes"] = ota->getDownloadedBytes();
+                doc["total"] = ota->getTotalBytes();
+            });
+        });
 
         webui->registerApiRoute("/api/ota/status", HTTP_GET, [this](AsyncWebServerRequest* request) {
             respondJson(request, [this](JsonDocument& doc) {
