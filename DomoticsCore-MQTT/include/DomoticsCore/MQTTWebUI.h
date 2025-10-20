@@ -56,8 +56,10 @@ public:
         const MQTTConfig& cfg = mqtt->getMQTTConfig();
         
         // Header status badge
+        // Frontend toggles color when first field is truthy; use boolean-like value for 'state'
+        String initState = mqtt->isConnected() ? String("ON") : String("OFF");
         contexts.push_back(WebUIContext::statusBadge("mqtt_status", "MQTT", "dc-mqtt")
-            .withField(WebUIField("state", "State", WebUIFieldType::Status, mqtt->getStateString()))
+            .withField(WebUIField("state", "State", WebUIFieldType::Status, initState))
             .withRealTime(2000)
             .withAPI("/api/mqtt/status"));
         
@@ -107,7 +109,18 @@ public:
         JsonDocument doc;
         
         if (contextId == "mqtt_status") {
-            doc["state"] = mqtt->getStateString();
+            const String label = mqtt->getStateString();
+            // Primary state used by app.js to toggle 'active' class (true/false)
+            doc["state"] = mqtt->isConnected() ? "true" : "false";
+            // Provide normalized code + human label additionally
+            String code = "unknown";
+            if (label == "Connected") code = "connected";
+            else if (label == "Connecting") code = "connecting";
+            else if (label == "Disconnected") code = "disconnected";
+            else if (label == "Error") code = "error";
+            doc["state_label"] = label;
+            doc["connected"] = mqtt->isConnected();
+            doc["state_code"] = code;
             
         } else if (contextId == "mqtt_settings") {
             const MQTTConfig& cfg = mqtt->getMQTTConfig();
@@ -150,6 +163,15 @@ public:
             return "{}";
         }
         return json;
+    }
+    
+    bool hasDataChanged(const String& contextId) override {
+        if (!mqtt) return false;
+        if (contextId == "mqtt_status") {
+            // Only push status updates when the connection state string changes
+            return statusState.hasChanged(mqtt->getStateString());
+        }
+        return true; // default behavior for other contexts
     }
     
     String handleWebUIRequest(const String& contextId, const String& /*endpoint*/, 
@@ -227,6 +249,7 @@ public:
 
 private:
     MQTTComponent* mqtt;  // Non-owning pointer
+    LazyState<String> statusState;
 };
 
 } // namespace WebUI
