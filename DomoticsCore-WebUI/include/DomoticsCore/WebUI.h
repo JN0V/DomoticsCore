@@ -664,6 +664,8 @@ private:
                 return request->requestAuthentication();
             }
             
+            DLOG_I(LOG_WEB, "Schema requested - building from %d context providers", contextProviders.size());
+            
             // Build JSON in String to avoid AsyncResponseStream buffer OOM
             // (schema can be very large with all components)
             // ArduinoJson v7 uses dynamic allocation - it grows as needed
@@ -682,32 +684,57 @@ private:
                     providers.push_back(pair.second);
                 }
             }
+            
+            DLOG_I(LOG_WEB, "Found %d unique providers", providers.size());
 
+            int totalContexts = 0;
             for (IWebUIProvider* provider : providers) {
                 bool enabled = true;
                 auto enIt = providerEnabled.find(provider);
                 if (enIt != providerEnabled.end()) enabled = enIt->second;
+                
+                DLOG_D(LOG_WEB, "Provider '%s': enabled=%d, isWebUIEnabled=%d", 
+                       provider ? provider->getWebUIName().c_str() : "null",
+                       enabled,
+                       provider ? provider->isWebUIEnabled() : 0);
+                
                 if (provider && provider->isWebUIEnabled() && enabled) {
                     auto contexts = provider->getWebUIContexts();
+                    DLOG_D(LOG_WEB, "  -> %d contexts", contexts.size());
                     for (const auto& context : contexts) {
                         JsonObject contextObj = schema.add<JsonObject>();
                         serializeContext(contextObj, context);
+                        totalContexts++;
                     }
                 }
             }
             
-            // Serialize to String first, then send (avoids stream buffer growing issues)
-            String output;
-            size_t written = serializeJson(doc, output);
+            // Serialize to String first (we have enough heap - verified by logs)
+            auto output = std::make_shared<String>();
+            size_t written = serializeJson(doc, *output);
             
-            // Log if serialization was truncated (indicates buffer too small)
+            DLOG_I(LOG_WEB, "Schema serialized: %d contexts, %d bytes", totalContexts, written);
+            
             if (doc.overflowed()) {
-                DLOG_E(LOG_WEB, "Schema JSON overflowed! Increase buffer size. Written: %d bytes", written);
+                DLOG_E(LOG_WEB, "Schema JSON overflowed! Written: %d bytes", written);
             }
             
-            AsyncWebServerResponse *response = request->beginResponse(200, "application/json", output);
+            // Use chunked response to send large data
+            // Capture output via shared_ptr to avoid 42KB copy
+            AsyncWebServerResponse *response = request->beginChunkedResponse("application/json",
+                [output](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                    size_t len = output->length();
+                    if (index >= len) return 0;  // Done
+                    
+                    size_t toSend = min(len - index, maxLen);
+                    memcpy(buffer, output->c_str() + index, toSend);
+                    return toSend;
+                });
+            
             addCorsHeaders(response);
             request->send(response);
+            
+            DLOG_I(LOG_WEB, "Schema chunked response sent (%d bytes)", written);
         });
         
         // Favicon handler
@@ -898,7 +925,7 @@ private:
         int contextCount = 0;
         for (const auto& pair : contextProviders) {
             // Smart limit: Stop if message gets too large (prevent ESP32 memory issues)
-            if (message.length() > 2048) {
+            if (message.length() > 3584) {
                 log_w("WebSocket message size limit reached (%d bytes), skipping remaining contexts", message.length());
                 break;
             }
@@ -975,7 +1002,7 @@ private:
         int contextCount = 0;
         for (const auto& pair : contextProviders) {
             // Smart limit: Stop if message gets too large (prevent ESP32 memory issues)
-            if (message.length() > 2048) {
+            if (message.length() > 3584) {
                 log_w("Single client message size limit reached (%d bytes), skipping remaining contexts", message.length());
                 break;
             }
