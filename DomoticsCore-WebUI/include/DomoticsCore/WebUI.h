@@ -90,6 +90,9 @@ private:
     
     unsigned long lastWebSocketUpdate = 0;
     bool forceNextUpdate = false; // force full contexts send on next tick (e.g., after WS reconnect)
+    
+    // Config persistence callback
+    std::function<void(const WebUIConfig&)> onConfigChanged;
 
 public:
     /**
@@ -249,6 +252,13 @@ public:
             webSocket->textAll(msg);
             DLOG_I(LOG_WEB, "Notified %d clients about WiFi network change", webSocket->count());
         }
+    }
+
+    /**
+     * @brief Set callback for WebUI configuration persistence (optional)
+     */
+    void setConfigCallback(std::function<void(const WebUIConfig&)> callback) {
+        onConfigChanged = callback;
     }
 
     // Allow applications to register factories for their own components (composition-based UI)
@@ -448,6 +458,17 @@ public:
             if (fieldIt != params.end() && valueIt != params.end()) {
                 if (fieldIt->second == "device_name") {
                     config.deviceName = valueIt->second;
+                    // Invoke config save callback if set
+                    if (onConfigChanged) {
+                        onConfigChanged(config);
+                    }
+                    return "{\"success\":true}";
+                } else if (fieldIt->second == "theme") {
+                    config.theme = valueIt->second;
+                    // Invoke config save callback if set
+                    if (onConfigChanged) {
+                        onConfigChanged(config);
+                    }
                     return "{\"success\":true}";
                 }
             }
