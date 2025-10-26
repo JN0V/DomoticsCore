@@ -412,7 +412,42 @@ public:
         
         #if __has_include(<DomoticsCore/NTP.h>)
         if (config.enableNTP) {
-            auto ntpPtr = std::make_unique<Components::NTPComponent>();
+            Components::NTPConfig ntpConfig;
+            
+            // Load NTP configuration from storage if available
+            #if __has_include(<DomoticsCore/Storage.h>)
+            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+            if (storageComp) {
+                ntpConfig.enabled = storageComp->getBool("ntp_enabled", true);
+                ntpConfig.timezone = storageComp->getString("ntp_timezone", "UTC0");
+                ntpConfig.syncInterval = (uint32_t)storageComp->getInt("ntp_interval", 3600);
+                
+                // Load servers from comma-separated string
+                String serversStr = storageComp->getString("ntp_servers", "");
+                if (serversStr.length() > 0) {
+                    ntpConfig.servers.clear();
+                    int start = 0;
+                    int commaPos;
+                    while ((commaPos = serversStr.indexOf(',', start)) != -1) {
+                        String server = serversStr.substring(start, commaPos);
+                        server.trim();
+                        if (server.length() > 0) {
+                            ntpConfig.servers.push_back(server);
+                        }
+                        start = commaPos + 1;
+                    }
+                    // Last server
+                    String server = serversStr.substring(start);
+                    server.trim();
+                    if (server.length() > 0) {
+                        ntpConfig.servers.push_back(server);
+                    }
+                }
+                DLOG_I(LOG_SYSTEM, "Loaded NTP config from storage: timezone=%s", ntpConfig.timezone.c_str());
+            }
+            #endif
+            
+            auto ntpPtr = std::make_unique<Components::NTPComponent>(ntpConfig);
             core.addComponent(std::move(ntpPtr));
             DLOG_I(LOG_SYSTEM, "✓ NTP component added");
         }
@@ -550,8 +585,36 @@ public:
             auto* ntpComponent = core.getComponent<Components::NTPComponent>("NTP");
             if (ntpComponent) {
                 ntpWebUIProvider = new Components::WebUI::NTPWebUI(ntpComponent);
+                
+                // Set up NTP configuration persistence callback if Storage available
+                #if __has_include(<DomoticsCore/Storage.h>)
+                auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+                if (storageComp) {
+                    ntpWebUIProvider->setConfigSaveCallback(
+                        [storageComp](const Components::NTPConfig& cfg) {
+                            DLOG_I(LOG_SYSTEM, "Saving NTP config: timezone='%s', interval=%lu", 
+                                   cfg.timezone.c_str(), cfg.syncInterval);
+                            storageComp->putBool("ntp_enabled", cfg.enabled);
+                            storageComp->putString("ntp_timezone", cfg.timezone);
+                            storageComp->putInt("ntp_interval", (int)cfg.syncInterval);
+                            // Save servers as comma-separated string
+                            String serversStr;
+                            for (size_t i = 0; i < cfg.servers.size(); i++) {
+                                if (i > 0) serversStr += ",";
+                                serversStr += cfg.servers[i];
+                            }
+                            storageComp->putString("ntp_servers", serversStr);
+                        }
+                    );
+                    DLOG_I(LOG_SYSTEM, "✓ NTP WebUI provider registered (with storage persistence)");
+                } else {
+                    DLOG_I(LOG_SYSTEM, "✓ NTP WebUI provider registered (no persistence)");
+                }
+                #else
+                DLOG_I(LOG_SYSTEM, "✓ NTP WebUI provider registered (no persistence)");
+                #endif
+                
                 webuiComponent->registerProviderWithComponent(ntpWebUIProvider, ntpComponent);
-                DLOG_I(LOG_SYSTEM, "✓ NTP WebUI provider registered");
             }
             #endif
             
