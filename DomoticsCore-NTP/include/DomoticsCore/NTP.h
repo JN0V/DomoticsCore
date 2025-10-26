@@ -7,11 +7,13 @@
 
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Logger.h"
+#include "DomoticsCore/Timer.h"
 #include <Arduino.h>
 #include <time.h>
 #include <sys/time.h>
 #include <vector>
 #include <functional>
+#include <algorithm>
 
 #ifdef ESP32
 #include "esp_sntp.h"
@@ -102,8 +104,10 @@ public:
      * @param cfg NTP configuration
      */
     explicit NTPComponent(const NTPConfig& cfg = NTPConfig())
-        : config(cfg), synced(false), syncInProgress(false), lastSyncAttempt(0), 
-          bootTime(millis()), syncCallback(nullptr) {
+        : config(cfg), synced(false), syncInProgress(false), 
+          bootTime(millis()), syncCallback(nullptr),
+          syncTimeoutTimer(cfg.timeoutMs) {
+        syncTimeoutTimer.disable();  // Start disabled
         DLOG_D(LOG_NTP, "Component constructed");
     }
 
@@ -179,32 +183,53 @@ public:
         time_t now = time(nullptr);
         bool currentlySynced = (now > 1000000000);  // After 2001-09-09
         
-        if (currentlySynced && !synced) {
-            // First sync!
-            synced = true;
-            stats.syncCount++;
-            stats.lastSyncTime = now;
-            stats.consecutiveFailures = 0;
-            
-            if (lastSyncAttempt > 0) {
-                stats.lastSyncDuration = millis() - lastSyncAttempt;
-            }
-            
-            DLOG_I(LOG_NTP, "Time synchronized: %s", getFormattedTime().c_str());
-            
-            if (syncCallback) {
-                syncCallback(true);
+        // Detect sync completion (initial or subsequent)
+        if (currentlySynced) {
+            if (!synced) {
+                // First sync ever
+                synced = true;
+                stats.syncCount++;
+                stats.lastSyncTime = now;
+                stats.consecutiveFailures = 0;
+                
+                if (syncInProgress) {
+                    stats.lastSyncDuration = syncTimeoutTimer.elapsed();
+                    syncTimeoutTimer.disable();
+                    syncInProgress = false;
+                    DLOG_I(LOG_NTP, "Initial time sync completed after %lu ms: %s", stats.lastSyncDuration, getFormattedTime().c_str());
+                } else {
+                    DLOG_I(LOG_NTP, "Initial time sync completed: %s", getFormattedTime().c_str());
+                }
+                
+                if (syncCallback) {
+                    syncCallback(true);
+                }
+            } else if (syncInProgress && now != stats.lastSyncTime) {
+                // Subsequent sync (manual or automatic)
+                stats.syncCount++;
+                stats.lastSyncTime = now;
+                stats.lastSyncDuration = syncTimeoutTimer.elapsed();
+                stats.consecutiveFailures = 0;
+                syncTimeoutTimer.disable();
+                syncInProgress = false;
+                
+                DLOG_I(LOG_NTP, "Time re-synchronized after %lu ms: %s", stats.lastSyncDuration, getFormattedTime().c_str());
+                
+                if (syncCallback) {
+                    syncCallback(true);
+                }
             }
         }
         
-        // Check for sync timeout
-        if (syncInProgress && (millis() - lastSyncAttempt > config.timeoutMs)) {
+        // Check for sync timeout using NonBlockingDelay timer
+        if (syncInProgress && syncTimeoutTimer.isReady()) {
             syncInProgress = false;
+            syncTimeoutTimer.disable();
             stats.syncErrors++;
             stats.consecutiveFailures++;
             stats.lastFailTime = time(nullptr);
             
-            DLOG_W(LOG_NTP, "Sync timeout");
+            DLOG_W(LOG_NTP, "Sync timeout after %lu ms (no response from NTP servers)", syncTimeoutTimer.getInterval());
             
             if (syncCallback) {
                 syncCallback(false);
@@ -220,26 +245,37 @@ public:
      * @return True if sync initiated
      */
     bool syncNow() {
+        DLOG_I(LOG_NTP, "syncNow() called");
+        
         if (!config.enabled) {
-            DLOG_W(LOG_NTP, "Component disabled");
+            DLOG_W(LOG_NTP, "Component disabled, cannot sync");
             return false;
         }
         
         if (syncInProgress) {
-            DLOG_W(LOG_NTP, "Sync already in progress");
+            DLOG_W(LOG_NTP, "Sync already in progress, ignoring request");
             return false;
         }
 
 #ifdef ESP32
-        DLOG_I(LOG_NTP, "Initiating sync...");
+        DLOG_I(LOG_NTP, "Requesting immediate SNTP sync...");
         syncInProgress = true;
-        lastSyncAttempt = millis();
         
-        // Request immediate sync
+        // Use longer timeout for manual sync (SNTP state machine needs time)
+        // Typical NTP sync takes 2-10 seconds depending on network conditions
+        uint32_t manualSyncTimeout = (config.timeoutMs > 15000) ? config.timeoutMs : 15000;  // Minimum 15 seconds
+        syncTimeoutTimer.setInterval(manualSyncTimeout);
+        syncTimeoutTimer.reset();
+        syncTimeoutTimer.enable();
+        
+        // Request immediate sync (non-blocking)
+        // Note: sntp_restart() stops and restarts the service, actual sync is async
         sntp_restart();
+        
+        DLOG_I(LOG_NTP, "SNTP restart requested, sync in progress (timeout: %lu ms)", manualSyncTimeout);
         return true;
 #else
-        DLOG_W(LOG_NTP, "Not supported");
+        DLOG_W(LOG_NTP, "NTP sync not supported on this platform");
         return false;
 #endif
     }
@@ -436,16 +472,20 @@ public:
      * @param cfg New configuration
      */
     void setConfig(const NTPConfig& cfg) {
-        bool needsRestart = (cfg.enabled != config.enabled) || 
-                           (cfg.servers != config.servers) ||
-                           (cfg.syncInterval != config.syncInterval);
-        
+        // Compute diffs BEFORE mutating config
+        bool needsRestart = (cfg.enabled != config.enabled) ||
+                            (cfg.servers != config.servers) ||
+                            (cfg.syncInterval != config.syncInterval);
+        bool tzChanged = (cfg.timezone != config.timezone);
+
+        // Apply new config
         config = cfg;
-        
-        if (cfg.timezone != config.timezone) {
-            setTimezone(cfg.timezone);
+
+        // Apply timezone immediately without restart
+        if (tzChanged) {
+            setTimezone(config.timezone);
         }
-        
+
         if (needsRestart && config.enabled) {
 #ifdef ESP32
             sntp_stop();
@@ -487,9 +527,9 @@ private:
     NTPStatistics stats;
     bool synced;
     bool syncInProgress;
-    unsigned long lastSyncAttempt;
-    unsigned long bootTime;
+    uint32_t bootTime;
     SyncCallback syncCallback;
+    Utils::NonBlockingDelay syncTimeoutTimer;  // Timer for sync timeout tracking
 };
 
 } // namespace Components
