@@ -175,7 +175,10 @@ public:
 
     String handleWebUIRequest(const String& contextId, const String& /*endpoint*/,
                               const String& method, const std::map<String, String>& params) override {
+        DLOG_D(LOG_NTP, "[WebUI] handleWebUIRequest: contextId=%s, method=%s", contextId.c_str(), method.c_str());
+        
         if (!ntp) {
+            DLOG_E(LOG_NTP, "[WebUI] NTP component not available");
             return "{\"success\":false,\"error\":\"Component not available\"}";
         }
 
@@ -184,6 +187,7 @@ public:
         }
 
         if (method != "POST") {
+            DLOG_W(LOG_NTP, "[WebUI] Method not allowed: %s", method.c_str());
             return "{\"success\":false,\"error\":\"Method not allowed\"}";
         }
 
@@ -191,15 +195,29 @@ public:
         if (contextId == "ntp_settings") {
             auto fieldIt = params.find("field");
             auto valueIt = params.find("value");
-            auto buttonIt = params.find("button");
+            
+            if (fieldIt != params.end()) {
+                DLOG_D(LOG_NTP, "[WebUI] Field: %s", fieldIt->second.c_str());
+            }
+            if (valueIt != params.end()) {
+                DLOG_D(LOG_NTP, "[WebUI] Value: %s", valueIt->second.c_str());
+            }
 
             NTPConfig cfg = ntp->getNTPConfig();
 
-            // Handle field updates
+            // Handle field updates and button actions
             if (fieldIt != params.end() && valueIt != params.end()) {
                 const String& field = fieldIt->second;
                 const String& value = valueIt->second;
 
+                // Check for button actions first
+                if (field == "sync_now_btn") {
+                    DLOG_I(LOG_NTP, "[WebUI] Sync Now button clicked");
+                    bool success = ntp->syncNow();
+                    return success ? "{\"success\":true}" : "{\"success\":false,\"error\":\"Sync failed to start\"}";
+                }
+                
+                // Handle configuration field updates
                 if (field == "enabled") {
                     cfg.enabled = (value == "true" || value == "1");
                 } else if (field == "servers") {
@@ -230,20 +248,14 @@ public:
                     }
                 } else if (field == "timezone") {
                     cfg.timezone = value;
+                } else {
+                    // Unknown field
+                    DLOG_W(LOG_NTP, "[WebUI] Unknown field: %s", field.c_str());
+                    return "{\"success\":false,\"error\":\"Unknown field\"}";
                 }
 
                 ntp->setConfig(cfg);
                 return "{\"success\":true}";
-            }
-
-            // Handle button actions
-            if (buttonIt != params.end()) {
-                const String& button = buttonIt->second;
-
-                if (button == "sync_now") {
-                    bool success = ntp->syncNow();
-                    return success ? "{\"success\":true}" : "{\"success\":false,\"error\":\"Sync failed to start\"}";
-                }
             }
         }
 
