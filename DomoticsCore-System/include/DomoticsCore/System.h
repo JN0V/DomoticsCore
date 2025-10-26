@@ -689,7 +689,7 @@ public:
             
             // Register SystemInfo WebUI provider
             #if __has_include(<DomoticsCore/SystemInfoWebUI.h>)
-            auto* sysInfoComponent = core.getComponent<Components::SystemInfoComponent>("SystemInfo");
+            auto* sysInfoComponent = core.getComponent<Components::SystemInfoComponent>("System Info");
             if (sysInfoComponent) {
                 systemInfoWebUIProvider = new Components::WebUI::SystemInfoWebUI(sysInfoComponent);
                 webuiComponent->registerProviderWithComponent(systemInfoWebUIProvider, sysInfoComponent);
