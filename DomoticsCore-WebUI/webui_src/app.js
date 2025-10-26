@@ -317,6 +317,20 @@ class DomoticsApp {
     }
 
     handleWebSocketMessage(data) {
+        // WiFi network change: force immediate reconnect (e.g., AP -> STA switch)
+        if (data && data.type === 'wifi_network_changed') {
+            console.log('WiFi network changed - forcing WebSocket reconnect...');
+            // Close current connection and reconnect immediately
+            if (this.ws) {
+                this.ws.close();
+            }
+            // Schedule immediate reconnect instead of waiting for timeout
+            setTimeout(() => {
+                this.setupWebSocket();
+            }, 1000);  // 1 second delay to allow network to stabilize
+            return;
+        }
+        
         // Schema change notification from server: re-fetch schema and re-render
         if (data && data.type === 'schema_changed') {
             this.loadUISchema().then(() => {
