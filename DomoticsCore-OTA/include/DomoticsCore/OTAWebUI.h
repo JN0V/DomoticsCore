@@ -361,6 +361,22 @@ public:
         return json;
     }
 
+    bool hasDataChanged(const String& contextId) override {
+        if (!ota) return false;
+        
+        if (contextId == "ota_unified") {
+            // Only send updates when OTA state or progress changes
+            OTAState current = {
+                ota->getState(),
+                ota->getProgress(),
+                ota->getDownloadedBytes()
+            };
+            return otaState.hasChanged(current);
+        }
+        
+        return true;  // Other contexts: always send
+    }
+
     String handleWebUIRequest(const String& contextId, const String& /*endpoint*/, const String& method,
                               const std::map<String, String>& params) override {
         if (!ota) {
@@ -422,6 +438,21 @@ private:
         String filename;
         size_t total = 0;
     } uploadState;
+    
+    // State tracking for change detection
+    struct OTAState {
+        OTAComponent::State state;
+        float progress;
+        size_t bytes;
+        
+        bool operator==(const OTAState& other) const {
+            return state == other.state && 
+                   progress == other.progress && 
+                   bytes == other.bytes;
+        }
+        bool operator!=(const OTAState& other) const { return !(*this == other); }
+    };
+    LazyState<OTAState> otaState;
 
     static String stateToString(OTAComponent::State state) {
         switch (state) {
