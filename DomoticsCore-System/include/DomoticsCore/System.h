@@ -352,10 +352,28 @@ public:
         auto wifiPtr = std::make_unique<Components::WifiComponent>(config.wifiSSID, config.wifiPassword);
         wifi = wifiPtr.get();
         
-        // Enable AP mode if no credentials or auto-config enabled
-        if (config.wifiSSID.isEmpty() && config.wifiAutoConfig) {
+        // Check if AP should be enabled (from storage or config)
+        bool enableAP = false;
+        String apSSID = config.wifiAPSSID;
+        
+        #if __has_include(<DomoticsCore/Storage.h>)
+        auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+        if (storageComp) {
+            // Load AP state from storage
+            enableAP = storageComp->getBool("wifi_ap_enabled", false);
+            String savedAPSSID = storageComp->getString("wifi_ap_ssid", "");
+            if (savedAPSSID.length() > 0) {
+                apSSID = savedAPSSID;
+            }
+            if (enableAP) {
+                DLOG_I(LOG_SYSTEM, "Loaded AP state from storage: enabled=%d, SSID=%s", enableAP, apSSID.c_str());
+            }
+        }
+        #endif
+        
+        // Enable AP mode if stored state says so, or if no credentials and auto-config enabled
+        if (enableAP || (config.wifiSSID.isEmpty() && config.wifiAutoConfig)) {
             // Generate AP SSID if not provided
-            String apSSID = config.wifiAPSSID;
             if (apSSID.isEmpty()) {
                 uint64_t chipid = ESP.getEfuseMac();
                 apSSID = config.deviceName + "-" + String((uint32_t)(chipid >> 32), HEX);
@@ -568,6 +586,17 @@ public:
                             DLOG_I(LOG_SYSTEM, "Storage result: SSID=%s, Password=%s", ssidOk ? "OK" : "FAIL", passOk ? "OK" : "FAIL");
                         }
                     );
+                    
+                    wifiWebUIProvider->setAPStateCallback(
+                        [storageComp](bool enabled, const String& ssid) {
+                            DLOG_I(LOG_SYSTEM, "Saving WiFi AP state: enabled=%d, SSID='%s'", enabled, ssid.c_str());
+                            storageComp->putBool("wifi_ap_enabled", enabled);
+                            if (enabled && ssid.length() > 0) {
+                                storageComp->putString("wifi_ap_ssid", ssid);
+                            }
+                        }
+                    );
+                    
                     DLOG_I(LOG_SYSTEM, "✓ WiFi WebUI provider registered (with storage persistence)");
                 } else {
                     DLOG_I(LOG_SYSTEM, "✓ WiFi WebUI provider registered (no persistence)");
