@@ -237,6 +237,20 @@ public:
         return config.port; 
     }
 
+    /**
+     * @brief Notify all connected WebSocket clients about WiFi network change.
+     * 
+     * This triggers immediate WebSocket reconnection on the client side, useful when
+     * switching from AP to STA mode where the IP address changes.
+     */
+    void notifyWiFiNetworkChanged() {
+        if (webSocket && webSocket->count() > 0) {
+            String msg = "{\"type\":\"wifi_network_changed\"}";
+            webSocket->textAll(msg);
+            DLOG_I(LOG_WEB, "Notified %d clients about WiFi network change", webSocket->count());
+        }
+    }
+
     // Allow applications to register factories for their own components (composition-based UI)
     /**
      * @brief Register a factory that can create providers for components with a matching type key.

@@ -518,6 +518,9 @@ public:
             if (wifi) {
                 wifiWebUIProvider = new Components::WebUI::WifiWebUI(wifi);
                 
+                // Set WebUI component reference for network change notifications
+                wifiWebUIProvider->setWebUIComponent(webuiComponent);
+                
                 // Set up credential persistence callback if Storage available
                 #if __has_include(<DomoticsCore/Storage.h>)
                 auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");

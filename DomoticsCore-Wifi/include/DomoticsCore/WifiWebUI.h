@@ -13,6 +13,7 @@ namespace WebUI {
 
 class WifiWebUI : public IWebUIProvider {
     WifiComponent* wifi; // non-owning
+    Components::WebUIComponent* webui = nullptr; // non-owning, for network change notifications
     std::function<void(const String&, const String&)> onCredentialsSaved; // callback for persistence
     // Keep pending credentials updated from UI
     String pendingSsid;
@@ -74,7 +75,14 @@ public:
             // to ensure WiFi component is fully initialized
         }
     }
-    
+
+    /**
+     * @brief Set WebUI component reference for network change notifications
+     */
+    void setWebUIComponent(Components::WebUIComponent* webuiComp) {
+        webui = webuiComp;
+    }
+
     // Set callback for credential persistence (optional)
     void setCredentialsSaveCallback(std::function<void(const String&, const String&)> callback) {
         onCredentialsSaved = callback;
@@ -160,6 +168,11 @@ public:
                         onCredentialsSaved(pendingSsid, pendingPassword);
                     } else {
                         DLOG_W(LOG_WIFI_WEBUI, "WARNING: No save callback set!");
+                    }
+                    
+                    // Notify WebSocket clients to reconnect (network change from AP->STA)
+                    if (webui) {
+                        webui->notifyWiFiNetworkChanged();
                     }
                     
                     // Clear password for safety
