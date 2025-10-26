@@ -505,7 +505,7 @@ private:
             
             AsyncResponseStream *response = request->beginResponseStream("application/json");
             addCorsHeaders(response);
-            JsonDocument doc;
+            JsonDocument doc;  // ArduinoJson v7 uses dynamic allocation
             JsonArray comps = doc["components"].to<JsonArray>();
 
             // Build a unique list from providerEnabled to include disabled providers as well
@@ -631,6 +631,7 @@ private:
             
             // Build JSON in String to avoid AsyncResponseStream buffer OOM
             // (schema can be very large with all components)
+            // ArduinoJson v7 uses dynamic allocation - it grows as needed
             JsonDocument doc;
             JsonArray schema = doc.to<JsonArray>();
 
@@ -662,7 +663,12 @@ private:
             
             // Serialize to String first, then send (avoids stream buffer growing issues)
             String output;
-            serializeJson(doc, output);
+            size_t written = serializeJson(doc, output);
+            
+            // Log if serialization was truncated (indicates buffer too small)
+            if (doc.overflowed()) {
+                DLOG_E(LOG_WEB, "Schema JSON overflowed! Increase buffer size. Written: %d bytes", written);
+            }
             
             AsyncWebServerResponse *response = request->beginResponse(200, "application/json", output);
             addCorsHeaders(response);
