@@ -14,7 +14,8 @@ namespace WebUI {
 class WifiWebUI : public IWebUIProvider {
     WifiComponent* wifi; // non-owning
     Components::WebUIComponent* webui = nullptr; // non-owning, for network change notifications
-    std::function<void(const String&, const String&)> onCredentialsSaved; // callback for persistence
+    std::function<void(const String&, const String&)> onCredentialsSaved; // callback for credentials persistence
+    std::function<void(bool, const String&)> onAPStateChanged; // callback for AP state persistence (enabled, ssid)
     // Keep pending credentials updated from UI
     String pendingSsid;
     String pendingPassword;
@@ -86,6 +87,11 @@ public:
     // Set callback for credential persistence (optional)
     void setCredentialsSaveCallback(std::function<void(const String&, const String&)> callback) {
         onCredentialsSaved = callback;
+    }
+
+    // Set callback for AP state persistence (optional)
+    void setAPStateCallback(std::function<void(bool, const String&)> callback) {
+        onAPStateChanged = callback;
     }
 
     String getWebUIName() const override { return wifi ? wifi->getName() : String("Wifi"); }
@@ -206,15 +212,24 @@ public:
             String field = f->second; String value = v->second;
             if (field == "ap_enabled") {
                 bool en = (value == "true" || value == "1" || value == "on");
+                String apName;
                 if (en) {
                     // Use pending AP SSID if set; otherwise current configured AP SSID; else default
-                    String apName = pendingApSsid.length() ? pendingApSsid : (wifi->getAPSSID().length() ? wifi->getAPSSID() : String("DomoticsCore-AP"));
+                    apName = pendingApSsid.length() ? pendingApSsid : (wifi->getAPSSID().length() ? wifi->getAPSSID() : String("DomoticsCore-AP"));
                     wifi->enableAP(apName);
                     // Clear pending once applied
                     pendingApSsid = "";
                 } else {
                     wifi->disableAP();
+                    apName = "";
                 }
+                
+                // Invoke AP state persistence callback if set
+                if (onAPStateChanged) {
+                    DLOG_I(LOG_WIFI_WEBUI, "Invoking AP state save callback: enabled=%d, ssid=%s", en, apName.c_str());
+                    onAPStateChanged(en, apName);
+                }
+                
                 // Force next delta update for header badges and cards
                 wifiStatusState.reset();
                 apStatusState.reset();
@@ -227,6 +242,12 @@ public:
                 if (newAp.isEmpty()) newAp = "DomoticsCore-AP";
                 if (wifi->isAPEnabled()) {
                     wifi->enableAP(newAp);
+                    
+                    // Invoke AP state persistence callback if set (save new SSID)
+                    if (onAPStateChanged) {
+                        DLOG_I(LOG_WIFI_WEBUI, "Invoking AP state save callback for SSID change: ssid=%s", newAp.c_str());
+                        onAPStateChanged(true, newAp);
+                    }
                 } else {
                     // Store for when AP gets enabled later
                     pendingApSsid = newAp;
