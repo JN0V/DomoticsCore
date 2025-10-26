@@ -417,7 +417,25 @@ public:
         
         #if __has_include(<DomoticsCore/WebUI.h>)
         if (config.enableWebUI) {
-            auto webuiPtr = std::make_unique<Components::WebUIComponent>();
+            Components::WebUIConfig webuiConfig;
+            webuiConfig.port = config.webUIPort;
+            webuiConfig.deviceName = config.deviceName;
+            
+            // Load WebUI configuration from storage if available
+            #if __has_include(<DomoticsCore/Storage.h>)
+            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+            if (storageComp) {
+                webuiConfig.theme = storageComp->getString("webui_theme", "dark");
+                String savedDeviceName = storageComp->getString("device_name", "");
+                if (savedDeviceName.length() > 0) {
+                    webuiConfig.deviceName = savedDeviceName;
+                }
+                DLOG_I(LOG_SYSTEM, "Loaded WebUI config from storage: theme=%s, deviceName=%s", 
+                       webuiConfig.theme.c_str(), webuiConfig.deviceName.c_str());
+            }
+            #endif
+            
+            auto webuiPtr = std::make_unique<Components::WebUIComponent>(webuiConfig);
             core.addComponent(std::move(webuiPtr));
             DLOG_I(LOG_SYSTEM, "✓ WebUI component added (port %d)", config.webUIPort);
         }
@@ -685,6 +703,22 @@ public:
                 consoleWebUIProvider = new Components::WebUI::RemoteConsoleWebUI(console);
                 webuiComponent->registerProviderWithComponent(consoleWebUIProvider, console);
                 DLOG_I(LOG_SYSTEM, "✓ RemoteConsole WebUI provider registered");
+            }
+            #endif
+            
+            // Set up WebUI configuration persistence callback if Storage available
+            #if __has_include(<DomoticsCore/Storage.h>)
+            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+            if (storageComp) {
+                webuiComponent->setConfigCallback(
+                    [storageComp](const Components::WebUIConfig& cfg) {
+                        DLOG_I(LOG_SYSTEM, "Saving WebUI config: theme='%s', deviceName='%s'", 
+                               cfg.theme.c_str(), cfg.deviceName.c_str());
+                        storageComp->putString("webui_theme", cfg.theme);
+                        storageComp->putString("device_name", cfg.deviceName);
+                    }
+                );
+                DLOG_I(LOG_SYSTEM, "✓ WebUI config persistence enabled");
             }
             #endif
         } else {
