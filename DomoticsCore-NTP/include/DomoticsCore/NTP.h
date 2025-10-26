@@ -13,7 +13,6 @@
 #include <sys/time.h>
 #include <vector>
 #include <functional>
-#include <algorithm>
 
 #ifdef ESP32
 #include "esp_sntp.h"
@@ -261,10 +260,8 @@ public:
         DLOG_I(LOG_NTP, "Requesting immediate SNTP sync...");
         syncInProgress = true;
         
-        // Use longer timeout for manual sync (SNTP state machine needs time)
-        // Typical NTP sync takes 2-10 seconds depending on network conditions
-        uint32_t manualSyncTimeout = (config.timeoutMs > 15000) ? config.timeoutMs : 15000;  // Minimum 15 seconds
-        syncTimeoutTimer.setInterval(manualSyncTimeout);
+        // Use configured timeout for sync
+        syncTimeoutTimer.setInterval(config.timeoutMs);
         syncTimeoutTimer.reset();
         syncTimeoutTimer.enable();
         
@@ -272,7 +269,7 @@ public:
         // Note: sntp_restart() stops and restarts the service, actual sync is async
         sntp_restart();
         
-        DLOG_I(LOG_NTP, "SNTP restart requested, sync in progress (timeout: %lu ms)", manualSyncTimeout);
+        DLOG_I(LOG_NTP, "SNTP restart requested, sync in progress (timeout: %lu ms)", config.timeoutMs);
         return true;
 #else
         DLOG_W(LOG_NTP, "NTP sync not supported on this platform");
