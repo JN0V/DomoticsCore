@@ -32,7 +32,15 @@ public:
         initializeTimezoneMap();
     }
 
+    /**
+     * @brief Set callback for NTP configuration persistence (optional)
+     */
+    void setConfigSaveCallback(std::function<void(const NTPConfig&)> callback) {
+        onConfigSaved = callback;
+    }
+
 private:
+    std::function<void(const NTPConfig&)> onConfigSaved; // callback for persistence
     /**
      * @brief Get friendly timezone name from POSIX string
      */
@@ -353,6 +361,13 @@ public:
                 }
 
                 ntp->setConfig(cfg);
+                
+                // Invoke persistence callback if set
+                if (onConfigSaved) {
+                    DLOG_I(LOG_NTP, "[WebUI] Invoking config save callback");
+                    onConfigSaved(cfg);
+                }
+                
                 return "{\"success\":true}";
             }
         }
