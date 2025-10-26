@@ -1031,6 +1031,12 @@ private:
                     options.add(opt);
                 }
             }
+            if (!field.optionLabels.empty()) {
+                JsonObject labels = fieldObj["optionLabels"].to<JsonObject>();
+                for (const auto& pair : field.optionLabels) {
+                    labels[pair.first] = pair.second;
+                }
+            }
         }
     }
 };

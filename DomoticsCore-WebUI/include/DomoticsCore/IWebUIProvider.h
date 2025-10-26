@@ -142,7 +142,8 @@ struct WebUIField {
     // Constraints and options
     float minValue = 0;
     float maxValue = 100;
-    std::vector<String> options;    // For select fields
+    std::vector<String> options;    // For select fields (option values)
+    std::map<String, String> optionLabels;  // Option value -> label mapping
     String endpoint;                // API endpoint for updates
     
     // Context-specific configuration
@@ -155,6 +156,11 @@ struct WebUIField {
     // Fluent interface
     WebUIField& range(float min, float max) { minValue = min; maxValue = max; return *this; }
     WebUIField& choices(const std::vector<String>& opts) { options = opts; return *this; }
+    WebUIField& addOption(const String& value, const String& label) {
+        options.push_back(value);
+        optionLabels[value] = label;
+        return *this;
+    }
     WebUIField& api(const String& ep) { endpoint = ep; return *this; }
     WebUIField& configure(const String& key, const JsonVariant& value) { 
         config[key] = value; 

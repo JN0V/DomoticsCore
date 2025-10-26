@@ -197,9 +197,11 @@ class DomoticsApp {
                 {
                     const options = (field.options || []).length ? field.options : (typeof field.unit === 'string' && field.unit.includes(',')) ? field.unit.split(',') : [];
                     const current = String(field.value || '');
+                    const labels = field.optionLabels || {};
                     const optsHtml = options.map(opt => {
                         const sel = (String(opt) === current) ? 'selected' : '';
-                        return `<option value="${opt}" ${sel}>${opt}</option>`;
+                        const label = labels[opt] || opt;  // Use label if available, fallback to value
+                        return `<option value="${opt}" ${sel}>${label}</option>`;
                     }).join('');
                     fieldHtml = `<select id="${field.name}" ${field.readOnly ? 'disabled' : ''}>${optsHtml}</select>`;
                 }
