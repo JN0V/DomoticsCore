@@ -1,46 +1,26 @@
 # DomoticsCore
 
-ESP32 domotics framework with WiFi, MQTT, web interface, Home Assistant integration, and persistent storage.
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.0.0)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-ESP32-orange.svg)](https://platformio.org/)
 
-## 🚀 Features
+**Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-- **Modular Architecture**: Header-only component system with dependency resolution
-- **WiFi Management**: Custom WiFi management with web interface
-- **Web Interface**: Configuration portal with responsive UI (headless API mode available)
-- **MQTT Integration**: Full MQTT client with reconnection and QoS support
-- **Home Assistant**: Auto-discovery integration
-- **OTA Updates**: Over-the-air firmware updates
-- **Persistent Storage**: Application data storage with preferences separation
-- **LED Status**: Visual feedback system with effects
-- **Remote Console**: Telnet-based debugging with real-time log streaming
-- **Unified Logging**: Decentralized, extensible logging with callback system
-- **System Info**: Real-time monitoring with WebSocket updates
+> **🎉 Version 1.0.0 Released!** First stable release with complete modular architecture, LED error indicators, chunked HTTP responses, and production-ready components. See [CHANGELOG.md](CHANGELOG.md) for details.
 
-## 📦 Installation
+## ✨ What Makes DomoticsCore Different
 
-### PlatformIO Library Manager
-```bash
-pio lib install "DomoticsCore"
-```
+- **🔌 Truly Modular**: Only include what you need - from a 300KB minimal core to full-featured IoT system
+- **🚨 Visual Debugging**: LED status indicators work even when system fails - perfect for headless devices
+- **🛡️ Production Ready**: Comprehensive error handling, component health monitoring, and graceful degradation
+- **🎯 Developer Friendly**: Header-only components, automatic dependency resolution, extensive examples
+- **🔧 IoT Complete**: WiFi, MQTT, Home Assistant, OTA, WebUI, Storage - everything integrated and tested
 
-### Git Dependency
-Add to your `platformio.ini`:
-```ini
-lib_deps = 
-    https://github.com/JN0V/DomoticsCore.git#v0.2.0
-```
+## 🚀 Quick Start (3 Minutes)
 
-### Local Development
-```ini
-lib_deps = 
-    file:///path/to/DomoticsCore
-```
+### Option 1: Full System (Recommended for beginners)
 
-## 🔧 Quick Start
-
-### Recommended: Use DomoticsCore-System (Batteries Included)
-
-**Everything automatic: WiFi, LED status, remote console!**
+Everything automatic: WiFi, LED status, remote console, error recovery!
 
 ```cpp
 #include <DomoticsCore/System.h>
@@ -49,347 +29,397 @@ using namespace DomoticsCore;
 
 System* domotics = nullptr;
 
-// YOUR sensor code
-float readTemperature() {
-    // Your DHT22, DS18B20, etc.
-    return 22.5;
-}
-
 void setup() {
     Serial.begin(115200);
     
-    // Simple configuration
-    SystemConfig config;
+    // Full-stack configuration
+    SystemConfig config = SystemConfig::fullStack();
     config.deviceName = "MyDevice";
     config.wifiSSID = "YOUR_WIFI";
     config.wifiPassword = "YOUR_PASSWORD";
-    config.enableLED = true;        // Automatic LED patterns
-    config.enableConsole = true;    // Telnet debugging
+    config.ledPin = 2;  // Visual status on GPIO 2
     
     domotics = new System(config);
     
-    // Add YOUR custom commands
-    domotics->registerCommand("temp", [](const String& args) {
-        return String("Temp: ") + String(readTemperature(), 1) + "°C\n";
+    // Add custom console commands
+    domotics->registerCommand("hello", [](const String& args) {
+        return String("Hello from DomoticsCore!\n");
     });
     
-    // Initialize (automatic: WiFi, LED, Console, States)
+    // Initialize - automatic WiFi, LED, Console, error handling
     if (!domotics->begin()) {
-        while (1) delay(1000);
+        DLOG_E(LOG_APP, "System initialization failed!");
+        while (1) {
+            domotics->loop();  // Keep LED error animation running
+            yield();
+        }
     }
     
-    // YOUR custom initialization
-    pinMode(5, OUTPUT);  // Relay
+    DLOG_I(LOG_APP, "System ready!");
 }
 
 void loop() {
-    domotics->loop();  // Handles everything
+    domotics->loop();  // Handles everything automatically
     
-    // YOUR application code
-    static unsigned long lastRead = 0;
-    if (millis() - lastRead > 10000) {
-        float temp = readTemperature();
-        digitalWrite(5, temp > 25.0 ? HIGH : LOW);  // Control relay
-        lastRead = millis();
-    }
+    // Your application code here
 }
 ```
 
-**That's it!** WiFi, LED patterns, telnet console - all automatic.
+**That's it!** LED patterns show system state, telnet console on port 23, error recovery built-in.
 
-**See:** `DomoticsCore-System/examples/SimpleApp/` and `ARCHITECTURE.md#system-component-batteries-included`
+**LED States:**
+- 🔵 Fast blink (200ms): Booting
+- 🟡 Slow blink (1000ms): WiFi connecting  
+- 🟢 Pulse (2000ms): Connected, services starting
+- 🟢 Breathing (3000ms): System ready
+- 🔴 **Fast blink (300ms): ERROR** (LED works even in error state!)
 
-### Advanced: Use Individual Components
+### Option 2: Minimal Core (Advanced users)
 
-For custom orchestration, use components directly. See component-specific examples:
-- `DomoticsCore-RemoteConsole/examples/BasicRemoteConsole/`
-- `DomoticsCore-Coordinator/examples/BasicCoordinator/`
-- Each component has its own examples in its directory
-
-## 📖 Documentation
-
-- `GETTING_STARTED.md`
-- `ARCHITECTURE.md`
-- `docs/WebUI-Developer-Guide.md`
-- `docs/WebUI-State-Tracking.md`
-
-## 🧩 EventBus (topic-based, decoupled)
-
-DomoticsCore provides a lightweight, topic-based EventBus to enable cross-component communication without tight coupling.
-
-- Publish/subscribe by topic strings (e.g., `"wifi.connected"`, `"storage.mounted"`).
-- Payloads are plain structs defined by the publishing component.
-- Dispatch is queued and processed in the main loop (non-ISR safe).
-
-Basic usage inside a component (framework injects EventBus):
+Use only what you need - build your own orchestration:
 
 ```cpp
-#include <DomoticsCore/Utils/EventBus.h>
+#include <DomoticsCore/Core.h>
+#include <DomoticsCore/LED.h>
+#include <DomoticsCore/Wifi.h>
 
-// Define topics and payloads inside your component (recommended)
-namespace WifiEvents {
-  static constexpr const char* Connected = "wifi.connected";
-  struct ConnectedPayload { String ssid; IPAddress ip; int rssi; };
+using namespace DomoticsCore;
+
+Core core;
+
+void setup() {
+    // Add only the components you need
+    core.addComponent(std::make_unique<Components::LEDComponent>());
+    core.addComponent(std::make_unique<Components::WifiComponent>("SSID", "password"));
+    
+    // Initialize - automatic dependency resolution
+    CoreConfig config;
+    config.deviceName = "MinimalDevice";
+    core.begin(config);
 }
 
-// Publisher (e.g., in loop())
-WifiEvents::ConnectedPayload payload{ ssid, WiFi.localIP(), WiFi.RSSI() };
-eventBus().publish(WifiEvents::Connected, payload);
-
-// Subscriber (e.g., in begin())
-subscriptionId_ = eventBus().subscribe(
-  WifiEvents::Connected,
-  [this](const void* p){
-    auto* payload = static_cast<const WifiEvents::ConnectedPayload*>(p);
-    this->setOn(true);
-  },
-  this
-);
-
-// Cleanup on shutdown
-eventBus().unsubscribeOwner(this);
-```
-
-Notes:
-
-- The core no longer defines domain-specific events. Each component owns its event topics and payloads.
-- A minimal enum `EventType::Custom` remains for rare global signals; most apps should prefer topics.
-- The bus is injected into components by the framework and is polled automatically during Core.loop().
-
-### Wildcards and Sticky Events
-
-- Wildcards: subscribe to a family of topics using a simple prefix pattern with `*`.
-  - Example: `eventBus().subscribe("sensor.*", handler, this);`
-  - Matches `sensor.update`, `sensor.temp`, etc.
-
-- Sticky events: retain last payload per topic so late subscribers can immediately receive the latest value.
-  - Publisher: `eventBus().publishSticky("sensor.update", value);`
-  - Subscriber with replay: `eventBus().subscribe("sensor.update", handler, this, true);`
-
-See `examples/03a-EventBusBasics/` for a minimal demo using:
-- `sensor.update` topic with an `int` payload
-- A consumer that toggles an LED, requesting sticky replay on subscribe
-- A wildcard consumer subscribing to `sensor.*`
-
-## 📖 Documentation
-
-### Core Configuration
-```cpp
-CoreConfig config;
-config.deviceName = "MyESP32";           // Device identifier
-config.manufacturer = "MyCompany";        // Manufacturer name
-config.webServerPort = 80;               // Web server port
-config.ledPin = 2;                       // Status LED pin
-
-// MQTT Configuration
-config.mqttEnabled = true;
-config.mqttServer = "192.168.1.100";
-config.mqttPort = 1883;
-
-// Home Assistant Integration
-config.homeAssistantEnabled = true;
-config.homeAssistantDiscoveryPrefix = "homeassistant";
-```
-
-### Persistent Storage System
-The framework provides a robust storage system that separates system preferences from application data:
-
-```cpp
-// Store application data
-core->storage().putULong("boot_count", bootCount);
-core->storage().putFloat("sensor_threshold", 75.5);
-core->storage().putString("device_nickname", "Living Room Sensor");
-
-// Retrieve application data with defaults
-unsigned long boots = core->storage().getULong("boot_count", 0);
-float threshold = core->storage().getFloat("sensor_threshold", 50.0);
-String nickname = core->storage().getString("device_nickname", "My Device");
-
-// Check if keys exist
-if (core->storage().isKey("calibration_offset")) {
-    float offset = core->storage().getFloat("calibration_offset");
+void loop() {
+    core.loop();
 }
-
-// Storage management
-core->storage().remove("old_key");        // Remove specific key
-core->storage().clear();                  // Clear all application data
-size_t entries = core->storage().freeEntries(); // Get available space
 ```
 
-**Supported Data Types:**
-- `bool`, `uint8_t`, `int16_t`, `uint16_t`
-- `int32_t`, `uint32_t`, `int64_t`, `uint64_t`
-- `float`, `double`, `String`
-- Binary data via `putBytes()`/`getBytes()`
+Binary size: **~300KB** (vs 1MB+ for full system)
 
-**Storage Namespaces:**
-- **System Preferences** (`esp32-config`): Used internally for WiFi, MQTT, and web config
-- **Application Data** (`app-data`): Available for your application use
-- Complete separation prevents conflicts between system and application data
+## 📦 Installation
 
-### Web Interface
-The framework provides a complete web interface accessible at `http://[device-ip]/`:
-- WiFi configuration
-- MQTT settings
-- Home Assistant integration
-- System information
-- OTA updates
+### PlatformIO (Recommended)
 
-### Home Assistant Integration
-```cpp
-// Publish sensors
-core.getHomeAssistant().publishSensor("temperature", "Temperature Sensor", "°C", "temperature");
-core.getHomeAssistant().publishSensor("humidity", "Humidity Sensor", "%", "humidity");
+Add to your `platformio.ini`:
 
-// Publish switches
-core.getHomeAssistant().publishSwitch("relay1", "Main Relay");
-
-// Publish binary sensors
-core.getHomeAssistant().publishBinarySensor("motion", "Motion Sensor", "motion");
-
-// Publish values via MQTT
-String deviceId = core.config().deviceName;
-core.getMQTTClient().publish(("jnov/" + deviceId + "/temperature/state").c_str(), "23.5");
-```
-
-### Unified Logging System
-The framework provides a decentralized logging system with component-based tagging:
-
-```cpp
-#include <DomoticsCore/Logger.h>
-
-// Use predefined library tags
-DLOG_I(LOG_CORE, "System initialized");
-DLOG_W(LOG_WIFI, "Connection unstable, RSSI: %d", WiFi.RSSI());
-DLOG_E(LOG_MQTT, "Broker connection failed");
-
-// Define custom application tags
-#define LOG_SENSOR "SENSOR"
-#define LOG_PUMP   "PUMP"
-
-DLOG_I(LOG_SENSOR, "Temperature: %.2f°C", temperature);
-DLOG_E(LOG_PUMP, "Motor failure detected");
-
-// Or use inline custom tags
-DLOG_D("CUSTOM", "My component message");
-```
-
-**Available Log Levels:**
-- `DLOG_E` - Error messages
-- `DLOG_W` - Warning messages  
-- `DLOG_I` - Information messages
-- `DLOG_D` - Debug messages
-- `DLOG_V` - Verbose messages
-
-**Predefined Component Tags:**
-`LOG_CORE`, `LOG_WIFI`, `LOG_MQTT`, `LOG_HTTP`, `LOG_HA`, `LOG_OTA`, `LOG_LED`, `LOG_SECURITY`, `LOG_WEB`, `LOG_SYSTEM`, `LOG_STORAGE`
-
-**Log Level Control:**
 ```ini
-build_flags = 
-    -DCORE_DEBUG_LEVEL=3  ; 0=None, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Verbose
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+
+lib_deps = 
+    https://github.com/JN0V/DomoticsCore.git#v1.0.0
 ```
 
-### LED Status System
-The framework includes a comprehensive LED status system:
-- **Solid ON (3s)**: System starting
-- **Slow blink (1s)**: AP configuration mode
-- **Medium blink (500ms)**: WiFi connecting
-- **Fast blink (200ms)**: WiFi reconnecting
-- **Very fast blink (100ms)**: Connection failed
-- **Heartbeat (2s)**: Normal operation
+### Specific Components Only
+
+```ini
+lib_deps = 
+    symlink://path/to/DomoticsCore/DomoticsCore-Core
+    symlink://path/to/DomoticsCore/DomoticsCore-LED
+    symlink://path/to/DomoticsCore/DomoticsCore-Wifi
+```
+
+## 🧩 Available Components
+
+| Component | Description | Size | Status |
+|-----------|-------------|------|--------|
+| **Core** | Essential framework, component registry, event bus | ~50KB | ✅ Stable |
+| **System** | High-level orchestration (batteries included) | ~100KB | ✅ Stable |
+| **WiFi** | Network connectivity with AP fallback | ~40KB | ✅ Stable |
+| **LED** | Visual status indicators (6 effects) | ~20KB | ✅ Stable |
+| **Storage** | NVS persistent data | ~30KB | ✅ Stable |
+| **RemoteConsole** | Telnet debugging console | ~25KB | ✅ Stable |
+| **WebUI** | Modern web interface with WebSocket | ~150KB | ✅ Stable |
+| **MQTT** | Message broker with auto-reconnect | ~40KB | ✅ Stable |
+| **NTP** | Time synchronization | ~15KB | ✅ Stable |
+| **OTA** | Over-the-air updates | ~30KB | ✅ Stable |
+| **HomeAssistant** | Auto-discovery integration | ~20KB | ✅ Stable |
+| **SystemInfo** | Real-time monitoring with charts | ~25KB | ✅ Stable |
+
+**Total with everything:** ~545KB flash, ~50KB RAM
+
+## 📖 Documentation
+
+- **[GETTING_STARTED.md](GETTING_STARTED.md)** - Comprehensive tutorial
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Design decisions and patterns
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history
+- **Component READMEs** - See each `DomoticsCore-*/README.md`
+- **Examples** - 20+ working examples in component directories
+
+### Key Documentation
+
+- **LED Effects**: [DomoticsCore-LED/README.md](DomoticsCore-LED/README.md)
+- **Event Bus**: [DomoticsCore-Core/README.md](DomoticsCore-Core/README.md#event-bus)
+- **WebUI Development**: [docs/WebUI-Developer-Guide.md](docs/WebUI-Developer-Guide.md)
+- **Storage API**: [DomoticsCore-Storage/README.md](DomoticsCore-Storage/README.md)
 
 ## 📁 Project Structure
 
 ```
 DomoticsCore/
-├── library.json              # Library metadata
-├── README.md                 # This file
-├── include/DomoticsCore/     # Public headers
-│   ├── Config.h              # Configuration structures
-│   ├── DomoticsCore.h        # Main framework class
-│   ├── HomeAssistant.h       # HA integration
-│   ├── LEDManager.h          # LED status management
-│   ├── Logger.h              # Unified logging system
-│   ├── OTAManager.h          # OTA updates
-│   ├── Storage.h             # Persistent storage system
-│   ├── SystemUtils.h         # System utilities
-│   └── WebConfig.h           # Web interface
-├── src/                      # Implementation files
-│   ├── DomoticsCore.cpp
-│   ├── homeassistant/
-│   ├── led/
-│   ├── ota/
-│   ├── storage/
-│   ├── system/
-│   └── web/
-└── examples/                 # Example projects
-    ├── AdvancedApp/
-    └── BasicApp/
+├── library.json                    # Meta-package (v1.0.0)
+├── README.md                       # This file
+├── CHANGELOG.md                    # Release notes
+├── ARCHITECTURE.md                 # Design documentation
+├── GETTING_STARTED.md             # Tutorial
+│
+├── DomoticsCore-Core/             # Essential framework
+│   ├── include/DomoticsCore/
+│   │   ├── Core.h                 # Component registry
+│   │   ├── IComponent.h           # Component interface
+│   │   ├── ComponentRegistry.h    # Dependency resolution
+│   │   └── Utils/
+│   │       ├── EventBus.h         # Inter-component communication
+│   │       ├── Logger.h           # Logging system
+│   │       └── Timer.h            # Non-blocking delays
+│   ├── examples/
+│   │   ├── 01-CoreOnly/           # Minimal setup
+│   │   ├── 02-CoreWithDummyComponent/
+│   │   ├── 03-EventBusBasics/
+│   │   ├── 04-EventBusCoordinators/
+│   │   └── 05-EventBusTests/
+│   └── library.json               # v1.0.0
+│
+├── DomoticsCore-System/           # High-level orchestration
+│   ├── include/DomoticsCore/
+│   │   ├── System.h               # Complete system manager
+│   │   └── SystemConfig.h         # Configuration
+│   ├── examples/
+│   │   ├── FullStack/             # All features enabled
+│   │   └── MinimalSystem/         # Lean configuration
+│   └── library.json               # v1.0.0
+│
+├── DomoticsCore-LED/              # Visual indicators
+│   ├── include/DomoticsCore/LED.h
+│   ├── examples/BasicLED/
+│   └── library.json               # v1.0.0
+│
+├── DomoticsCore-Wifi/             # Network connectivity
+│   ├── include/DomoticsCore/Wifi.h
+│   ├── examples/BasicWifi/
+│   └── library.json               # v1.0.0
+│
+├── DomoticsCore-Storage/          # Persistent data
+│   ├── include/DomoticsCore/Storage.h
+│   ├── examples/BasicStorage/
+│   └── library.json               # v1.0.0
+│
+├── DomoticsCore-RemoteConsole/    # Telnet console
+│   ├── include/DomoticsCore/RemoteConsole.h
+│   ├── examples/BasicRemoteConsole/
+│   └── library.json               # v1.0.0
+│
+├── DomoticsCore-WebUI/            # Web interface
+│   ├── include/DomoticsCore/WebUI.h
+│   ├── examples/WebUIOnly/
+│   └── library.json               # v1.0.0
+│
+├── DomoticsCore-MQTT/             # Message broker
+│   ├── include/DomoticsCore/MQTT.h
+│   ├── examples/BasicMQTT/
+│   └── library.json               # v1.0.0
+│
+├── DomoticsCore-NTP/              # Time sync
+│   ├── include/DomoticsCore/NTP.h
+│   └── library.json               # v1.0.0
+│
+├── DomoticsCore-OTA/              # Firmware updates
+│   ├── include/DomoticsCore/OTA.h
+│   ├── src/OTA.cpp
+│   └── library.json               # v1.0.0
+│
+├── DomoticsCore-HomeAssistant/    # HA integration
+│   ├── include/DomoticsCore/HomeAssistant.h
+│   ├── examples/HAWithWebUI/
+│   └── library.json               # v1.0.0
+│
+└── DomoticsCore-SystemInfo/       # System monitoring
+    ├── include/DomoticsCore/SystemInfo.h
+    ├── examples/SystemInfoDemo/
+    └── library.json               # v1.0.0
 ```
 
-## 🔗 Dependencies
+## 💡 Examples
 
-- ArduinoJson (>=6.21.0) - MIT License
-- PubSubClient (>=2.8.0) - MIT License
-- ESP Async WebServer (>=1.2.3) - LGPL 2.1 License
-- AsyncTCP (>=1.1.1) - LGPL 3.0 License
+### Full-Featured Application
 
-## 📋 Examples
+**Location:** `DomoticsCore-System/examples/FullStack/`
 
-### BasicApp
-Simple sensor monitoring with REST API (21 lines):
-- Analog sensor reading on pin A0
-- Single REST endpoint: `GET /api/sensor`
-- Minimal configuration example
+Complete IoT device with:
+- ✅ WiFi with AP fallback
+- ✅ LED status indicators
+- ✅ Telnet console (port 23)
+- ✅ Web interface (port 80)
+- ✅ MQTT with Home Assistant discovery
+- ✅ OTA updates
+- ✅ NTP time sync
+- ✅ Persistent storage
+- ✅ Custom sensor integration
 
-### AdvancedApp  
-Comprehensive IoT device with hardware control and storage:
-- Sensor monitoring with configurable threshold
-- Persistent boot counter and device nickname
-- Relay control via `POST /api/relay`
-- Configuration endpoints (`POST /api/config`)
-- Storage management (`GET /api/storage/stats`, `POST /api/storage/clear`)
-- MQTT integration with 30-second updates
-- Home Assistant auto-discovery (5 sensors including boot count)
-- Threshold-based automation logic
-- Specific logging for sensor/relay/storage operations
+**Binary:** ~900KB flash, ~50KB RAM
+
+### Minimal Core
+
+**Location:** `DomoticsCore-Core/examples/01-CoreOnly/`
+
+Bare minimum:
+- ✅ Component registry
+- ✅ Logging system
+- ✅ Non-blocking timers
+
+**Binary:** ~250KB flash, ~15KB RAM
+
+### LED Status Patterns
+
+**Location:** `DomoticsCore-LED/examples/BasicLED/`
+
+Demonstrates all LED effects:
+- Solid on/off
+- Blink (configurable speed)
+- Fade in/out
+- Pulse/heartbeat
+- Breathing
+- Rainbow cycle
+
+### Component Development
+
+**Location:** `DomoticsCore-Core/examples/02-CoreWithDummyComponent/`
+
+Learn to build custom components:
+- Component lifecycle (begin/loop/shutdown)
+- Dependency declaration
+- Configuration management
+- Health monitoring
+
+### Event Bus Communication
+
+**Location:** `DomoticsCore-Core/examples/03-EventBusBasics/`
+
+Inter-component messaging:
+- Publish/subscribe pattern
+- Sticky events
+- Type-safe payloads
+- Event coordination
+
+## 🔧 Key Features Deep Dive
+
+### Error Recovery
+
+System continues running even when components fail:
+
+```cpp
+if (!domotics->begin()) {
+    DLOG_E(LOG_APP, "Init failed!");
+    while (1) {
+        domotics->loop();  // LED shows ERROR, console still accessible
+        yield();
+    }
+}
+```
+
+LED fast-blinks (300ms) to indicate error state. Telnet console remains available for debugging.
+
+### Automatic Dependency Resolution
+
+Components declare dependencies, framework initializes in correct order:
+
+```cpp
+class MyComponent : public IComponent {
+    std::vector<String> getDependencies() const override {
+        return {"Storage", "Wifi"};  // Will init after these
+    }
+};
+```
+
+### Visual Status Indicators
+
+LED shows system state without serial console:
+
+- **BOOTING** → Fast blink (200ms)
+- **WIFI_CONNECTING** → Slow blink (1000ms)
+- **WIFI_CONNECTED** → Pulse (2000ms)
+- **READY** → Breathing (3000ms)
+- **ERROR** → Fast blink (300ms)
+- **OTA_UPDATE** → Solid on
+
+### Event Bus
+
+Decouple components with topic-based messaging:
+
+```cpp
+// Publisher
+struct TempData { float celsius; };
+eventBus().publish("sensor.temperature", TempData{22.5});
+
+// Subscriber
+eventBus().subscribe("sensor.temperature", [](const void* data) {
+    auto* temp = static_cast<const TempData*>(data);
+    Serial.printf("Temp: %.1f°C\n", temp->celsius);
+}, this);
+```
+
+### Chunked HTTP Responses
+
+WebUI handles large responses (>40KB) automatically:
+
+```cpp
+// Automatically uses chunked transfer encoding for large schemas
+webUI->serveSchema();  // Works even with 50KB+ JSON
+```
 
 ## 🤝 Contributing
 
+Contributions welcome! Please:
+
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Follow existing code style
 4. Add tests if applicable
-5. Submit a pull request
+5. Update documentation
+6. Submit a pull request
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for design patterns.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see LICENSE file for details.
+MIT License - see [LICENSE](LICENSE) file for details.
 
-### Third-Party Licenses
+## 🙏 Acknowledgments
 
-This project uses several third-party libraries with different licenses:
+Built on top of excellent ESP32 ecosystem:
+- **Arduino Core for ESP32**
+- **ESPAsyncWebServer** (3.x)
+- **AsyncTCP** (3.x)
+- **PubSubClient** (MQTT)
+- **ArduinoJson** (7.x)
 
-- **ArduinoJson** by Benoit Blanchon - MIT License
-- **PubSubClient** by Nick O'Leary - MIT License  
-- **ESP Async WebServer** by Hristo Gochkov - LGPL 2.1 License
-- **AsyncTCP** by me-no-dev - LGPL 3.0 License
+## 📞 Support
 
-**Important**: The ESP Async WebServer and AsyncTCP libraries are licensed under LGPL, which means:
-- You can use this library in commercial projects
-- If you modify the LGPL-licensed components, you must make those modifications available under LGPL
-- Your application code remains under your chosen license
-- Static linking is allowed, but you must provide a way for users to replace the LGPL components
+- **Issues**: [GitHub Issues](https://github.com/JN0V/DomoticsCore/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/JN0V/DomoticsCore/discussions)
+- **Documentation**: See `docs/` folder and component READMEs
 
-For full license compliance, please review the individual license files of each dependency.
+## 🗺️ Roadmap
 
-## 🆘 Support
+See [docs/ROADMAP.md](docs/ROADMAP.md) for planned features and improvements.
 
-- GitHub Issues: Report bugs and request features
-- Documentation: Check the examples and source code
-- Community: Share your projects and get help
+### Current Priorities
+- PlatformIO Registry publication
+- Additional component examples
+- Performance optimization
+- Extended Home Assistant integration
 
 ---
 
-**Created with ❤️ using Cascade AI**
+**Made with ❤️ for the ESP32 community**
