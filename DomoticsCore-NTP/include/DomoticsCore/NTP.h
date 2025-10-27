@@ -122,7 +122,7 @@ public:
     // ========== IComponent Interface ==========
 
     String getName() const override { return "NTP"; }
-    String getVersion() const override { return "0.1.0"; }
+    String getVersion() const override { return "1.0.0"; }
 
     ComponentStatus begin() override {
         DLOG_I(LOG_NTP, "Starting component...");

@@ -57,7 +57,7 @@ public:
     
     // IComponent interface
     String getName() const override { return "HomeAssistant"; }
-    String getVersion() const override { return "0.1.0"; }
+    String getVersion() const override { return "1.0.0"; }
     
     ComponentStatus begin() override {
         if (!mqtt) {

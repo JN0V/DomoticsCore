@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-NTP",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "DomoticsCore NTP component (header-only) with timezone management, DST support, and WebUI integration",
   "keywords": ["ntp", "time", "timezone", "sntp", "esp32", "arduino", "rtc"],
   "repository": {
@@ -19,6 +19,6 @@
     "lib_archive": false
   },
   "dependencies": [
-    { "name": "DomoticsCore-Core", "version": ">=0.2.5" }
+    { "name": "DomoticsCore-Core", "version": ">=1.0.0" }
   ]
 }

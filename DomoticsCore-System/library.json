@@ -19,7 +19,7 @@
     "lib_archive": false
   },
   "dependencies": [
-    { "name": "DomoticsCore-Core", "version": ">=0.2.5" },
+    { "name": "DomoticsCore-Core", "version": ">=1.0.0" },
     { "name": "DomoticsCore-LED", "version": ">=1.0.0" },
     { "name": "DomoticsCore-RemoteConsole", "version": ">=0.1.0" },
     { "name": "DomoticsCore-Wifi", "version": ">=1.0.0" }
