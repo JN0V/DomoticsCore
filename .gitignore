@@ -51,3 +51,8 @@ pip-delete-this-directory.txt
 *.bak
 *.backup
 *~
+
+# Local release/marketing files (not committed)
+docs/RELEASE_GUIDE.md
+docs/ANNOUNCEMENT_TEMPLATES.md
+RELEASE_NOTES_DRAFT.md

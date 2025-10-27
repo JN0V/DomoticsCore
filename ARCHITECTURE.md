@@ -1,6 +1,5 @@
 # DomoticsCore Architecture
 
-**Date:** 2025-10-04  
 **Version:** 1.0.0  
 **Status:** Production Ready
 
@@ -153,7 +152,7 @@ DomoticsCore/
 └── DomoticsCore-SystemInfo/
 ```
 
-### Decision: Keep Monorepo
+### Monorepo Structure
 
 **Rationale:**
 
@@ -289,70 +288,9 @@ DomoticsCore          v1.0.0
 
 ---
 
-## 3. Coordinator Component Removal
+## 3. System Component Design
 
-### Decision: Removed (2025-10-04) ✅
-
-**Rationale:**
-
-The `DomoticsCore-Coordinator` component was removed and its functionality merged into the `System` component.
-
-**Why it was removed:**
-
-❌ **Problems:**
-1. **Misleading Name** - "Coordinator" implied it coordinated components, but it only managed states
-2. **Actual Coordination** - ComponentRegistry already handles real coordination (dependencies, lifecycle)
-3. **Confusion** - Two "coordinators" (Coordinator component vs ComponentRegistry)
-4. **Limited Functionality** - Only did state management and LED pattern mapping
-5. **Extra Dependency** - Added complexity without sufficient value
-6. **Tight Coupling** - Only useful with System component, not standalone
-
-✅ **Solution:**
-
-State management is now **built into** the `System` component:
-
-```cpp
-class System {
-private:
-    SystemState currentState;  // Internal state tracking
-    std::vector<StateCallback> stateCallbacks;
-    
-    void setState(SystemState newState) {
-        // Update state
-        // Update LED automatically
-        // Fire callbacks
-    }
-};
-```
-
-**Benefits:**
-- ✅ Simpler architecture (one less component)
-- ✅ Clearer responsibilities
-- ✅ No confusion about coordination
-- ✅ Same functionality, better organization
-- ✅ Reduced dependencies
-
-**Migration:**
-
-Old (with Coordinator):
-```cpp
-#include <DomoticsCore/Coordinator.h>
-CoordinatorComponent coordinator(config);
-coordinator.setState(SystemState::READY);
-```
-
-New (System built-in):
-```cpp
-#include <DomoticsCore/System.h>
-System domotics(config);
-domotics.setState(SystemState::READY);  // Internal method
-```
-
----
-
-## 4. System Component Design
-
-### Decision: "Batteries Included" Approach ✅
+### "Batteries Included" Approach
 
 **Rationale:**
 

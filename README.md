@@ -167,87 +167,26 @@ lib_deps =
 ## 📁 Project Structure
 
 ```
-DomoticsCore/
-├── library.json                    # Meta-package (v1.0.0)
-├── README.md                       # This file
-├── CHANGELOG.md                    # Release notes
-├── ARCHITECTURE.md                 # Design documentation
-├── GETTING_STARTED.md             # Tutorial
-│
+DomoticsCore/                      # Monorepo with 12 component packages
 ├── DomoticsCore-Core/             # Essential framework
-│   ├── include/DomoticsCore/
-│   │   ├── Core.h                 # Component registry
-│   │   ├── IComponent.h           # Component interface
-│   │   ├── ComponentRegistry.h    # Dependency resolution
-│   │   └── Utils/
-│   │       ├── EventBus.h         # Inter-component communication
-│   │       ├── Logger.h           # Logging system
-│   │       └── Timer.h            # Non-blocking delays
-│   ├── examples/
-│   │   ├── 01-CoreOnly/           # Minimal setup
-│   │   ├── 02-CoreWithDummyComponent/
-│   │   ├── 03-EventBusBasics/
-│   │   ├── 04-EventBusCoordinators/
-│   │   └── 05-EventBusTests/
-│   └── library.json               # v1.0.0
-│
-├── DomoticsCore-System/           # High-level orchestration
-│   ├── include/DomoticsCore/
-│   │   ├── System.h               # Complete system manager
-│   │   └── SystemConfig.h         # Configuration
-│   ├── examples/
-│   │   ├── FullStack/             # All features enabled
-│   │   └── MinimalSystem/         # Lean configuration
-│   └── library.json               # v1.0.0
-│
-├── DomoticsCore-LED/              # Visual indicators
-│   ├── include/DomoticsCore/LED.h
-│   ├── examples/BasicLED/
-│   └── library.json               # v1.0.0
-│
-├── DomoticsCore-Wifi/             # Network connectivity
-│   ├── include/DomoticsCore/Wifi.h
-│   ├── examples/BasicWifi/
-│   └── library.json               # v1.0.0
-│
-├── DomoticsCore-Storage/          # Persistent data
-│   ├── include/DomoticsCore/Storage.h
-│   ├── examples/BasicStorage/
-│   └── library.json               # v1.0.0
-│
-├── DomoticsCore-RemoteConsole/    # Telnet console
-│   ├── include/DomoticsCore/RemoteConsole.h
-│   ├── examples/BasicRemoteConsole/
-│   └── library.json               # v1.0.0
-│
-├── DomoticsCore-WebUI/            # Web interface
-│   ├── include/DomoticsCore/WebUI.h
-│   ├── examples/WebUIOnly/
-│   └── library.json               # v1.0.0
-│
-├── DomoticsCore-MQTT/             # Message broker
-│   ├── include/DomoticsCore/MQTT.h
-│   ├── examples/BasicMQTT/
-│   └── library.json               # v1.0.0
-│
-├── DomoticsCore-NTP/              # Time sync
-│   ├── include/DomoticsCore/NTP.h
-│   └── library.json               # v1.0.0
-│
+├── DomoticsCore-System/           # High-level orchestration (batteries included)
+├── DomoticsCore-WiFi/             # Network connectivity
+├── DomoticsCore-LED/              # Visual status indicators
+├── DomoticsCore-Storage/          # Persistent data (NVS)
+├── DomoticsCore-RemoteConsole/    # Telnet debugging console
+├── DomoticsCore-WebUI/            # Web interface with WebSocket
+├── DomoticsCore-MQTT/             # Message broker client
+├── DomoticsCore-NTP/              # Time synchronization
 ├── DomoticsCore-OTA/              # Firmware updates
-│   ├── include/DomoticsCore/OTA.h
-│   ├── src/OTA.cpp
-│   └── library.json               # v1.0.0
-│
-├── DomoticsCore-HomeAssistant/    # HA integration
-│   ├── include/DomoticsCore/HomeAssistant.h
-│   ├── examples/HAWithWebUI/
-│   └── library.json               # v1.0.0
-│
+├── DomoticsCore-HomeAssistant/    # Auto-discovery integration
 └── DomoticsCore-SystemInfo/       # System monitoring
-    ├── include/DomoticsCore/SystemInfo.h
-    ├── examples/SystemInfoDemo/
-    └── library.json               # v1.0.0
+
+Each component has:
+├── include/                       # Public headers
+├── src/                           # Implementation (if needed)
+├── examples/                      # Working examples
+├── README.md                      # Component documentation
+└── library.json                   # Package metadata (v1.0.0)
 ```
 
 ## 💡 Examples
