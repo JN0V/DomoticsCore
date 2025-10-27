@@ -761,7 +761,8 @@ public:
      * @brief Main loop - call this in Arduino loop()
      */
     void loop() {
-        if (!initialized) return;
+        // Always run component loops (LED, Console, etc.) even if initialization failed
+        // This allows error visualization and debugging even in ERROR state
         core.loop();
     }
     
