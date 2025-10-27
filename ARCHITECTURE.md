@@ -185,7 +185,7 @@ DomoticsCore/
 ```json
 {
   "name": "DomoticsCore",
-  "version": "0.2.5",
+  "version": "1.0.0",
   "description": "ESP32 domotics framework...",
   "dependencies": []
 }
@@ -212,12 +212,12 @@ Consider adding dependencies to make it a true meta-package:
 ```json
 {
   "name": "DomoticsCore",
-  "version": "0.2.5",
+  "version": "1.0.0",
   "description": "ESP32 domotics framework...",
   "dependencies": [
-    { "name": "DomoticsCore-Core", "version": "^0.2.5" },
-    { "name": "DomoticsCore-MQTT", "version": "^0.1.0" },
-    { "name": "DomoticsCore-WebUI", "version": "^0.1.0" }
+    { "name": "DomoticsCore-Core", "version": "^1.0.0" },
+    { "name": "DomoticsCore-MQTT", "version": "^1.0.0" },
+    { "name": "DomoticsCore-WebUI", "version": "^1.0.0" }
   ]
 }
 ```
@@ -273,16 +273,16 @@ pio pkg publish DomoticsCore-HomeAssistant
 **Recommendation:** Synchronized major/minor, independent patches
 
 ```
-DomoticsCore          v0.3.0
-├── Core              v0.3.0
-├── MQTT              v0.3.0
-├── WebUI             v0.3.1  (patch independent)
-├── HomeAssistant     v0.3.0
-└── NTP               v0.3.2  (patch independent)
+DomoticsCore          v1.0.0
+├── Core              v1.0.0
+├── MQTT              v1.0.0
+├── WebUI             v1.0.0
+├── HomeAssistant     v1.0.0
+└── NTP               v1.0.0
 ```
 
 **Rules:**
-1. **Major versions** synchronized across all components
+1. **Major versions** synchronized across all components (currently v1.0.0)
 2. **Minor versions** synchronized for breaking changes
 3. **Patch versions** can diverge for bug fixes
 4. Use semantic versioning strictly
