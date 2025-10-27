@@ -1,0 +1,44 @@
+# DomoticsCore Standard platformio.ini Template
+# 
+# Use this template for all example applications to ensure consistency
+# across the project.
+
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+
+monitor_speed = 115200
+monitor_filters = esp32_exception_decoder
+
+# Build flags
+build_unflags = -std=gnu++11
+build_flags = 
+    -std=gnu++14
+    -DCORE_DEBUG_LEVEL=3
+
+# Library configuration
+lib_archive = false
+lib_ignore = ESPAsyncTCP, RPAsyncTCP
+lib_compat_mode = strict
+
+# Dependencies
+# Note: External dependencies must be listed explicitly even if declared
+# in library.json because symlinked libraries don't auto-resolve dependencies
+lib_deps = 
+    bblanchon/ArduinoJson@^7.0.0
+    ESP32Async/ESPAsyncWebServer@^3.8.0
+    ESP32Async/AsyncTCP@^3.4.8
+    symlink://../../../DomoticsCore-Core
+    # Add other component symlinks as needed:
+    # symlink://../../../DomoticsCore-WebUI
+    # symlink://../../../DomoticsCore-MQTT
+    # symlink://../../../DomoticsCore-HomeAssistant
+    # etc.
+
+# Notes:
+# - Always use symlinks for local DomoticsCore components
+# - lib_archive=false prevents stale library caching
+# - lib_ignore prevents wrong TCP stack variants
+# - lib_compat_mode=strict ensures correct library selection
+# - External deps (ArduinoJson, ESPAsyncWebServer, AsyncTCP) must be explicit

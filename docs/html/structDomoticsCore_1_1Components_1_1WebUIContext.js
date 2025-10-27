@@ -1,0 +1,27 @@
+var structDomoticsCore_1_1Components_1_1WebUIContext =
+[
+    [ "WebUIContext", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a991e70f1895e4b4e4b28602495572931", null ],
+    [ "WebUIContext", "structDomoticsCore_1_1Components_1_1WebUIContext.html#ac1dcb6051e135180db414087f588c8dc", null ],
+    [ "configure", "structDomoticsCore_1_1Components_1_1WebUIContext.html#aab2bf4d49cac660af39f0dbd21780f56", null ],
+    [ "withAPI", "structDomoticsCore_1_1Components_1_1WebUIContext.html#ae13ffc9ba5b8cc062c01deec7b6713be", null ],
+    [ "withCustomCss", "structDomoticsCore_1_1Components_1_1WebUIContext.html#ae874b16ce7d4d831c86388ac4d4dd1d1", null ],
+    [ "withCustomHtml", "structDomoticsCore_1_1Components_1_1WebUIContext.html#aebe4cfacde4daf10d4f1c36115888d29", null ],
+    [ "withCustomJs", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a613b47bf811f1c49093acfb138ae27b7", null ],
+    [ "withField", "structDomoticsCore_1_1Components_1_1WebUIContext.html#afba090f3b468219e6631aed3f166bb23", null ],
+    [ "withPriority", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a984a632de8c2ef55f8fbd7ab28722766", null ],
+    [ "withRealTime", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a43f61c1d73a200f196d86ba9990bb31e", null ],
+    [ "apiEndpoint", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a6d26902bd5aabc762eadd3bad84925da", null ],
+    [ "contextConfig", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a35f6725ceb8920d0a6058f364e2dcb05", null ],
+    [ "contextId", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a1f481088b71e605ae42b0ce05de1862c", null ],
+    [ "customCss", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a581549bdd31f0d4d7b3173196fecee09", null ],
+    [ "customHtml", "structDomoticsCore_1_1Components_1_1WebUIContext.html#afced6664d082095bc109d8180fd0753f", null ],
+    [ "customJs", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a51f508d8ab0e5134e4bcc600ef8b6eee", null ],
+    [ "fields", "structDomoticsCore_1_1Components_1_1WebUIContext.html#ae544eb3c56dad92407004047bedea5a3", null ],
+    [ "icon", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a4371aa4867759aae6161109db22b8e72", null ],
+    [ "location", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a35a37f4491c7341291ba49c5657c3f8d", null ],
+    [ "presentation", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a083f56aadc0a9d87df13bb412622e1db", null ],
+    [ "priority", "structDomoticsCore_1_1Components_1_1WebUIContext.html#af9b3b7dfed302385d5d2e73c476f36a7", null ],
+    [ "realTime", "structDomoticsCore_1_1Components_1_1WebUIContext.html#acd06b456106e29c9543adc655c455fc3", null ],
+    [ "title", "structDomoticsCore_1_1Components_1_1WebUIContext.html#a225bebfeae3e643910052dcd9a913a8b", null ],
+    [ "updateInterval", "structDomoticsCore_1_1Components_1_1WebUIContext.html#ae4c5f2ad8c9458d365caf9d7d7d31afd", null ]
+];

@@ -1,0 +1,26 @@
+var classDomoticsCore_1_1Components_1_1WebUIComponent =
+[
+    [ "WebUIComponent", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a9aea2e8563257824adfe17ee69d7863f", null ],
+    [ "~WebUIComponent", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a55407c5c7a3feba8d4d3d5e7360ac225", null ],
+    [ "begin", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a9b5184871cc57224012f8f956d0d298f", null ],
+    [ "discoverProviders", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#acd72045bf952ef24a0205df486a49781", null ],
+    [ "getName", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a6d72a7bc730cd1e8bbd80594d489dfa4", null ],
+    [ "getPort", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#aa2c221143991219eb61cf362c6945e75", null ],
+    [ "getVersion", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a569b7385468a2863821fa7420dd282a2", null ],
+    [ "getWebSocketClients", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#ad4e2b70b1568372726e0dadcd12d2d17", null ],
+    [ "getWebUIContexts", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a7f69aeb61b0eec9cfa38bbc61acb8e55", null ],
+    [ "getWebUIData", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a09f082f1e97b05e0593873dd73aa8bc6", null ],
+    [ "getWebUIName", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#ae4d3c901b8634923607950879426d002", null ],
+    [ "getWebUIProvider", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a3dc7eb49b9ba65f903ccf8f696351c09", null ],
+    [ "getWebUIVersion", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a70a7c3bd60ca3ec65edb045317415954", null ],
+    [ "handleWebUIRequest", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a3ffaa04d50eb3ccdeaba66eb426a973f", null ],
+    [ "loop", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a89b38c1c3b23aeef84f918130c652437", null ],
+    [ "onComponentAdded", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a62d1c9ebf85f482bc4b4279d083e688a", null ],
+    [ "onComponentRemoved", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#aa5279d1f8b29d014ada8867cd62c040f", null ],
+    [ "onComponentsReady", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#ae420118dc32d0eb7bae9a7931fd67715", null ],
+    [ "registerProvider", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a7632eee8a16d2e66e61bbf9bc85fca5b", null ],
+    [ "registerProviderFactory", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#aa8f7e3f8806b886780d13446e460f350", null ],
+    [ "registerProviderWithComponent", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#af8cda6b049eed81d6e42c58ee40b1bf4", null ],
+    [ "shutdown", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#ad87b015b3393f8e53be32ea63ca97154", null ],
+    [ "unregisterProvider", "classDomoticsCore_1_1Components_1_1WebUIComponent.html#a1637a47e844fdc331a02e21549150c42", null ]
+];

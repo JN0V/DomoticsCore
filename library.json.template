@@ -1,0 +1,24 @@
+{
+  "name": "DomoticsCore-<ComponentName>",
+  "version": "0.1.0",
+  "description": "Brief description of the component",
+  "keywords": ["esp32", "domotics", "keyword1", "keyword2"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JN0V/DomoticsCore.git"
+  },
+  "authors": [
+    { "name": "JN0V", "maintainer": true }
+  ],
+  "license": "MIT",
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"],
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src",
+    "lib_archive": false
+  },
+  "dependencies": [
+    { "name": "DomoticsCore-Core", "version": ">=0.2.5" }
+  ]
+}

@@ -1,0 +1,86 @@
+#include <Arduino.h>
+#include <DomoticsCore/Core.h>
+#include <DomoticsCore/ComponentRegistry.h>
+#include <DomoticsCore/IComponent.h>
+#include <DomoticsCore/Timer.h>
+#include "CustomComponents.h"
+
+using namespace DomoticsCore;
+
+// Custom application log tag
+#define LOG_APP "APP"
+using namespace DomoticsCore::Components;
+
+Core core;
+
+void setup() {
+    // Create core with custom device name
+    CoreConfig config;
+    config.deviceName = "ComponentTestDevice";
+    config.logLevel = 3; // INFO level
+    
+    // Core initialized
+    
+    // Add custom components to demonstrate the system
+    DLOG_I(LOG_APP, "Adding custom components...");
+    
+    // Custom TestComponent instances - no dependencies
+    core.addComponent(createTestComponent("ComponentA", 3000));
+    
+    // Component B - depends on A
+    core.addComponent(createTestComponent("ComponentB", 4000, {"ComponentA"}));
+    
+    // Component C - depends on B (indirect dependency on A)
+    core.addComponent(createTestComponent("ComponentC", 6000, {"ComponentB"}));
+    
+    // Add LED blinker component (hardware interaction example)
+    core.addComponent(createLEDBlinker(LED_BUILTIN, 500)); // Fast blink
+    
+    DLOG_I(LOG_APP, "Starting core with %d components...", core.getComponentCount());
+    
+    if (!core.begin(config)) {
+        DLOG_E(LOG_APP, "Failed to initialize core!");
+        return;
+    }
+    
+    DLOG_I(LOG_APP, "Setup complete - all components initialized");
+    
+    // Demonstrate component access
+    auto* testComp = core.getComponent<TestComponent>("ComponentA");
+    if (testComp) {
+        testComp->logStatus();
+    }
+}
+
+void loop() {
+    core.loop();
+    
+    // Demonstrate runtime component interaction
+    static unsigned long lastInteraction = 0;
+    static bool removedC = false;
+    if (millis() - lastInteraction >= 15000) { // Every 15 seconds
+        lastInteraction = millis();
+        
+        // Get and interact with ComponentA
+        auto* compA = core.getComponent<TestComponent>("ComponentA");
+        if (compA) {
+            DLOG_I(LOG_APP, "=== Component Interaction Demo ===");
+            compA->logStatus();
+            
+            // Every 30 seconds, reset counter
+            static int interactionCount = 0;
+            interactionCount++;
+            if (interactionCount % 2 == 0) {
+                compA->resetCounter();
+            }
+        }
+
+        // After ~30 seconds, remove ComponentC to demonstrate runtime removal
+        if (!removedC && millis() > 30000) {
+            DLOG_I(LOG_APP, "Attempting to remove ComponentC at runtime...");
+            bool ok = core.removeComponent("ComponentC");
+            DLOG_I(LOG_APP, "%s", ok ? "ComponentC removed successfully" : "ComponentC remove failed");
+            removedC = true;
+        }
+    }
+}
