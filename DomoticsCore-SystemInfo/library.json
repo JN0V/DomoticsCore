@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-SystemInfo",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "DomoticsCore SystemInfo component (system metrics, CPU/heap, uptime)",
   "keywords": ["esp32", "domotics", "system", "metrics"],
   "repository": {"type": "git", "url": "https://github.com/JN0V/DomoticsCore.git"},

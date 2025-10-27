@@ -147,7 +147,7 @@ public:
     // ========== IComponent Interface ==========
     
     String getName() const override { return "MQTT"; }
-    String getVersion() const override { return "0.1.0"; }
+    String getVersion() const override { return "1.0.0"; }
     std::vector<String> getDependencies() const override { return {}; }
     
     ComponentStatus begin() override;
