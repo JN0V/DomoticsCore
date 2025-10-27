@@ -124,7 +124,11 @@ void setup() {
     // Initialize system (AUTOMATIC: WiFi, LED, Console, State management)
     if (!domotics->begin()) {
         DLOG_E(LOG_APP, "System initialization failed!");
-        while (1) delay(1000);
+        // System in ERROR state - components still run (LED, Console, etc.)
+        while (1) {
+            domotics->loop();
+            yield();  // Allow RTOS tasks to run
+        }
     }
     
     // YOUR CUSTOM INITIALIZATION
