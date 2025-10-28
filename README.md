@@ -13,8 +13,10 @@
 - **🔌 Truly Modular**: Only include what you need - from a 300KB minimal core to full-featured IoT system
 - **🚨 Visual Debugging**: LED status indicators work even when system fails - perfect for headless devices
 - **🛡️ Production Ready**: Comprehensive error handling, component health monitoring, and graceful degradation
-- **🎯 Developer Friendly**: Header-only components, automatic dependency resolution, extensive examples
+- **🎯 Developer Friendly**: Header-only design (no linking issues), automatic dependency resolution, extensive examples
 - **🔧 IoT Complete**: WiFi, MQTT, Home Assistant, OTA, WebUI, Storage - everything integrated and tested
+
+> **Note:** Components are mostly header-only (`.h` files) for zero overhead and simple integration. This is a standard C++ pattern, not ESP32-specific. See [ARCHITECTURE.md](ARCHITECTURE.md#header-only-design) for details.
 
 ## 🚀 Quick Start (3 Minutes)
 
