@@ -11,6 +11,64 @@ DomoticsCore is a modular IoT framework for ESP32 with a clean component archite
 
 ---
 
+## Header-Only Design
+
+**Rationale:** Most components are header-only (`.h` files only) for simplicity and optimization.
+
+### Why Header-Only?
+
+✅ **Advantages:**
+1. **No Linking Issues** - PlatformIO automatically includes headers, no manual library configuration
+2. **Better Optimization** - Compiler can inline everything, reducing overhead
+3. **Simpler Build** - No precompiled libraries (.a files), no linking errors
+4. **Zero Overhead** - Unused functions are eliminated at compile-time
+5. **ESP32 Friendly** - Embedded systems benefit from aggressive inlining
+
+❌ **Exceptions (have .cpp files):**
+- **DomoticsCore-Core** - Complex logic, reduce compilation time
+- **DomoticsCore-OTA** - Large implementation, better in .cpp
+
+### Implementation Pattern
+
+Most components use a clean header-only approach:
+
+```cpp
+// LED.h (typical header-only component)
+class LEDComponent : public IComponent {
+    void begin() override {
+        // Implementation directly in header
+    }
+};
+```
+
+**MQTT Pattern (header-only with separation):**
+
+Some components separate declaration/implementation while staying header-only:
+
+```cpp
+// MQTT.h (declaration)
+class MQTTComponent : public IComponent {
+    void begin() override;  // Declared
+};
+
+#include "MQTT_impl.h"  // ← Include implementation at end
+
+// MQTT_impl.h (implementation)
+inline void MQTTComponent::begin() {
+    // Implementation here
+}
+```
+
+**Why `MQTT_impl.h` instead of `MQTT.cpp`?**
+- Keeps it header-only (no compilation unit)
+- Separates interface from implementation (readability)
+- Still gets inlining benefits
+- Avoids `.cpp` linking in PlatformIO
+
+**This is NOT ESP32-specific** - it's a C++ pattern commonly used in template-heavy or embedded libraries (Boost, Eigen, etc.).
+
+---
+
 ## Current Architecture
 
 ```
