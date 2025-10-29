@@ -4,7 +4,52 @@
 
 ---
 
-## 🚀 Quick Start (Recommended)
+## 🚀 Quick Start
+
+### Installation from GitHub (Development/Testing)
+
+**Step 1: Add to platformio.ini**
+```ini
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+
+lib_deps = 
+    https://github.com/JN0V/DomoticsCore.git#v1.0.0
+```
+
+**Step 2: Write your code**
+```cpp
+#include <DomoticsCore/System.h>
+
+using namespace DomoticsCore;
+System* domotics = nullptr;
+
+void setup() {
+    SystemConfig config = SystemConfig::fullStack();
+    config.deviceName = "MyDevice";
+    config.wifiSSID = "";  // Empty = AP mode
+    
+    domotics = new System(config);
+    domotics->begin();
+}
+
+void loop() {
+    domotics->loop();
+}
+```
+
+**Step 3: Build**
+```bash
+pio run -t upload -t monitor
+```
+
+That's it! Everything is configured automatically.
+
+---
+
+### Installation from PlatformIO Registry (Recommended for Production)
 
 ### 1. Install DomoticsCore-System
 
