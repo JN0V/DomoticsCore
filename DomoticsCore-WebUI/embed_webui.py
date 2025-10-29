@@ -4,24 +4,38 @@ from pathlib import Path
 
 Import("env")
 
-def find_webui_sources():
+def find_webui_sources(env):
     """
     Find WebUI sources in both local development and PlatformIO installation.
     
     Detection logic:
     1. Local development: search for 'DomoticsCore' folder by walking up the tree
-    2. PlatformIO installation: use __file__ to locate script in libdeps
-    3. Fallback: search for webui_src/ relative to script
+    2. PlatformIO installation: use libdeps directory from environment
+    3. Fallback: search for webui_src/ relative to various known locations
     """
+    # Try to get libdeps directory from environment (PlatformIO installation)
+    libdeps_dir = Path(env.get("PROJECT_LIBDEPS_DIR", ""))
+    pioenv = env.get("PIOENV", "")
+    
+    if libdeps_dir and pioenv:
+        # Case 1: PlatformIO installation - look in libdeps
+        candidates = [
+            libdeps_dir / pioenv / "DomoticsCore" / "DomoticsCore-WebUI" / "webui_src",
+            libdeps_dir / pioenv / "DomoticsCore-WebUI" / "webui_src",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                print(f"[WebUI] Found PlatformIO sources: {candidate}")
+                return candidate
+    
+    # Case 2: Try using __file__ if available (local development)
     try:
-        # Try using __file__ first (works in both local and PlatformIO)
         script_path = Path(__file__).resolve()
         
-        # Case 1: Local development - search for 'DomoticsCore' folder by walking up
+        # Search for 'DomoticsCore' folder by walking up
         current = script_path.parent
         while current.parent != current:
             if current.name == "DomoticsCore" and (current / "DomoticsCore-WebUI").exists():
-                # Local dev: return DomoticsCore/DomoticsCore-WebUI/webui_src
                 webui_src = current / "DomoticsCore-WebUI" / "webui_src"
                 if webui_src.exists():
                     print(f"[WebUI] Found local dev sources: {webui_src}")
@@ -29,43 +43,39 @@ def find_webui_sources():
                 break
             current = current.parent
         
-        # Case 2: PlatformIO installation - script is in DomoticsCore-WebUI/ in libdeps
-        # Script path: .pio/libdeps/esp32dev/DomoticsCore/DomoticsCore-WebUI/embed_webui.py
-        webui_root = script_path.parent
-        
-        # Search for webui_src/ in DomoticsCore-WebUI/
-        webui_src = webui_root / "webui_src"
+        # Maybe script is directly in DomoticsCore-WebUI/
+        webui_src = script_path.parent / "webui_src"
         if webui_src.exists():
-            print(f"[WebUI] Found PlatformIO sources: {webui_src}")
+            print(f"[WebUI] Found sources relative to script: {webui_src}")
             return webui_src
-        
-        # Case 3: Fallback alternative - maybe installed differently
-        # Try walking up to find DomoticsCore then descend
-        for parent in script_path.parents:
-            candidate = parent / "DomoticsCore-WebUI" / "webui_src"
-            if candidate.exists():
-                print(f"[WebUI] Found sources via parent search: {candidate}")
-                return candidate
-        
-        # If nothing worked, detailed error
-        raise RuntimeError(
-            f"Could not locate WebUI sources.\n"
-            f"Script location: {script_path}\n"
-            f"Searched locations:\n"
-            f"  - Local dev: {current / 'DomoticsCore-WebUI' / 'webui_src'}\n"
-            f"  - PlatformIO: {webui_src}\n"
-            f"Please ensure 'webui_src/' directory exists in DomoticsCore-WebUI package."
-        )
-        
+            
     except NameError:
-        # __file__ not available (very unusual SCons environment)
-        raise RuntimeError(
-            "Unable to resolve paths: __file__ is not available.\n"
-            "This is an unusual SCons environment."
-        )
+        # __file__ not available in SCons environment
+        pass
+    
+    # Case 3: Try project dir (local development without __file__)
+    project_dir = Path(env.get("PROJECT_DIR", ""))
+    if project_dir:
+        # Walk up from project to find DomoticsCore
+        current = project_dir
+        while current.parent != current:
+            candidate = current / "DomoticsCore-WebUI" / "webui_src"
+            if candidate.exists():
+                print(f"[WebUI] Found sources via project search: {candidate}")
+                return candidate
+            current = current.parent
+    
+    # If nothing worked, detailed error
+    raise RuntimeError(
+        f"Could not locate WebUI sources.\n"
+        f"Searched in:\n"
+        f"  - PlatformIO libdeps: {libdeps_dir / pioenv if libdeps_dir and pioenv else 'N/A'}\n"
+        f"  - Project directory: {project_dir if project_dir else 'N/A'}\n"
+        f"Please ensure 'webui_src/' directory exists in DomoticsCore-WebUI package."
+    )
 
 # Locate WebUI sources
-src_dir = find_webui_sources()
+src_dir = find_webui_sources(env)
 
 # Project dir for the example
 example_dir = Path(env["PROJECT_DIR"])
