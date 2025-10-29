@@ -41,6 +41,7 @@
     "srcFilter": [
       "+<DomoticsCore-*/src/*>"
     ],
+    "extraScript": "DomoticsCore-WebUI/embed_webui.py",
     "lib_archive": false
   },
   "dependencies": [
