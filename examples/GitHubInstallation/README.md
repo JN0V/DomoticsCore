@@ -10,9 +10,13 @@ This example demonstrates how simple it is to use DomoticsCore directly from Git
 platform = espressif32
 board = esp32dev
 framework = arduino
+board_build.partitions = min_spiffs.csv
 
 lib_deps = 
     https://github.com/JN0V/DomoticsCore.git#v1.0.0
+
+build_unflags = 
+    -std=gnu++11
 
 build_flags = 
     -std=gnu++14
