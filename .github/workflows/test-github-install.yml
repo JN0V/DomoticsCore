@@ -29,7 +29,7 @@ jobs:
           lib_deps = 
               https://github.com/JN0V/DomoticsCore.git#${GITHUB_SHA}
           build_flags = 
-              -std=c++14
+              -std=gnu++14
           EOF
           
           mkdir src

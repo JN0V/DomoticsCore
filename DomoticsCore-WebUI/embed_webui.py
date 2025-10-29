@@ -4,6 +4,10 @@ from pathlib import Path
 
 Import("env")
 
+# Force C++14 for library compilation (required for std::make_unique)
+env.Append(CXXFLAGS=["-std=gnu++14"])
+print("[DomoticsCore] Using GNU C++14 standard")
+
 def find_webui_sources(env):
     """
     Find WebUI sources in both local development and PlatformIO installation.

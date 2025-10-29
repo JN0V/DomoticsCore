@@ -15,7 +15,7 @@ lib_deps =
     https://github.com/JN0V/DomoticsCore.git#v1.0.0
 
 build_flags = 
-    -std=c++14
+    -std=gnu++14
 ```
 
 2. Include and use:
