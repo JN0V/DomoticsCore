@@ -26,8 +26,11 @@ jobs:
           platform = espressif32
           board = esp32dev
           framework = arduino
+          board_build.partitions = min_spiffs.csv
           lib_deps = 
               https://github.com/JN0V/DomoticsCore.git#${GITHUB_SHA}
+          build_unflags = 
+              -std=gnu++11
           build_flags = 
               -std=gnu++14
           EOF

@@ -5,8 +5,19 @@ from pathlib import Path
 Import("env")
 
 # Force C++14 for library compilation (required for std::make_unique)
+# Must be applied early before any compilation
 env.Append(CXXFLAGS=["-std=gnu++14"])
-print("[DomoticsCore] Using GNU C++14 standard")
+env.Append(CCFLAGS=["-std=gnu++14"])
+
+# Also try to modify the global build environment
+try:
+    global_env = DefaultEnvironment()
+    global_env.Append(CXXFLAGS=["-std=gnu++14"])
+    global_env.Append(CCFLAGS=["-std=gnu++14"])
+except:
+    pass
+
+print("[DomoticsCore] Forcing GNU C++14 standard for library compilation")
 
 def find_webui_sources(env):
     """
