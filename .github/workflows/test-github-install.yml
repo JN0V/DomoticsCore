@@ -28,6 +28,8 @@ jobs:
           framework = arduino
           lib_deps = 
               https://github.com/JN0V/DomoticsCore.git#${GITHUB_SHA}
+          build_flags = 
+              -std=c++14
           EOF
           
           mkdir src
