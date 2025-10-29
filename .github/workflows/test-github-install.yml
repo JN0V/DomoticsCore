@@ -1,0 +1,50 @@
+name: Test GitHub Installation
+
+on: [push, pull_request]
+
+jobs:
+  test-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install PlatformIO
+        run: |
+          pip install platformio
+      
+      - name: Create test project
+        run: |
+          mkdir test-install
+          cd test-install
+          cat > platformio.ini << EOF
+          [env:esp32dev]
+          platform = espressif32
+          board = esp32dev
+          framework = arduino
+          lib_deps = 
+              https://github.com/JN0V/DomoticsCore.git#${GITHUB_SHA}
+          EOF
+          
+          mkdir src
+          cat > src/main.cpp << 'EOF'
+          #include <DomoticsCore/System.h>
+          using namespace DomoticsCore;
+          System* sys = nullptr;
+          void setup() {
+              SystemConfig config;
+              config.deviceName = "Test";
+              sys = new System(config);
+              sys->begin();
+          }
+          void loop() { sys->loop(); }
+          EOF
+      
+      - name: Test compilation
+        run: |
+          cd test-install
+          pio run

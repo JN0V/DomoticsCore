@@ -4,50 +4,101 @@ from pathlib import Path
 
 Import("env")
 
-# Project dir for the example (e.g., .../examples/LEDWithWebUI)
-example_dir = Path(env["PROJECT_DIR"])  # current environment project dir
-
-# Resolve assets relative to the repository 'DomoticsCore/DomoticsCore-WebUI' folder
-# Walk up from the example dir to find a 'packages' directory
-packages_root = None
-for parent in example_dir.parents:
-    if parent.name == "DomoticsCore":
-        packages_root = parent
-        break
-
-if packages_root is None:
-    # Fallback: assume this script is inside the package when __file__ is available
+def find_webui_sources():
+    """
+    Find WebUI sources in both local development and PlatformIO installation.
+    
+    Detection logic:
+    1. Local development: search for 'DomoticsCore' folder by walking up the tree
+    2. PlatformIO installation: use __file__ to locate script in libdeps
+    3. Fallback: search for webui_src/ relative to script
+    """
     try:
-        package_root = Path(__file__).resolve().parent
+        # Try using __file__ first (works in both local and PlatformIO)
+        script_path = Path(__file__).resolve()
+        
+        # Case 1: Local development - search for 'DomoticsCore' folder by walking up
+        current = script_path.parent
+        while current.parent != current:
+            if current.name == "DomoticsCore" and (current / "DomoticsCore-WebUI").exists():
+                # Local dev: return DomoticsCore/DomoticsCore-WebUI/webui_src
+                webui_src = current / "DomoticsCore-WebUI" / "webui_src"
+                if webui_src.exists():
+                    print(f"[WebUI] Found local dev sources: {webui_src}")
+                    return webui_src
+                break
+            current = current.parent
+        
+        # Case 2: PlatformIO installation - script is in DomoticsCore-WebUI/ in libdeps
+        # Script path: .pio/libdeps/esp32dev/DomoticsCore/DomoticsCore-WebUI/embed_webui.py
+        webui_root = script_path.parent
+        
+        # Search for webui_src/ in DomoticsCore-WebUI/
+        webui_src = webui_root / "webui_src"
+        if webui_src.exists():
+            print(f"[WebUI] Found PlatformIO sources: {webui_src}")
+            return webui_src
+        
+        # Case 3: Fallback alternative - maybe installed differently
+        # Try walking up to find DomoticsCore then descend
+        for parent in script_path.parents:
+            candidate = parent / "DomoticsCore-WebUI" / "webui_src"
+            if candidate.exists():
+                print(f"[WebUI] Found sources via parent search: {candidate}")
+                return candidate
+        
+        # If nothing worked, detailed error
+        raise RuntimeError(
+            f"Could not locate WebUI sources.\n"
+            f"Script location: {script_path}\n"
+            f"Searched locations:\n"
+            f"  - Local dev: {current / 'DomoticsCore-WebUI' / 'webui_src'}\n"
+            f"  - PlatformIO: {webui_src}\n"
+            f"Please ensure 'webui_src/' directory exists in DomoticsCore-WebUI package."
+        )
+        
     except NameError:
-        raise RuntimeError("Unable to locate 'packages' directory and __file__ is unavailable to resolve package root")
-else:
-    package_root = packages_root / "DomoticsCore-WebUI"
+        # __file__ not available (very unusual SCons environment)
+        raise RuntimeError(
+            "Unable to resolve paths: __file__ is not available.\n"
+            "This is an unusual SCons environment."
+        )
 
-src_dir = package_root / "webui_src"
-out_dir_src = package_root / "include" / "DomoticsCore" / "Generated"
-out_dir_src.mkdir(parents=True, exist_ok=True)
+# Locate WebUI sources
+src_dir = find_webui_sources()
 
-out_header_src = out_dir_src / "WebUIAssets.h"
-out_header_libdeps = None
+# Project dir for the example
+example_dir = Path(env["PROJECT_DIR"])
 
-# Also mirror into libdeps for this env (prefer DomoticsCore-WebUI package folder if present)
+# Determine output directory for generated assets
+# Local dev: write to DomoticsCore-WebUI/include/DomoticsCore/Generated
+# PlatformIO: write to libdeps
 libdeps_dir = Path(env.get("PROJECT_LIBDEPS_DIR", ""))
 pioenv = env.get("PIOENV", "")
+out_header_src = None
+
 if libdeps_dir and pioenv:
-    # Try DomoticsCore-WebUI first
+    # PlatformIO installation: write to libdeps
     candidates = [
+        libdeps_dir / pioenv / "DomoticsCore" / "DomoticsCore-WebUI" / "include" / "DomoticsCore" / "Generated",
         libdeps_dir / pioenv / "DomoticsCore-WebUI" / "include" / "DomoticsCore" / "Generated",
-        libdeps_dir / pioenv / "DomoticsCore" / "include" / "DomoticsCore" / "Generated",
     ]
-    out_header_libdeps = None
     for out_dir in candidates:
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_header_libdeps = out_dir / "WebUIAssets.h"
+            out_header_src = out_dir / "WebUIAssets.h"
+            print(f"[WebUI] Output directory: {out_dir}")
             break
-        except Exception:
+        except Exception as e:
             continue
+
+if out_header_src is None:
+    # Local development: write next to sources
+    package_root = src_dir.parent  # DomoticsCore-WebUI/
+    out_dir_src = package_root / "include" / "DomoticsCore" / "Generated"
+    out_dir_src.mkdir(parents=True, exist_ok=True)
+    out_header_src = out_dir_src / "WebUIAssets.h"
+    print(f"[WebUI] Output directory (local dev): {out_dir_src}")
 
 assets = [
     ("index.html", "WEBUI_HTML_GZ"),
@@ -133,10 +184,4 @@ for filename, sym in assets:
 
 out_text = "\n".join(header_lines) + "\n"
 out_header_src.write_text(out_text)
-print(f"Embedded WebUI assets -> {out_header_src}")
-if out_header_libdeps:
-    try:
-        out_header_libdeps.write_text(out_text)
-        print(f"Mirrored WebUI assets -> {out_header_libdeps}")
-    except Exception as e:
-        print(f"Warning: could not write libdeps header: {e}")
+print(f"[WebUI] Successfully embedded assets -> {out_header_src}")
