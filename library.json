@@ -25,7 +25,6 @@
   "build": {
     "includeDir": ".",
     "flags": [
-      "-std=c++14",
       "-IDomoticsCore-Core/include",
       "-IDomoticsCore-System/include",
       "-IDomoticsCore-Wifi/include",
