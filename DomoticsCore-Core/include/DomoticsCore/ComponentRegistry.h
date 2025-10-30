@@ -11,6 +11,10 @@
 #include "EventBus.h"
 
 namespace DomoticsCore {
+    class Core; // Forward declaration
+}
+
+namespace DomoticsCore {
 namespace Components {
 
 /**
@@ -31,6 +35,8 @@ private:
     std::vector<IComponentLifecycleListener*> listeners;
     // Event bus for cross-component communication
     DomoticsCore::Utils::EventBus eventBus;
+    // Core reference for automatic injection to components
+    DomoticsCore::Core* core_ = nullptr;
     
     
 public:
@@ -100,9 +106,10 @@ public:
             
             DLOG_I(LOG_CORE, "Initializing component: %s", component->getName().c_str());
             
-            // Provide framework services (EventBus) to the component before begin()
+            // Provide framework services (EventBus, Core) to the component before begin()
             if (component) {
                 component->__dc_setEventBus(&eventBus);
+                component->__dc_setCore(core_);
             }
 
             ComponentStatus status = component->begin();
@@ -205,6 +212,14 @@ public:
         out.reserve(components.size());
         for (const auto& up : components) out.push_back(up.get());
         return out;
+    }
+    
+    /**
+     * Set Core reference for automatic injection to components
+     * Called by Core before initializing components
+     */
+    void setCore(DomoticsCore::Core* core) {
+        core_ = core;
     }
 
 public:

@@ -5,6 +5,91 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2025-10-30
+
+### ✨ New Features
+
+#### Core Access in Components (HIGH Priority)
+- **Automatic Core Injection**: Components now receive automatic Core reference via `getCore()`
+- **No More Boilerplate**: Eliminates manual `setCore()` calls in user projects
+- **Consistent Pattern**: Same injection mechanism as EventBus (`__dc_core`)
+- **Backward Compatible**: Fully additive, no breaking changes
+
+**Before (Manual):**
+```cpp
+class MyComponent : public IComponent {
+private:
+    Core* core_ = nullptr;
+public:
+    void setCore(Core* c) { core_ = c; }
+};
+// In main.cpp - manual injection required
+myComponent->setCore(&domotics->getCore());
+```
+
+**After (Automatic):**
+```cpp
+class MyComponent : public IComponent {
+public:
+    ComponentStatus begin() override {
+        auto* storage = getCore()->getComponent<StorageComponent>("Storage");
+        // Core automatically injected by framework!
+    }
+};
+```
+
+#### Storage uint64_t Support (MEDIUM Priority)
+- **Native uint64_t Methods**: Added `putULong64()` and `getULong64()`
+- **Cleaner API**: No more blob workarounds for counters
+- **Use Cases**: Pulse counters, timestamps, large values
+
+**Before (Blob Workaround):**
+```cpp
+uint8_t buffer[8];
+memcpy(buffer, &value, 8);
+storage->putBlob("count", buffer, 8);
+```
+
+**After (Native Support):**
+```cpp
+storage->putULong64("pulse_count", g_pulseCount);
+uint64_t count = storage->getULong64("pulse_count", 0);
+```
+
+### 📚 Documentation
+
+- **New Guide**: `docs/CUSTOM_COMPONENTS.md` - Comprehensive guide for creating custom components
+  - Basic component structure
+  - Accessing other components with `getCore()`
+  - ESP32 ISR best practices (IRAM requirements)
+  - Storage patterns (simple types, uint64_t, binary data)
+  - Event Bus communication
+  - Non-blocking timers
+  - Complete real-world example (Water Meter Component)
+
+### 🔧 Improvements
+
+- **ComponentRegistry**: Enhanced to inject Core reference during initialization
+- **IComponent**: Added protected `__dc_core` member and public `getCore()` helper
+- **Build System**: Improved error messages in `embed_webui.py`
+
+### 📦 Installation
+
+GitHub installation remains simple:
+```ini
+lib_deps = https://github.com/JN0V/DomoticsCore.git#v1.0.1
+
+build_unflags = -std=gnu++11
+build_flags = -std=gnu++14
+board_build.partitions = min_spiffs.csv
+```
+
+### 🙏 Acknowledgments
+
+These enhancements come from real-world production use in the WaterMeter project, demonstrating DomoticsCore's readiness for IoT applications.
+
+---
+
 ## [1.0.0] - 2025-10-27
 
 ### 🎉 First Stable Release
