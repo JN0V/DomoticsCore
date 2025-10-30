@@ -58,6 +58,10 @@ public:
         }
         
         IComponent* ptr = component.get();
+        
+        // Inject registry immediately for lazy Core access
+        ptr->__dc_setRegistry(this);
+        
         componentMap[name] = ptr;
         components.push_back(std::move(component));
         
@@ -264,6 +268,15 @@ public:
      */
     bool isInitialized() const {
         return initialized;
+    }
+    
+    /**
+     * Get Core reference for lazy injection
+     * Used by IComponent::getCore() for lazy injection
+     * @return Pointer to Core, or nullptr if not set
+     */
+    DomoticsCore::Core* getCore() const {
+        return core_;
     }
 
 

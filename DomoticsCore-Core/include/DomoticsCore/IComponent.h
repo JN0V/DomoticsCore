@@ -31,7 +31,8 @@ protected:
     ComponentMetadata metadata;
     // Set by ComponentRegistry before begin(); framework services
     DomoticsCore::Utils::EventBus* __dc_eventBus = nullptr; // preferred injection
-    DomoticsCore::Core* __dc_core = nullptr; // automatic Core injection
+    mutable DomoticsCore::Core* __dc_core = nullptr; // automatic Core injection (lazy)
+    mutable DomoticsCore::Components::ComponentRegistry* __dc_registry = nullptr; // for lazy Core injection
     
 public:
     virtual ~IComponent() = default;
@@ -147,9 +148,10 @@ public:
     
     /**
      * Get access to the Core instance (injected automatically by framework)
-     * @return Pointer to Core, or nullptr if not yet injected
+     * Uses lazy injection - works even if component is registered after begin()
+     * @return Pointer to Core, or nullptr if not available
      */
-    DomoticsCore::Core* getCore() const { return __dc_core; }
+    DomoticsCore::Core* getCore() const;
 
 protected:
     /**
@@ -174,6 +176,7 @@ protected:
     // Called by ComponentRegistry prior to begin()
     void __dc_setEventBus(DomoticsCore::Utils::EventBus* eb) { __dc_eventBus = eb; }
     void __dc_setCore(DomoticsCore::Core* core) { __dc_core = core; }
+    void __dc_setRegistry(DomoticsCore::Components::ComponentRegistry* reg) { __dc_registry = reg; }
 
 public:
     // Typed helper: subscribe to a topic and receive a const T& payload. Owner is this component by default.

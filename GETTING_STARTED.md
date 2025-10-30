@@ -306,37 +306,6 @@ domotics->getCore().addComponent(std::move(ntp));
 
 ---
 
-## ⚠️ Custom Components - CRITICAL
-
-### Component Registration Order
-
-**If you're adding custom components, they MUST be registered BEFORE calling `begin()`!**
-
-```cpp
-// ❌ WRONG - WILL CRASH
-domotics = new System(config);
-domotics->begin();                    // Core injection happens here
-myComp = new MyComponent();
-domotics->getCore().addComponent(...); // TOO LATE! Crashes
-
-// ✅ CORRECT
-domotics = new System(config);
-myComp = new MyComponent();
-domotics->getCore().addComponent(...); // BEFORE begin()
-domotics->begin();                     // Now works properly
-```
-
-**Why:** The framework injects Core reference during `begin()`. Components added after will crash with `nullptr` access.
-
-**Always:**
-1. Create System
-2. Register ALL custom components
-3. Call `begin()`
-
-See `docs/CUSTOM_COMPONENTS.md` for complete guide.
-
----
-
 ## 📚 Documentation
 
 - **Main README**: `README.md`
