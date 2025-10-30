@@ -72,9 +72,7 @@ public:
     StorageComponent(const StorageConfig& config = StorageConfig()) 
         : storageConfig(config), statusTimer(30000), maintenanceTimer(300000), // 5 minutes
           isOpen(false), entryCount(0) {
-        // Ensure a stable name before registration into the registry
-        metadata.name = "Storage";
-        metadata.version = "1.0.1";
+        // Metadata will be fully initialized in begin()
     }
     
     ComponentStatus begin() override {
