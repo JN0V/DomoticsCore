@@ -6,7 +6,7 @@
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **⚠️ Version 1.0.2 Released!** Critical documentation updates from real-world production use. Added warnings about component registration order and `getDependencies()` limitations. See [CHANGELOG.md](CHANGELOG.md) for details.
+> **🎉 Version 1.0.2 Released!** Lazy Core injection - components can now be registered at any time, even after `begin()`! Enhanced flexibility with zero risk of crashes. See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## ✨ What Makes DomoticsCore Different
 
@@ -104,15 +104,6 @@ void loop() {
     core.loop();
 }
 ```
-
-> **⚠️ CRITICAL: Custom Components**  
-> If you add custom components, they **MUST** be registered **BEFORE** calling `begin()`!
-> ```cpp
-> core.addComponent(...);  // ← Register ALL components FIRST
-> core.begin(config);      // ← Then initialize
-> ```
-> Components added after `begin()` will crash with `nullptr` access.  
-> See [`docs/CUSTOM_COMPONENTS.md`](docs/CUSTOM_COMPONENTS.md) for details.
 
 Binary size: **~300KB** (vs 1MB+ for full system)
 

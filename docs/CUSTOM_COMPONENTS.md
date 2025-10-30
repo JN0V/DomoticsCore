@@ -2,38 +2,7 @@
 
 This guide shows how to create custom components for DomoticsCore, including best practices for ESP32 hardware interaction, dependency management, and storage patterns.
 
-## ⚠️ CRITICAL: Component Registration Order
-
-**Components MUST be registered BEFORE calling `begin()`, or your application will crash!**
-
-```cpp
-// ❌ WRONG - WILL CRASH
-domotics = new System(config);
-domotics->begin();                    // Core injection happens here
-myComp = new MyComponent();
-domotics->getCore().addComponent(...); // TOO LATE! Crashes with nullptr
-
-// ✅ CORRECT - Works properly
-domotics = new System(config);
-myComp = new MyComponent();
-domotics->getCore().addComponent(...); // BEFORE begin()
-domotics->begin();                     // Now Core is injected correctly
-```
-
-**Why this matters:**
-- The framework injects `Core` reference during `begin()` → `initializeAll()`
-- Components added after `begin()` never receive the Core pointer
-- Calling `getCore()` returns `nullptr` → **Guru Meditation Error (LoadProhibited)**
-
-**Always follow this order:**
-1. Create System instance
-2. Register ALL custom components
-3. Call `begin()`
-
----
-
 ## Table of Contents
-- [Critical Registration Order](#️-critical-component-registration-order)
 - [Basic Component Structure](#basic-component-structure)
 - [Accessing Other Components](#accessing-other-components)
 - [Understanding Dependencies](#understanding-dependencies)
