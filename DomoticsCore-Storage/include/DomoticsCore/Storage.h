@@ -74,7 +74,7 @@ public:
           isOpen(false), entryCount(0) {
         // Ensure a stable name before registration into the registry
         metadata.name = "Storage";
-        metadata.version = "1.0.0";
+        metadata.version = "1.0.1";
     }
     
     ComponentStatus begin() override {
@@ -82,7 +82,7 @@ public:
         
         // Initialize component metadata
         metadata.name = "Storage";
-        metadata.version = "1.0.0";
+        metadata.version = "1.0.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Key-value storage component for preferences and app data";
         metadata.category = "Storage";

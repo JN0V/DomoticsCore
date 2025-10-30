@@ -55,24 +55,24 @@ public:
 
 using namespace DomoticsCore;
 
-System* system = nullptr;
+System* domotics = nullptr;
 MyComponent* myComp = nullptr;
 
 void setup() {
     SystemConfig config = SystemConfig::fullStack();
     config.deviceName = "MyDevice";
     
-    system = new System(config);
+    domotics = new System(config);
     
     // Add custom component
     myComp = new MyComponent();
-    system->getCore().addComponent(std::unique_ptr<MyComponent>(myComp));
+    domotics->getCore().addComponent(std::unique_ptr<MyComponent>(myComp));
     
-    system->begin();
+    domotics->begin();
 }
 
 void loop() {
-    system->loop();
+    domotics->loop();
 }
 ```
 
