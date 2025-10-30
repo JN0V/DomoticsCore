@@ -2,9 +2,41 @@
 
 This guide shows how to create custom components for DomoticsCore, including best practices for ESP32 hardware interaction, dependency management, and storage patterns.
 
+## ⚠️ CRITICAL: Component Registration Order
+
+**Components MUST be registered BEFORE calling `begin()`, or your application will crash!**
+
+```cpp
+// ❌ WRONG - WILL CRASH
+domotics = new System(config);
+domotics->begin();                    // Core injection happens here
+myComp = new MyComponent();
+domotics->getCore().addComponent(...); // TOO LATE! Crashes with nullptr
+
+// ✅ CORRECT - Works properly
+domotics = new System(config);
+myComp = new MyComponent();
+domotics->getCore().addComponent(...); // BEFORE begin()
+domotics->begin();                     // Now Core is injected correctly
+```
+
+**Why this matters:**
+- The framework injects `Core` reference during `begin()` → `initializeAll()`
+- Components added after `begin()` never receive the Core pointer
+- Calling `getCore()` returns `nullptr` → **Guru Meditation Error (LoadProhibited)**
+
+**Always follow this order:**
+1. Create System instance
+2. Register ALL custom components
+3. Call `begin()`
+
+---
+
 ## Table of Contents
+- [Critical Registration Order](#️-critical-component-registration-order)
 - [Basic Component Structure](#basic-component-structure)
 - [Accessing Other Components](#accessing-other-components)
+- [Understanding Dependencies](#understanding-dependencies)
 - [ISR Best Practices (ESP32 Specific)](#isr-best-practices-esp32-specific)
 - [Storage Patterns](#storage-patterns)
 - [Event Bus Communication](#event-bus-communication)
@@ -138,7 +170,122 @@ public:
 - Use `getCore()` to access the automatically injected Core instance
 - Cache component pointers in `begin()` for efficiency
 - Check for `nullptr` - components may not be registered
-- Declare dependencies with `getDependencies()` for correct init order
+- Use `getDependencies()` carefully (see next section)
+
+---
+
+## Understanding Dependencies
+
+### ⚠️ Important: `getDependencies()` Limitations
+
+**`getDependencies()` only works for custom → custom component dependencies!**
+
+```cpp
+// ✅ WORKS: Custom component depending on another custom component
+class ComponentB : public IComponent {
+    std::vector<String> getDependencies() const override {
+        return {"ComponentA"};  // ComponentA is custom, registered before begin()
+    }
+    
+    ComponentStatus begin() override {
+        auto* compA = getCore()->getComponent<ComponentA>("ComponentA");
+        // compA is guaranteed to exist and be initialized
+    }
+};
+
+// ❌ FAILS: Custom component depending on built-in component
+class MyComponent : public IComponent {
+    std::vector<String> getDependencies() const override {
+        return {"Storage", "MQTT"};  // ERROR: Not yet registered!
+    }
+};
+```
+
+**Why this limitation exists:**
+- Custom components are registered in `setup()` **before** `begin()`
+- Built-in components (Storage, WiFi, MQTT, NTP, etc.) are registered **during** `begin()`
+- Dependency resolution happens at registration time
+- Built-ins don't exist yet when custom components are registered
+
+### Correct Pattern for Built-in Dependencies
+
+Always use defensive checks when accessing built-in components:
+
+```cpp
+class MyComponent : public IComponent {
+private:
+    StorageComponent* storage_ = nullptr;
+    MQTTComponent* mqtt_ = nullptr;
+    
+public:
+    std::vector<String> getDependencies() const override {
+        // Don't declare built-in dependencies here
+        return {};
+    }
+    
+    ComponentStatus begin() override {
+        // Get built-in components with null checks
+        storage_ = getCore()->getComponent<StorageComponent>("Storage");
+        mqtt_ = getCore()->getComponent<MQTTComponent>("MQTT");
+        
+        if (!storage_) {
+            DLOG_W("MyComponent", "Storage unavailable, using defaults");
+            // Continue with fallback behavior
+        }
+        
+        if (!mqtt_) {
+            DLOG_W("MyComponent", "MQTT unavailable, data will not be published");
+        }
+        
+        // Load from storage if available
+        if (storage_) {
+            uint64_t count = storage_->getULong64("pulse_count", 0);
+            DLOG_I("MyComponent", "Loaded count: %llu", count);
+        }
+        
+        return ComponentStatus::Success;
+    }
+    
+    void loop() override {
+        // Always check before using
+        if (storage_) {
+            storage_->putULong64("pulse_count", currentCount);
+        }
+        
+        if (mqtt_ && mqtt_->isConnected()) {
+            mqtt_->publish("sensor/data", payload);
+        }
+    }
+};
+```
+
+### When to Use `getDependencies()`
+
+**✅ Use it when:**
+- Custom component depends on another custom component
+- You want guaranteed initialization order between your components
+- You need to fail fast if dependency is missing
+
+**❌ Don't use it for:**
+- Built-in framework components (Storage, WiFi, MQTT, NTP, OTA, etc.)
+- Optional dependencies (use null checks instead)
+- Components that might not be configured
+
+### Component Initialization Timeline
+
+```
+1. setup() {
+   2. Create System
+   3. Register custom components ← getDependencies() checked here
+   4. begin() {
+      5. Register built-in components
+      6. initializeAll() in dependency order
+         7. Core injection happens
+         8. begin() called on each component
+      }
+   }
+}
+```
 
 ---
 

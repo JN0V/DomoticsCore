@@ -5,6 +5,95 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2025-10-30
+
+### 📚 Critical Documentation Updates
+
+**From Real-World Production Use (WaterMeter Project)**
+
+#### ⚠️ Component Registration Order (CRITICAL)
+
+Added prominent warnings across documentation about component registration order:
+
+**The Issue:**
+```cpp
+// ❌ WRONG - WILL CRASH (Guru Meditation Error: LoadProhibited)
+domotics = new System(config);
+domotics->begin();                    // Core injection happens here
+myComp = new MyComponent();
+domotics->getCore().addComponent(...); // TOO LATE! nullptr crash
+
+// ✅ CORRECT
+domotics = new System(config);
+myComp = new MyComponent();
+domotics->getCore().addComponent(...); // BEFORE begin()
+domotics->begin();                     // Now Core is injected correctly
+```
+
+**Why This Matters:**
+- Core reference injection happens during `begin()` → `initializeAll()`
+- Components added after `begin()` never receive the Core pointer
+- Calling `getCore()` returns `nullptr` → **Crash with EXCVADDR: 0x00000000**
+
+**Documentation Updated:**
+- `docs/CUSTOM_COMPONENTS.md` - Added critical warning section at top
+- `GETTING_STARTED.md` - Added "Custom Components - CRITICAL" section
+- `README.md` - Added warning box after minimal core example
+
+#### Understanding `getDependencies()` Limitations
+
+Added comprehensive explanation of dependency system limitations:
+
+**Key Discovery:**
+- `getDependencies()` **only works** for custom → custom component dependencies
+- **Does NOT work** for custom → built-in dependencies (Storage, MQTT, WiFi, etc.)
+- Built-in components are registered **during** `begin()`, not before
+- Custom components are registered **before** `begin()`
+
+**Correct Pattern:**
+```cpp
+class MyComponent : public IComponent {
+    std::vector<String> getDependencies() const override {
+        return {};  // Don't declare built-in dependencies
+    }
+    
+    ComponentStatus begin() override {
+        // Always use defensive null checks for built-ins
+        auto* storage = getCore()->getComponent<StorageComponent>("Storage");
+        if (!storage) {
+            DLOG_W("MyComponent", "Storage unavailable, using defaults");
+        }
+        return ComponentStatus::Success;
+    }
+};
+```
+
+**Documentation Added:**
+- Complete section in `CUSTOM_COMPONENTS.md` explaining when to use `getDependencies()`
+- Component initialization timeline diagram
+- Examples of correct and incorrect patterns
+- Defensive programming patterns for built-in components
+
+### 🎓 Learning
+
+These findings come from debugging production crashes in the WaterMeter project. The framework works excellently once these undocumented behaviors are understood.
+
+**Real-World Validation:**
+- ✅ ESP32 WaterMeter v0.5.1 running in production
+- ✅ All patterns tested and verified
+- ✅ Complete working implementation available
+
+### 📖 Reference
+
+See `docs/CUSTOM_COMPONENTS.md` for the complete guide with:
+- Critical registration order warning
+- getDependencies() limitations explained  
+- Component initialization timeline
+- ESP32 ISR best practices
+- Complete real-world examples
+
+---
+
 ## [1.0.1] - 2025-10-30
 
 ### ✨ New Features
