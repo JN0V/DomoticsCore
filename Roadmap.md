@@ -379,7 +379,7 @@ jobs:
 4. ✅ **Mettre à jour GETTING_STARTED.md**
 5. ✅ **Ajouter le workflow de test** GitHub Actions
 6. ✅ **Tester manuellement** avec un projet vierge
-7. ⏳ **Publier v1.0.1** avec ces corrections
+7. ✅ **Publier v1.0.1** avec ces corrections
 
 ## Test manuel
 
@@ -915,3 +915,70 @@ Thank you for creating this framework! The modular architecture and component sy
 The WaterMeter project demonstrates that DomoticsCore v1.0 is production-ready and provides a solid foundation for ESP32 IoT projects. These enhancements would make it even more developer-friendly.
 
 **Contact:** Available for discussion, testing, or providing code examples if helpful.
+
+---
+
+## v1.0.1 Implementation Status
+
+### ✅ Implemented Enhancements
+
+#### 1. Core Access in IComponent (HIGH Priority) - ✅ COMPLETED
+- Added `__dc_core` member to IComponent
+- Added `getCore()` public helper method
+- ComponentRegistry automatically injects Core reference in `initializeAll()`
+- Core calls `setCore(this)` before initializing components
+- **Result**: No more manual `setCore()` boilerplate in user projects
+
+#### 2. Storage uint64_t Support (MEDIUM Priority) - ✅ COMPLETED
+- Added `putULong64(key, value)` method to StorageComponent
+- Added `getULong64(key, defaultValue)` method to StorageComponent  
+- Uses native ESP32 Preferences `putULong64()` and `getULong64()`
+- **Result**: Clean API for counters, timestamps, large values
+
+#### 3. Documentation: Custom Components Guide (HIGH Priority) - ✅ COMPLETED
+- Created comprehensive `docs/CUSTOM_COMPONENTS.md`
+- Covers basic component structure
+- Shows how to access Core with `getCore()`
+- ESP32 ISR best practices (IRAM requirements explained)
+- Storage patterns for all data types including uint64_t
+- Event Bus communication examples
+- Non-blocking timer patterns
+- Complete real-world Water Meter example
+- **Result**: Clear, production-tested guidance for developers
+
+### 📦 Published
+
+- **Version**: 1.0.1
+- **Tag**: v1.0.1
+- **Released**: 2025-10-30
+- **GitHub**: https://github.com/JN0V/DomoticsCore/releases/tag/v1.0.1
+
+### 🔮 Future Enhancements (Lower Priority)
+
+#### Component Lifecycle Enhancement (LOW Priority) - Not Implemented
+- Proposed `afterBegin()` method for dependency-safe initialization
+- Would eliminate defensive null checks
+- **Decision**: Current pattern works well, defer to future version if needed
+
+#### Dependency Injection Enhancement (LOW Priority) - Not Implemented
+- Template-based automatic injection or callback patterns
+- **Decision**: Manual approach with `getCore()` is clean enough
+
+#### Storage Namespace Configuration (VERY LOW Priority) - Not Implemented
+- Configurable namespace per component
+- **Decision**: Shared namespace works fine for current use cases
+
+### 📊 Summary
+
+**v1.0.1 Achievements:**
+- 3/3 high/medium priority items implemented
+- All enhancements backward compatible (no breaking changes)
+- Production-tested with WaterMeter project
+- Comprehensive documentation added
+- Released and tagged on GitHub
+
+**Impact:**
+- Significantly improved developer experience
+- Cleaner component code with less boilerplate
+- Better storage API for common use cases
+- Clear guidance for ESP32-specific patterns
