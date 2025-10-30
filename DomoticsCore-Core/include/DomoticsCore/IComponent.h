@@ -8,7 +8,13 @@
 #include "EventBus.h"
 
 // Forward declarations to avoid circular includes
-namespace DomoticsCore { namespace Components { class ComponentRegistry; class IWebUIProvider; } }
+namespace DomoticsCore { 
+    class Core;
+    namespace Components { 
+        class ComponentRegistry; 
+        class IWebUIProvider; 
+    } 
+}
 
 namespace DomoticsCore {
 namespace Components {
@@ -25,6 +31,7 @@ protected:
     ComponentMetadata metadata;
     // Set by ComponentRegistry before begin(); framework services
     DomoticsCore::Utils::EventBus* __dc_eventBus = nullptr; // preferred injection
+    DomoticsCore::Core* __dc_core = nullptr; // automatic Core injection
     
 public:
     virtual ~IComponent() = default;
@@ -137,6 +144,12 @@ public:
      * Components may perform cross-component discovery here.
      */
     virtual void onComponentsReady(const ComponentRegistry& /*registry*/) {}
+    
+    /**
+     * Get access to the Core instance (injected automatically by framework)
+     * @return Pointer to Core, or nullptr if not yet injected
+     */
+    DomoticsCore::Core* getCore() const { return __dc_core; }
 
 protected:
     /**
@@ -160,6 +173,7 @@ protected:
     friend class ComponentRegistry;
     // Called by ComponentRegistry prior to begin()
     void __dc_setEventBus(DomoticsCore::Utils::EventBus* eb) { __dc_eventBus = eb; }
+    void __dc_setCore(DomoticsCore::Core* core) { __dc_core = core; }
 
 public:
     // Typed helper: subscribe to a topic and receive a const T& payload. Owner is this component by default.

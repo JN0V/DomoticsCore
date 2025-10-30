@@ -233,6 +233,20 @@ public:
         return false;
     }
     
+    bool putULong64(const String& key, uint64_t value) {
+        if (!isOpen) {
+            DLOG_E(LOG_STORAGE, "Not open");
+            return false;
+        }
+        
+        size_t written = preferences.putULong64(key.c_str(), value);
+        if (written > 0) {
+            DLOG_D(LOG_STORAGE, "Stored uint64 '%s' = %llu", key.c_str(), value);
+            return true;
+        }
+        return false;
+    }
+    
     bool putBlob(const String& key, const uint8_t* data, size_t length) {
         if (!isOpen) {
             DLOG_E(LOG_STORAGE, "Not open");
@@ -295,6 +309,17 @@ public:
         
         bool value = preferences.getBool(key.c_str(), defaultValue);
         DLOG_D(LOG_STORAGE, "Retrieved bool '%s' = %s", key.c_str(), value ? "true" : "false");
+        return value;
+    }
+    
+    uint64_t getULong64(const String& key, uint64_t defaultValue = 0) {
+        if (!isOpen) {
+            DLOG_E(LOG_STORAGE, "Not open");
+            return defaultValue;
+        }
+        
+        uint64_t value = preferences.getULong64(key.c_str(), defaultValue);
+        DLOG_D(LOG_STORAGE, "Retrieved uint64 '%s' = %llu", key.c_str(), value);
         return value;
     }
     

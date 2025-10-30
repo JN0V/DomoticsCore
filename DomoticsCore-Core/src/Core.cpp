@@ -37,6 +37,9 @@ bool Core::begin(const CoreConfig& cfg) {
     DLOG_I(LOG_CORE, "Device: %s (ID: %s)", config.deviceName.c_str(), config.deviceId.c_str());
     DLOG_I(LOG_CORE, "Free heap: %d bytes", ESP.getFreeHeap());
     
+    // Provide Core reference to registry for component injection
+    componentRegistry.setCore(this);
+    
     // Initialize all registered components
     Components::ComponentStatus status = componentRegistry.initializeAll();
     if (status != Components::ComponentStatus::Success) {

@@ -430,3 +430,488 @@ Et `#include <DomoticsCore/System.h>` fonctionnera immédiatement, sans:
 - Garder la structure modulaire actuelle intacte
 - Ces changements sont rétro-compatibles avec le développement local
 - Une fois stable, publier sur le registre PlatformIO pour `lib_deps = DomoticsCore-System`
+
+---
+
+# DomoticsCore v1.0 - API Enhancement Suggestions
+
+**From:** WaterMeter Project (Real-world ESP32 IoT water meter implementation)  
+**Date:** October 2025  
+**Context:** Full production implementation using all DomoticsCore features
+
+## Executive Summary
+
+After developing a complete ESP32 water meter using DomoticsCore v1.0, here are practical enhancement suggestions based on real-world usage. The project successfully uses:
+- Custom IComponent with ISR handling
+- Storage for uint64_t counters
+- NTP for time-based resets
+- Event bus for MQTT publishing
+- All fullStack() features
+
+## 🎯 Enhancement Suggestions
+
+### 1. **Core Access in IComponent** (Priority: **HIGH**)
+
+**Current Issue:**
+```cpp
+// Manual boilerplate required in every project
+class WaterMeterComponent : public IComponent {
+private:
+    Core* core_ = nullptr;  // Have to add this
+    
+public:
+    void setCore(Core* c) { core_ = c; }  // And this
+};
+
+// In main.cpp
+waterMeter = new WaterMeterComponent();
+waterMeter->setCore(&domotics->getCore());  // Manual injection
+domotics->getCore().addComponent(std::unique_ptr<WaterMeterComponent>(waterMeter));
+```
+
+**Proposed Solution:**
+```cpp
+class IComponent {
+protected:
+    Core* __dc_core = nullptr;  // Automatically injected by framework
+    
+public:
+    void __dc_setCore(Core* c) { __dc_core = c; }
+    
+    // Helper for easy access
+    Core* getCore() const { return __dc_core; }
+};
+```
+
+**Benefits:**
+- Consistent pattern with `__dc_eventBus` (already exists)
+- No boilerplate code in user projects
+- Easier for beginners
+- Framework handles injection automatically
+
+**Implementation Notes:**
+- ComponentRegistry should call `__dc_setCore()` when registering
+- Same lifecycle as `__dc_setEventBus()`
+- Zero breaking changes (additive only)
+
+---
+
+### 2. **Storage uint64_t Support** (Priority: **MEDIUM**)
+
+**Current Issue:**
+```cpp
+// Complex workaround needed for uint64_t
+void saveToStorage() {
+    auto* storage = core_->getComponent<StorageComponent>("Storage");
+    uint8_t buffer[8];
+    memcpy(buffer, (const void*)&g_pulseCount, 8);
+    storage->putBlob("pulse_count", buffer, 8);
+}
+
+void loadFromStorage() {
+    uint8_t buffer[8];
+    if (storage->getBlob("pulse_count", buffer, 8) == 8) {
+        memcpy((void*)&g_pulseCount, buffer, 8);
+    }
+}
+```
+
+**Proposed Solution:**
+```cpp
+class StorageComponent {
+public:
+    // Add native uint64_t support
+    bool putULong64(const String& key, uint64_t value) {
+        return preferences.putULong64(key.c_str(), value);
+    }
+    
+    uint64_t getULong64(const String& key, uint64_t defaultValue = 0) {
+        return preferences.getULong64(key.c_str(), defaultValue);
+    }
+};
+
+// Usage becomes simple
+storage->putULong64("pulse_count", g_pulseCount);
+g_pulseCount = storage->getULong64("pulse_count", 0);
+```
+
+**Benefits:**
+- Consistent API (putInt, putFloat, putString, putULong64)
+- More readable, less error-prone
+- ESP32 Preferences natively supports uint64_t
+- No volatile pointer casting issues
+
+**Use Case:**
+- Counters (pulse counts, uptime seconds)
+- Timestamps (milliseconds since epoch)
+- Large values (total bytes transferred, etc.)
+
+---
+
+### 3. **Component Lifecycle Enhancement** (Priority: **LOW**)
+
+**Current Issue:**
+Components accessing dependencies in `begin()` must check availability:
+```cpp
+ComponentStatus begin() override {
+    loadFromStorage();  // Storage might not be ready yet
+    return ComponentStatus::Success;
+}
+
+void loadFromStorage() {
+    if (!core_) return;  // Check 1
+    auto* storage = core_->getComponent<StorageComponent>("Storage");
+    if (!storage) {      // Check 2
+        DLOG_W(LOG_WATER, "Storage not available");
+        return;
+    }
+    // Actually use storage...
+}
+```
+
+**Proposed Solution:**
+```cpp
+class IComponent {
+    virtual ComponentStatus begin() = 0;           // Existing
+    virtual void afterBegin() {}                   // NEW - Called after all components are ready
+    virtual void loop() = 0;
+    virtual ComponentStatus shutdown() = 0;
+};
+
+// Usage
+ComponentStatus begin() override {
+    // Internal initialization only
+    pinMode(GPIO_PIN, INPUT);
+    return ComponentStatus::Success;
+}
+
+void afterBegin() override {
+    // Dependencies are guaranteed available here
+    auto* storage = core_->getComponent<StorageComponent>("Storage");
+    loadFromStorage();  // No null checks needed
+}
+```
+
+**Benefits:**
+- Clear separation: `begin()` = internal init, `afterBegin()` = dependency setup
+- No defensive null checks everywhere
+- Framework guarantees all dependencies are ready
+- Cleaner, more maintainable code
+
+**Implementation:**
+- ComponentRegistry calls all `begin()` first
+- Then calls all `afterBegin()` in topological order
+- Non-breaking (virtual with default empty implementation)
+
+---
+
+### 4. **Documentation: Custom Components Guide** (Priority: **HIGH**)
+
+**Currently Missing:**
+- How to access Core from custom components
+- Best practices for components with dependencies
+- ISR handling patterns for ESP32
+- Storage patterns for different data types
+- Real-world examples beyond basic demos
+
+**Proposed Documentation Structure:**
+
+```markdown
+## Creating Custom Components
+
+### 1. Basic Component
+```cpp
+class MyComponent : public IComponent {
+    ComponentStatus begin() override {
+        // Initialize your hardware/state
+        return ComponentStatus::Success;
+    }
+    
+    void loop() override {
+        // Your periodic logic
+    }
+    
+    ComponentStatus shutdown() override {
+        // Cleanup
+        return ComponentStatus::Success;
+    }
+};
+```
+
+### 2. Accessing Other Components
+```cpp
+class MyComponent : public IComponent {
+private:
+    Core* core_ = nullptr;
+    
+public:
+    void setCore(Core* c) { core_ = c; }
+    
+    ComponentStatus begin() override {
+        auto* storage = core_->getComponent<StorageComponent>("Storage");
+        if (storage) {
+            // Use storage
+        }
+        return ComponentStatus::Success;
+    }
+};
+```
+
+### 3. ISR Best Practices (ESP32 Specific)
+**Problem:** ESP32 linker cannot place C++ class static members in IRAM
+
+```cpp
+// ❌ DON'T: Static ISR in class (causes linker errors)
+class MyComponent {
+    static volatile uint64_t count;
+    static void IRAM_ATTR isr() {
+        count++;  // Error: "dangerous relocation: l32r"
+    }
+};
+
+// ✅ DO: Global ISR outside class
+namespace {
+    volatile uint64_t g_count = 0;
+    volatile bool g_newEvent = false;
+}
+
+void IRAM_ATTR myISR() {
+    g_count++;
+    g_newEvent = true;
+}
+
+class MyComponent : public IComponent {
+    void begin() override {
+        attachInterrupt(pin, myISR, FALLING);
+    }
+    
+    void loop() override {
+        if (g_newEvent) {
+            handleEvent();
+            g_newEvent = false;
+        }
+    }
+};
+```
+
+**Why?** ESP32 toolchain limitation with C++ member functions in IRAM.
+**Solution:** ISR must be global function, variables in anonymous namespace.
+
+### 4. Storage Patterns
+
+**Storing Simple Types:**
+```cpp
+storage->putInt("counter", 42);
+storage->putString("name", "Device");
+storage->putFloat("temperature", 23.5);
+```
+
+**Storing uint64_t (Current Workaround):**
+```cpp
+uint8_t buffer[8];
+memcpy(buffer, &value, 8);
+storage->putBlob("key", buffer, 8);
+
+// Reading
+if (storage->getBlob("key", buffer, 8) == 8) {
+    memcpy(&value, buffer, 8);
+}
+```
+
+**Storing Structs:**
+```cpp
+struct Config {
+    int value1;
+    float value2;
+};
+Config cfg = {42, 3.14};
+storage->putBlob("config", (uint8_t*)&cfg, sizeof(Config));
+```
+
+### 5. Event Bus Communication
+```cpp
+// Emit data to other components
+struct SensorData {
+    float temperature;
+    int humidity;
+};
+SensorData data = {23.5, 65};
+emit("sensor.data", data, false);  // Non-sticky
+
+// Subscribe in another component
+on<SensorData>("sensor.data", [](const SensorData& d) {
+    DLOG_I("MQTT", "Temp: %.1f, Humidity: %d", d.temperature, d.humidity);
+});
+```
+
+### 6. Non-Blocking Timers
+```cpp
+class MyComponent : public IComponent {
+private:
+    Utils::NonBlockingDelay timer{5000};  // 5 seconds
+    
+    void loop() override {
+        if (timer.isReady()) {
+            doPeriodicTask();
+            // timer auto-resets
+        }
+    }
+};
+```
+```
+
+---
+
+### 5. **Dependency Injection Enhancement** (Priority: **LOW**)
+
+**Current State:**
+```cpp
+std::vector<String> getDependencies() const override {
+    return {"Storage", "NTP"};
+}
+// But no automatic injection - components must call getComponent() manually
+```
+
+**Potential Future Enhancement:**
+```cpp
+// Option A: Template-based automatic injection
+template<typename... Deps>
+class ComponentWithDeps : public IComponent {
+protected:
+    std::tuple<Deps*...> deps;
+};
+
+class MyComponent : public ComponentWithDeps<StorageComponent, NTPComponent> {
+    void afterBegin() override {
+        auto* storage = std::get<0>(deps);  // Automatically injected
+        auto* ntp = std::get<1>(deps);
+    }
+};
+
+// Option B: Callback pattern
+class IComponent {
+    virtual void onDependenciesReady() {}  // NEW
+};
+
+class MyComponent : public IComponent {
+    void onDependenciesReady() override {
+        // Framework guarantees all declared dependencies are available
+        storage_ = core_->getComponent<StorageComponent>("Storage");
+        // No null check needed
+    }
+};
+```
+
+**Note:** Lower priority - current manual approach works, but could be improved long-term.
+
+---
+
+### 6. **Storage Namespace Configuration** (Priority: **VERY LOW**)
+
+**Observation:**
+Storage always uses namespace `"domotics"` (hardcoded).
+
+**Potential Enhancement:**
+```cpp
+StorageConfig config;
+config.namespace_ = "watermeter";  // Per-project namespace
+
+auto* storage = new StorageComponent(config);
+```
+
+**Benefits:**
+- Isolation between projects on same device
+- Avoid key conflicts
+- Easier multi-project development
+
+**Note:** Very low priority - current shared namespace works fine for most cases.
+
+---
+
+## 🐛 Minor Issues Found
+
+### 1. Storage.h - Missing isOpen Check
+Some methods check `isOpen` before accessing preferences, others don't:
+```cpp
+// Has check
+String getString(...) {
+    if (!isOpen) return defaultValue;  // ✅
+}
+
+// Missing check?
+size_t getBlob(...) {
+    // No isOpen check here
+}
+```
+
+Should be consistent across all methods.
+
+---
+
+## 💡 Real-World Use Case Details
+
+**Project:** ESP32 Water Meter  
+**Description:** IoT water consumption monitoring with magnetic pulse sensor
+
+**Features Implemented:**
+- ✅ ISR pulse counting (IRAM pattern documented)
+- ✅ NVS persistence (uint64_t via blob storage)
+- ✅ NTP-based auto-resets (daily at midnight, yearly Jan 1st)
+- ✅ Event bus → MQTT → Home Assistant
+- ✅ WebUI with telnet console
+- ✅ OTA updates
+- ✅ Non-blocking timers (LED flash, auto-save, publish)
+
+**Memory Usage:**
+- RAM: 14.8% (48KB / 328KB)
+- Flash: 70.8% (1.39MB / 1.97MB)
+
+**Code Size:**
+- `main.cpp`: 92 lines (mostly DomoticsCore setup)
+- `WaterMeterComponent.h`: 290 lines (business logic)
+- Clean, maintainable architecture
+
+**Challenges Solved:**
+1. ESP32 ISR IRAM issue → Global function pattern
+2. uint64_t storage → Blob workaround
+3. Core access → Manual injection pattern
+4. Dependencies → Null-checking pattern
+
+**What Worked Excellently:**
+- Event bus - very clean and intuitive
+- Component lifecycle - well thought out
+- System::fullStack() - great for rapid start
+- Storage with Preferences - simple and reliable
+- Overall architecture - modular and extensible
+
+**Project Available:**
+Complete source code available at WaterMeter project for testing/examples if needed.
+
+---
+
+## 📊 Priority Summary
+
+| Enhancement | Priority | Effort | Impact | Breaking? |
+|------------|----------|--------|---------|-----------|
+| Core Access in IComponent | HIGH | Low | High | No |
+| Custom Components Documentation | HIGH | Medium | High | No |
+| Storage uint64_t Support | MEDIUM | Low | Medium | No |
+| Component Lifecycle (afterBegin) | LOW | Medium | Medium | No |
+| Dependency Injection | LOW | High | Low | No |
+| Storage Namespace Config | VERY LOW | Low | Low | No |
+
+**Recommended Implementation Order:**
+1. Documentation (high impact, non-breaking)
+2. Core Access pattern (high impact, low effort)
+3. Storage uint64_t (practical need, simple addition)
+4. Others as time permits
+
+---
+
+## 🙏 Acknowledgments
+
+Thank you for creating this framework! The modular architecture and component system are excellent. These suggestions come from real production use and aim to make DomoticsCore even better for the community.
+
+The WaterMeter project demonstrates that DomoticsCore v1.0 is production-ready and provides a solid foundation for ESP32 IoT projects. These enhancements would make it even more developer-friendly.
+
+**Contact:** Available for discussion, testing, or providing code examples if helpful.
