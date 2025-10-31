@@ -130,10 +130,17 @@ public:
         initialized = true;
         DLOG_I(LOG_CORE, "All components initialized successfully (%d components)", initializationOrder.size());
 
-        // Post-initialization hook for components
+        // Post-initialization hooks for components
         for (auto* component : initializationOrder) {
             component->onComponentsReady(*this);
         }
+        
+        // v1.1: Late initialization hook - all components guaranteed available
+        DLOG_D(LOG_CORE, "Calling afterAllComponentsReady() hooks...");
+        for (auto* component : initializationOrder) {
+            component->afterAllComponentsReady();
+        }
+        
         return ComponentStatus::Success;
     }
     
@@ -302,14 +309,20 @@ private:
             String name = comp->getName();
             auto deps = comp->getDependencies();
             
-            for (const String& dep : deps) {
-                if (componentMap.find(dep) == componentMap.end()) {
-                    DLOG_E(LOG_CORE, "Component '%s' depends on unregistered component '%s'", 
-                           name.c_str(), dep.c_str());
-                    return false;
+            for (const auto& dep : deps) {
+                if (componentMap.find(dep.name) == componentMap.end()) {
+                    if (dep.required) {
+                        DLOG_E(LOG_CORE, "Component '%s' depends on unregistered required component '%s'", 
+                               name.c_str(), dep.name.c_str());
+                        return false;
+                    } else {
+                        DLOG_I(LOG_CORE, "Component '%s' optional dependency '%s' not available (OK)", 
+                               name.c_str(), dep.name.c_str());
+                        continue;  // Skip optional missing dependency
+                    }
                 }
                 
-                dependents[dep].push_back(name);
+                dependents[dep.name].push_back(name);
                 inDegree[name]++;
             }
         }

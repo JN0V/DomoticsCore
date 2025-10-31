@@ -5,6 +5,96 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-10-31
+
+### ✨ New Features
+
+#### Lifecycle Callback: afterAllComponentsReady()
+
+**Problem Solved:** Need clean separation between internal init and dependency setup.
+
+**New Lifecycle Hook:**
+```cpp
+class MyComponent : public IComponent {
+    std::vector<Dependency> getDependencies() const override {
+        return {{"Storage", false}, {"MQTT", false}};  // Optional dependencies
+    }
+    
+    ComponentStatus begin() override {
+        // Internal initialization only (GPIO, state)
+        pinMode(PIN, INPUT);
+        return ComponentStatus::Success;
+    }
+    
+    void afterAllComponentsReady() override {
+        // ALL components guaranteed available here!
+        storage_ = getCore()->getComponent<StorageComponent>("Storage");
+        mqtt_ = getCore()->getComponent<MQTTComponent>("MQTT");
+        // Framework logs if optional dep missing
+    }
+};
+```
+
+**Benefits:**
+- Clear separation: `begin()` = internal init, `afterAllComponentsReady()` = dependency setup
+- Framework guarantees all components (including built-ins) are ready
+- More intuitive than defensive null checks everywhere
+- Non-breaking: virtual with default empty implementation
+
+**Lifecycle Order:**
+1. `begin()` - Internal initialization (all components)
+2. `afterAllComponentsReady()` - Dependency setup (all components)
+3. `loop()` - Normal operation
+
+**Files Changed:**
+- `IComponent.h`: Added `afterAllComponentsReady()` virtual method
+- `ComponentRegistry.h`: Call hook after all components initialized
+
+---
+
+## [1.0.3] - 2025-10-31
+
+### ✨ New Features
+
+#### Optional Dependencies Support
+
+**Problem Solved:** Custom components couldn't declare built-in dependencies without workarounds.
+
+**Enhanced `getDependencies()` API:**
+```cpp
+// Simple case - all required (implicit)
+std::vector<Dependency> getDependencies() const override {
+    return {"ComponentA", "ComponentB"};  // Implicit required=true
+}
+
+// Advanced case - mix of required and optional
+std::vector<Dependency> getDependencies() const override {
+    return {
+        {"Storage", false},      // Optional - won't fail if missing
+        {"MQTT", false},         // Optional  
+        {"MyCustomComp", true}   // Required - init fails if missing
+    };
+}
+```
+
+**Benefits:**
+- Explicit intent (required vs optional)
+- Framework logs informative messages for missing optional deps
+- Implicit conversion from `String` for backward compatibility
+- Better than defensive null checks everywhere
+
+**Implementation:**
+- Added `Dependency` struct with `name` and `required` flag
+- Implicit conversion from `String` (defaults to required=true)
+- ComponentRegistry checks optional deps but doesn't fail
+- Logs INFO when optional dep missing, ERROR for required
+
+**Files Changed:**
+- `IComponent.h`: Enhanced `getDependencies()` to return `Dependency` objects
+- `ComponentRegistry.h`: Updated dependency resolution to support optional deps
+
+---
+
 ## [1.0.2] - 2025-10-30
 
 ### ✨ Lazy Core Injection - Enhanced Flexibility

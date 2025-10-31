@@ -145,40 +145,9 @@ public:
 
 ## Understanding Dependencies
 
-### ⚠️ Important: `getDependencies()` Limitations
+### Optional vs Required Dependencies
 
-**`getDependencies()` only works for custom → custom component dependencies!**
-
-```cpp
-// ✅ WORKS: Custom component depending on another custom component
-class ComponentB : public IComponent {
-    std::vector<String> getDependencies() const override {
-        return {"ComponentA"};  // ComponentA is custom, registered before begin()
-    }
-    
-    ComponentStatus begin() override {
-        auto* compA = getCore()->getComponent<ComponentA>("ComponentA");
-        // compA is guaranteed to exist and be initialized
-    }
-};
-
-// ❌ FAILS: Custom component depending on built-in component
-class MyComponent : public IComponent {
-    std::vector<String> getDependencies() const override {
-        return {"Storage", "MQTT"};  // ERROR: Not yet registered!
-    }
-};
-```
-
-**Why this limitation exists:**
-- Custom components are registered in `setup()` **before** `begin()`
-- Built-in components (Storage, WiFi, MQTT, NTP, etc.) are registered **during** `begin()`
-- Dependency resolution happens at registration time
-- Built-ins don't exist yet when custom components are registered
-
-### Correct Pattern for Built-in Dependencies
-
-Always use defensive checks when accessing built-in components:
+`getDependencies()` supports both required and optional dependencies:
 
 ```cpp
 class MyComponent : public IComponent {
@@ -187,36 +156,35 @@ private:
     MQTTComponent* mqtt_ = nullptr;
     
 public:
-    std::vector<String> getDependencies() const override {
-        // Don't declare built-in dependencies here
-        return {};
+    // Declare dependencies with optional flag
+    std::vector<Dependency> getDependencies() const override {
+        return {
+            {"Storage", false},  // Optional - won't fail if missing
+            {"MQTT", false},     // Optional
+            {"MyCustomComp", true}  // Required - init fails if missing
+        };
     }
     
     ComponentStatus begin() override {
-        // Get built-in components with null checks
+        // Internal initialization only
+        pinMode(PIN, INPUT);
+        return ComponentStatus::Success;
+    }
+    
+    void afterAllComponentsReady() override {
+        // Get components - framework already logged if optional missing
         storage_ = getCore()->getComponent<StorageComponent>("Storage");
         mqtt_ = getCore()->getComponent<MQTTComponent>("MQTT");
-        
-        if (!storage_) {
-            DLOG_W("MyComponent", "Storage unavailable, using defaults");
-            // Continue with fallback behavior
-        }
-        
-        if (!mqtt_) {
-            DLOG_W("MyComponent", "MQTT unavailable, data will not be published");
-        }
         
         // Load from storage if available
         if (storage_) {
             uint64_t count = storage_->getULong64("pulse_count", 0);
             DLOG_I("MyComponent", "Loaded count: %llu", count);
         }
-        
-        return ComponentStatus::Success;
     }
     
     void loop() override {
-        // Always check before using
+        // Always check before using optional components
         if (storage_) {
             storage_->putULong64("pulse_count", currentCount);
         }
@@ -228,29 +196,48 @@ public:
 };
 ```
 
+### Simple Dependencies (All Required)
+
+For simple cases where all dependencies are required, use implicit conversion:
+
+```cpp
+class ComponentB : public IComponent {
+    std::vector<Dependency> getDependencies() const override {
+        return {"ComponentA"};  // Implicit required=true
+    }
+    
+    void afterAllComponentsReady() override {
+        auto* compA = getCore()->getComponent<ComponentA>("ComponentA");
+        // compA is guaranteed to exist (framework fails if missing)
+    }
+};
+```
+
 ### When to Use `getDependencies()`
 
-**✅ Use it when:**
-- Custom component depends on another custom component
-- You want guaranteed initialization order between your components
-- You need to fail fast if dependency is missing
+**✅ Use for:**
+- Custom → custom component dependencies (required or optional)
+- Built-in components (Storage, MQTT, etc.) as optional dependencies
+- Explicit declaration of what your component needs
 
-**❌ Don't use it for:**
-- Built-in framework components (Storage, WiFi, MQTT, NTP, OTA, etc.)
-- Optional dependencies (use null checks instead)
-- Components that might not be configured
+**💡 Tips:**
+- Use `required=false` for built-in components (they might not be configured)
+- Use `required=true` for critical custom dependencies
+- Framework logs INFO when optional dep missing, ERROR for required
+- Access components in `afterAllComponentsReady()` for guaranteed availability
 
 ### Component Initialization Timeline
 
 ```
 1. setup() {
    2. Create System
-   3. Register custom components ← getDependencies() checked here
+   3. Register custom components
    4. begin() {
       5. Register built-in components
-      6. initializeAll() in dependency order
-         7. Core injection happens
-         8. begin() called on each component
+      6. Resolve dependencies (optional deps OK if missing)
+      7. initializeAll() in dependency order
+         → begin() called on each component
+         → afterAllComponentsReady() called on each component
       }
    }
 }

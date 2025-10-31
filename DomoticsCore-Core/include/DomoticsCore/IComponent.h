@@ -20,6 +20,19 @@ namespace DomoticsCore {
 namespace Components {
 
 /**
+ * Dependency specification for component initialization ordering
+ * Allows declaring both required and optional dependencies
+ */
+struct Dependency {
+    String name;           // Component name
+    bool required = true;  // If false, component will init even if dependency missing
+    
+    // Implicit conversion from String for backward compatibility
+    Dependency(const String& n) : name(n), required(true) {}
+    Dependency(const String& n, bool req) : name(n), required(req) {}
+};
+
+/**
  * Base interface for all DomoticsCore components
  * Provides lifecycle management, dependency resolution, and status reporting
  */
@@ -64,12 +77,29 @@ public:
     virtual String getName() const = 0;
     
     /**
-     * Get list of component dependencies
+     * Get list of component dependencies with optional/required flags
      * Dependencies will be initialized before this component
-     * @return Vector of dependency component names
+     * @return Vector of Dependency objects with name and required flag
+     * 
+     * Examples:
+     * ```cpp
+     * // All required (default)
+     * std::vector<Dependency> getDependencies() const override {
+     *     return {"ComponentA", "ComponentB"};  // Implicit required=true
+     * }
+     * 
+     * // Mix of required and optional
+     * std::vector<Dependency> getDependencies() const override {
+     *     return {
+     *         {"Storage", false},      // Optional - won't fail if missing
+     *         {"MQTT", false},         // Optional
+     *         {"MyCustomComp", true}   // Required - init fails if missing
+     *     };
+     * }
+     * ```
      */
-    virtual std::vector<String> getDependencies() const { 
-        return {}; 
+    virtual std::vector<Dependency> getDependencies() const {
+        return {};
     }
     
     /**
@@ -145,6 +175,33 @@ public:
      * Components may perform cross-component discovery here.
      */
     virtual void onComponentsReady(const ComponentRegistry& /*registry*/) {}
+    
+    /**
+     * Optional: Called after ALL components (including built-ins) are ready
+     * Use this for late initialization that depends on other components
+     * All components declared in getDependenciesEx() are guaranteed available here
+     * 
+     * Lifecycle order:
+     * 1. begin() - Internal initialization only (GPIO, state, etc.)
+     * 2. afterAllComponentsReady() - Dependency setup (can access other components safely)
+     * 3. loop() - Normal operation
+     * 
+     * Example:
+     * ```cpp
+     * ComponentStatus begin() override {
+     *     pinMode(PIN, INPUT);  // Internal init only
+     *     return ComponentStatus::Success;
+     * }
+     * 
+     * void afterAllComponentsReady() override {
+     *     // All components guaranteed available here
+     *     storage_ = getCore()->getComponent<StorageComponent>("Storage");
+     *     mqtt_ = getCore()->getComponent<MQTTComponent>("MQTT");
+     *     // No null checks needed if declared in getDependenciesEx()
+     * }
+     * ```
+     */
+    virtual void afterAllComponentsReady() {}
     
     /**
      * Get access to the Core instance (injected automatically by framework)
