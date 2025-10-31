@@ -313,31 +313,13 @@ public:
         }
         
         // ====================================================================
-        // 2. Storage Component (if enabled) - Early so others can load config
+        // 2. Storage Component (if enabled) - NO EARLY-INIT since v1.1
         // ====================================================================
         #if __has_include(<DomoticsCore/Storage.h>)
-        Components::StorageComponent* storage = nullptr;
         if (config.enableStorage) {
             auto storagePtr = std::make_unique<Components::StorageComponent>();
-            storage = storagePtr.get();
             core.addComponent(std::move(storagePtr));
-            
-            // Initialize storage early so we can load credentials
-            if (storage->begin() == Components::ComponentStatus::Success) {
-                storage->setActive(true);  // Mark as initialized to skip double-init
-                DLOG_I(LOG_SYSTEM, "✓ Storage component initialized (early)");
-                
-                // Load WiFi credentials from storage if not provided in config
-                if (config.wifiSSID.isEmpty()) {
-                    config.wifiSSID = storage->getString("wifi_ssid", "");
-                    config.wifiPassword = storage->getString("wifi_password", "");
-                    if (!config.wifiSSID.isEmpty()) {
-                        DLOG_I(LOG_SYSTEM, "Loaded WiFi credentials from storage: %s", config.wifiSSID.c_str());
-                    }
-                }
-            } else {
-                DLOG_E(LOG_SYSTEM, "✗ Storage initialization failed");
-            }
+            DLOG_I(LOG_SYSTEM, "✓ Storage component registered");
         }
         #else
         if (config.enableStorage) {
@@ -347,33 +329,15 @@ public:
         #endif
         
         // ====================================================================
-        // 3. WiFi Component (AUTOMATIC with AP fallback)
+        // 3. WiFi Component - Credentials loaded in afterAllComponentsReady()
         // ====================================================================
+        // Create WiFi component with config credentials (may be empty if using Storage)
         auto wifiPtr = std::make_unique<Components::WifiComponent>(config.wifiSSID, config.wifiPassword);
         wifi = wifiPtr.get();
         
-        // Check if AP should be enabled (from storage or config)
-        bool enableAP = false;
-        String apSSID = config.wifiAPSSID;
-        
-        #if __has_include(<DomoticsCore/Storage.h>)
-        auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
-        if (storageComp) {
-            // Load AP state from storage
-            enableAP = storageComp->getBool("wifi_ap_enabled", false);
-            String savedAPSSID = storageComp->getString("wifi_ap_ssid", "");
-            if (savedAPSSID.length() > 0) {
-                apSSID = savedAPSSID;
-            }
-            if (enableAP) {
-                DLOG_I(LOG_SYSTEM, "Loaded AP state from storage: enabled=%d, SSID=%s", enableAP, apSSID.c_str());
-            }
-        }
-        #endif
-        
-        // Enable AP mode if stored state says so, or if no credentials and auto-config enabled
-        if (enableAP || (config.wifiSSID.isEmpty() && config.wifiAutoConfig)) {
-            // Generate AP SSID if not provided
+        // Enable AP mode if no credentials and auto-config enabled
+        if (config.wifiSSID.isEmpty() && config.wifiAutoConfig) {
+            String apSSID = config.wifiAPSSID;
             if (apSSID.isEmpty()) {
                 uint64_t chipid = ESP.getEfuseMac();
                 apSSID = config.deviceName + "-" + String((uint32_t)(chipid >> 32), HEX);
@@ -551,6 +515,39 @@ public:
             setState(SystemState::ERROR);
             return false;
         }
+        
+        // ====================================================================
+        // 6.1. Load WiFi credentials from Storage (if credentials not in config)
+        // ====================================================================
+        #if __has_include(<DomoticsCore/Storage.h>)
+        if (config.enableStorage && config.wifiSSID.isEmpty()) {
+            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+            if (storageComp && wifi) {
+                String savedSSID = storageComp->getString("wifi_ssid", "");
+                String savedPassword = storageComp->getString("wifi_password", "");
+                
+                if (!savedSSID.isEmpty()) {
+                    DLOG_I(LOG_SYSTEM, "Loading WiFi credentials from Storage: %s", savedSSID.c_str());
+                    wifi->setCredentials(savedSSID, savedPassword);
+                    
+                    // Check and enable AP if configured
+                    bool apEnabled = storageComp->getBool("wifi_ap_enabled", false);
+                    if (apEnabled) {
+                        String apSSID = storageComp->getString("wifi_ap_ssid", "");
+                        if (apSSID.isEmpty()) {
+                            uint64_t chipid = ESP.getEfuseMac();
+                            apSSID = config.deviceName + "-" + String((uint32_t)(chipid >> 32), HEX);
+                        }
+                        String apPassword = storageComp->getString("wifi_ap_password", "");
+                        wifi->enableAP(apSSID, apPassword);
+                        DLOG_I(LOG_SYSTEM, "✓ WiFi AP mode enabled from Storage: %s", apSSID.c_str());
+                    }
+                } else {
+                    DLOG_I(LOG_SYSTEM, "No WiFi credentials in Storage - using AP mode");
+                }
+            }
+        }
+        #endif
         
         // ====================================================================
         // 6.5. Add HomeAssistant (requires MQTT component reference)

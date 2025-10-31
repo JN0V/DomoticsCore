@@ -56,14 +56,24 @@ private:
 public:
     /**
      * Constructor
-     * @param ssid Wifi network name
+     * @param ssid Wifi network name (empty = configure later)
      * @param password Wifi password
      */
-    WifiComponent(const String& ssid, const String& password) 
+    WifiComponent(const String& ssid = "", const String& password = "") 
         : ssid(ssid), password(password), 
           reconnectTimer(5000), statusTimer(30000), connectionTimer(100),
           shouldConnect(true), isConnecting(false), connectionStartTime(0),
           wifiEnabled(true), apEnabled(false) {
+    }
+    
+    /**
+     * Set WiFi credentials (call before begin() or in afterAllComponentsReady())
+     * @param newSsid Network SSID
+     * @param newPassword Network password
+     */
+    void setCredentials(const String& newSsid, const String& newPassword = "") {
+        ssid = newSsid;
+        password = newPassword;
     }
     
     ComponentStatus begin() override {
@@ -90,9 +100,27 @@ public:
         config.defineParameter(ConfigParam("auto_reconnect", ConfigType::Boolean, false, "true",
                                          "Enable automatic reconnection"));
         
+        // Skip connection if credentials not set yet (will connect in afterAllComponentsReady)
+        if (ssid.isEmpty()) {
+            DLOG_I(LOG_WIFI, "No credentials configured yet - waiting for setCredentials()");
+            setStatus(ComponentStatus::Success);
+            return ComponentStatus::Success;
+        }
+        
         ComponentStatus status = connectToWifi();
         setStatus(status);
         return status;
+    }
+    
+    /**
+     * Called after all components ready - connect to WiFi if credentials were set late
+     */
+    void afterAllComponentsReady() override {
+        // If credentials were set via setCredentials() but not connected yet
+        if (!ssid.isEmpty() && !isSTAConnected() && wifiEnabled) {
+            DLOG_I(LOG_WIFI, "Connecting to WiFi with late-configured credentials...");
+            connectToWifi();
+        }
     }
     
     void loop() override {
