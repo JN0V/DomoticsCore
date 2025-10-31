@@ -148,7 +148,7 @@ public:
     
     String getName() const override { return "MQTT"; }
     String getVersion() const override { return "1.0.0"; }
-    std::vector<String> getDependencies() const override { return {}; }
+    std::vector<Dependency> getDependencies() const override { return {}; }
     
     ComponentStatus begin() override;
     void loop() override;
