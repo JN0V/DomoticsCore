@@ -1,8 +1,12 @@
 # DomoticsCore - Future Enhancements Roadmap
 
-This file tracks potential future enhancements for DomoticsCore. All high and medium priority items from v1.0.1 have been completed.
+This file tracks potential future enhancements for DomoticsCore.
 
-## Low Priority Enhancements (Not Scheduled)
+**Current Version:** v1.1.0
+
+---
+
+## Potential Future Enhancements
 
 ### Component Lifecycle Enhancement
 **Priority:** LOW  
@@ -125,13 +129,12 @@ auto* storage = new StorageComponent(config);
 
 ---
 
-## Completed in v1.0.1
+## Completed Features
 
-✅ **Core Access in IComponent** (HIGH Priority)  
-✅ **Storage uint64_t Support** (MEDIUM Priority)  
-✅ **Custom Components Documentation** (HIGH Priority)
-
-See CHANGELOG.md for details.
+See [CHANGELOG.md](CHANGELOG.md) for details on completed features:
+- v1.1.0: Lifecycle Callback (`afterAllComponentsReady()`) + Optional Dependencies
+- v1.0.2: Lazy Core Injection
+- v1.0.1: Core Access in IComponent, Storage uint64_t Support
 
 ---
 
@@ -143,3 +146,48 @@ If you have suggestions for future enhancements, please:
 3. Consider priority and backward compatibility
 
 **Note:** This roadmap focuses on enhancements that maintain backward compatibility within the 1.x series.
+
+---
+
+## 📚 Technical Notes
+
+### Why Early-Init is Necessary in System
+
+**Background:** System::begin() uses "early initialization" for LED and Storage components.
+
+**Reasons:**
+
+1. **LED Component** - Must be initialized BEFORE other components to show boot errors visually
+   ```cpp
+   // LED initialized early so it can show errors during boot sequence
+   if (led->begin() == ComponentStatus::Success) {
+       led->setActive(true);  // Skip double-init in core.begin()
+   }
+   ```
+
+2. **Storage Component** - Must load WiFi credentials BEFORE creating WifiComponent
+   ```cpp
+   // Storage initialized early to load credentials
+   if (storage->begin() == ComponentStatus::Success) {
+       storage->setActive(true);
+       // Load WiFi credentials from storage
+       config.wifiSSID = storage->getString("wifi_ssid", "");
+       config.wifiPassword = storage->getString("wifi_password", "");
+   }
+   // NOW create WifiComponent with loaded credentials
+   auto wifi = new WifiComponent(config.wifiSSID, config.wifiPassword);
+   ```
+
+**Why This Works:**
+- ComponentRegistry detects already-initialized components (line 106-108)
+- Skips `begin()` call if component already active
+- Dependency resolution works correctly (early-init components are in registry)
+
+**Future Enhancement:**
+Could eliminate early-init if WifiComponent is refactored to:
+- Accept empty credentials in constructor
+- Add `setCredentials()` method
+- Configure credentials in `afterAllComponentsReady()`
+
+But current pattern is production-proven and works reliably.
+
