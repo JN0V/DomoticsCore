@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "ESP32 domotics framework with WiFi, MQTT, web interface, Home Assistant integration, and persistent storage",
   "keywords": ["esp32", "domotics", "iot", "mqtt", "home-assistant", "wifi"],
   "repository": {

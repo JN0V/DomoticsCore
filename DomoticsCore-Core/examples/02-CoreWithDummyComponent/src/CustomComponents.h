@@ -119,8 +119,13 @@ public:
         return "1.0.0-test";
     }
     
-    std::vector<String> getDependencies() const override {
-        return dependencies;
+    std::vector<Dependency> getDependencies() const override {
+        // Convert String vector to Dependency vector (implicit conversion per element)
+        std::vector<Dependency> deps;
+        for (const auto& dep : dependencies) {
+            deps.push_back(dep);  // Implicit conversion String -> Dependency
+        }
+        return deps;
     }
     
     // Test-specific methods

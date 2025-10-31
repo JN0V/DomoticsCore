@@ -1,0 +1,10 @@
+# PlatformIO build artifacts
+.pio/
+.vscode/
+*.bin
+*.elf
+*.map
+
+# IDE
+.idea/
+*.code-workspace
