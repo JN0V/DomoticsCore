@@ -5,6 +5,78 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2025-10-31
+
+### 🎯 Eliminated Early-Init Requirement
+
+**Major Improvement:** Refactored WifiComponent and System to eliminate Storage early-init pattern.
+
+#### WifiComponent Enhancements
+
+**New Features:**
+```cpp
+// Constructor now accepts empty credentials
+WifiComponent wifi;  // Create without credentials
+wifi.setCredentials("MySSID", "password");  // Configure later
+
+// Automatic connection in afterAllComponentsReady()
+void afterAllComponentsReady() override {
+    // Connects to WiFi if credentials were set via setCredentials()
+}
+```
+
+**Changes:**
+- Constructor parameter `ssid` is now optional (defaults to empty)
+- Added `setCredentials(ssid, password)` method for late configuration
+- `begin()` skips connection if SSID is empty (waits for setCredentials)
+- `afterAllComponentsReady()` connects if credentials set after begin()
+
+#### System Improvements
+
+**Before (v1.1.0):** Storage early-init required
+```cpp
+// Storage initialized BEFORE core.begin() to load WiFi credentials
+storage->begin();  // Early-init
+storage->setActive(true);
+config.wifiSSID = storage->getString("wifi_ssid", "");
+auto wifi = new WifiComponent(config.wifiSSID, config.wifiPassword);
+core.begin();
+```
+
+**After (v1.1.1):** Clean component initialization
+```cpp
+// All components registered normally
+core.addComponent(std::make_unique<StorageComponent>());
+core.addComponent(std::make_unique<WifiComponent>());  // Empty credentials OK
+core.begin();  // All components initialized in dependency order
+
+// Load credentials AFTER core.begin() (Storage is ready)
+auto* storage = core.getComponent<StorageComponent>("Storage");
+auto* wifi = core.getComponent<WifiComponent>("Wifi");
+wifi->setCredentials(storage->getString("wifi_ssid", ""), 
+                     storage->getString("wifi_password", ""));
+```
+
+**Result:**
+- ✅ Storage early-init eliminated
+- ✅ Only LED early-init remains (justified for boot error visualization)
+- ✅ Cleaner code, easier to understand
+- ✅ Better separation of concerns
+
+#### Documentation Updates
+
+- Roadmap: Marked early-init elimination as implemented
+- Technical notes: Updated to reflect new pattern
+- Examples: All compile successfully with new pattern
+
+#### Testing
+
+- ✅ Minimal example: 860KB flash, 45KB RAM
+- ✅ Backward compatible: Existing code with credentials in constructor still works
+- ✅ New pattern validated: Empty credentials + setCredentials() works
+
+---
+
 ## [1.1.0] - 2025-10-31
 
 ### ✨ New Features

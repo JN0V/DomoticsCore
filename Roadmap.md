@@ -183,11 +183,12 @@ If you have suggestions for future enhancements, please:
 - Skips `begin()` call if component already active
 - Dependency resolution works correctly (early-init components are in registry)
 
-**Future Enhancement:**
-Could eliminate early-init if WifiComponent is refactored to:
-- Accept empty credentials in constructor
-- Add `setCredentials()` method
-- Configure credentials in `afterAllComponentsReady()`
+**✅ ELIMINATED Since v1.1.1:**
+WifiComponent refactored to eliminate Storage early-init:
+- Constructor accepts empty credentials (defaults)
+- Added `setCredentials()` method for late configuration
+- Added `afterAllComponentsReady()` to connect if credentials set late
+- System loads credentials from Storage AFTER `core.begin()`
 
-But current pattern is production-proven and works reliably.
+**Result:** Only LED early-init remains (justified for boot error visualization). Storage early-init eliminated!
 

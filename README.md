@@ -1,12 +1,12 @@
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.1.0)
+[![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.1.1)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 1.1.0 Released!** Optional dependencies + lifecycle callback `afterAllComponentsReady()` for cleaner component initialization! See [CHANGELOG.md](CHANGELOG.md) for details.
+> **🎉 Version 1.1.1 Released!** Eliminated Storage early-init requirement - cleaner component initialization pattern! See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## ✨ What Makes DomoticsCore Different
 
