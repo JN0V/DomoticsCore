@@ -528,7 +528,7 @@ public:
                 
                 if (!savedSSID.isEmpty()) {
                     DLOG_I(LOG_SYSTEM, "Loading WiFi credentials from Storage: %s", savedSSID.c_str());
-                    wifi->setCredentials(savedSSID, savedPassword);
+                    wifi->setCredentials(savedSSID, savedPassword, true);
                     
                     // Check and enable AP if configured
                     bool apEnabled = storageComp->getBool("wifi_ap_enabled", false);

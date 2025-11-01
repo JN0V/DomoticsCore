@@ -192,3 +192,165 @@ WifiComponent refactored to eliminate Storage early-init:
 
 **Result:** Only LED early-init remains (justified for boot error visualization). Storage early-init eliminated!
 
+
+---
+
+## 🐛 v1.1.1 Bug Report: setCredentials() Ambiguity
+
+**Reporter:** WaterMeter Project  
+**Date:** October 31, 2025  
+**Severity:** CRITICAL - Prevents compilation
+
+### Bug: Overloaded setCredentials() Ambiguity
+
+**File:** `DomoticsCore-Wifi/include/DomoticsCore/Wifi.h`
+
+**Problem:**
+```cpp
+// Line ~74
+void setCredentials(const String& newSsid, const String& newPassword = "") { ... }
+
+// Line ~290
+void setCredentials(const String& newSsid, const String& newPassword, bool reconnectNow = true) { ... }
+
+// In System.h:531
+wifi->setCredentials(savedSSID, savedPassword);  // ❌ Ambiguous\!
+```
+
+**Error:**
+```
+error: call of overloaded 'setCredentials(String&, String&)' is ambiguous
+```
+
+**Root Cause:**
+Both methods match the 2-argument call. Compiler can't decide.
+
+**Quick Fix:**
+Remove the second overload's default parameter OR rename one method:
+
+**Option A (Recommended):**
+```cpp
+// Keep first
+void setCredentials(const String& newSsid, const String& newPassword = "")
+
+// Remove second OR change to:
+void setCredentialsAndReconnect(const String& newSsid, const String& newPassword)
+```
+
+**Option B:**
+```cpp
+// Make reconnect non-optional in second
+void setCredentials(const String& newSsid, const String& newPassword)  // No defaults
+void setCredentials(const String& newSsid, const String& newPassword, bool reconnectNow)  // No default
+```
+
+**Impact:**
+- ❌ v1.1.1 does not compile
+- ❌ Blocks all users from upgrading
+
+**Status:** Awaiting v1.1.2
+
+
+---
+
+## 🐛 v1.1.1 Bug Report #2: Storage Still Not in Dependency Graph
+
+**Reporter:** WaterMeter Project  
+**Date:** October 31, 2025  
+**Severity:** HIGH - Optional dependencies don't work
+
+### Bug: Storage Initialized AFTER Components That Depend On It
+
+**Problem:**
+Storage is no longer "early-init" BUT it's still initialized LAST, after all other components.
+
+**Evidence from logs:**
+```
+[583]  resolveDependencies(): Component 'WaterMeter' optional dependency 'Storage' not available (OK)
+[1156] Initializing component: WaterMeter
+[1292] Component initialized: WaterMeter
+[1357] Initializing component: Storage  ← Storage AFTER WaterMeter\!
+[1385] Component initialized: Storage
+[1394] All components initialized
+[1425] afterAllComponentsReady(): Storage not available  ← Called but Storage exists\!
+```
+
+**Root Cause:**
+When `resolveDependencies()` runs, Storage is NOT in the dependency graph yet, so:
+1. WaterMeter declares `{"Storage", false}` as optional dependency
+2. Storage not found in componentMap → marked "not available (OK)"
+3. Topological sort puts WaterMeter before Storage
+4. WaterMeter.begin() called → WaterMeter.afterAllComponentsReady() called
+5. Storage.begin() called AFTER
+6. Storage exists but WaterMeter can't access it
+
+**Expected Behavior:**
+Components with optional dependency on Storage should initialize AFTER Storage.
+
+**Current Workaround:**
+None - optional dependencies on Storage don't work at all.
+
+**Proper Fix:**
+Storage must be added to componentMap BEFORE resolveDependencies() runs, or:
+- Use a two-phase init: built-ins first, then custom components
+- Or: call afterAllComponentsReady() in a second pass after ALL begin()
+
+**Impact:**
+- ❌ Optional dependencies feature completely broken for Storage
+- ❌ Must use defensive checks in begin() (old v1.0.2 pattern)
+- ❌ afterAllComponentsReady() callback useless for Storage access
+
+**Logs show:** `getComponent<StorageComponent>("Storage")` returns nullptr even though Storage is initialized.
+
+**Status:** Critical - makes v1.1.1 features non-functional
+
+
+---
+
+## 🐛 v1.1.1 Bug Report #3: Storage Component Has Empty Name
+
+**Reporter:** WaterMeter Project  
+**Date:** October 31, 2025  
+**Severity:** HIGH - Breaks dependency system
+
+### Bug: Storage Component getName() Returns Empty String
+
+**Evidence from logs:**
+```
+[185] Registered component:  v1.0.0  ← Empty name\!
+[193] Storage component registered
+```
+
+**Problem:**
+- Storage component registered with empty name: `""`
+- Cannot declare Storage in `getDependencies()` - framework can't find it
+- Must use `getComponent<StorageComponent>()` without name parameter
+
+**Code Impact:**
+```cpp
+// ❌ Doesn't work - Storage has empty name
+auto* storage = getCore()->getComponent<StorageComponent>("Storage");  
+
+// ✅ Workaround - get by type only
+auto* storage = getCore()->getComponent<StorageComponent>();
+```
+
+**Expected:**
+```cpp
+// Storage.h should have:
+String getName() const override {
+    return "Storage";
+}
+```
+
+**Impact:**
+- ❌ Cannot declare Storage as dependency (optional or required)
+- ❌ Breaks dependency resolution system
+- ❌ Users must remember to use type-only lookup
+
+**Related to:** Bug #2 (dependency graph issue)
+
+**Fix:** Add proper `getName()` implementation returning `"Storage"` in StorageComponent.
+
+**Status:** Workaround applied in user code
+
