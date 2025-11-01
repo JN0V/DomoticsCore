@@ -5,6 +5,50 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2025-11-01
+
+### ✨ New Features
+
+**Storage Namespace Configuration** - Project isolation for NVS storage
+
+#### Feature
+Configurable storage namespace for better project isolation on shared devices.
+
+**System-level:**
+```cpp
+SystemConfig sysConfig = SystemConfig::standard();
+sysConfig.storageNamespace = "watermeter";  // Custom namespace instead of "domotics"
+System system(sysConfig);
+```
+
+**Component-level:**
+```cpp
+StorageConfig config;
+config.namespace_name = "myproject";
+auto storage = new StorageComponent(config);
+```
+
+#### Benefits
+- ✅ **Isolation:** Multiple projects on same device without key conflicts
+- ✅ **Clarity:** Each project has its own namespace
+- ✅ **Development:** Easier to test multiple firmwares
+- ✅ **Backward compatible:** Defaults to "domotics"
+
+#### Testing
+New unit test: `DomoticsCore-Storage/tests/namespace-isolation/`
+- Tests namespace isolation with two Storage instances
+- Validates same keys store different values in different namespaces
+- Tests all data types (String, Int, Bool, Float, ULong64)
+- Validates clear() per namespace
+- Automated pass/fail with assertion macros
+
+**Test Results:**
+- ✅ All namespace isolation tests pass
+- ✅ FullStack example compiles with namespace config
+- ✅ Backward compatible (defaults to "domotics")
+
+---
+
 ## [1.1.2] - 2025-11-01
 
 ### 🐛 Bug Fixes

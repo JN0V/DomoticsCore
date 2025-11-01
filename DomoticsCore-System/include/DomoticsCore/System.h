@@ -317,9 +317,14 @@ public:
         // ====================================================================
         #if __has_include(<DomoticsCore/Storage.h>)
         if (config.enableStorage) {
-            auto storagePtr = std::make_unique<Components::StorageComponent>();
+            // Configure storage namespace
+            Components::StorageConfig storageConfig;
+            storageConfig.namespace_name = config.storageNamespace;
+            
+            auto storagePtr = std::make_unique<Components::StorageComponent>(storageConfig);
             core.addComponent(std::move(storagePtr));
-            DLOG_I(LOG_SYSTEM, "✓ Storage component registered");
+            DLOG_I(LOG_SYSTEM, "✓ Storage component registered (namespace: %s)", 
+                   config.storageNamespace.c_str());
         }
         #else
         if (config.enableStorage) {
