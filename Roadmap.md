@@ -2,7 +2,7 @@
 
 This file tracks potential future enhancements for DomoticsCore.
 
-**Current Version:** v1.1.2
+**Current Version:** v1.1.3
 
 ---
 
@@ -99,42 +99,15 @@ class MyComponent : public IComponent {
 
 ---
 
-### Storage Namespace Configuration
-**Priority:** VERY LOW  
-**Effort:** Low  
-**Status:** Not planned
-
-**Proposal:** Configurable namespace per component instead of shared "domotics" namespace.
-
-**Current:**
-```cpp
-// All components share "domotics" namespace
-StorageComponent storage;  // Uses "domotics" namespace
-```
-
-**Proposed:**
-```cpp
-StorageConfig config;
-config.namespace_ = "watermeter";  // Per-project namespace
-
-auto* storage = new StorageComponent(config);
-```
-
-**Benefits:**
-- Isolation between projects on same device
-- Avoid key conflicts
-- Easier multi-project development
-
-**Decision:** Shared namespace works fine for current use cases. Can be added if needed without breaking changes.
-
----
-
 ## Completed Features
 
 See [CHANGELOG.md](CHANGELOG.md) for details on completed features:
-- v1.1.0: Lifecycle Callback (`afterAllComponentsReady()`) + Optional Dependencies
-- v1.0.2: Lazy Core Injection
-- v1.0.1: Core Access in IComponent, Storage uint64_t Support
+- **v1.1.3:** Storage Namespace Configuration (project isolation)
+- **v1.1.2:** AP mode bugfix
+- **v1.1.1:** Eliminated Storage early-init requirement
+- **v1.1.0:** Lifecycle Callback (`afterAllComponentsReady()`) + Optional Dependencies
+- **v1.0.2:** Lazy Core Injection
+- **v1.0.1:** Core Access in IComponent, Storage uint64_t Support
 
 ---
 
