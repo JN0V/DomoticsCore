@@ -79,9 +79,6 @@ public:
     ComponentStatus begin() override {
         DLOG_I(LOG_WIFI, "Initializing...");
         
-        WiFi.mode(WIFI_STA);
-        WiFi.setAutoReconnect(false); // We handle reconnection ourselves
-        
         // Initialize component metadata
         metadata.name = "Wifi";
         metadata.version = "1.0.0";
@@ -100,13 +97,26 @@ public:
         config.defineParameter(ConfigParam("auto_reconnect", ConfigType::Boolean, false, "true",
                                          "Enable automatic reconnection"));
         
-        // Skip connection if credentials not set yet (will connect in afterAllComponentsReady)
-        if (ssid.isEmpty()) {
-            DLOG_I(LOG_WIFI, "No credentials configured yet - waiting for setCredentials()");
+        // If AP already enabled (via enableAP before begin), keep it
+        if (ssid.isEmpty() && apEnabled) {
+            DLOG_I(LOG_WIFI, "No STA credentials - AP-only mode");
+            WiFi.setAutoReconnect(false);
             setStatus(ComponentStatus::Success);
             return ComponentStatus::Success;
         }
         
+        // If no credentials and no AP, wait for setCredentials()
+        if (ssid.isEmpty()) {
+            DLOG_I(LOG_WIFI, "No credentials configured yet - waiting for setCredentials()");
+            WiFi.mode(WIFI_STA);
+            WiFi.setAutoReconnect(false);
+            setStatus(ComponentStatus::Success);
+            return ComponentStatus::Success;
+        }
+        
+        // Normal STA connection
+        WiFi.mode(WIFI_STA);
+        WiFi.setAutoReconnect(false);
         ComponentStatus status = connectToWifi();
         setStatus(status);
         return status;
