@@ -5,6 +5,39 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2025-11-01
+
+### 🐛 Bug Fixes
+
+**Fixed:** WifiComponent AP mode broken after v1.1.1 refactoring
+
+#### Problem
+- AP configured and logs showed "AP started: FullStackDevice-ac89 (IP: 192.168.4.1)"
+- But AP not visible/accessible, system showed IP: 0.0.0.0
+- FullStack example affected (any config with AP + empty STA credentials)
+
+#### Root Cause
+In `Wifi.h::begin()`, the code always set `WiFi.mode(WIFI_STA)` at the beginning, overriding the AP mode that was configured earlier via `enableAP()`. When SSID was empty, `begin()` returned early without restoring the mode, leaving WiFi in inconsistent state.
+
+#### Solution
+Added AP mode detection in `begin()`:
+```cpp
+// If AP already enabled, don't override mode
+if (ssid.isEmpty() && apEnabled) {
+    DLOG_I(LOG_WIFI, "No STA credentials - AP-only mode");
+    return ComponentStatus::Success;  // Keep AP mode
+}
+```
+
+**Result:** AP mode now works correctly with empty STA credentials.
+
+#### Testing
+- ✅ FullStack example: AP visible at 192.168.4.1
+- ✅ WebUI accessible at http://192.168.4.1:80
+- ✅ Telnet accessible at 192.168.4.1:23
+
+---
+
 ## [1.1.1] - 2025-10-31
 
 ### 🎯 Eliminated Early-Init Requirement
