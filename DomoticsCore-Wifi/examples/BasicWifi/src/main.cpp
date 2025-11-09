@@ -43,10 +43,6 @@ public:
         metadata.tags = {"wifi", "demo", "network", "connectivity"};
     }
     
-    String getName() const override {
-        return metadata.name;
-    }
-    
     ComponentStatus begin() override {
         DLOG_I(LOG_APP, "[WifiDemo] Initializing Wifi demonstration component...");
         

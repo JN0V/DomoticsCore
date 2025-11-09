@@ -33,10 +33,6 @@ public:
         metadata.tags = {"storage", "demo", "preferences", "settings"};
     }
     
-    String getName() const override {
-        return metadata.name;
-    }
-    
     ComponentStatus begin() override {
         DLOG_I(LOG_APP, "[StorageDemo] Initializing storage demonstration component...");
         
