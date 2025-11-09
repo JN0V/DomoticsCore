@@ -30,10 +30,6 @@ public:
         metadata.tags = {"led", "demo", "effects", "hardware"};
     }
     
-    String getName() const override {
-        return metadata.name;
-    }
-    
     ComponentStatus begin() override {
         DLOG_I(LOG_APP, "[LEDDemo] Initializing LED demonstration component...");
         

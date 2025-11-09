@@ -31,11 +31,11 @@ public:
     // ========== IWebUIProvider Interface ==========
 
     String getWebUIName() const override {
-        return ha ? ha->getName() : String("HomeAssistant");
+        return ha ? ha->getMetadata().name : String("HomeAssistant");
     }
 
     String getWebUIVersion() const override {
-        return ha ? ha->getVersion() : String("0.1.0");
+        return ha ? ha->getMetadata().version : String("0.1.0");
     }
 
     std::vector<WebUIContext> getWebUIContexts() override {

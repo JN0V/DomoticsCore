@@ -16,7 +16,6 @@ private:
     SystemInfoComponent sys;
     Utils::NonBlockingDelay statusTimer{5000};
 public:
-    String getName() const override { return "SystemInfoDemo"; }
     ComponentStatus begin() override {
         sys.begin();
         return ComponentStatus::Success;
