@@ -92,9 +92,6 @@ public:
         }
     }
     
-    String getName() const override {
-        return metadata.name;
-    }
     
     ComponentStatus begin() override {
         if (!config.enabled) {

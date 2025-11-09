@@ -111,13 +111,6 @@ public:
         return ComponentStatus::Success;
     }
     
-    String getName() const override {
-        return componentName;
-    }
-    
-    String getVersion() const override {
-        return "1.0.0-test";
-    }
     
     std::vector<Dependency> getDependencies() const override {
         // Convert String vector to Dependency vector (implicit conversion per element)
@@ -228,10 +221,6 @@ public:
         blinkEnabled = false;
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
-    }
-    
-    String getName() const override {
-        return "LEDBlinker";
     }
     
     void setBlinkInterval(unsigned long intervalMs) {

@@ -19,7 +19,10 @@ static constexpr const char* T_BP = "test.backpressure";
 
 class EventBusTestComponent : public IComponent {
 public:
-  String getName() const override { return "EventBusTests"; }
+  EventBusTestComponent() {
+    metadata.name = "EventBusTests";
+    metadata.version = "1.0.0";
+  }
 
   ComponentStatus begin() override {
     Serial.begin(115200);

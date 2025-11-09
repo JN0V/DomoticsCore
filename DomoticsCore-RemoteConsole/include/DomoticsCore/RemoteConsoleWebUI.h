@@ -22,7 +22,7 @@ public:
     explicit RemoteConsoleWebUI(RemoteConsoleComponent* c) : console(c) {}
     
     String getWebUIName() const override { 
-        return console ? console->getName() : String("RemoteConsole"); 
+        return console ? console->metadata.name : String("RemoteConsole"); 
     }
     
     String getWebUIVersion() const override { return String("1.0.0"); }

@@ -99,7 +99,13 @@ public:
      * @brief Construct a WebUI component with the provided configuration.
      */
     WebUIComponent(const WebUIConfig& cfg = WebUIConfig()) 
-        : config(cfg) {}
+        : config(cfg) {
+        // Initialize component metadata immediately for dependency resolution
+        metadata.name = "WebUI";
+        metadata.version = "1.0.0";
+        metadata.author = "DomoticsCore";
+        metadata.description = "Web dashboard and API component";
+    }
 
     /**
      * @brief Release the AsyncWebServer and WebSocket instances.
@@ -167,14 +173,6 @@ public:
             server->end();
         }
         return ComponentStatus::Success;
-    }
-
-    String getName() const override {
-        return "WebUI";
-    }
-
-    String getVersion() const override {
-        return "2.0.0";
     }
 
     // Provider management

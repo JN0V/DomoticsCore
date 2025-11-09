@@ -47,6 +47,11 @@ public:
      */
     HomeAssistantComponent(MQTTComponent* mqtt, const HAConfig& config = HAConfig())
         : mqtt(mqtt), config(config) {
+        // Initialize component metadata immediately for dependency resolution
+        metadata.name = "HomeAssistant";
+        metadata.version = "1.0.0";
+        metadata.author = "DomoticsCore";
+        metadata.description = "Home Assistant MQTT Discovery integration";
         if (this->config.availabilityTopic.isEmpty()) {
             this->config.availabilityTopic = this->config.discoveryPrefix + "/" + 
                                             this->config.nodeId + "/availability";
@@ -56,9 +61,6 @@ public:
     ~HomeAssistantComponent() override = default;
     
     // IComponent interface
-    String getName() const override { return "HomeAssistant"; }
-    String getVersion() const override { return "1.0.0"; }
-    
     ComponentStatus begin() override {
         if (!mqtt) {
             DLOG_E(LOG_HA, "MQTT component not provided");

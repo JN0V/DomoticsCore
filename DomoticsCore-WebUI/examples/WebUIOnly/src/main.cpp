@@ -31,7 +31,6 @@ public:
         metadata.version = "1.0.0";
     }
     
-    String getName() const override { return metadata.name; }
     const char* getTypeKey() const override { return "demo_led"; }
     
     ComponentStatus begin() override {

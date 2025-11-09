@@ -51,7 +51,7 @@ public:
             return false;
         }
         
-        String name = component->getName();
+        String name = component->metadata.name;
         if (componentMap.find(name) != componentMap.end()) {
             DLOG_E(LOG_CORE, "Component '%s' already registered", name.c_str());
             return false;
@@ -66,7 +66,7 @@ public:
         components.push_back(std::move(component));
         
         DLOG_I(LOG_CORE, "Registered component: %s v%s", 
-               name.c_str(), ptr->getVersion().c_str());
+               name.c_str(), ptr->metadata.version.c_str());
         // Notify listeners about addition
         for (auto* l : listeners) {
             if (l) l->onComponentAdded(ptr);
@@ -95,7 +95,7 @@ public:
             auto validation = component->validateConfig();
             if (!validation.isValid()) {
                 DLOG_E(LOG_CORE, "Component %s config validation failed: %s", 
-                       component->getName().c_str(), validation.toString().c_str());
+                       component->metadata.name.c_str(), validation.toString().c_str());
                 return ComponentStatus::ConfigError;
             }
         }
@@ -104,11 +104,11 @@ public:
         for (auto* component : initializationOrder) {
             // Skip if already initialized (e.g., early init by System)
             if (component->getLastStatus() == ComponentStatus::Success && component->isActive()) {
-                DLOG_I(LOG_CORE, "Component already initialized, skipping: %s", component->getName().c_str());
+                DLOG_I(LOG_CORE, "Component already initialized, skipping: %s", component->metadata.name.c_str());
                 continue;
             }
             
-            DLOG_I(LOG_CORE, "Initializing component: %s", component->getName().c_str());
+            DLOG_I(LOG_CORE, "Initializing component: %s", component->metadata.name.c_str());
             
             // Provide framework services (EventBus, Core) to the component before begin()
             if (component) {
@@ -119,12 +119,12 @@ public:
             ComponentStatus status = component->begin();
             if (status != ComponentStatus::Success) {
                 DLOG_E(LOG_CORE, "Failed to initialize component %s: %s", 
-                       component->getName().c_str(), statusToString(status));
+                       component->metadata.name.c_str(), statusToString(status));
                 return status;
             }
             
             component->setActive(true);
-            DLOG_I(LOG_CORE, "Component initialized: %s", component->getName().c_str());
+            DLOG_I(LOG_CORE, "Component initialized: %s", component->metadata.name.c_str());
         }
         
         initialized = true;
@@ -169,11 +169,11 @@ public:
         for (auto it = initializationOrder.rbegin(); it != initializationOrder.rend(); ++it) {
             auto* component = *it;
             if (component->isActive()) {
-                DLOG_I(LOG_CORE, "Shutting down component: %s", component->getName().c_str());
+                DLOG_I(LOG_CORE, "Shutting down component: %s", component->metadata.name.c_str());
                 ComponentStatus status = component->shutdown();
                 if (status != ComponentStatus::Success) {
                     DLOG_W(LOG_CORE, "Component %s shutdown warning: %s", 
-                           component->getName().c_str(), statusToString(status));
+                           component->metadata.name.c_str(), statusToString(status));
                 }
                 component->setActive(false);
             }
@@ -299,14 +299,14 @@ private:
         
         // Initialize in-degree count
         for (const auto& comp : components) {
-            String name = comp->getName();
+            String name = comp->metadata.name;
             inDegree[name] = 0;
             dependents[name] = {};
         }
         
         // Build dependency graph
         for (const auto& comp : components) {
-            String name = comp->getName();
+            String name = comp->metadata.name;
             auto deps = comp->getDependencies();
             
             for (const auto& dep : deps) {

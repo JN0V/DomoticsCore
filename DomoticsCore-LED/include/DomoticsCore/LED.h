@@ -97,9 +97,6 @@ public:
     }
     
     // Required IComponent methods
-    String getName() const override {
-        return metadata.name;
-    }
     
     // Component lifecycle
     /**

@@ -64,6 +64,11 @@ public:
           reconnectTimer(5000), statusTimer(30000), connectionTimer(100),
           shouldConnect(true), isConnecting(false), connectionStartTime(0),
           wifiEnabled(true), apEnabled(false) {
+        // Initialize component metadata immediately for dependency resolution
+        metadata.name = "Wifi";
+        metadata.version = "1.0.0";
+        metadata.author = "DomoticsCore";
+        metadata.description = "Wifi connectivity management component";
     }
     
     /**
@@ -78,12 +83,6 @@ public:
     
     ComponentStatus begin() override {
         DLOG_I(LOG_WIFI, "Initializing...");
-        
-        // Initialize component metadata
-        metadata.name = "Wifi";
-        metadata.version = "1.0.0";
-        metadata.author = "DomoticsCore";
-        metadata.description = "Wifi connectivity management component";
         
         // Define configuration parameters
         config.defineParameter(ConfigParam("ssid", ConfigType::String, true, ssid, "Wifi network name")
@@ -209,13 +208,6 @@ public:
         return ComponentStatus::Success;
     }
     
-    String getName() const override {
-        return "Wifi";
-    }
-    
-    String getVersion() const override {
-        return "1.0.0";
-    }
     
     // Wifi-specific methods
     

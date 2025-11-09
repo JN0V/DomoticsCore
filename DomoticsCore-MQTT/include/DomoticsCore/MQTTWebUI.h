@@ -42,11 +42,11 @@ public:
     // ========== IWebUIProvider Interface ==========
     
     String getWebUIName() const override { 
-        return mqtt ? mqtt->getName() : String("MQTT"); 
+        return mqtt ? mqtt->metadata.name : String("MQTT"); 
     }
     
     String getWebUIVersion() const override { 
-        return mqtt ? mqtt->getVersion() : String("0.1.0"); 
+        return mqtt ? mqtt->metadata.version : String("0.1.0"); 
     }
     
     std::vector<WebUIContext> getWebUIContexts() override {

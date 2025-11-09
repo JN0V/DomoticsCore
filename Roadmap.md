@@ -147,3 +147,84 @@ wifi->setCredentials(storage->getString("ssid", ""), storage->getString("passwor
 
 See [CHANGELOG.md](CHANGELOG.md) for complete v1.1.x evolution history.
 
+
+---
+
+## 🐛 Storage Dependency Declaration Issue (v1.1.3)
+
+**Reporter:** WaterMeter Project  
+**Date:** November 7, 2025  
+**Severity:** MEDIUM - Workaround available but pattern broken
+
+### Bug: Storage Cannot Be Declared in getDependencies()
+
+**Problem:**
+Components cannot declare Storage as a dependency because Storage's name is not set until `begin()` is called, which happens AFTER dependency resolution.
+
+**Root Cause:**
+```cpp
+// DomoticsCore-Storage/include/DomoticsCore/Storage.h
+
+StorageComponent(const StorageConfig& config = StorageConfig()) {
+    // ❌ metadata.name is NOT set here
+}
+
+ComponentStatus begin() override {
+    // ⚠️ Name set too late - after resolveDependencies()
+    metadata.name = "Storage";
+}
+```
+
+**Sequence:**
+1. System.h:326 - Storage added to registry (name = "")
+2. ComponentRegistry::resolveDependencies() - Builds map by getName()
+   - Storage->getName() returns "" (empty)
+   - Storage NOT in map with key "Storage"
+3. ComponentRegistry::initializeAll() - Calls Storage::begin()
+   - metadata.name = "Storage" set NOW
+   - Too late - dependencies already resolved
+
+**Impact:**
+```cpp
+// ❌ Does NOT work
+std::vector<Dependency> getDependencies() const override {
+    return {
+        {"Storage", false}  // Not found - name empty during resolution
+    };
+}
+
+// ✅ Workaround required
+auto* storage = getCore()->getComponent<Components::StorageComponent>("");  // Empty name
+```
+
+**Proposed Fix:**
+```cpp
+StorageComponent(const StorageConfig& config = StorageConfig()) 
+    : storageConfig(config), ... {
+    // ✅ Initialize name immediately
+    metadata.name = "Storage";
+    metadata.version = "1.0.1";
+    metadata.author = "DomoticsCore";
+    metadata.description = "Key-value storage component";
+    metadata.category = "Storage";
+}
+
+ComponentStatus begin() override {
+    // Name already set, no change needed here
+    DLOG_I(LOG_STORAGE, "Initializing...");
+    // ...
+}
+```
+
+**Benefits:**
+- ✅ Storage findable in dependency resolution
+- ✅ Can be declared in getDependencies()
+- ✅ Correct init order via topological sort
+- ✅ No workaround needed
+- ✅ Consistent with other components (LED, WiFi, etc.)
+
+**Current Workaround:**
+See WaterMeter project `docs/STORAGE_DEPENDENCY_ISSUE.md` for detailed workaround pattern.
+
+**Status:** Open - Awaiting fix in v1.1.4+
+

@@ -94,7 +94,7 @@ public:
         onAPStateChanged = callback;
     }
 
-    String getWebUIName() const override { return wifi ? wifi->getName() : String("Wifi"); }
+    String getWebUIName() const override { return wifi ? wifi->metadata.name : String("Wifi"); }
     String getWebUIVersion() const override { return String("1.0.0"); }
 
     std::vector<WebUIContext> getWebUIContexts() override {

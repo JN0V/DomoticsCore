@@ -136,8 +136,6 @@ public:
     }
 
     ComponentStatus shutdown() override { return ComponentStatus::Success; }
-    String getName() const override { return metadata.name; }
-    String getVersion() const override { return metadata.version; }
     const char* getTypeKey() const override { return "system_info"; }
 
     // Public accessors for metrics (for WebUI extensions)

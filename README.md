@@ -1,12 +1,12 @@
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-1.1.3-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.1.3)
+[![Version](https://img.shields.io/badge/version-1.1.4-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.1.4)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 1.1.3 Released!** Configurable storage namespace for project isolation - run multiple projects on same device! See [CHANGELOG.md](CHANGELOG.md) for details.
+> **🎉 Version 1.1.4 Released!** Unified component metadata system - cleaner architecture with proper dependency resolution! See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## ✨ What Makes DomoticsCore Different
 

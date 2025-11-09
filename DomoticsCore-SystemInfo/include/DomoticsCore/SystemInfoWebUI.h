@@ -68,8 +68,8 @@ public:
         : sys(component) {}
 
     // IWebUIProvider
-    String getWebUIName() const override { return sys ? sys->getName() : String("System Info"); }
-    String getWebUIVersion() const override { return sys ? sys->getVersion() : String("1.0.0"); }
+    String getWebUIName() const override { return sys ? sys->metadata.name : String("System Info"); }
+    String getWebUIVersion() const override { return sys ? sys->metadata.version : String("1.0.0"); }
 
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;

@@ -5,6 +5,63 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2025-11-07
+
+### 🔧 Architecture Improvements
+
+**Unified Component Metadata System** - Simplified component identification
+
+#### Changes
+Refactored component metadata initialization for consistency and proper dependency resolution.
+
+**Before (inconsistent):**
+- Some components: `getName()` override returning hardcoded string
+- Other components: `metadata.name` in `begin()` (too late for dependency resolution)
+- Mixed approach created confusion and potential bugs
+
+**After (unified):**
+```cpp
+// All components now initialize metadata in constructor
+ComponentName() {
+    metadata.name = "ComponentName";
+    metadata.version = "1.0.0";
+    metadata.author = "DomoticsCore";
+    metadata.description = "Component description";
+}
+```
+
+#### Benefits
+- ✅ **Consistency:** All components use same pattern
+- ✅ **Early availability:** Metadata ready before dependency resolution
+- ✅ **Cleaner API:** Removed redundant `getName()` and `getVersion()` overrides
+- ✅ **Direct access:** `component->metadata.name` instead of `component->getName()`
+- ✅ **Simpler:** One source of truth (metadata struct)
+
+#### Components Updated
+All components now follow unified pattern:
+- LED, Storage, Wifi, NTP, WebUI, OTA, MQTT, HomeAssistant
+- SystemInfo, RemoteConsole, System
+
+#### Technical Details
+- Made `metadata` and `config` public in `IComponent` for external access
+- Removed `getName()` and `getVersion()` virtual methods
+- All metadata initialization moved to constructors
+- Updated all WebUI providers to use `metadata.name` and `metadata.version`
+- Added `eventBus()` helper method to `IComponent` for direct EventBus API access
+
+**Result:** Cleaner, more maintainable codebase with proper early metadata initialization.
+
+#### Examples Tested
+All examples compile and work correctly:
+- ✅ FullStack (1.38MB flash, 88.2%)
+- ✅ WebUIOnly (1.04MB flash, 79.6%)
+- ✅ CoreWithDummyComponent (320KB flash, 24.4%)
+- ✅ 03-EventBusBasics (313KB flash, 23.9%)
+- ✅ 04-EventBusCoordinators (315KB flash, 24.0%)
+- ✅ 05-EventBusTests (315KB flash, 24.1%)
+
+---
+
 ## [1.1.3] - 2025-11-01
 
 ### ✨ New Features
