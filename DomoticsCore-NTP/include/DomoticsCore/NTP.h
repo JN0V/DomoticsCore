@@ -106,6 +106,11 @@ public:
         : config(cfg), synced(false), syncInProgress(false), 
           bootTime(millis()), syncCallback(nullptr),
           syncTimeoutTimer(cfg.timeoutMs) {
+        // Initialize component metadata immediately for dependency resolution
+        metadata.name = "NTP";
+        metadata.version = "1.0.0";
+        metadata.author = "DomoticsCore";
+        metadata.description = "Network Time Protocol synchronization component";
         syncTimeoutTimer.disable();  // Start disabled
         DLOG_D(LOG_NTP, "Component constructed");
     }
@@ -120,9 +125,6 @@ public:
     }
 
     // ========== IComponent Interface ==========
-
-    String getName() const override { return "NTP"; }
-    String getVersion() const override { return "1.0.0"; }
 
     ComponentStatus begin() override {
         DLOG_I(LOG_NTP, "Starting component...");

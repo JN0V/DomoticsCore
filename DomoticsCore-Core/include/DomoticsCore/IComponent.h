@@ -37,11 +37,14 @@ struct Dependency {
  * Provides lifecycle management, dependency resolution, and status reporting
  */
 class IComponent {
+public:
+    // Public metadata for dependency resolution and identification
+    ComponentMetadata metadata;
+    ComponentConfig config;
+    
 protected:
     bool active = false;
     ComponentStatus lastStatus = ComponentStatus::Success;
-    ComponentConfig config;
-    ComponentMetadata metadata;
     // Set by ComponentRegistry before begin(); framework services
     DomoticsCore::Utils::EventBus* __dc_eventBus = nullptr; // preferred injection
     mutable DomoticsCore::Core* __dc_core = nullptr; // automatic Core injection (lazy)
@@ -70,11 +73,6 @@ public:
      */
     virtual ComponentStatus shutdown() = 0;
     
-    /**
-     * Get component name for identification and logging
-     * @return Unique component name
-     */
-    virtual String getName() const = 0;
     
     /**
      * Get list of component dependencies with optional/required flags
@@ -150,13 +148,6 @@ public:
         return config.validate();
     }
     
-    /**
-     * Get component version for compatibility checking
-     * @return Version string (e.g., "1.0.0")
-     */
-    virtual String getVersion() const { 
-        return metadata.version.isEmpty() ? "1.0.0" : metadata.version; 
-    }
 
     /**
      * Optional: Stable type key to identify component kind (e.g., "system_info").
@@ -236,6 +227,14 @@ protected:
     void __dc_setRegistry(DomoticsCore::Components::ComponentRegistry* reg) { __dc_registry = reg; }
 
 public:
+    /**
+     * Get access to the EventBus for direct API usage
+     * @return Reference to EventBus
+     */
+    DomoticsCore::Utils::EventBus& eventBus() {
+        return *__dc_eventBus;
+    }
+    
     // Typed helper: subscribe to a topic and receive a const T& payload. Owner is this component by default.
     template<typename T>
     uint32_t on(const String& topic, std::function<void(const T&)> cb, bool replayLast = false) {

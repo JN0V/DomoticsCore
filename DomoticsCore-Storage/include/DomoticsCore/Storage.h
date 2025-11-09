@@ -72,19 +72,17 @@ public:
     StorageComponent(const StorageConfig& config = StorageConfig()) 
         : storageConfig(config), statusTimer(30000), maintenanceTimer(300000), // 5 minutes
           isOpen(false), entryCount(0) {
-        // Metadata will be fully initialized in begin()
-    }
-    
-    ComponentStatus begin() override {
-        DLOG_I(LOG_STORAGE, "Initializing...");
-        
-        // Initialize component metadata
+        // Initialize component metadata immediately for dependency resolution
         metadata.name = "Storage";
         metadata.version = "1.0.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Key-value storage component for preferences and app data";
         metadata.category = "Storage";
         metadata.tags = {"storage", "preferences", "nvs", "settings", "config"};
+    }
+    
+    ComponentStatus begin() override {
+        DLOG_I(LOG_STORAGE, "Initializing...");
         
         // Define configuration parameters
         config.defineParameter(ConfigParam("namespace", ConfigType::String, false, 
@@ -142,9 +140,6 @@ public:
         return ComponentStatus::Success;
     }
     
-    String getName() const override {
-        return metadata.name;
-    }
     
     // Storage operations
     bool putString(const String& key, const String& value) {

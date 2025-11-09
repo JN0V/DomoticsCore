@@ -19,9 +19,10 @@ static constexpr const char* SENSOR_UPDATE_TOPIC = "sensor.update";
 class PublisherComponent : public IComponent {
 public:
     // No-arg constructor; sensible defaults inside the class
-    PublisherComponent() = default;
-
-    String getName() const override { return "Publisher"; }
+    PublisherComponent() {
+        metadata.name = "Publisher";
+        metadata.version = "1.0.0";
+    }
 
     ComponentStatus begin() override {
         lastTick_ = millis();
@@ -50,9 +51,10 @@ private:
 // --- Wildcard consumer that logs any "sensor.*" topic ---
 class WildcardConsumer : public IComponent {
 public:
-    WildcardConsumer() = default;
-
-    String getName() const override { return "Wildcard"; }
+    WildcardConsumer() {
+        metadata.name = "Wildcard";
+        metadata.version = "1.0.0";
+    }
 
     ComponentStatus begin() override {
         // Subscribe to any topic starting with "sensor."
@@ -80,9 +82,10 @@ private:
 class ConsumerComponent : public IComponent {
 public:
     // No-arg constructor; uses built-in LED and a default threshold
-    ConsumerComponent() = default;
-
-    String getName() const override { return "Consumer"; }
+    ConsumerComponent() {
+        metadata.name = "Consumer";
+        metadata.version = "1.0.0";
+    }
 
     ComponentStatus begin() override {
         pinMode(ledPin_, OUTPUT);

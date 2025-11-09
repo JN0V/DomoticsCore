@@ -18,7 +18,10 @@ static constexpr const char* TOPIC_SYSTEM_READY = "system.ready";
 // Simulated component A: becomes ready after a short delay and publishes sticky ready=true
 class ServiceAComponent : public IComponent {
 public:
-  String getName() const override { return "ServiceA"; }
+  ServiceAComponent() {
+    metadata.name = "ServiceA";
+    metadata.version = "1.0.0";
+  }
   ComponentStatus begin() override {
     start_ = millis();
     return ComponentStatus::Success;
@@ -40,7 +43,10 @@ private:
 // Simulated component B: becomes ready after a slightly longer delay and publishes sticky ready=true
 class ServiceBComponent : public IComponent {
 public:
-  String getName() const override { return "ServiceB"; }
+  ServiceBComponent() {
+    metadata.name = "ServiceB";
+    metadata.version = "1.0.0";
+  }
   ComponentStatus begin() override {
     start_ = millis();
     return ComponentStatus::Success;
@@ -62,7 +68,10 @@ private:
 // Coordinator listens to A and B readiness and publishes system.ready when both are true.
 class CoordinatorComponent : public IComponent {
 public:
-  String getName() const override { return "Coordinator"; }
+  CoordinatorComponent() {
+    metadata.name = "Coordinator";
+    metadata.version = "1.0.0";
+  }
   ComponentStatus begin() override {
     // Replay sticky so if A/B already published, we react immediately
     subA_ = eventBus().subscribe(TOPIC_A_READY, [this](const void* p){ onA(p); }, this, true);
@@ -100,7 +109,10 @@ private:
 // A consumer that reacts to system.ready and toggles LED
 class ReadyLEDConsumer : public IComponent {
 public:
-  String getName() const override { return "ReadyLED"; }
+  ReadyLEDConsumer() {
+    metadata.name = "ReadyLED";
+    metadata.version = "1.0.0";
+  }
   ComponentStatus begin() override {
     pinMode(LED_BUILTIN, OUTPUT);
     sub_ = eventBus().subscribe(TOPIC_SYSTEM_READY, [this](const void* p){

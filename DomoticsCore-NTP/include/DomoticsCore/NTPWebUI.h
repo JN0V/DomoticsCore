@@ -93,11 +93,11 @@ public:
     // ========== IWebUIProvider Interface ==========
 
     String getWebUIName() const override {
-        return ntp ? ntp->getName() : String("NTP");
+        return ntp ? ntp->metadata.name : String("NTP");
     }
 
     String getWebUIVersion() const override {
-        return ntp ? ntp->getVersion() : String("0.1.0");
+        return ntp ? ntp->metadata.version : String("0.1.0");
     }
 
     std::vector<WebUIContext> getWebUIContexts() override {

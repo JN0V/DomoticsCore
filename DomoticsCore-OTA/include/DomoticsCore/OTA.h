@@ -57,8 +57,6 @@ public:
     ComponentStatus begin() override;
     void loop() override;
     ComponentStatus shutdown() override;
-    String getName() const override { return "OTA"; }
-    String getVersion() const override { return metadata.version.isEmpty() ? "1.0.0" : metadata.version; }
     const char* getTypeKey() const override { return "ota"; }
 
     // Control API
