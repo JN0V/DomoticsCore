@@ -36,6 +36,9 @@
   #if __has_include(<DomoticsCore/RemoteConsoleWebUI.h>)
   #include <DomoticsCore/RemoteConsoleWebUI.h>
   #endif
+  #if __has_include(<DomoticsCore/HomeAssistantWebUI.h>)
+  #include <DomoticsCore/HomeAssistantWebUI.h>
+  #endif
 #endif
 
 #if __has_include(<DomoticsCore/Storage.h>)
@@ -232,6 +235,9 @@ private:
       #if __has_include(<DomoticsCore/RemoteConsoleWebUI.h>)
       Components::WebUI::RemoteConsoleWebUI* consoleWebUIProvider = nullptr;
       #endif
+      #if __has_include(<DomoticsCore/HomeAssistantWebUI.h>)
+      Components::WebUI::HomeAssistantWebUI* haWebUIProvider = nullptr;
+      #endif
     #endif
     
     // System state
@@ -265,6 +271,9 @@ public:
           #endif
           #if __has_include(<DomoticsCore/RemoteConsoleWebUI.h>)
           delete consoleWebUIProvider;
+          #endif
+          #if __has_include(<DomoticsCore/HomeAssistantWebUI.h>)
+          delete haWebUIProvider;
           #endif
         #endif
     }
@@ -474,8 +483,30 @@ public:
             mqttConfig.enabled = true;
             
             auto mqttPtr = std::make_unique<Components::MQTTComponent>(mqttConfig);
+            auto* mqttComponent = mqttPtr.get();  // Keep reference for HomeAssistant
             core.addComponent(std::move(mqttPtr));
             DLOG_I(LOG_SYSTEM, "✓ MQTT component added");
+            
+            // Add HomeAssistant right after MQTT (needs MQTT reference)
+            #if __has_include(<DomoticsCore/HomeAssistant.h>)
+            if (config.enableHomeAssistant) {
+                // Configure Home Assistant with proper node ID
+                Components::HomeAssistant::HAConfig haConfig;
+                haConfig.nodeId = config.deviceName;
+                haConfig.deviceName = config.deviceName;
+                haConfig.swVersion = config.firmwareVersion;
+                haConfig.discoveryPrefix = config.haDiscoveryPrefix;
+                
+                auto haPtr = std::make_unique<Components::HomeAssistant::HomeAssistantComponent>(mqttComponent, haConfig);
+                core.addComponent(std::move(haPtr));
+                DLOG_I(LOG_SYSTEM, "✓ Home Assistant component added (nodeId: %s)", haConfig.nodeId.c_str());
+            }
+            #else
+            if (config.enableHomeAssistant) {
+                DLOG_W(LOG_SYSTEM, "⚠️  Home Assistant requested but library not installed");
+                DLOG_I(LOG_SYSTEM, "📦 To enable: Add 'symlink://../../../DomoticsCore-HomeAssistant' to lib_deps");
+            }
+            #endif
         }
         #else
         if (config.enableMQTT) {
@@ -509,8 +540,6 @@ public:
             DLOG_I(LOG_SYSTEM, "📦 To enable: Add 'symlink://../../../DomoticsCore-SystemInfo' to lib_deps");
         }
         #endif
-        
-        // Note: HomeAssistant is added AFTER core.begin() because it needs MQTT reference
         
         // ====================================================================
         // 6. Initialize Core (with all registered components)
@@ -555,31 +584,7 @@ public:
         #endif
         
         // ====================================================================
-        // 6.5. Add HomeAssistant (requires MQTT component reference)
-        // ====================================================================
-        #if __has_include(<DomoticsCore/HomeAssistant.h>)
-        if (config.enableHomeAssistant) {
-            auto* mqttComponent = core.getComponent<Components::MQTTComponent>("MQTT");
-            if (mqttComponent) {
-                auto haPtr = std::make_unique<Components::HomeAssistant::HomeAssistantComponent>(mqttComponent);
-                if (core.addComponent(std::move(haPtr))) {
-                    DLOG_I(LOG_SYSTEM, "✓ Home Assistant component added and initialized");
-                } else {
-                    DLOG_E(LOG_SYSTEM, "✗ Home Assistant component failed to initialize");
-                }
-            } else {
-                DLOG_W(LOG_SYSTEM, "⚠️  Home Assistant requires MQTT - MQTT not available");
-            }
-        }
-        #else
-        if (config.enableHomeAssistant) {
-            DLOG_W(LOG_SYSTEM, "⚠️  Home Assistant requested but library not installed");
-            DLOG_I(LOG_SYSTEM, "📦 To enable: Add 'symlink://../../../DomoticsCore-HomeAssistant' to lib_deps");
-        }
-        #endif
-        
-        // ====================================================================
-        // 6.6. Register WebUI Providers (after components are initialized)
+        // 6.5. Register WebUI Providers (after components are initialized)
         // ====================================================================
         #if __has_include(<DomoticsCore/WebUI.h>)
         DLOG_I(LOG_SYSTEM, "Registering WebUI providers...");
@@ -705,6 +710,16 @@ public:
                 consoleWebUIProvider = new Components::WebUI::RemoteConsoleWebUI(console);
                 webuiComponent->registerProviderWithComponent(consoleWebUIProvider, console);
                 DLOG_I(LOG_SYSTEM, "✓ RemoteConsole WebUI provider registered");
+            }
+            #endif
+            
+            // Register HomeAssistant WebUI provider
+            #if __has_include(<DomoticsCore/HomeAssistantWebUI.h>)
+            auto* haComponent = core.getComponent<Components::HomeAssistant::HomeAssistantComponent>("HomeAssistant");
+            if (haComponent) {
+                haWebUIProvider = new Components::WebUI::HomeAssistantWebUI(haComponent);
+                webuiComponent->registerProviderWithComponent(haWebUIProvider, haComponent);
+                DLOG_I(LOG_SYSTEM, "✓ HomeAssistant WebUI provider registered");
             }
             #endif
             

@@ -73,9 +73,15 @@ public:
         
         // Subscribe to command topics when MQTT connects
         mqtt->onConnect([this]() {
-            DLOG_I(LOG_HA, "MQTT connected, publishing availability and discovery");
+            DLOG_I(LOG_HA, "MQTT connected, publishing availability");
             setAvailable(true);
-            publishDiscovery();
+            // Only publish discovery if entities have been added
+            if (!entities.empty()) {
+                DLOG_I(LOG_HA, "Publishing discovery for %d entities", entities.size());
+                publishDiscovery();
+            } else {
+                DLOG_I(LOG_HA, "No entities yet - discovery will be published when entities are added");
+            }
             subscribeToCommands();
         });
         
@@ -84,11 +90,17 @@ public:
             DLOG_W(LOG_HA, "MQTT disconnected");
         });
         
-        // If MQTT is already connected, publish discovery immediately
+        // If MQTT is already connected, publish discovery immediately (if entities exist)
         if (mqtt->isConnected()) {
-            DLOG_I(LOG_HA, "MQTT already connected, publishing discovery now");
+            DLOG_I(LOG_HA, "MQTT already connected");
             setAvailable(true);
-            publishDiscovery();
+            // Only publish discovery if entities have been added
+            if (!entities.empty()) {
+                DLOG_I(LOG_HA, "Publishing discovery for %d entities", entities.size());
+                publishDiscovery();
+            } else {
+                DLOG_I(LOG_HA, "No entities yet - discovery will be published when entities are added");
+            }
             subscribeToCommands();
         }
         

@@ -142,9 +142,12 @@ FullStackDevice/command/relay   ← ON/OFF
 - Device info
 
 **Discovered Entities:**
-- `sensor.fullstackdevice_temperature`
-- `sensor.fullstackdevice_humidity`
-- `switch.fullstackdevice_relay`
+- `sensor.fullstackdevice_temperature` - Simulated temperature sensor (°C)
+- `sensor.fullstackdevice_uptime` - Device uptime (seconds)
+- `sensor.fullstackdevice_free_heap` - Available memory (bytes)
+- `sensor.fullstackdevice_wifi_signal` - WiFi signal strength (dBm)
+- `switch.fullstackdevice_relay` - Cooling relay control
+- `button.fullstackdevice_restart` - Device restart button
 
 **Configuration:**
 ```yaml
@@ -274,30 +277,82 @@ switch:
     state_topic: "FullStackDevice/sensor/relay"
 ```
 
+## Code Architecture Notes
+
+### Home Assistant Component Namespace
+
+The `HomeAssistantComponent` is in a nested namespace. Use the full qualified name:
+
+```cpp
+using namespace DomoticsCore::Components;
+
+// Get the component with full namespace
+HomeAssistant::HomeAssistantComponent* haPtr = 
+    core.getComponent<HomeAssistant::HomeAssistantComponent>("HomeAssistant");
+```
+
+**Note:** Unlike other components, HomeAssistant uses `DomoticsCore::Components::HomeAssistant::` namespace for better organization of entity types (`HASensor`, `HASwitch`, etc.).
+
+### Using WiFi RSSI
+
+Always use the `WifiComponent` to get RSSI instead of accessing WiFi library directly:
+
+```cpp
+auto* wifiComp = domotics->getWiFi();
+if (wifiComp && wifiComp->isSTAConnected()) {
+    int32_t rssi = wifiComp->getRSSI();  // ✅ Use component
+    // NOT: WiFi.RSSI()  // ❌ Don't access WiFi.h directly
+}
+```
+
+This maintains proper encapsulation and component architecture.
+
 ## Complete Example
+
+The FullStack example automatically publishes sensor data to Home Assistant every 5 seconds:
 
 ```cpp
 void loop() {
-    domotics.loop();
+    domotics->loop();
     
-    static unsigned long lastPublish = 0;
-    if (millis() - lastPublish > 10000) {  // Every 10 seconds
-        // Read sensors
+    // Automatic MQTT publishing to Home Assistant (every 5 seconds)
+    if (mqttPublishTimer.isReady() && haPtr && haPtr->isMQTTConnected()) {
         float temp = readTemperature();
-        float humidity = readHumidity();
+        uint32_t uptime = millis() / 1000;
+        uint32_t freeHeap = ESP.getFreeHeap();
         
-        // Publish to MQTT
-        auto mqtt = domotics.getCore().getComponent<MQTTComponent>();
-        mqtt->publish("sensor/temperature", String(temp, 1));
-        mqtt->publish("sensor/humidity", String(humidity, 1));
+        // Publish sensor states (automatically routed to HA)
+        haPtr->publishState("temperature", temp);
+        haPtr->publishState("uptime", (float)uptime);
+        haPtr->publishState("free_heap", (float)freeHeap);
         
-        // Also log
-        DLOG_I(LOG_APP, "Temp: %.1f°C, Humidity: %.1f%%", temp, humidity);
+        // Get WiFi signal from WifiComponent
+        auto* wifiComp = domotics->getWiFi();
+        if (wifiComp && wifiComp->isSTAConnected()) {
+            haPtr->publishState("wifi_signal", (float)wifiComp->getRSSI());
+        }
         
-        lastPublish = millis();
+        DLOG_D(LOG_APP, "📡 Published to HA: Temp=%.1f°C, Uptime=%ds", temp, uptime);
+    }
+    
+    // Automatic relay control based on temperature
+    if (sensorTimer.isReady()) {
+        float temp = readTemperature();
+        if (temp > 25.0) {
+            setRelay(true);  // Turn on cooling
+        } else if (temp < 20.0) {
+            setRelay(false);  // Turn off cooling
+        }
     }
 }
 ```
+
+**Key Features:**
+- ✅ Automatic sensor data publishing (5 second interval)
+- ✅ Temperature-based relay control (10 second interval)
+- ✅ Relay state changes published immediately
+- ✅ Initial state published when HA is ready
+- ✅ All entities auto-discovered in Home Assistant
 
 ## Build Results
 
