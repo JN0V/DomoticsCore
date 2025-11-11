@@ -75,13 +75,6 @@ public:
         mqtt->onConnect([this]() {
             DLOG_I(LOG_HA, "MQTT connected, publishing availability");
             setAvailable(true);
-            // Only publish discovery if entities have been added
-            if (!entities.empty()) {
-                DLOG_I(LOG_HA, "Publishing discovery for %d entities", entities.size());
-                publishDiscovery();
-            } else {
-                DLOG_I(LOG_HA, "No entities yet - discovery will be published when entities are added");
-            }
             subscribeToCommands();
         });
         
@@ -90,17 +83,10 @@ public:
             DLOG_W(LOG_HA, "MQTT disconnected");
         });
         
-        // If MQTT is already connected, publish discovery immediately (if entities exist)
+        // If MQTT is already connected, publish availability and subscribe
         if (mqtt->isConnected()) {
-            DLOG_I(LOG_HA, "MQTT already connected");
+            DLOG_I(LOG_HA, "MQTT already connected, publishing availability");
             setAvailable(true);
-            // Only publish discovery if entities have been added
-            if (!entities.empty()) {
-                DLOG_I(LOG_HA, "Publishing discovery for %d entities", entities.size());
-                publishDiscovery();
-            } else {
-                DLOG_I(LOG_HA, "No entities yet - discovery will be published when entities are added");
-            }
             subscribeToCommands();
         }
         
@@ -141,6 +127,7 @@ public:
         entities.push_back(std::move(sensor));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added sensor: %s", id.c_str());
+        emit("ha/entity_added", id);
     }
     
     /**
@@ -298,6 +285,9 @@ public:
         }
         
         stats.discoveryCount++;
+        
+        // Emit event for monitoring
+        emit("ha/discovery_published", (int)entities.size());
     }
     
     /**

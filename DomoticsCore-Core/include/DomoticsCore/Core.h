@@ -129,6 +129,13 @@ public:
     static Utils::NonBlockingDelay createTimer(unsigned long intervalMs) {
         return Utils::NonBlockingDelay(intervalMs);
     }
+    
+    /**
+     * @brief Get the EventBus for event-driven orchestration
+     */
+    Utils::EventBus& getEventBus() {
+        return componentRegistry.getEventBus();
+    }
 };
 
 } // namespace DomoticsCore

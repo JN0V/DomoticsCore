@@ -247,8 +247,16 @@ public:
     void addListener(IComponentLifecycleListener* listener) {
         if (listener) listeners.push_back(listener);
     }
+    
     void removeListener(IComponentLifecycleListener* listener) {
         listeners.erase(std::remove(listeners.begin(), listeners.end(), listener), listeners.end());
+    }
+    
+    /**
+     * @brief Get the EventBus for event-driven orchestration
+     */
+    DomoticsCore::Utils::EventBus& getEventBus() {
+        return eventBus;
     }
     
     /**

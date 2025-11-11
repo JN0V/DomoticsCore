@@ -67,6 +67,8 @@ inline ComponentStatus MQTTComponent::begin() {
     mqttClient.setKeepAlive(config.keepAlive);
     mqttClient.setBufferSize(1024);  // Increase buffer for large payloads (HA discovery)
     
+    // Auto-connect if enabled (components must work independently)
+    // System.h can ALSO trigger via WiFi events for better orchestration
     if (config.autoReconnect) {
         connect();
     }
@@ -130,6 +132,9 @@ inline bool MQTTComponent::connect() {
             mqttClient.subscribe(sub.topic.c_str(), sub.qos);
         }
         
+        // Emit event for orchestration
+        emit("mqtt/connected", true);
+        
         // Call connect callbacks
         for (const auto& callback : connectCallbacks) {
             callback();
@@ -152,6 +157,9 @@ inline void MQTTComponent::disconnect() {
     stateChangeTime = millis();
     
     DLOG_I(LOG_MQTT, "Disconnected from broker");
+    
+    // Emit event for orchestration
+    emit("mqtt/disconnected", true);
     
     // Call disconnect callbacks
     for (const auto& callback : disconnectCallbacks) {

@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-System",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Complete ready-to-use system with automatic component orchestration",
   "keywords": ["esp32", "domotics", "system", "all-in-one", "ready-to-use"],
   "repository": {
