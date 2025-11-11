@@ -14,8 +14,8 @@ private:
 public:
     explicit StorageWebUI(StorageComponent* comp) : storage(comp) {}
 
-    String getWebUIName() const override { return storage ? storage->getName() : String("Storage"); }
-    String getWebUIVersion() const override { return String("1.0.0"); }
+    String getWebUIName() const override { return storage ? storage->metadata.name : String("Storage"); }
+    String getWebUIVersion() const override { return storage ? storage->metadata.version : String("1.0.0"); }
 
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> ctxs;

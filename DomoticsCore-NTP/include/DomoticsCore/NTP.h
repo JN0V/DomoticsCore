@@ -202,6 +202,9 @@ public:
                     DLOG_I(LOG_NTP, "Initial time sync completed: %s", getFormattedTime().c_str());
                 }
                 
+                // Emit event for orchestration
+                emit("ntp/synced", true);
+                
                 if (syncCallback) {
                     syncCallback(true);
                 }
@@ -215,6 +218,9 @@ public:
                 syncInProgress = false;
                 
                 DLOG_I(LOG_NTP, "Time re-synchronized after %lu ms: %s", stats.lastSyncDuration, getFormattedTime().c_str());
+                
+                // Emit event for orchestration
+                emit("ntp/synced", true);
                 
                 if (syncCallback) {
                     syncCallback(true);
@@ -231,6 +237,9 @@ public:
             stats.lastFailTime = time(nullptr);
             
             DLOG_W(LOG_NTP, "Sync timeout after %lu ms (no response from NTP servers)", syncTimeoutTimer.getInterval());
+            
+            // Emit event for orchestration
+            emit("ntp/sync_failed", true);
             
             if (syncCallback) {
                 syncCallback(false);

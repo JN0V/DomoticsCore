@@ -744,6 +744,75 @@ public:
         #endif
         
         // ====================================================================
+        // 6.6. Setup Event Orchestration (WiFi → MQTT → HomeAssistant)
+        // ====================================================================
+        DLOG_I(LOG_SYSTEM, "Setting up component event orchestration...");
+        
+        // WiFi → MQTT orchestration
+        #if __has_include(<DomoticsCore/MQTT.h>)
+        auto* mqttComp = core.getComponent<Components::MQTTComponent>("MQTT");
+        if (mqttComp && wifi) {
+            // When WiFi connects, trigger MQTT connection attempt
+            core.getEventBus().subscribe("wifi/sta/connected", [mqttComp](const void* payload) {
+                bool connected = payload ? *static_cast<const bool*>(payload) : false;
+                if (connected) {
+                    DLOG_I(LOG_SYSTEM, "📶 WiFi connected → triggering MQTT connection");
+                    mqttComp->connect();
+                }
+            });
+            DLOG_I(LOG_SYSTEM, "✓ WiFi → MQTT orchestration configured");
+            
+            // If WiFi is already connected at boot, trigger MQTT now
+            if (wifi->isSTAConnected()) {
+                DLOG_I(LOG_SYSTEM, "📶 WiFi already connected at boot → triggering MQTT connection");
+                mqttComp->connect();
+            }
+        }
+        #endif
+        
+        // WiFi → NTP orchestration
+        #if __has_include(<DomoticsCore/NTP.h>)
+        auto* ntpComp = core.getComponent<Components::NTPComponent>("NTP");
+        if (ntpComp && wifi) {
+            // Log NTP sync events
+            core.getEventBus().subscribe("ntp/synced", [](const void*) {
+                DLOG_I(LOG_SYSTEM, "⏰ NTP time synchronized");
+            });
+            core.getEventBus().subscribe("ntp/sync_failed", [](const void*) {
+                DLOG_W(LOG_SYSTEM, "⏰ NTP sync failed");
+            });
+            DLOG_I(LOG_SYSTEM, "✓ NTP event monitoring configured");
+        }
+        #endif
+        
+        // MQTT → HomeAssistant orchestration (via EventBus)
+        #if __has_include(<DomoticsCore/MQTT.h>) && __has_include(<DomoticsCore/HomeAssistant.h>)
+        auto* haComp = core.getComponent<Components::HomeAssistant::HomeAssistantComponent>("HomeAssistant");
+        
+        if (mqttComp && haComp) {
+            // When MQTT connects, trigger Home Assistant discovery
+            core.getEventBus().subscribe("mqtt/connected", [haComp](const void*) {
+                // Only publish if entities have been added by user code
+                if (haComp->getStatistics().entityCount > 0) {
+                    DLOG_I(LOG_SYSTEM, "📡 MQTT connected → triggering HA discovery");
+                    haComp->publishDiscovery();
+                }
+            });
+            
+            // Log HA discovery events
+            core.getEventBus().subscribe("ha/discovery_published", [](const void* payload) {
+                int count = payload ? *static_cast<const int*>(payload) : 0;
+                DLOG_I(LOG_SYSTEM, "🏠 Home Assistant discovery published (%d entities)", count);
+            });
+            
+            DLOG_I(LOG_SYSTEM, "✓ MQTT → HomeAssistant orchestration configured");
+        }
+        #endif
+        
+        // NOTE: WebUI orchestration not needed - WebServer binds to all interfaces
+        // and works in both AP and STA modes automatically
+        
+        // ====================================================================
         // 7. System Ready!
         // ====================================================================
         setState(SystemState::READY);

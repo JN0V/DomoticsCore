@@ -448,25 +448,80 @@ ComponentStatus begin() override {
 }
 ```
 
-### Publishing to MQTT via Event Bus
+### System Events
+
+DomoticsCore components emit standard events that you can subscribe to:
+
+**WiFi Component:**
+- `wifi/sta/connected` (bool) - Station connected/disconnected
+- `wifi/ap/enabled` (bool) - Access Point enabled/disabled
+
+**MQTT Component:**
+- `mqtt/connected` (bool) - MQTT broker connected
+- `mqtt/disconnected` (bool) - MQTT broker disconnected
+
+**NTP Component:**
+- `ntp/synced` (bool) - Time synchronized successfully
+- `ntp/sync_failed` (bool) - Time synchronization failed
+
+**HomeAssistant Component:**
+- `ha/discovery_published` (int) - Discovery published (entity count)
+- `ha/entity_added` (String) - Entity added (entity ID)
+
+### Subscribing to System Events
 
 ```cpp
-void publishWaterUsage(uint64_t liters) {
-    struct MQTTMessage {
-        String topic;
-        String payload;
-        bool retained;
-    };
+void setup() {
+    System system(config);
+    system.begin();
     
-    MQTTMessage msg;
-    msg.topic = "watermeter/usage";
-    msg.payload = String(liters);
-    msg.retained = true;
+    // React to MQTT connection
+    system.getCore().getEventBus().subscribe("mqtt/connected", 
+        [](const void*) {
+            DLOG_I(LOG_APP, "MQTT is now available!");
+            // Start publishing data, enable features, etc.
+        }
+    );
     
-    // MQTT component will pick this up and publish
-    emit("mqtt.publish", msg, false);
+    // Monitor NTP sync
+    system.getCore().getEventBus().subscribe("ntp/synced", 
+        [](const void*) {
+            DLOG_I(LOG_APP, "Time synchronized!");
+        }
+    );
+    
+    // Monitor Home Assistant entity additions
+    system.getCore().getEventBus().subscribe("ha/entity_added", 
+        [](const void* payload) {
+            String id = payload ? *static_cast<const String*>(payload) : "";
+            DLOG_I(LOG_APP, "New HA entity: %s", id.c_str());
+        }
+    );
 }
 ```
+
+### System.h Orchestration
+
+The `System` class uses the Event Bus for intelligent orchestration of components:
+
+```cpp
+// WiFi → MQTT: Trigger connection when network available
+core.getEventBus().subscribe("wifi/sta/connected", [mqttComp](const void* payload) {
+    bool connected = payload ? *static_cast<const bool*>(payload) : false;
+    if (connected) {
+        mqttComp->connect();
+    }
+});
+
+// MQTT → HomeAssistant: Trigger discovery when MQTT connects
+core.getEventBus().subscribe("mqtt/connected", [haComp](const void*) {
+    if (haComp->getStatistics().entityCount > 0) {
+        haComp->publishDiscovery();
+    }
+});
+```
+
+This ensures proper timing: WiFi must be up before MQTT connects, and MQTT must be connected before Home Assistant discovery is published.
 
 ---
 
