@@ -27,6 +27,7 @@
 #include <DomoticsCore/System.h>
 
 using namespace DomoticsCore;
+using namespace DomoticsCore::Components;
 
 #define LOG_APP "APP"
 
@@ -46,6 +47,18 @@ const char* MQTT_PASSWORD = "";  // Optional
 
 // OTA password (required for security)
 const char* OTA_PASSWORD = "admin123";  // CHANGE THIS!
+
+// ============================================================================
+// GLOBAL VARIABLES
+// ============================================================================
+
+// Component references (obtained after system initialization)
+HomeAssistant::HomeAssistantComponent* haPtr = nullptr;
+MQTTComponent* mqttPtr = nullptr;
+
+// State tracking
+bool initialStatePublished = false;
+bool lastRelayState = false;
 
 // ============================================================================
 // YOUR APPLICATION CODE
@@ -133,6 +146,78 @@ void setup() {
     
     // YOUR CUSTOM INITIALIZATION
     pinMode(5, OUTPUT);  // Relay pin
+    digitalWrite(5, LOW);  // Start with relay OFF
+    
+    // ========================================================================
+    // HOME ASSISTANT INTEGRATION
+    // ========================================================================
+    
+    // Get component references
+    mqttPtr = domotics->getCore().getComponent<MQTTComponent>("MQTT");
+    haPtr = domotics->getCore().getComponent<HomeAssistant::HomeAssistantComponent>("HomeAssistant");
+    
+    if (haPtr && mqttPtr) {
+        DLOG_I(LOG_APP, "Setting up Home Assistant entities...");
+        
+        // ====================================================================
+        // ADD SENSORS
+        // ====================================================================
+        
+        // Temperature sensor (simulated)
+        haPtr->addSensor("temperature", "Temperature", "°C", "temperature", "mdi:thermometer");
+        
+        // System uptime sensor
+        haPtr->addSensor("uptime", "Uptime", "s", "", "mdi:clock-outline");
+        
+        // Free heap sensor (system health)
+        haPtr->addSensor("free_heap", "Free Heap", "bytes", "", "mdi:memory");
+        
+        // WiFi signal strength sensor
+        auto* wifiComp = domotics->getWiFi();
+        if (wifiComp) {
+            haPtr->addSensor("wifi_signal", "WiFi Signal", "dBm", "signal_strength", "mdi:wifi");
+        }
+        
+        // ====================================================================
+        // ADD SWITCH (Relay control)
+        // ====================================================================
+        
+        haPtr->addSwitch("relay", "Cooling Relay", [](bool state) {
+            setRelay(state);
+            DLOG_I(LOG_APP, "Relay command from HA: %s", state ? "ON" : "OFF");
+            // State will be published in loop() to avoid recursion
+        }, "mdi:fan");
+        
+        // ====================================================================
+        // ADD BUTTON (Restart device)
+        // ====================================================================
+        
+        haPtr->addButton("restart", "Restart Device", []() {
+            DLOG_I(LOG_APP, "Restart button pressed from Home Assistant");
+            delay(1000);
+            ESP.restart();
+        }, "mdi:restart");
+        
+        DLOG_I(LOG_APP, "✓ Home Assistant entities created (%d entities)", 
+               haPtr->getStatistics().entityCount);
+        
+        // Publish discovery messages for all entities
+        // (Must be called after adding all entities)
+        if (mqttPtr->isConnected()) {
+            haPtr->publishDiscovery();
+            DLOG_I(LOG_APP, "✓ Discovery messages published to Home Assistant");
+        } else {
+            DLOG_I(LOG_APP, "⏳ Discovery will be published when MQTT connects");
+        }
+    } else {
+        if (!haPtr) {
+            DLOG_W(LOG_APP, "⚠️  Home Assistant component not available");
+            DLOG_I(LOG_APP, "   Make sure MQTT broker is configured");
+        }
+        if (!mqttPtr) {
+            DLOG_W(LOG_APP, "⚠️  MQTT component not available");
+        }
+    }
     
     DLOG_I(LOG_APP, "Application ready!");
 }
@@ -141,23 +226,89 @@ void setup() {
 // MAIN LOOP
 // ============================================================================
 
-// Non-blocking timer for sensor readings
-DomoticsCore::Utils::NonBlockingDelay sensorTimer(10000);  // 10 seconds
+// Non-blocking timers
+DomoticsCore::Utils::NonBlockingDelay sensorTimer(10000);  // 10 seconds - sensor readings
+DomoticsCore::Utils::NonBlockingDelay mqttPublishTimer(5000);  // 5 seconds - MQTT publish
+DomoticsCore::Utils::NonBlockingDelay heartbeatTimer(30000);  // 30 seconds - system status
 
 void loop() {
     // System loop (handles everything automatically)
     domotics->loop();
     
-    // YOUR APPLICATION CODE HERE
+    // ========================================================================
+    // PUBLISH INITIAL STATE (once HA is ready)
+    // ========================================================================
+    if (!initialStatePublished && haPtr && haPtr->isReady()) {
+        bool currentRelayState = digitalRead(5) == HIGH;
+        haPtr->publishState("relay", currentRelayState);
+        lastRelayState = currentRelayState;
+        initialStatePublished = true;
+        DLOG_I(LOG_APP, "✓ Published initial relay state: %s", currentRelayState ? "ON" : "OFF");
+    }
+    
+    // ========================================================================
+    // SENSOR READING & AUTOMATIC CONTROL
+    // ========================================================================
     if (sensorTimer.isReady()) {
         float temp = readTemperature();
         DLOG_I(LOG_APP, "Temperature: %.1f°C", temp);
         
-        // Example: Control relay based on temperature
+        // Example: Automatic temperature control
+        // (Only if relay state hasn't been manually controlled from HA recently)
         if (temp > 25.0) {
             setRelay(true);  // Turn on cooling
         } else if (temp < 20.0) {
             setRelay(false);  // Turn off cooling
         }
+    }
+    
+    // ========================================================================
+    // MQTT STATE PUBLISHING (to Home Assistant)
+    // ========================================================================
+    if (mqttPublishTimer.isReady() && haPtr && haPtr->isMQTTConnected()) {
+        // Read current values
+        float temp = readTemperature();
+        uint32_t uptime = millis() / 1000;
+        uint32_t freeHeap = ESP.getFreeHeap();
+        
+        // Publish sensor states
+        haPtr->publishState("temperature", temp);
+        haPtr->publishState("uptime", (float)uptime);
+        haPtr->publishState("free_heap", (float)freeHeap);
+        
+        // Publish WiFi signal if available
+        auto* wifiComp = domotics->getWiFi();
+        if (wifiComp && wifiComp->isSTAConnected()) {
+            // Get RSSI from WifiComponent (no need for WiFi.h)
+            int32_t rssi = wifiComp->getRSSI();
+            haPtr->publishState("wifi_signal", (float)rssi);
+        }
+        
+        DLOG_D(LOG_APP, "📡 Published to HA: Temp=%.1f°C, Uptime=%ds, Heap=%d",
+               temp, uptime, freeHeap);
+    }
+    
+    // ========================================================================
+    // RELAY STATE CHANGE DETECTION
+    // ========================================================================
+    // Publish relay state only when it changes (not on timer!)
+    if (haPtr && haPtr->isMQTTConnected()) {
+        bool currentRelayState = digitalRead(5) == HIGH;
+        
+        if (currentRelayState != lastRelayState) {
+            haPtr->publishState("relay", currentRelayState);
+            DLOG_I(LOG_APP, "🔄 Relay state changed: %s", currentRelayState ? "ON" : "OFF");
+            lastRelayState = currentRelayState;
+        }
+    }
+    
+    // ========================================================================
+    // SYSTEM HEARTBEAT (periodic status)
+    // ========================================================================
+    if (heartbeatTimer.isReady()) {
+        DLOG_I(LOG_APP, "💚 System alive - Uptime: %ds, MQTT: %s, HA entities: %d",
+               millis() / 1000,
+               (mqttPtr && mqttPtr->isConnected()) ? "connected" : "disconnected",
+               haPtr ? haPtr->getStatistics().entityCount : 0);
     }
 }
