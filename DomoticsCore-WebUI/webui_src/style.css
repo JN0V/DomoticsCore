@@ -285,6 +285,21 @@ input[type="range"] {
 
 select { min-width: 160px; }
 
+/* Disabled inputs visual state */
+select:disabled,
+input[type="text"]:disabled,
+input[type="number"]:disabled,
+input[type="password"]:disabled,
+input[type="range"]:disabled,
+input[type="color"]:disabled,
+textarea:disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  opacity: 0.6;
+  cursor: not-allowed;
+  border-color: var(--border-color);
+}
+
 /* Range slider styling */
 input[type="range"] {
   -webkit-appearance: none;
@@ -322,6 +337,12 @@ input[type="range"]::-moz-range-track {
   background: linear-gradient(90deg, var(--bg-tertiary), var(--primary-color));
   border-radius: 6px;
 }
+
+/* Disabled range visuals */
+input[type="range"]:disabled::-webkit-slider-thumb { background: var(--border-color); cursor: not-allowed; }
+input[type="range"]:disabled::-moz-range-thumb { background: var(--border-color); cursor: not-allowed; }
+input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--bg-tertiary); filter: grayscale(0.6); }
+input[type="range"]:disabled::-moz-range-track { background: var(--bg-tertiary); filter: grayscale(0.6); }
 
 .loading-message { text-align: center; color: var(--text-secondary); padding: 2rem; }
 
@@ -392,6 +413,10 @@ input:focus + .slider {
 input:checked + .slider:before {
   transform: translateX(22px);
 }
+
+/* Disabled toggle visuals */
+.toggle-switch input:disabled + .slider { background-color: var(--bg-tertiary); opacity: 0.5; cursor: not-allowed; }
+.toggle-switch input:disabled + .slider:before { background-color: var(--border-color); }
 
 .icon-bars {
   font-size: 1.2em;
