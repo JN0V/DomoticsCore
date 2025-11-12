@@ -103,17 +103,27 @@ public:
                 "cpu_chart", "CPU Usage", "cpuChart", "cpuValue", "#ffc107", "%"
             ).withRealTime(sys->getUpdateInterval()));
 
-            contexts.push_back(WebUIContext::settings("hardware_info", "Hardware")
-                .withField(WebUIField("chip_model", "Chip", WebUIFieldType::Display, metrics.chipModel, "", true))
-                .withField(WebUIField("chip_revision", "Revision", WebUIFieldType::Display, String(metrics.chipRevision), "", true))
-                .withField(WebUIField("cpu_freq", "CPU Frequency", WebUIFieldType::Display, String(metrics.cpuFreq) + " MHz", "", true)));
+            // Merged settings card (Hardware + Memory)
+            WebUIContext sysSettings = WebUIContext::settings("system_info", "System Info");
+            // Hardware details
+            sysSettings.withField(WebUIField("chip_model", "Chip", WebUIFieldType::Display, metrics.chipModel, "", true));
+            sysSettings.withField(WebUIField("chip_revision", "Revision", WebUIFieldType::Display, String(metrics.chipRevision), "", true));
+            sysSettings.withField(WebUIField("cpu_freq", "CPU Frequency", WebUIFieldType::Display, String(metrics.cpuFreq) + " MHz", "", true));
+            // Memory details
+            if (sys->isMemoryInfoEnabled()) {
+                sysSettings.withField(WebUIField("free_heap", "Free Heap", WebUIFieldType::Display, sys->formatBytesPublic(metrics.freeHeap), "", true));
+                sysSettings.withField(WebUIField("min_free_heap", "Min Free", WebUIFieldType::Display, sys->formatBytesPublic(metrics.minFreeHeap), "", true));
+                sysSettings.withField(WebUIField("flash_size", "Flash", WebUIFieldType::Display, sys->formatBytesPublic(metrics.flashSize), "", true));
+            }
+            contexts.push_back(sysSettings);
         }
-
-        if (sys->isMemoryInfoEnabled()) {
-            contexts.push_back(WebUIContext::settings("memory_info", "Memory")
-                .withField(WebUIField("free_heap", "Free Heap", WebUIFieldType::Display, sys->formatBytesPublic(metrics.freeHeap), "", true))
-                .withField(WebUIField("min_free_heap", "Min Free", WebUIFieldType::Display, sys->formatBytesPublic(metrics.minFreeHeap), "", true))
-                .withField(WebUIField("flash_size", "Flash", WebUIFieldType::Display, sys->formatBytesPublic(metrics.flashSize), "", true)));
+        // If detailed info disabled but memory info enabled, still expose combined card with memory only
+        else if (sys->isMemoryInfoEnabled()) {
+            WebUIContext sysSettings = WebUIContext::settings("system_info", "System Info");
+            sysSettings.withField(WebUIField("free_heap", "Free Heap", WebUIFieldType::Display, sys->formatBytesPublic(metrics.freeHeap), "", true));
+            sysSettings.withField(WebUIField("min_free_heap", "Min Free", WebUIFieldType::Display, sys->formatBytesPublic(metrics.minFreeHeap), "", true));
+            sysSettings.withField(WebUIField("flash_size", "Flash", WebUIFieldType::Display, sys->formatBytesPublic(metrics.flashSize), "", true));
+            contexts.push_back(sysSettings);
         }
         return contexts;
     }
@@ -142,6 +152,15 @@ public:
         } else if (contextId == "cpu_chart") {
             JsonDocument doc;
             doc["cpu_chart_data"] = getChartDataJson(cpuHistory, CHART_DATA_SIZE);
+            String json; serializeJson(doc, json); return json;
+        } else if (contextId == "system_info") {
+            JsonDocument doc;
+            doc["chip_model"] = metrics.chipModel;
+            doc["chip_revision"] = String(metrics.chipRevision);
+            doc["cpu_freq"] = String(metrics.cpuFreq) + " MHz";
+            doc["free_heap"] = sys->formatBytesPublic(metrics.freeHeap);
+            doc["min_free_heap"] = sys->formatBytesPublic(metrics.minFreeHeap);
+            doc["flash_size"] = sys->formatBytesPublic(metrics.flashSize);
             String json; serializeJson(doc, json); return json;
         }
         return "{}";
