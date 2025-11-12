@@ -664,13 +664,7 @@ private:
             
             DLOG_I(LOG_WEB, "Schema requested - building from %d context providers", contextProviders.size());
             
-            // Build JSON in String to avoid AsyncResponseStream buffer OOM
-            // (schema can be very large with all components)
-            // ArduinoJson v7 uses dynamic allocation - it grows as needed
-            JsonDocument doc;
-            JsonArray schema = doc.to<JsonArray>();
-
-            // Prefer provider list from providerEnabled, merge any active context providers
+            // Build provider list
             std::vector<IWebUIProvider*> providers;
             for (const auto& kv : providerEnabled) {
                 if (kv.first && std::find(providers.begin(), providers.end(), kv.first) == providers.end()) {
@@ -682,57 +676,102 @@ private:
                     providers.push_back(pair.second);
                 }
             }
-            
             DLOG_I(LOG_WEB, "Found %d unique providers", providers.size());
 
-            int totalContexts = 0;
-            for (IWebUIProvider* provider : providers) {
-                bool enabled = true;
-                auto enIt = providerEnabled.find(provider);
-                if (enIt != providerEnabled.end()) enabled = enIt->second;
-                
-                DLOG_D(LOG_WEB, "Provider '%s': enabled=%d, isWebUIEnabled=%d", 
-                       provider ? provider->getWebUIName().c_str() : "null",
-                       enabled,
-                       provider ? provider->isWebUIEnabled() : 0);
-                
-                if (provider && provider->isWebUIEnabled() && enabled) {
-                    auto contexts = provider->getWebUIContexts();
-                    DLOG_D(LOG_WEB, "  -> %d contexts", contexts.size());
-                    for (const auto& context : contexts) {
-                        JsonObject contextObj = schema.add<JsonObject>();
-                        serializeContext(contextObj, context);
-                        totalContexts++;
-                    }
-                }
-            }
-            
-            // Serialize to String first (we have enough heap - verified by logs)
-            auto output = std::make_shared<String>();
-            size_t written = serializeJson(doc, *output);
-            
-            DLOG_I(LOG_WEB, "Schema serialized: %d contexts, %d bytes", totalContexts, written);
-            
-            if (doc.overflowed()) {
-                DLOG_E(LOG_WEB, "Schema JSON overflowed! Written: %d bytes", written);
-            }
-            
-            // Use chunked response to send large data
-            // Capture output via shared_ptr to avoid 42KB copy
+            struct SchemaChunkState {
+                std::vector<IWebUIProvider*> providers;
+                size_t providerIndex = 0;
+                std::vector<WebUIContext> currentContexts;
+                size_t contextIndex = 0;
+                bool began = false;
+                bool finished = false;
+                bool firstContext = true;
+                String pending;
+                int totalContexts = 0;
+            };
+
+            auto state = std::make_shared<SchemaChunkState>();
+            state->providers = providers;
+
             AsyncWebServerResponse *response = request->beginChunkedResponse("application/json",
-                [output](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
-                    size_t len = output->length();
-                    if (index >= len) return 0;  // Done
-                    
-                    size_t toSend = min(len - index, maxLen);
-                    memcpy(buffer, output->c_str() + index, toSend);
-                    return toSend;
+                [this, state](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                    if (state->finished) return 0;
+                    size_t written = 0;
+
+                    auto writeBytes = [&](const char* data, size_t len){
+                        size_t n = std::min(len, maxLen - written);
+                        if (n > 0) {
+                            memcpy(buffer + written, data, n);
+                            written += n;
+                        }
+                        return n;
+                    };
+
+                    if (!state->began) {
+                        writeBytes("[", 1);
+                        state->began = true;
+                        if (written >= maxLen) return written;
+                    }
+
+                    while (written < maxLen) {
+                        if (state->pending.length() > 0) {
+                            size_t n = writeBytes(state->pending.c_str(), state->pending.length());
+                            if (n < state->pending.length()) {
+                                state->pending.remove(0, n);
+                                break;
+                            } else {
+                                state->pending = "";
+                                continue;
+                            }
+                        }
+
+                        if (state->providerIndex >= state->providers.size() && state->contextIndex >= state->currentContexts.size()) {
+                            writeBytes("]", 1);
+                            state->finished = true;
+                            break;
+                        }
+
+                        if (state->contextIndex >= state->currentContexts.size()) {
+                            // advance to next provider with contexts
+                            state->currentContexts.clear();
+                            while (state->providerIndex < state->providers.size()) {
+                                IWebUIProvider* provider = state->providers[state->providerIndex++];
+                                bool enabled = true;
+                                auto enIt = providerEnabled.find(provider);
+                                if (enIt != providerEnabled.end()) enabled = enIt->second;
+                                if (provider && provider->isWebUIEnabled() && enabled) {
+                                    state->currentContexts = provider->getWebUIContexts();
+                                    DLOG_D(LOG_WEB, "Provider '%s' -> %d contexts", provider->getWebUIName().c_str(), state->currentContexts.size());
+                                    break;
+                                }
+                            }
+                            state->contextIndex = 0;
+                            if (state->currentContexts.empty()) {
+                                continue;
+                            }
+                        }
+
+                        // serialize one context
+                        const auto& context = state->currentContexts[state->contextIndex++];
+                        JsonDocument one;
+                        JsonObject obj = one.to<JsonObject>();
+                        serializeContext(obj, context);
+                        String ctx;
+                        serializeJson(one, ctx);
+                        if (!state->firstContext) {
+                            state->pending = "," + ctx;
+                        } else {
+                            state->pending = ctx;
+                            state->firstContext = false;
+                        }
+                        state->totalContexts++;
+                    }
+
+                    return written;
                 });
-            
+
             addCorsHeaders(response);
             request->send(response);
-            
-            DLOG_I(LOG_WEB, "Schema chunked response sent (%d bytes)", written);
         });
         
         // Favicon handler
