@@ -95,35 +95,46 @@ src_dir = find_webui_sources(env)
 # Project dir for the example
 example_dir = Path(env["PROJECT_DIR"])
 
-# Determine output directory for generated assets
+# Determine output directories for generated assets
 # Local dev: write to DomoticsCore-WebUI/include/DomoticsCore/Generated
-# PlatformIO: write to libdeps
+# PlatformIO: write to ALL relevant libdeps instances to avoid header not found
 libdeps_dir = Path(env.get("PROJECT_LIBDEPS_DIR", ""))
 pioenv = env.get("PIOENV", "")
-out_header_src = None
+out_header_paths = []
 
 if libdeps_dir and pioenv:
-    # PlatformIO installation: write to libdeps
-    candidates = [
-        libdeps_dir / pioenv / "DomoticsCore" / "DomoticsCore-WebUI" / "include" / "DomoticsCore" / "Generated",
+    # PlatformIO installation: consider both the direct lib and nested under the meta DomoticsCore lib
+    pio_candidates = [
         libdeps_dir / pioenv / "DomoticsCore-WebUI" / "include" / "DomoticsCore" / "Generated",
+        libdeps_dir / pioenv / "DomoticsCore" / "DomoticsCore-WebUI" / "include" / "DomoticsCore" / "Generated",
     ]
-    for out_dir in candidates:
+    for out_dir in pio_candidates:
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_header_src = out_dir / "WebUIAssets.h"
+            out_header_paths.append(out_dir / "WebUIAssets.h")
             print(f"[WebUI] Output directory: {out_dir}")
-            break
-        except Exception as e:
-            continue
+        except Exception:
+            pass
 
-if out_header_src is None:
+if not out_header_paths:
     # Local development: write next to sources
     package_root = src_dir.parent  # DomoticsCore-WebUI/
     out_dir_src = package_root / "include" / "DomoticsCore" / "Generated"
     out_dir_src.mkdir(parents=True, exist_ok=True)
-    out_header_src = out_dir_src / "WebUIAssets.h"
+    out_header_paths.append(out_dir_src / "WebUIAssets.h")
     print(f"[WebUI] Output directory (local dev): {out_dir_src}")
+else:
+    # Also add the local workspace include output to ensure workspace headers can include it
+    try:
+        package_root = src_dir.parent  # DomoticsCore-WebUI/
+        out_dir_src = package_root / "include" / "DomoticsCore" / "Generated"
+        out_dir_src.mkdir(parents=True, exist_ok=True)
+        local_header = out_dir_src / "WebUIAssets.h"
+        if local_header not in out_header_paths:
+            out_header_paths.append(local_header)
+            print(f"[WebUI] Output directory (workspace): {out_dir_src}")
+    except Exception:
+        pass
 
 assets = [
     ("index.html", "WEBUI_HTML_GZ"),
@@ -208,5 +219,23 @@ for filename, sym in assets:
     header_lines.append(f"const size_t {sym}_LEN = sizeof({sym});")
 
 out_text = "\n".join(header_lines) + "\n"
-out_header_src.write_text(out_text)
-print(f"[WebUI] Successfully embedded assets -> {out_header_src}")
+for header_path in out_header_paths:
+    header_path.write_text(out_text)
+    print(f"[WebUI] Successfully embedded assets -> {header_path}")
+
+# Ensure compiler can find the generated header regardless of compilation unit by adding include roots
+include_roots = set()
+for header_path in out_header_paths:
+    # header_path .../include/DomoticsCore/Generated/WebUIAssets.h -> include root is two parents up
+    try:
+        root = header_path.parent.parent  # .../include
+        include_roots.add(str(root))
+    except Exception:
+        continue
+
+for root in sorted(include_roots):
+    try:
+        env.Append(CPPPATH=[root])
+        print(f"[WebUI] Added include path: {root}")
+    except Exception:
+        pass
