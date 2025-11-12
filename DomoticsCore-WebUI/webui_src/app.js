@@ -4,6 +4,7 @@ class DomoticsApp {
         this.wsReconnectInterval = null;
         this.uiSchema = [];
         this.isEditingDeviceName = false;
+        this.editingContexts = new Set();
 
         // Enum mappings from C++ backend
         this.WebUILocation = { Dashboard: 0, ComponentDetail: 1, HeaderStatus: 2, QuickControls: 3, Settings: 4, HeaderInfo: 5 };
@@ -91,9 +92,35 @@ class DomoticsApp {
         card.className = 'card';
         card.dataset.contextId = context.contextId;
 
-        // Use custom HTML if provided, otherwise use default structure
+        const actionsHtml = (context.location === this.WebUILocation.Settings) ? `
+                <div class="card-actions">
+                    <button class="btn btn-edit" data-action="edit">Edit</button>
+                    <button class="btn btn-save" data-action="save" style="display:none">Save</button>
+                    <button class="btn btn-cancel" data-action="cancel" style="display:none">Cancel</button>
+                </div>` : '';
+
         if (context.customHtml) {
             card.innerHTML = context.customHtml;
+            if (context.location === this.WebUILocation.Settings) {
+                let header = card.querySelector('.card-header');
+                if (!header) {
+                    header = document.createElement('div');
+                    header.className = 'card-header';
+                    header.innerHTML = `<h3 class="card-title">${context.title || ''}</h3>`;
+                    card.insertBefore(header, card.firstChild);
+                }
+                if (!header.querySelector('.card-actions')) {
+                    header.insertAdjacentHTML('beforeend', actionsHtml);
+                }
+                if (!card.querySelector('.card-content')) {
+                    const contentWrapper = document.createElement('div');
+                    contentWrapper.className = 'card-content';
+                    const toMove = [];
+                    card.childNodes.forEach(n => { if (n !== header) toMove.push(n); });
+                    toMove.forEach(n => contentWrapper.appendChild(n));
+                    card.appendChild(contentWrapper);
+                }
+            }
         } else {
             let fieldsHtml = '';
             context.fields.forEach(field => {
@@ -103,12 +130,19 @@ class DomoticsApp {
             card.innerHTML = `
                 <div class="card-header">
                     <h3 class="card-title">${context.title}</h3>
+                    ${actionsHtml}
                 </div>
                 <div class="card-content">${fieldsHtml}</div>
             `;
         }
 
+        if (context.location === this.WebUILocation.Settings) {
+            card.dataset.editing = 'false';
+            this.setCardEditing(card, false);
+        }
+
         this.attachFieldEventListeners(card, context);
+        this.attachCardActions(card, context);
         return card;
     }
 
@@ -399,8 +433,11 @@ class DomoticsApp {
             } else {
                 const card = document.querySelector(`.card[data-context-id='${contextId}']`);
                 if (card) {
+                    if (card.dataset.editing === 'true') {
+                        return;
+                    }
                     Object.entries(data).forEach(([fieldName, value]) => {
-                        const fieldSchema = contextSchema.fields.find(f => f.name === fieldName);
+                        const fieldSchema = Array.isArray(contextSchema.fields) ? contextSchema.fields.find(f => f.name === fieldName) : null;
                         // Try to find an input element first (for toggles, sliders, etc.)
                         const inputEl = card.querySelector(`#${fieldName}`);
                         if (inputEl) {
@@ -424,17 +461,20 @@ class DomoticsApp {
                             // Otherwise, find a display span
                             const displayEl = card.querySelector(`[data-field-name='${fieldName}']`);
                             if (displayEl) {
-                                displayEl.textContent = this.formatValue(value) + (fieldSchema.unit || '');
+                                const unit = fieldSchema && fieldSchema.unit ? fieldSchema.unit : '';
+                                displayEl.textContent = this.formatValue(value) + unit;
                             }
                         }
                     });
                 }
             }
 
-            // Dispatch generic component status update event
-            document.dispatchEvent(new CustomEvent('component-status-update', {
-                detail: { contextId, data }
-            }));
+            const cardEl = document.querySelector(`.card[data-context-id='${contextId}']`);
+            if (!(cardEl && cardEl.dataset.editing === 'true')) {
+                document.dispatchEvent(new CustomEvent('component-status-update', {
+                    detail: { contextId, data }
+                }));
+            }
         });
     }
 
@@ -617,6 +657,7 @@ class DomoticsApp {
     }
 
     attachFieldEventListeners(card, context) {
+        if (!Array.isArray(context.fields) || context.fields.length === 0) return;
         context.fields.forEach(field => {
             if (field.readOnly) return;
 
@@ -634,12 +675,109 @@ class DomoticsApp {
                 } else {
                     value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
                 }
+                if (card.dataset.editing === 'true' && field.type !== this.WebUIFieldType.Button) {
+                    this.bufferFieldChange(card, field.name, value);
+                    return;
+                }
                 this.sendUICommand(context.contextId, field.name, value);
                 // Apply theme immediately on client side when changed from settings
                 if (context.contextId === 'webui_settings' && field.name === 'theme') {
                     this.applyTheme(value);
                 }
             });
+        });
+    }
+
+    attachCardActions(card, context) {
+        if (context.location !== this.WebUILocation.Settings) return;
+        const editBtn = card.querySelector('.btn-edit');
+        const saveBtn = card.querySelector('.btn-save');
+        const cancelBtn = card.querySelector('.btn-cancel');
+        if (!editBtn || !saveBtn || !cancelBtn) return;
+
+        const enterEdit = () => {
+            if (card.dataset.editing === 'true') return;
+            card.dataset.editing = 'true';
+            this.editingContexts.add(context.contextId);
+            const baseline = {};
+            context.fields.forEach(f => {
+                const el = card.querySelector(`#${f.name}`);
+                if (!el) return;
+                baseline[f.name] = (el.type === 'checkbox') ? el.checked : el.value;
+            });
+            card.dataset.baseline = JSON.stringify(baseline);
+            card.dataset.pending = '{}';
+            editBtn.style.display = 'none';
+            saveBtn.style.display = '';
+            cancelBtn.style.display = '';
+            this.setCardEditing(card, true);
+        };
+
+        const applySave = async () => {
+            const pending = card.dataset.pending ? JSON.parse(card.dataset.pending) : {};
+            const entries = Object.entries(pending);
+            for (const [fieldName, value] of entries) {
+                this.sendUICommand(context.contextId, fieldName, value);
+                if (context.contextId === 'webui_settings' && fieldName === 'theme') {
+                    this.applyTheme(value);
+                }
+            }
+            card.dataset.pending = '{}';
+            exitEdit();
+        };
+
+        const exitEdit = () => {
+            card.dataset.editing = 'false';
+            this.editingContexts.delete(context.contextId);
+            editBtn.style.display = '';
+            saveBtn.style.display = 'none';
+            cancelBtn.style.display = 'none';
+            this.setCardEditing(card, false);
+        };
+
+        const cancelEdit = () => {
+            const baseline = card.dataset.baseline ? JSON.parse(card.dataset.baseline) : {};
+            Object.entries(baseline).forEach(([name, value]) => {
+                const el = card.querySelector(`#${name}`);
+                if (!el) return;
+                if (el.type === 'checkbox') {
+                    el.checked = (value === true || value === 'true');
+                } else {
+                    el.value = value;
+                }
+            });
+            card.dataset.pending = '{}';
+            exitEdit();
+        };
+
+        editBtn.addEventListener('click', enterEdit);
+        saveBtn.addEventListener('click', applySave);
+        cancelBtn.addEventListener('click', cancelEdit);
+    }
+
+    bufferFieldChange(card, fieldName, value) {
+        const pending = card.dataset.pending ? JSON.parse(card.dataset.pending) : {};
+        pending[fieldName] = value;
+        card.dataset.pending = JSON.stringify(pending);
+    }
+
+    setCardEditing(card, isEditing) {
+        const controls = card.querySelectorAll('.card-content input, .card-content select, .card-content textarea, .card-content button');
+        controls.forEach(el => {
+            if (el.dataset.wasDisabled === undefined) {
+                el.dataset.wasDisabled = el.disabled ? 'true' : 'false';
+            }
+            if (el.id === 'otaAutoReboot') {
+                el.disabled = true;
+                return;
+            }
+            if (isEditing) {
+                if (el.dataset.wasDisabled === 'false') {
+                    el.disabled = false;
+                }
+            } else {
+                el.disabled = true;
+            }
         });
     }
 
