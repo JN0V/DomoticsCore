@@ -121,7 +121,8 @@ public:
             .withField(WebUIField("sta_password", "Password", WebUIFieldType::Password, ""))
             .withField(WebUIField("scan_networks", "Scan Networks", WebUIFieldType::Button, ""))
             .withField(WebUIField("networks", "Available Networks", WebUIFieldType::Display, ""))
-            .withField(WebUIField("wifi_enabled", "Enable WiFi", WebUIFieldType::Boolean, wifi->isWifiEnabled() ? "true" : "false"))
+            .withField(WebUIField("wifi_enabled", "Enable WiFi", WebUIFieldType::Boolean,
+                                   (wifi->getConfiguredSSID().length() ? (wifi->isWifiEnabled() ? String("true") : String("false")) : String("false"))))
             .withAPI("/api/wifi")
             .withRealTime(2000)
         );
@@ -134,7 +135,8 @@ public:
                 WebUIFieldType::Text,
                 (wifi->getAPSSID().length() ? wifi->getAPSSID() : (pendingApSsid.length() ? pendingApSsid : String("DomoticsCore-AP")))
             ))
-            .withField(WebUIField("ap_enabled", "Enable AP", WebUIFieldType::Boolean, wifi->isAPEnabled() ? "true" : "false"))
+            .withField(WebUIField("ap_enabled", "Enable AP", WebUIFieldType::Boolean,
+                                   (wifi->getConfiguredSSID().length() ? (wifi->isAPEnabled() ? String("true") : String("false")) : String("true"))))
             .withAPI("/api/wifi")
             .withRealTime(2000)
         );
