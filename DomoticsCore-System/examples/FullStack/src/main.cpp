@@ -58,7 +58,6 @@ MQTTComponent* mqttPtr = nullptr;
 
 // State tracking
 bool initialStatePublished = false;
-bool lastRelayState = false;
 
 // ============================================================================
 // YOUR APPLICATION CODE
@@ -185,7 +184,7 @@ void setup() {
         haPtr->addSwitch("relay", "Cooling Relay", [](bool state) {
             setRelay(state);
             DLOG_I(LOG_APP, "Relay command from HA: %s", state ? "ON" : "OFF");
-            // State will be published in loop() to avoid recursion
+            // State is automatically published by the HA component
         }, "mdi:fan");
         
         // ====================================================================
@@ -241,7 +240,6 @@ void loop() {
     if (!initialStatePublished && haPtr && haPtr->isReady()) {
         bool currentRelayState = digitalRead(5) == HIGH;
         haPtr->publishState("relay", currentRelayState);
-        lastRelayState = currentRelayState;
         initialStatePublished = true;
         DLOG_I(LOG_APP, "✓ Published initial relay state: %s", currentRelayState ? "ON" : "OFF");
     }
@@ -254,11 +252,23 @@ void loop() {
         DLOG_I(LOG_APP, "Temperature: %.1f°C", temp);
         
         // Example: Automatic temperature control
-        // (Only if relay state hasn't been manually controlled from HA recently)
-        if (temp > 25.0) {
-            setRelay(true);  // Turn on cooling
-        } else if (temp < 20.0) {
-            setRelay(false);  // Turn off cooling
+        // When local control changes the relay, publish state to HA
+        bool currentRelayState = digitalRead(5) == HIGH;
+        bool shouldBeOn = (temp > 25.0);
+        bool shouldBeOff = (temp < 20.0);
+        
+        if (shouldBeOn && !currentRelayState) {
+            setRelay(true);
+            if (haPtr && haPtr->isMQTTConnected()) {
+                haPtr->publishState("relay", true);
+                DLOG_I(LOG_APP, "🌡️ Auto control: Relay ON (temp=%.1f°C)", temp);
+            }
+        } else if (shouldBeOff && currentRelayState) {
+            setRelay(false);
+            if (haPtr && haPtr->isMQTTConnected()) {
+                haPtr->publishState("relay", false);
+                DLOG_I(LOG_APP, "🌡️ Auto control: Relay OFF (temp=%.1f°C)", temp);
+            }
         }
     }
     
@@ -288,19 +298,9 @@ void loop() {
                temp, uptime, freeHeap);
     }
     
-    // ========================================================================
-    // RELAY STATE CHANGE DETECTION
-    // ========================================================================
-    // Publish relay state only when it changes (not on timer!)
-    if (haPtr && haPtr->isMQTTConnected()) {
-        bool currentRelayState = digitalRead(5) == HIGH;
-        
-        if (currentRelayState != lastRelayState) {
-            haPtr->publishState("relay", currentRelayState);
-            DLOG_I(LOG_APP, "🔄 Relay state changed: %s", currentRelayState ? "ON" : "OFF");
-            lastRelayState = currentRelayState;
-        }
-    }
+    // Note: When relay changes via HA command, state is auto-published by HA component
+    // This section is only for automatic temperature control changes (above)
+    // If you need to publish state after local/automatic control, do it explicitly
     
     // ========================================================================
     // SYSTEM HEARTBEAT (periodic status)
