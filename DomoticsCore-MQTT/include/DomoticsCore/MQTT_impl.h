@@ -343,6 +343,9 @@ inline bool MQTTComponent::connectInternal() {
         mqttClient.setServer(config.broker.c_str(), config.port);
     }
     
+    // Yield before blocking connection to prevent watchdog issues
+    yield();
+    
     if (config.enableLWT) {
         if (!config.username.isEmpty()) {
             success = mqttClient.connect(
@@ -376,18 +379,18 @@ inline bool MQTTComponent::connectInternal() {
         }
     }
     
+    // Yield after blocking connection to allow watchdog reset
+    yield();
+    
     return success;
 }
 
 inline void MQTTComponent::handleReconnection() {
     if (state == MQTTState::Connecting) return;
     
-    // Use NonBlockingDelay timer - check if reconnect interval has elapsed
-    if (!reconnectTimer.isReady()) {
-        return;
-    }
+    if (!reconnectTimer.isReady()) return;
     
-    // Exponential backoff with max delay
+    // Exponential backoff for reconnection delay
     unsigned long currentDelay = reconnectTimer.getInterval();
     if (currentDelay < config.maxReconnectDelay) {
         unsigned long newDelay = currentDelay * 2;
@@ -399,6 +402,9 @@ inline void MQTTComponent::handleReconnection() {
     
     DLOG_I(LOG_MQTT, "Attempting reconnection (delay: %lu ms)", reconnectTimer.getInterval());
     stats.reconnectCount++;
+    
+    // Reset timer and attempt connection
+    reconnectTimer.reset();
     connect();
 }
 
