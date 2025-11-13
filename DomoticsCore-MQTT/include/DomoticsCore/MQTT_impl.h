@@ -65,7 +65,7 @@ inline ComponentStatus MQTTComponent::begin() {
     mqttClient.setServer(config.broker.c_str(), config.port);
     mqttClient.setCallback(mqttCallback);
     mqttClient.setKeepAlive(config.keepAlive);
-    mqttClient.setBufferSize(1024);  // Increase buffer for large payloads (HA discovery)
+    // Buffer size is now set at connection
     
     // Auto-connect if enabled (components must work independently)
     // System.h can ALSO trigger via WiFi events for better orchestration
@@ -75,6 +75,7 @@ inline ComponentStatus MQTTComponent::begin() {
     
     DLOG_I(LOG_MQTT, "Initialized with broker %s:%d, client ID: %s", 
            config.broker.c_str(), config.port, config.clientId.c_str());
+    DLOG_I(LOG_MQTT, "MQTT buffer size: %d bytes", MQTT_MAX_PACKET_SIZE);
     
     return ComponentStatus::Success;
 }
@@ -106,6 +107,13 @@ inline bool MQTTComponent::connect() {
     if (isConnected()) {
         DLOG_W(LOG_MQTT, "Already connected");
         return true;
+    }
+    
+    // Check if WiFi is connected before attempting MQTT connection
+    if (WiFi.status() != WL_CONNECTED) {
+        lastError = "WiFi not connected";
+        DLOG_D(LOG_MQTT, "Cannot connect to MQTT - WiFi not connected");
+        return false;
     }
     
     if (config.broker.isEmpty()) {
@@ -195,13 +203,19 @@ inline bool MQTTComponent::publish(const String& topic, const String& payload, u
         return true;
     }
     
+    DLOG_D(LOG_MQTT, "Publishing to topic '%s' (QoS %d, retain %s), size: %d bytes", 
+           topic.c_str(), qos, retain ? "true" : "false", payload.length());
+    
     bool success = mqttClient.publish(topic.c_str(), payload.c_str(), retain);
     
     if (success) {
         stats.publishCount++;
         publishCountThisSecond++;
+        DLOG_D(LOG_MQTT, "  ✓ Published successfully");
     } else {
         stats.publishErrors++;
+        DLOG_E(LOG_MQTT, "  ✗ Publish failed! Client state: %d, buffer size: %d", 
+               mqttClient.state(), mqttClient.getBufferSize());
     }
     
     return success;
@@ -342,6 +356,10 @@ inline bool MQTTComponent::connectInternal() {
     if (!config.broker.isEmpty()) {
         mqttClient.setServer(config.broker.c_str(), config.port);
     }
+    
+    // Ensure buffer size is preserved across reconnections
+    mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE);
+    DLOG_D(LOG_MQTT, "MQTT buffer size set to %d bytes", MQTT_MAX_PACKET_SIZE);
     
     // Yield before blocking connection to prevent watchdog issues
     yield();

@@ -76,6 +76,13 @@ public:
             DLOG_I(LOG_HA, "MQTT connected, publishing availability");
             setAvailable(true);
             subscribeToCommands();
+            
+            if (stats.entityCount > 0) {
+                DLOG_I(LOG_HA, "Publishing HA discovery after MQTT connect");
+                publishDiscovery();
+            } else {
+                DLOG_W(LOG_HA, "No entities registered yet; skipping discovery on connect");
+            }
         });
         
         // Handle disconnect
@@ -88,6 +95,11 @@ public:
             DLOG_I(LOG_HA, "MQTT already connected, publishing availability");
             setAvailable(true);
             subscribeToCommands();
+            
+            if (stats.entityCount > 0) {
+                DLOG_I(LOG_HA, "MQTT already connected - publishing discovery");
+                publishDiscovery();
+            }
         }
         
         return ComponentStatus::Success;
@@ -128,6 +140,9 @@ public:
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added sensor: %s", id.c_str());
         emit("ha/entity_added", id);
+        if (mqtt && mqtt->isConnected()) {
+            republishEntity(id);
+        }
     }
     
     /**
@@ -139,6 +154,9 @@ public:
         entities.push_back(std::move(sensor));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added binary sensor: %s", id.c_str());
+        if (mqtt && mqtt->isConnected()) {
+            republishEntity(id);
+        }
     }
     
     /**
@@ -150,6 +168,9 @@ public:
         entities.push_back(std::move(sw));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added switch: %s", id.c_str());
+        if (mqtt && mqtt->isConnected()) {
+            republishEntity(id);
+        }
     }
     
     /**
@@ -161,6 +182,9 @@ public:
         entities.push_back(std::move(light));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added light: %s", id.c_str());
+        if (mqtt && mqtt->isConnected()) {
+            republishEntity(id);
+        }
     }
     
     /**
@@ -172,6 +196,9 @@ public:
         entities.push_back(std::move(button));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added button: %s", id.c_str());
+        if (mqtt && mqtt->isConnected()) {
+            republishEntity(id);
+        }
     }
     
     // ========== State Publishing ==========
@@ -194,7 +221,7 @@ public:
         // Set guard before MQTT publish to prevent re-entrant callbacks
         publishing = true;
         String topic = entity->getStateTopic(config.nodeId, config.discoveryPrefix);
-        mqtt->publish(topic, state, entity->retained);
+        mqtt->publish(topic, state, 0, entity->retained);
         stats.stateUpdates++;
         publishing = false;
     }
@@ -230,7 +257,7 @@ public:
         String payload;
         serializeJson(doc, payload);
         String topic = entity->getStateTopic(config.nodeId, config.discoveryPrefix);
-        mqtt->publish(topic, payload, entity->retained);
+        mqtt->publish(topic, payload, 0, entity->retained);
         stats.stateUpdates++;
         publishing = false;
     }
@@ -245,7 +272,7 @@ public:
         String payload;
         serializeJson(attributes, payload);
         String topic = entity->getAttributesTopic(config.nodeId, config.discoveryPrefix);
-        mqtt->publish(topic, payload, true);
+        mqtt->publish(topic, payload, 0, true);
     }
     
     // ========== Availability ==========
@@ -259,7 +286,7 @@ public:
         DLOG_I(LOG_HA, "  Topic: %s", config.availabilityTopic.c_str());
         DLOG_I(LOG_HA, "  Payload: %s", payload.c_str());
         
-        bool published = mqtt->publish(config.availabilityTopic, payload, true);
+        bool published = mqtt->publish(config.availabilityTopic, payload, 0, true);
         if (published) {
             DLOG_I(LOG_HA, "  ✓ Availability published");
         } else {
@@ -298,7 +325,7 @@ public:
         
         for (const auto& entity : entities) {
             String topic = entity->getDiscoveryTopic(config.nodeId, config.discoveryPrefix);
-            mqtt->publish(topic, "", config.retainDiscovery);  // Empty payload removes entity
+            mqtt->publish(topic, "", 0, config.retainDiscovery);  // Empty payload removes entity
         }
     }
     
@@ -412,7 +439,7 @@ private:
         DLOG_I(LOG_HA, "  Payload size: %d bytes", payload.length());
         DLOG_D(LOG_HA, "  Payload: %s", payload.c_str());
         
-        bool published = mqtt->publish(topic, payload, config.retainDiscovery);
+        bool published = mqtt->publish(topic, payload, 0, config.retainDiscovery);
         if (published) {
             DLOG_I(LOG_HA, "  ✓ Published successfully");
         } else {
@@ -430,6 +457,8 @@ private:
         
         // Register message handler for command topics
         mqtt->onMessage(commandTopic, [this](const String& topic, const String& payload) {
+            DLOG_D(LOG_HA, "MQTT message received - Topic: %s", topic.c_str());
+            
             // CRITICAL: Prevent re-entrant calls during publish
             // PubSubClient calls loop() during publish(), which triggers this callback
             if (publishing) {
@@ -446,17 +475,25 @@ private:
      * @brief Handle incoming command
      */
     void handleCommand(const String& topic, const String& payload) {
+        DLOG_I(LOG_HA, "Received MQTT command - Topic: %s, Payload: %s", topic.c_str(), payload.c_str());
+        
         // Extract entity ID from topic
         // Format: homeassistant/{component}/{node_id}/{entity_id}/set
         int lastSlash = topic.lastIndexOf('/');
-        if (lastSlash == -1) return;
+        if (lastSlash == -1) {
+            DLOG_E(LOG_HA, "Invalid topic format - no trailing slash");
+            return;
+        }
         
-        String topicWithoutSet = topic.substring(0, lastSlash);
-        int prevSlash = topicWithoutSet.lastIndexOf('/');
-        if (prevSlash == -1) return;
+        int secondLastSlash = topic.lastIndexOf('/', lastSlash - 1);
+        if (secondLastSlash == -1) {
+            DLOG_E(LOG_HA, "Invalid topic format - missing entity ID");
+            return;
+        }
         
-        String entityId = topicWithoutSet.substring(prevSlash + 1);
+        String entityId = topic.substring(secondLastSlash + 1, lastSlash);
         
+        DLOG_I(LOG_HA, "Extracted entity ID: '%s', looking up entity...", entityId.c_str());
         HAEntity* entity = findEntity(entityId);
         if (!entity) {
             DLOG_W(LOG_HA, "Command for unknown entity: %s", entityId.c_str());
@@ -466,16 +503,25 @@ private:
         stats.commandsReceived++;
         DLOG_D(LOG_HA, "Command for %s: %s", entityId.c_str(), payload.c_str());
         
-        // Route command to appropriate entity type
+        // Route command to appropriate entity type and auto-publish state
         if (entity->component == "switch") {
             HASwitch* sw = static_cast<HASwitch*>(entity);
             sw->handleCommand(payload);
+            
+            // Auto-publish state after command execution
+            // This ensures HA immediately sees the state change
+            if (!sw->optimistic) {
+                publishState(entityId, payload);
+                DLOG_D(LOG_HA, "Auto-published switch state: %s = %s", entityId.c_str(), payload.c_str());
+            }
         } else if (entity->component == "light") {
             HALight* light = static_cast<HALight*>(entity);
             light->handleCommand(payload);
+            // TODO: Auto-publish light state (needs JSON state)
         } else if (entity->component == "button") {
             HAButton* button = static_cast<HAButton*>(entity);
             button->handleCommand(payload);
+            // Buttons don't have state
         }
     }
 };

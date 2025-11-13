@@ -1,5 +1,8 @@
 #pragma once
 
+// Set PubSubClient buffer size before including the library
+#define MQTT_MAX_PACKET_SIZE 1024
+
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Timer.h>
