@@ -48,6 +48,23 @@ inline MQTTComponent::~MQTTComponent() {
 inline ComponentStatus MQTTComponent::begin() {
     DLOG_I(LOG_MQTT, "Initializing");
     
+    // CRITICAL: Register EventBus listeners FIRST, even if no config yet
+    // This ensures listeners are ready when broker gets configured via WebUI
+    on<MQTTPublishEvent>("mqtt/publish", [this](const MQTTPublishEvent& ev) {
+        publish(String(ev.topic), String(ev.payload), ev.qos, ev.retain);
+    });
+    
+    on<MQTTSubscribeEvent>("mqtt/subscribe", [this](const MQTTSubscribeEvent& ev) {
+        subscribe(String(ev.topic), ev.qos);
+    });
+    
+    DLOG_D(LOG_MQTT, "EventBus listeners registered (mqtt/publish, mqtt/subscribe)");
+    
+    // CRITICAL: Set PubSubClient callback BEFORE config check
+    // This ensures callback is ready when broker gets configured via WebUI
+    mqttClient.setCallback(mqttCallback);
+    DLOG_D(LOG_MQTT, "PubSubClient callback registered");
+    
     loadConfiguration();
     
     // Auto-disable if no broker configured (similar to WiFi auto-switching to AP)
@@ -63,7 +80,6 @@ inline ComponentStatus MQTTComponent::begin() {
     }
     
     mqttClient.setServer(config.broker.c_str(), config.port);
-    mqttClient.setCallback(mqttCallback);
     mqttClient.setKeepAlive(config.keepAlive);
     // Buffer size is now set at connection
     
@@ -140,13 +156,8 @@ inline bool MQTTComponent::connect() {
             mqttClient.subscribe(sub.topic.c_str(), sub.qos);
         }
         
-        // Emit event for orchestration
+        // Emit event for decoupled components
         emit("mqtt/connected", true);
-        
-        // Call connect callbacks
-        for (const auto& callback : connectCallbacks) {
-            callback();
-        }
     } else {
         state = MQTTState::Error;
         stateChangeTime = millis();
@@ -166,13 +177,8 @@ inline void MQTTComponent::disconnect() {
     
     DLOG_I(LOG_MQTT, "Disconnected from broker");
     
-    // Emit event for orchestration
+    // Emit event for decoupled components
     emit("mqtt/disconnected", true);
-    
-    // Call disconnect callbacks
-    for (const auto& callback : disconnectCallbacks) {
-        callback();
-    }
 }
 
 inline void MQTTComponent::resetReconnect() {
@@ -303,24 +309,7 @@ inline std::vector<String> MQTTComponent::getActiveSubscriptions() const {
     return result;
 }
 
-// Callbacks
-inline bool MQTTComponent::onMessage(const String& topicFilter, MessageCallback callback) {
-    CallbackEntry entry;
-    entry.topicFilter = topicFilter;
-    entry.callback = callback;
-    messageCallbacks.push_back(entry);
-    return true;
-}
-
-inline bool MQTTComponent::onConnect(ConnectionCallback callback) {
-    connectCallbacks.push_back(callback);
-    return true;
-}
-
-inline bool MQTTComponent::onDisconnect(ConnectionCallback callback) {
-    disconnectCallbacks.push_back(callback);
-    return true;
-}
+// Callbacks removed - use EventBus for inter-component communication
 
 // Configuration
 inline void MQTTComponent::setConfig(const MQTTConfig& cfg) {
@@ -449,12 +438,13 @@ inline void MQTTComponent::handleIncomingMessage(char* topic, byte* payload, uns
     
     stats.receiveCount++;
     
-    // Match against registered callbacks
-    for (const auto& cb : messageCallbacks) {
-        if (topicMatches(cb.topicFilter, topicStr)) {
-            cb.callback(topicStr, payloadStr);
-        }
-    }
+    // Emit message event for decoupled components
+    MQTTMessageEvent ev{};
+    strncpy(ev.topic, topicStr.c_str(), sizeof(ev.topic) - 1);
+    ev.topic[sizeof(ev.topic) - 1] = '\0';
+    strncpy(ev.payload, payloadStr.c_str(), sizeof(ev.payload) - 1);
+    ev.payload[sizeof(ev.payload) - 1] = '\0';
+    emit("mqtt/message", ev);
 }
 
 inline void MQTTComponent::updateStatistics() {
