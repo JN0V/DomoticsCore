@@ -1,8 +1,8 @@
-# Release Preparation: v1.2.0 - EventBus Migration
+# Release Preparation: v1.2.1 - EventBus Migration
 
 **Date**: 2025-11-14  
-**Version**: v1.2.0  
-**Type**: Minor (breaking API changes with EventBus migration)
+**Version**: v1.2.1  
+**Type**: Patch (breaking API changes with EventBus migration)
 
 ---
 
@@ -156,19 +156,19 @@ auto ha = std::make_unique<HomeAssistantComponent>(haConfig);
   - [x] DomoticsCore-System: 1.0.2 → 1.2.0
   - [x] DomoticsCore-Core: 1.1.4 → 1.2.0 (added on<>/emit() helpers)
 - [x] READMEs updated (main README.md with EventBus mention)
-- [x] Migration guide created (docs/migration/v1.2.0.md)
+- [x] Migration guide created (docs/migration/v1.2.1.md)
 - [x] Documentation reorganized (guides/, migration/, reference/ folders)
 - [x] CHANGELOG.md updated with breaking changes
 - [x] Removed obsolete files (test_examples_fast.sh, Roadmap.md)
 - [ ] Git commit with detailed message (ready)
-- [ ] Git tag with v1.2.0 (after commit)
+- [ ] Git tag with v1.2.1 (after commit)
 - [ ] GitHub release notes prepared (use release notes below)
 
 ---
 
 ## 🚀 Release Notes Draft
 
-### v1.2.0 - EventBus Architecture Migration
+### v1.2.1 - EventBus Architecture Migration
 
 **Breaking Changes:**
 - MQTT component now uses EventBus for all communication

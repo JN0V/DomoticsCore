@@ -13,7 +13,7 @@ Welcome to the DomoticsCore documentation. This directory contains comprehensive
 - **[Architecture Guide](architecture.md)** - Framework design, patterns, and best practices
 
 ### **Migration Guides**
-- **[Migration to v1.2.0](migration/v1.2.0.md)** - Upgrading from v1.1.x (EventBus changes)
+- **[Migration to v1.2.1](migration/v1.2.1.md)** - Upgrading from v1.1.x (EventBus changes)
 
 ### **Developer Guides**
 - **[Custom Components](guides/custom-components.md)** - Creating your own components
@@ -261,7 +261,7 @@ docs/
 ├── getting-started.md                 # Complete tutorial
 ├── architecture.md                    # Framework design
 ├── migration/
-│   └── v1.2.0.md                     # Migration guides
+│   └── v1.2.1.md                     # Migration guides
 ├── guides/
 │   ├── custom-components.md          # Component development
 │   ├── webui-developer.md            # WebUI integration
