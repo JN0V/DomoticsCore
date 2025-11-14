@@ -2,7 +2,7 @@
 
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
-#include <DomoticsCore/MQTT.h>
+#include <DomoticsCore/MQTT.h>  // Only for event structures
 #include "HAEntity.h"
 #include "HASensor.h"
 #include "HABinarySensor.h"
@@ -15,6 +15,14 @@
 namespace DomoticsCore {
 namespace Components {
 namespace HomeAssistant {
+
+/**
+ * @brief Event for entity added to Home Assistant
+ */
+struct HAEntityAddedEvent {
+    char id[64];           // Entity ID
+    char component[32];    // Component type (sensor, switch, etc.)
+};
 
 /**
  * @brief Configuration for Home Assistant component
@@ -42,11 +50,10 @@ class HomeAssistantComponent : public IComponent {
 public:
     /**
      * @brief Construct HomeAssistant component
-     * @param mqtt MQTT component for communication
      * @param config HA configuration
      */
-    HomeAssistantComponent(MQTTComponent* mqtt, const HAConfig& config = HAConfig())
-        : mqtt(mqtt), config(config) {
+    HomeAssistantComponent(const HAConfig& config = HAConfig())
+        : config(config) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "HomeAssistant";
         metadata.version = "1.0.0";
@@ -62,18 +69,14 @@ public:
     
     // IComponent interface
     ComponentStatus begin() override {
-        if (!mqtt) {
-            DLOG_E(LOG_HA, "MQTT component not provided");
-            return ComponentStatus::DependencyError;
-        }
-        
         DLOG_I(LOG_HA, "Initializing Home Assistant integration");
         DLOG_I(LOG_HA, "Node ID: %s", config.nodeId.c_str());
         DLOG_I(LOG_HA, "Discovery prefix: %s", config.discoveryPrefix.c_str());
         
-        // Subscribe to command topics when MQTT connects
-        mqtt->onConnect([this]() {
-            DLOG_I(LOG_HA, "MQTT connected, publishing availability");
+        // Subscribe to MQTT events via EventBus
+        on<bool>("mqtt/connected", [this](const bool&) {
+            DLOG_I(LOG_HA, "MQTT connected (via EventBus), publishing availability");
+            mqttConnected = true;
             setAvailable(true);
             subscribeToCommands();
             
@@ -85,32 +88,23 @@ public:
             }
         });
         
-        // Handle disconnect
-        mqtt->onDisconnect([this]() {
-            DLOG_W(LOG_HA, "MQTT disconnected");
+        on<bool>("mqtt/disconnected", [this](const bool&) {
+            DLOG_W(LOG_HA, "MQTT disconnected (via EventBus)");
+            mqttConnected = false;
         });
         
-        // If MQTT is already connected, publish availability and subscribe
-        if (mqtt->isConnected()) {
-            DLOG_I(LOG_HA, "MQTT already connected, publishing availability");
-            setAvailable(true);
-            subscribeToCommands();
-            
-            if (stats.entityCount > 0) {
-                DLOG_I(LOG_HA, "MQTT already connected - publishing discovery");
-                publishDiscovery();
-            }
-        }
+        // Subscribe to incoming MQTT messages
+        on<DomoticsCore::Components::MQTTMessageEvent>("mqtt/message", [this](const DomoticsCore::Components::MQTTMessageEvent& ev) {
+            handleCommand(String(ev.topic), String(ev.payload));
+        });
+        
+        // Note: Initial MQTT state will be signaled via mqtt/connected event
         
         return ComponentStatus::Success;
     }
     
     void loop() override {
-        // Publish initial availability once MQTT is connected
-        if (!availabilityPublished && mqtt && mqtt->isConnected()) {
-            setAvailable(true);
-            availabilityPublished = true;
-        }
+        // Nothing to do in loop - all communication via EventBus
     }
     
     /**
@@ -118,7 +112,7 @@ public:
      * @return true if ready for state publishing
      */
     bool isReady() const {
-        return availabilityPublished && mqtt && mqtt->isConnected();
+        return availabilityPublished && mqttConnected;
     }
     
     ComponentStatus shutdown() override {
@@ -140,7 +134,7 @@ public:
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added sensor: %s", id.c_str());
         emit("ha/entity_added", id);
-        if (mqtt && mqtt->isConnected()) {
+        if (mqttConnected) {
             republishEntity(id);
         }
     }
@@ -154,7 +148,7 @@ public:
         entities.push_back(std::move(sensor));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added binary sensor: %s", id.c_str());
-        if (mqtt && mqtt->isConnected()) {
+        if (mqttConnected) {
             republishEntity(id);
         }
     }
@@ -168,7 +162,7 @@ public:
         entities.push_back(std::move(sw));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added switch: %s", id.c_str());
-        if (mqtt && mqtt->isConnected()) {
+        if (mqttConnected) {
             republishEntity(id);
         }
     }
@@ -182,7 +176,7 @@ public:
         entities.push_back(std::move(light));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added light: %s", id.c_str());
-        if (mqtt && mqtt->isConnected()) {
+        if (mqttConnected) {
             republishEntity(id);
         }
     }
@@ -196,7 +190,7 @@ public:
         entities.push_back(std::move(button));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added button: %s", id.c_str());
-        if (mqtt && mqtt->isConnected()) {
+        if (mqttConnected) {
             republishEntity(id);
         }
     }
@@ -213,7 +207,7 @@ public:
             return;
         }
         
-        if (!mqtt || !mqtt->isConnected()) {
+        if (!mqttConnected) {
             DLOG_D(LOG_HA, "MQTT not connected, skipping publish for: %s", id.c_str());
             return;
         }
@@ -221,7 +215,8 @@ public:
         // Set guard before MQTT publish to prevent re-entrant callbacks
         publishing = true;
         String topic = entity->getStateTopic(config.nodeId, config.discoveryPrefix);
-        mqtt->publish(topic, state, 0, entity->retained);
+        DLOG_D(LOG_HA, "Publishing state: %s = %s", id.c_str(), state.c_str());
+        mqttPublish(topic, state, 0, entity->retained);
         stats.stateUpdates++;
         publishing = false;
     }
@@ -247,7 +242,7 @@ public:
         HAEntity* entity = findEntity(id);
         if (!entity) return;
         
-        if (!mqtt || !mqtt->isConnected()) {
+        if (!mqttConnected) {
             DLOG_D(LOG_HA, "MQTT not connected, skipping JSON publish");
             return;
         }
@@ -257,7 +252,7 @@ public:
         String payload;
         serializeJson(doc, payload);
         String topic = entity->getStateTopic(config.nodeId, config.discoveryPrefix);
-        mqtt->publish(topic, payload, 0, entity->retained);
+        mqttPublish(topic, payload, 0, entity->retained);
         stats.stateUpdates++;
         publishing = false;
     }
@@ -272,7 +267,7 @@ public:
         String payload;
         serializeJson(attributes, payload);
         String topic = entity->getAttributesTopic(config.nodeId, config.discoveryPrefix);
-        mqtt->publish(topic, payload, 0, true);
+        mqttPublish(topic, payload, 0, true);
     }
     
     // ========== Availability ==========
@@ -286,7 +281,7 @@ public:
         DLOG_I(LOG_HA, "  Topic: %s", config.availabilityTopic.c_str());
         DLOG_I(LOG_HA, "  Payload: %s", payload.c_str());
         
-        bool published = mqtt->publish(config.availabilityTopic, payload, 0, true);
+        bool published = mqttPublish(config.availabilityTopic, payload, 0, true);
         if (published) {
             DLOG_I(LOG_HA, "  ✓ Availability published");
         } else {
@@ -325,7 +320,7 @@ public:
         
         for (const auto& entity : entities) {
             String topic = entity->getDiscoveryTopic(config.nodeId, config.discoveryPrefix);
-            mqtt->publish(topic, "", 0, config.retainDiscovery);  // Empty payload removes entity
+            mqttPublish(topic, "", 0, config.retainDiscovery);  // Empty payload removes entity
         }
     }
     
@@ -378,16 +373,16 @@ public:
      * @return true if MQTT connection is active
      */
     bool isMQTTConnected() const {
-        return mqtt && mqtt->isConnected();
+        return mqttConnected;
     }
     
 private:
-    MQTTComponent* mqtt;
     HAConfig config;
     std::vector<std::unique_ptr<HAEntity>> entities;
     HAStatistics stats;
     volatile bool publishing = false;  // Re-entrancy guard (volatile to prevent optimization)
     bool availabilityPublished = false;  // Track if initial availability sent
+    bool mqttConnected = false;  // Track MQTT connection state via EventBus
     
     /**
      * @brief Find entity by ID
@@ -399,6 +394,21 @@ private:
             }
         }
         return nullptr;
+    }
+    
+    /**
+     * @brief Publish MQTT message via EventBus
+     */
+    bool mqttPublish(const String& topic, const String& payload, uint8_t qos = 0, bool retain = false) {
+        DomoticsCore::Components::MQTTPublishEvent ev{};
+        strncpy(ev.topic, topic.c_str(), sizeof(ev.topic) - 1);
+        ev.topic[sizeof(ev.topic) - 1] = '\0';
+        strncpy(ev.payload, payload.c_str(), sizeof(ev.payload) - 1);
+        ev.payload[sizeof(ev.payload) - 1] = '\0';
+        ev.qos = qos;
+        ev.retain = retain;
+        emit("mqtt/publish", ev);
+        return true;  // EventBus emit is fire-and-forget
     }
     
     /**
@@ -439,7 +449,7 @@ private:
         DLOG_I(LOG_HA, "  Payload size: %d bytes", payload.length());
         DLOG_D(LOG_HA, "  Payload: %s", payload.c_str());
         
-        bool published = mqtt->publish(topic, payload, 0, config.retainDiscovery);
+        bool published = mqttPublish(topic, payload, 0, config.retainDiscovery);
         if (published) {
             DLOG_I(LOG_HA, "  ✓ Published successfully");
         } else {
@@ -451,24 +461,17 @@ private:
      * @brief Subscribe to all command topics
      */
     void subscribeToCommands() {
-        // Subscribe to wildcard command topics for all entity types
+        // Subscribe to wildcard command topics for all entity types via EventBus
         String commandTopic = config.discoveryPrefix + "/+/" + config.nodeId + "/+/set";
-        mqtt->subscribe(commandTopic);
         
-        // Register message handler for command topics
-        mqtt->onMessage(commandTopic, [this](const String& topic, const String& payload) {
-            DLOG_D(LOG_HA, "MQTT message received - Topic: %s", topic.c_str());
-            
-            // CRITICAL: Prevent re-entrant calls during publish
-            // PubSubClient calls loop() during publish(), which triggers this callback
-            if (publishing) {
-                DLOG_W(LOG_HA, "Skipping command during publish to prevent recursion");
-                return;
-            }
-            handleCommand(topic, payload);
-        });
+        DomoticsCore::Components::MQTTSubscribeEvent ev{};
+        strncpy(ev.topic, commandTopic.c_str(), sizeof(ev.topic) - 1);
+        ev.topic[sizeof(ev.topic) - 1] = '\0';
+        ev.qos = 0;
+        emit("mqtt/subscribe", ev);
         
-        DLOG_D(LOG_HA, "Subscribed to commands: %s", commandTopic.c_str());
+        DLOG_D(LOG_HA, "Subscribed to commands via EventBus: %s", commandTopic.c_str());
+        // Message handling is done via "mqtt/message" event listener in begin()
     }
     
     /**

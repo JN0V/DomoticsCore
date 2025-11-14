@@ -482,12 +482,10 @@ public:
             mqttConfig.clientId = config.mqttClientId;
             mqttConfig.enabled = true;
             
-            auto mqttPtr = std::make_unique<Components::MQTTComponent>(mqttConfig);
-            auto* mqttComponent = mqttPtr.get();  // Keep reference for HomeAssistant
-            core.addComponent(std::move(mqttPtr));
+            core.addComponent(std::make_unique<Components::MQTTComponent>(mqttConfig));
             DLOG_I(LOG_SYSTEM, "✓ MQTT component added");
             
-            // Add HomeAssistant right after MQTT (needs MQTT reference)
+            // Add HomeAssistant (communicates with MQTT via EventBus)
             #if __has_include(<DomoticsCore/HomeAssistant.h>)
             if (config.enableHomeAssistant) {
                 // Configure Home Assistant with proper node ID
@@ -497,14 +495,12 @@ public:
                 haConfig.swVersion = config.firmwareVersion;
                 haConfig.discoveryPrefix = config.haDiscoveryPrefix;
                 
-                auto haPtr = std::make_unique<Components::HomeAssistant::HomeAssistantComponent>(mqttComponent, haConfig);
-                core.addComponent(std::move(haPtr));
+                core.addComponent(std::make_unique<Components::HomeAssistant::HomeAssistantComponent>(haConfig));
                 DLOG_I(LOG_SYSTEM, "✓ Home Assistant component added (nodeId: %s)", haConfig.nodeId.c_str());
             }
             #else
             if (config.enableHomeAssistant) {
                 DLOG_W(LOG_SYSTEM, "⚠️  Home Assistant requested but library not installed");
-                DLOG_I(LOG_SYSTEM, "📦 To enable: Add 'symlink://../../../DomoticsCore-HomeAssistant' to lib_deps");
             }
             #endif
         }

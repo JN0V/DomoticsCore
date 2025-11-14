@@ -18,6 +18,36 @@
 namespace DomoticsCore {
 namespace Components {
 
+// ============================================================================
+// EventBus Event Structures for MQTT Communication
+// ============================================================================
+
+/**
+ * @brief Event for publishing MQTT messages via EventBus
+ */
+struct MQTTPublishEvent {
+    char topic[160];      ///< MQTT topic (max 160 chars)
+    char payload[2048];   ///< Message payload (max 2048 chars)
+    uint8_t qos;          ///< QoS level (0, 1, 2)
+    bool retain;          ///< Retain flag
+};
+
+/**
+ * @brief Event for subscribing to MQTT topics via EventBus
+ */
+struct MQTTSubscribeEvent {
+    char topic[160];      ///< Topic filter (supports wildcards)
+    uint8_t qos;          ///< QoS level
+};
+
+/**
+ * @brief Event for incoming MQTT messages via EventBus
+ */
+struct MQTTMessageEvent {
+    char topic[160];      ///< Message topic
+    char payload[2048];   ///< Message payload
+};
+
 /**
  * @brief MQTT client configuration
  */
@@ -124,17 +154,8 @@ struct MQTTStatistics {
  */
 class MQTTComponent : public IComponent {
 public:
-    /**
-     * @brief Message callback type
-     * @param topic MQTT topic
-     * @param payload Message payload as string
-     */
-    using MessageCallback = std::function<void(const String& topic, const String& payload)>;
-    
-    /**
-     * @brief Connection callback type
-     */
-    using ConnectionCallback = std::function<void()>;
+    // Callbacks removed - use EventBus for inter-component communication
+    // Events: "mqtt/connected", "mqtt/disconnected", "mqtt/message", "mqtt/publish", "mqtt/subscribe"
 
     /**
      * @brief Construct MQTT component with configuration
@@ -256,29 +277,10 @@ public:
      */
     std::vector<String> getActiveSubscriptions() const;
 
-    // ========== Callbacks ==========
-    
-    /**
-     * @brief Register message callback for topic filter
-     * @param topicFilter Topic filter (supports wildcards)
-     * @param callback Callback function
-     * @return true if registered successfully
-     */
-    bool onMessage(const String& topicFilter, MessageCallback callback);
-    
-    /**
-     * @brief Register connection callback
-     * @param callback Callback function called on connection
-     * @return true if registered successfully
-     */
-    bool onConnect(ConnectionCallback callback);
-    
-    /**
-     * @brief Register disconnection callback
-     * @param callback Callback function called on disconnection
-     * @return true if registered successfully
-     */
-    bool onDisconnect(ConnectionCallback callback);
+    // ========== EventBus Communication ==========
+    // This component uses EventBus for decoupled communication:
+    // - Emits: "mqtt/connected", "mqtt/disconnected", "mqtt/message"
+    // - Listens: "mqtt/publish", "mqtt/subscribe"
 
     // ========== Configuration ==========
     
@@ -371,16 +373,7 @@ private:
     };
     std::vector<Subscription> subscriptions;
     
-    // Message callbacks
-    struct CallbackEntry {
-        String topicFilter;
-        MessageCallback callback;
-    };
-    std::vector<CallbackEntry> messageCallbacks;
-    
-    // Connection callbacks
-    std::vector<ConnectionCallback> connectCallbacks;
-    std::vector<ConnectionCallback> disconnectCallbacks;
+    // EventBus subscriptions (managed in begin/shutdown)
     
     // Message queue (for offline buffering)
     struct QueuedMessage {
