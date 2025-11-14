@@ -5,7 +5,7 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] - 2025-11-14
+## [1.2.1] - 2025-11-14
 
 ### 🚨 Breaking Changes
 
@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 📦 Migration Required
 
-This is a breaking release. See [Migration Guide](docs/migration/v1.2.0.md) for step-by-step migration instructions.
+This is a breaking release. See [Migration Guide](docs/migration/v1.2.1.md) for step-by-step migration instructions.
 
 ---
 

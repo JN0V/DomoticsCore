@@ -1,12 +1,12 @@
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.2.0)
+[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.2.1)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 1.2.0 Released!** EventBus architecture with `core.on<>()`/`core.emit()` - fully decoupled components, no reboot for MQTT/HA config! See [CHANGELOG.md](CHANGELOG.md) and [Migration Guide](docs/migration/v1.2.0.md).
+> **🎉 Version 1.2.1 Released!** EventBus architecture with `core.on<>()`/`core.emit()` - fully decoupled components, no reboot for MQTT/HA config! See [CHANGELOG.md](CHANGELOG.md) and [Migration Guide](docs/migration/v1.2.1.md).
 
 ## ✨ What Makes DomoticsCore Different
 
@@ -156,7 +156,7 @@ lib_deps =
 
 - **[Getting Started Guide](docs/getting-started.md)** - Comprehensive tutorial
 - **[Architecture Guide](docs/architecture.md)** - Design decisions and patterns
-- **[Migration Guide v1.2.0](docs/migration/v1.2.0.md)** - Upgrading from v1.1.x
+- **[Migration Guide v1.2.1](docs/migration/v1.2.1.md)** - Upgrading from v1.1.x
 - **[EventBus Reference](docs/reference/eventbus-architecture.md)** - Complete EventBus documentation
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history
 - **[Complete Documentation Index](docs/README.md)** - All guides and references
