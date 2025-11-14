@@ -106,45 +106,47 @@ void setup() {
     DLOG_I(LOG_APP, "  LWT Topic: %s", mqttConfig.lwtTopic.c_str());
     
     // Create and register MQTT component
-    auto mqtt = std::make_unique<MQTTComponent>(mqttConfig);
-    auto* mqttPtr = mqtt.get();
-    core.addComponent(std::move(mqtt));
+    core.addComponent(std::make_unique<MQTTComponent>(mqttConfig));
     
-    // Register callbacks BEFORE initializing components
-    // Note: We capture mqttPtr (raw pointer) which remains valid as long as
-    // the component exists in core. This avoids unnecessary getComponent() calls.
-    
-    // On connect: publish online status and subscribe to commands
-    mqttPtr->onConnect([mqttPtr]() {
+    // Register EventBus listeners BEFORE initializing components
+    core.on<bool>("mqtt/connected", [&core](const bool&) {
         DLOG_I(LOG_APP, "📡 MQTT Connected!");
         
-        // Publish online status
-        mqttPtr->publish(TOPIC_STATUS, "online", 1, true);
+        // Publish online status via EventBus
+        DomoticsCore::Components::MQTTPublishEvent pubEv{};
+        strncpy(pubEv.topic, TOPIC_STATUS, sizeof(pubEv.topic) - 1);
+        strncpy(pubEv.payload, "online", sizeof(pubEv.payload) - 1);
+        pubEv.qos = 1;
+        pubEv.retain = true;
+        core.emit("mqtt/publish", pubEv);
         DLOG_I(LOG_APP, "  ✓ Published: %s = online", TOPIC_STATUS);
         
-        // Subscribe to commands
-        if (mqttPtr->subscribe(TOPIC_COMMAND, 1)) {
-            DLOG_I(LOG_APP, "  ✓ Subscribed to: %s", TOPIC_COMMAND);
-        }
+        // Subscribe to commands via EventBus
+        DomoticsCore::Components::MQTTSubscribeEvent subEv{};
+        strncpy(subEv.topic, TOPIC_COMMAND, sizeof(subEv.topic) - 1);
+        subEv.qos = 1;
+        core.emit("mqtt/subscribe", subEv);
+        DLOG_I(LOG_APP, "  ✓ Subscribed to: %s", TOPIC_COMMAND);
     });
     
-    // On disconnect
-    mqttPtr->onDisconnect([]() {
+    core.on<bool>("mqtt/disconnected", [](const bool&) {
         DLOG_W(LOG_APP, "📡 MQTT Disconnected");
     });
     
-    // On message received
-    mqttPtr->onMessage(TOPIC_COMMAND, [](const String& topic, const String& payload) {
+    core.on<DomoticsCore::Components::MQTTMessageEvent>("mqtt/message", [](const DomoticsCore::Components::MQTTMessageEvent& ev) {
+        String topic = String(ev.topic);
+        String payloadStr = String(ev.payload);
+        
         DLOG_I(LOG_APP, "📨 Received command");
         DLOG_I(LOG_APP, "  Topic: %s", topic.c_str());
-        DLOG_I(LOG_APP, "  Payload: %s", payload.c_str());
+        DLOG_I(LOG_APP, "  Payload: %s", payloadStr.c_str());
         
         // Parse command
         if (topic.endsWith("/led")) {
-            if (payload == "on") {
+            if (payloadStr == "on") {
                 DLOG_I(LOG_APP, "💡 LED ON");
                 // digitalWrite(LED_PIN, HIGH);
-            } else if (payload == "off") {
+            } else if (payloadStr == "off") {
                 DLOG_I(LOG_APP, "💡 LED OFF");
                 // digitalWrite(LED_PIN, LOW);
             }

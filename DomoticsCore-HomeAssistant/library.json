@@ -1,7 +1,7 @@
 {
   "name": "DomoticsCore-HomeAssistant",
-  "version": "1.0.2",
-  "description": "DomoticsCore Home Assistant component (header-only) with MQTT auto-discovery, entity management, and WebUI integration",
+  "version": "1.2.0",
+  "description": "DomoticsCore Home Assistant component (header-only) with EventBus-based MQTT communication, auto-discovery, entity management, and WebUI integration",
   "keywords": ["homeassistant", "mqtt", "discovery", "automation", "iot", "esp32", "arduino"],
   "repository": {
     "type": "git",
@@ -20,7 +20,7 @@
   },
   "dependencies": [
     { "name": "DomoticsCore-Core", "version": ">=1.0.0" },
-    { "name": "DomoticsCore-MQTT", "version": ">=0.1.0" },
+    { "name": "DomoticsCore-MQTT", "version": ">=1.2.0" },
     { "name": "ArduinoJson", "version": "^7.0.0" }
   ]
 }

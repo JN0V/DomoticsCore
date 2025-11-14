@@ -104,11 +104,9 @@ void setup() {
     mqttCfg.lwtQoS = 1;
     mqttCfg.lwtRetain = true;
     
-    auto mqtt = std::make_unique<MQTTComponent>(mqttCfg);
-    auto* mqttPtr = mqtt.get();
-    core.addComponent(std::move(mqtt));
+    core.addComponent(std::make_unique<MQTTComponent>(mqttCfg));
     
-    // Configure Home Assistant
+    // Configure Home Assistant (communicates with MQTT via EventBus)
     HAConfig haCfg;
     haCfg.nodeId = "esp32-demo";
     haCfg.deviceName = "ESP32 Demo Device";
@@ -119,7 +117,7 @@ void setup() {
     haCfg.configUrl = "http://" + WiFi.localIP().toString();
     haCfg.suggestedArea = "Office";
     
-    auto ha = std::make_unique<HomeAssistantComponent>(mqttPtr, haCfg);
+    auto ha = std::make_unique<HomeAssistantComponent>(haCfg);
     haPtr = ha.get();
     
     // ========== Add Entities ==========

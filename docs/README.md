@@ -6,44 +6,22 @@ Welcome to the DomoticsCore documentation. This directory contains comprehensive
 
 ---
 
-## Documentation Index
+## 📚 Documentation Index
 
-### **📘 Core Guides**
+### **Getting Started**
+- **[Getting Started Guide](getting-started.md)** - Complete tutorial from installation to first project
+- **[Architecture Guide](architecture.md)** - Framework design, patterns, and best practices
 
-#### **[WebUI-Developer-Guide.md](WebUI-Developer-Guide.md)**
-Complete guide for creating WebUI providers for your components.
+### **Migration Guides**
+- **[Migration to v1.2.0](migration/v1.2.0.md)** - Upgrading from v1.1.x (EventBus changes)
 
-**Topics covered:**
-- Architecture overview and data flow
-- Creating WebUI providers step-by-step
-- UI contexts (Dashboard, Settings, Status badges, etc.)
-- WebSocket updates and optimization
-- Complete working examples
-- Best practices and troubleshooting
+### **Developer Guides**
+- **[Custom Components](guides/custom-components.md)** - Creating your own components
+- **[WebUI Development](guides/webui-developer.md)** - Adding web interfaces to components
+- **[WebUI State Tracking](guides/webui-state-tracking.md)** - Efficient state management with LazyState
 
-**Start here if you want to:**
-- Add web interface to your component
-- Understand the WebUI system architecture
-- Create dashboard cards and settings panels
-- Implement real-time status updates
-
----
-
-### **📖 Quick References**
-
-#### **[WebUI-State-Tracking.md](WebUI-State-Tracking.md)**
-Quick reference for the `LazyState<T>` helper used for efficient change detection in WebUI providers.
-
-**Topics covered:**
-- LazyState API and usage patterns
-- Simple and composite state tracking
-- Migration from manual state tracking
-- Best practices summary
-
-**Use this for:**
-- Quick LazyState syntax lookup
-- Pattern examples
-- State tracking troubleshooting
+### **Reference Documentation**
+- **[EventBus Architecture](reference/eventbus-architecture.md)** - Complete EventBus API and patterns
 
 ---
 
@@ -279,22 +257,29 @@ For WebUI issues, see:
 
 ```
 docs/
-├── README.md                       # This file
-├── WebUI-Developer-Guide.md        # Complete WebUI development guide
-├── WebUI-State-Tracking.md         # LazyState quick reference
-├── Doxyfile                        # Doxygen configuration
-└── html/                           # Generated API documentation (git-ignored)
+├── README.md                          # This file - documentation index
+├── getting-started.md                 # Complete tutorial
+├── architecture.md                    # Framework design
+├── migration/
+│   └── v1.2.0.md                     # Migration guides
+├── guides/
+│   ├── custom-components.md          # Component development
+│   ├── webui-developer.md            # WebUI integration
+│   └── webui-state-tracking.md       # State management
+├── reference/
+│   └── eventbus-architecture.md      # EventBus API reference
+├── Doxyfile                          # Doxygen configuration
+└── html/                             # Generated API docs (git-ignored)
 
 Each component library:
 └── DomoticsCore-{Component}/
-    ├── README.md                   # Component overview and API
-    ├── include/                    # Header files
-    ├── src/                        # Implementation files (if needed)
-    └── examples/                   # Example applications
+    ├── README.md                      # Component overview and API
+    ├── include/                       # Header files
+    ├── src/                           # Implementation (if needed)
+    └── examples/                      # Example applications
         └── {ExampleName}/
-            ├── README.md           # Example-specific guide
-            ├── src/main.cpp        # Example code
-            └── platformio.ini      # Build configuration
+            ├── src/main.cpp           # Example code
+            └── platformio.ini         # Build configuration
 ```
 
 ---

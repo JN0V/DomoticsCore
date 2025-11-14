@@ -1,12 +1,12 @@
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-1.1.4-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.1.4)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.2.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 1.1.4 Released!** Unified component metadata system - cleaner architecture with proper dependency resolution! See [CHANGELOG.md](CHANGELOG.md) for details.
+> **🎉 Version 1.2.0 Released!** EventBus architecture with `core.on<>()`/`core.emit()` - fully decoupled components, no reboot for MQTT/HA config! See [CHANGELOG.md](CHANGELOG.md) and [Migration Guide](docs/migration/v1.2.0.md).
 
 ## ✨ What Makes DomoticsCore Different
 
@@ -14,9 +14,10 @@
 - **🚨 Visual Debugging**: LED status indicators work even when system fails - perfect for headless devices
 - **🛡️ Production Ready**: Comprehensive error handling, component health monitoring, and graceful degradation
 - **🎯 Developer Friendly**: Header-only design (no linking issues), automatic dependency resolution, extensive examples
+- **📡 EventBus Architecture**: Decoupled components communicate via EventBus - no tight coupling, easy testing
 - **🔧 IoT Complete**: WiFi, MQTT, Home Assistant, OTA, WebUI, Storage - everything integrated and tested
 
-> **Note:** Components are mostly header-only (`.h` files) for zero overhead and simple integration. This is a standard C++ pattern, not ESP32-specific. See [ARCHITECTURE.md](ARCHITECTURE.md#header-only-design) for details.
+> **Note:** Components are mostly header-only (`.h` files) for zero overhead and simple integration. This is a standard C++ pattern, not ESP32-specific. See [Architecture Guide](docs/architecture.md#header-only-design) for details.
 
 ## 🚀 Quick Start (3 Minutes)
 
@@ -153,17 +154,21 @@ lib_deps =
 
 ## 📖 Documentation
 
-- **[GETTING_STARTED.md](GETTING_STARTED.md)** - Comprehensive tutorial
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Design decisions and patterns
+- **[Getting Started Guide](docs/getting-started.md)** - Comprehensive tutorial
+- **[Architecture Guide](docs/architecture.md)** - Design decisions and patterns
+- **[Migration Guide v1.2.0](docs/migration/v1.2.0.md)** - Upgrading from v1.1.x
+- **[EventBus Reference](docs/reference/eventbus-architecture.md)** - Complete EventBus documentation
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history
+- **[Complete Documentation Index](docs/README.md)** - All guides and references
 - **Component READMEs** - See each `DomoticsCore-*/README.md`
-- **Examples** - 20+ working examples in component directories
+- **Examples** - 19 working examples in component directories
 
 ### Key Documentation
 
 - **LED Effects**: [DomoticsCore-LED/README.md](DomoticsCore-LED/README.md)
 - **Event Bus**: [DomoticsCore-Core/README.md](DomoticsCore-Core/README.md#event-bus)
-- **WebUI Development**: [docs/WebUI-Developer-Guide.md](docs/WebUI-Developer-Guide.md)
+- **WebUI Development**: [docs/guides/webui-developer.md](docs/guides/webui-developer.md)
+- **Custom Components**: [docs/guides/custom-components.md](docs/guides/custom-components.md)
 - **Storage API**: [DomoticsCore-Storage/README.md](DomoticsCore-Storage/README.md)
 
 ## 📁 Project Structure
@@ -330,7 +335,7 @@ Contributions welcome! Please:
 5. Update documentation
 6. Submit a pull request
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for design patterns.
+See [Architecture Guide](docs/architecture.md) for design patterns.
 
 ## 📄 License
 

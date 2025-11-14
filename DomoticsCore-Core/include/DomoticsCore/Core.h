@@ -136,6 +136,42 @@ public:
     Utils::EventBus& getEventBus() {
         return componentRegistry.getEventBus();
     }
+    
+    // EventBus convenience methods (same API as IComponent)
+    /**
+     * @brief Subscribe to a topic-based event
+     * @param topic Event topic string
+     * @param handler Callback function
+     * @param replayLast If true and sticky event exists, handler called immediately
+     * @return Subscription ID
+     */
+    template<typename PayloadT>
+    uint32_t on(const String& topic, std::function<void(const PayloadT&)> handler, bool replayLast = false) {
+        auto wrapper = [handler](const void* payload) {
+            if (payload) {
+                handler(*static_cast<const PayloadT*>(payload));
+            }
+        };
+        return componentRegistry.getEventBus().subscribe(topic, wrapper, this, replayLast);
+    }
+    
+    /**
+     * @brief Emit/publish an event on a topic
+     * @param topic Event topic string
+     * @param payload Event payload data
+     */
+    template<typename PayloadT>
+    void emit(const String& topic, const PayloadT& payload) {
+        componentRegistry.getEventBus().publish(topic, payload);
+    }
+    
+    /**
+     * @brief Emit/publish an event on a topic without payload
+     * @param topic Event topic string
+     */
+    void emit(const String& topic) {
+        componentRegistry.getEventBus().publish(topic);
+    }
 };
 
 } // namespace DomoticsCore
