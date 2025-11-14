@@ -106,32 +106,41 @@ void setup() {
     mqttConfig.lwtRetain = true;
     
     auto mqtt = std::make_unique<MQTTComponent>(mqttConfig);
-    auto* mqttPtr = mqtt.get();
+    auto* mqttPtr = mqtt.get();  // Keep for WebUI provider
     core.addComponent(std::move(mqtt));
     
-    // Register MQTT callbacks
-    // Capture mqttPtr to avoid unnecessary getComponent() calls
-    mqttPtr->onConnect([mqttPtr]() {
+    // Register EventBus listeners (capture clientId before config is moved)
+    String clientId = mqttConfig.clientId;
+    
+    core.on<bool>("mqtt/connected", [&core, clientId](const bool&) {
         DLOG_I(LOG_APP, "📡 MQTT Connected!");
         
-        // Publish online status
-        String statusTopic = mqttPtr->getMQTTConfig().clientId + "/status";
-        mqttPtr->publish(statusTopic, "online", 1, true);
+        // Publish online status via EventBus
+        DomoticsCore::Components::MQTTPublishEvent pubEv{};
+        String statusTopic = clientId + "/status";
+        strncpy(pubEv.topic, statusTopic.c_str(), sizeof(pubEv.topic) - 1);
+        strncpy(pubEv.payload, "online", sizeof(pubEv.payload) - 1);
+        pubEv.qos = 1;
+        pubEv.retain = true;
+        core.emit("mqtt/publish", pubEv);
         
-        // Subscribe to command topics
-        String commandTopic = mqttPtr->getMQTTConfig().clientId + "/command/#";
-        mqttPtr->subscribe(commandTopic, 1);
+        // Subscribe to command topics via EventBus
+        DomoticsCore::Components::MQTTSubscribeEvent subEv{};
+        String commandTopic = clientId + "/command/#";
+        strncpy(subEv.topic, commandTopic.c_str(), sizeof(subEv.topic) - 1);
+        subEv.qos = 1;
+        core.emit("mqtt/subscribe", subEv);
         
         DLOG_I(LOG_APP, "  ✓ Published online status");
         DLOG_I(LOG_APP, "  ✓ Subscribed to commands");
     });
     
-    mqttPtr->onDisconnect([]() {
+    core.on<bool>("mqtt/disconnected", [](const bool&) {
         DLOG_W(LOG_APP, "📡 MQTT Disconnected");
     });
     
-    mqttPtr->onMessage("+/command/#", [](const String& topic, const String& payload) {
-        DLOG_I(LOG_APP, "📨 Command received: %s = %s", topic.c_str(), payload.c_str());
+    core.on<DomoticsCore::Components::MQTTMessageEvent>("mqtt/message", [](const DomoticsCore::Components::MQTTMessageEvent& ev) {
+        DLOG_I(LOG_APP, "📨 Command received: %s = %s", ev.topic, ev.payload);
     });
     
     // Initialize components

@@ -5,6 +5,79 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-11-14
+
+### 🚨 Breaking Changes
+
+**EventBus-Only Communication** - MQTT and HomeAssistant components now use EventBus exclusively
+
+#### MQTT Component
+- **REMOVED:** Direct callback methods (`onConnect`, `onDisconnect`, `onMessage`)
+- **NEW:** EventBus-based communication via topics
+  - Emits: `mqtt/connected`, `mqtt/disconnected`, `mqtt/message`
+  - Listens: `mqtt/publish`, `mqtt/subscribe`
+- **Migration:** Use `core.on<>()` and `core.emit()` for event handling
+- **See:** `MIGRATING_TO_V1.2.md` for detailed migration guide
+
+#### HomeAssistant Component
+- **REMOVED:** `MQTTComponent*` parameter from constructor
+- **NEW:** EventBus-based MQTT communication (no direct dependency)
+- **Before:** `HomeAssistantComponent(mqttPtr, haConfig)`
+- **After:** `HomeAssistantComponent(haConfig)`
+- **Impact:** Fully decoupled from MQTT component
+
+### ✨ New Features
+
+#### Core EventBus Helpers
+- **NEW:** `Core::on<>()` and `Core::emit()` methods for cleaner API
+- **Before:** `core.getEventBus().subscribe()` / `core.getEventBus().publish()`
+- **After:** `core.on<bool>("topic", callback)` / `core.emit("topic", data)`
+- **Impact:** Consistent API between Core and IComponent
+
+### 🐛 Critical Bug Fixes
+
+#### Bug #1: EventBus Listener Registration
+- **Problem:** EventBus listeners registered AFTER configuration checks
+- **Impact:** Discovery/subscriptions failed after WebUI configuration (reboot required)
+- **Fix:** Listeners now registered BEFORE configuration checks
+- **Result:** Discovery works immediately after WebUI config (no reboot needed)
+
+#### Bug #2: PubSubClient Callback Registration  
+- **Problem:** `mqttClient.setCallback()` called AFTER configuration checks
+- **Impact:** Incoming MQTT messages silently dropped (switch commands not received)
+- **Fix:** Callback registered BEFORE configuration checks
+- **Result:** All MQTT messages properly received
+
+### ✨ Improvements
+
+- **Architecture:** Complete EventBus decoupling for inter-component communication
+- **API Consistency:** Same `on<>()` / `emit()` API in Core and IComponent
+- **Modularity:** Components can be tested independently
+- **Maintainability:** Reduced tight coupling and component dependencies
+- **Examples:** Updated all MQTT/HomeAssistant examples to use EventBus
+- **Documentation:** Added comprehensive EventBus architecture guide
+
+### 📚 Documentation
+
+- **NEW:** `docs/reference/eventbus-architecture.md` - Complete EventBus reference
+- **NEW:** `docs/migration/v1.2.0.md` - Migration guide from v1.1.x
+- **REORGANIZED:** Documentation structure with guides/, migration/, reference/ folders
+- **UPDATED:** All component examples with EventBus usage
+- **UPDATED:** Component README files with new APIs
+
+### 🔄 Component Versions
+
+- **DomoticsCore-MQTT:** 1.0.1 → 1.2.0
+- **DomoticsCore-HomeAssistant:** 1.0.2 → 1.2.0  
+- **DomoticsCore-System:** 1.0.2 → 1.2.0
+- **DomoticsCore-Core:** 1.1.4 → 1.2.0
+
+### 📦 Migration Required
+
+This is a breaking release. See [Migration Guide](docs/migration/v1.2.0.md) for step-by-step migration instructions.
+
+---
+
 ## [1.1.4] - 2025-11-07
 
 ### 🔧 Architecture Improvements

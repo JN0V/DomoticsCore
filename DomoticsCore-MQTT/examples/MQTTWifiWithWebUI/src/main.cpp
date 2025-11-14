@@ -54,18 +54,35 @@ void setup() {
     mqttCfg.lwtRetain = true;
 
     auto mqtt = std::make_unique<MQTTComponent>(mqttCfg);
-    auto* mqttPtr = mqtt.get();
+    auto* mqttPtr = mqtt.get();  // Keep for WebUI provider
     core.addComponent(std::move(mqtt));
 
-    // MQTT callbacks
-    mqttPtr->onConnect([mqttPtr]() {
+    // Register EventBus listeners (capture clientId before config is moved)
+    String clientId = mqttCfg.clientId;
+    
+    core.on<bool>("mqtt/connected", [&core, clientId](const bool&) {
         DLOG_I(LOG_APP, "MQTT connected");
-        String statusTopic = mqttPtr->getMQTTConfig().clientId + "/status";
-        mqttPtr->publish(statusTopic, "online", 1, true);
-        String cmdTopic = mqttPtr->getMQTTConfig().clientId + "/command/#";
-        mqttPtr->subscribe(cmdTopic, 1);
+        
+        // Publish online status via EventBus
+        DomoticsCore::Components::MQTTPublishEvent pubEv{};
+        String statusTopic = clientId + "/status";
+        strncpy(pubEv.topic, statusTopic.c_str(), sizeof(pubEv.topic) - 1);
+        strncpy(pubEv.payload, "online", sizeof(pubEv.payload) - 1);
+        pubEv.qos = 1;
+        pubEv.retain = true;
+        core.emit("mqtt/publish", pubEv);
+        
+        // Subscribe to command topics via EventBus
+        DomoticsCore::Components::MQTTSubscribeEvent subEv{};
+        String cmdTopic = clientId + "/command/#";
+        strncpy(subEv.topic, cmdTopic.c_str(), sizeof(subEv.topic) - 1);
+        subEv.qos = 1;
+        core.emit("mqtt/subscribe", subEv);
     });
-    mqttPtr->onDisconnect([](){ DLOG_W(LOG_APP, "MQTT disconnected"); });
+    
+    core.on<bool>("mqtt/disconnected", [](const bool&) { 
+        DLOG_W(LOG_APP, "MQTT disconnected"); 
+    });
 
     // Initialize components
     DLOG_I(LOG_APP, "Initializing components...");
