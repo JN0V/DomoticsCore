@@ -84,24 +84,21 @@ public:
     ComponentStatus begin() override {
         DLOG_I(LOG_STORAGE, "Initializing...");
         
-        // Define configuration parameters
-        config.defineParameter(ConfigParam("namespace", ConfigType::String, false, 
-                                         storageConfig.namespace_name, "Storage namespace (max 15 chars)")
-                              .length(15)); // NVS namespace limit
-        config.defineParameter(ConfigParam("read_only", ConfigType::Boolean, false, 
-                                         storageConfig.readOnly ? "true" : "false", 
-                                         "Open storage in read-only mode"));
-        config.defineParameter(ConfigParam("max_entries", ConfigType::Integer, false, 
-                                         String(storageConfig.maxEntries), "Maximum number of entries")
-                              .min(1).max(500));
-        config.defineParameter(ConfigParam("auto_commit", ConfigType::Boolean, false, 
-                                         storageConfig.autoCommit ? "true" : "false", 
-                                         "Automatically commit changes"));
-        
         // Validate configuration
-        auto validation = validateConfig();
-        if (!validation.isValid()) {
-            DLOG_E(LOG_STORAGE, "Config validation failed: %s", validation.toString().c_str());
+        if (storageConfig.namespace_name.isEmpty()) {
+            DLOG_E(LOG_STORAGE, "Namespace cannot be empty");
+            setStatus(ComponentStatus::ConfigError);
+            return ComponentStatus::ConfigError;
+        }
+        
+        if (storageConfig.namespace_name.length() > 15) {
+            DLOG_E(LOG_STORAGE, "Namespace too long (max 15 chars): %s", storageConfig.namespace_name.c_str());
+            setStatus(ComponentStatus::ConfigError);
+            return ComponentStatus::ConfigError;
+        }
+        
+        if (storageConfig.maxEntries < 1 || storageConfig.maxEntries > 500) {
+            DLOG_E(LOG_STORAGE, "Invalid max_entries: %d (must be 1-500)", storageConfig.maxEntries);
             setStatus(ComponentStatus::ConfigError);
             return ComponentStatus::ConfigError;
         }
@@ -473,23 +470,6 @@ private:
         if (entryCount >= storageConfig.maxEntries) {
             DLOG_W(LOG_STORAGE, "At maximum capacity (%d entries)", entryCount);
         }
-    }
-
-    ValidationResult validateConfig() const {
-        // Validate namespace name
-        if (storageConfig.namespace_name.isEmpty()) {
-            return ValidationResult(ComponentStatus::ConfigError, "Namespace cannot be empty", "namespace");
-        } else if (storageConfig.namespace_name.length() > 15) {
-            return ValidationResult(ComponentStatus::ConfigError, "Namespace too long (max 15 characters)", "namespace");
-        }
-        
-        // Validate max entries
-        if (storageConfig.maxEntries == 0) {
-            return ValidationResult(ComponentStatus::ConfigError, "Max entries must be greater than 0", "max_entries");
-        }
-        
-        // Return success if all validations pass
-        return ValidationResult(ComponentStatus::Success);
     }
 
 #if DOMOTICSCORE_WEBUI_ENABLED

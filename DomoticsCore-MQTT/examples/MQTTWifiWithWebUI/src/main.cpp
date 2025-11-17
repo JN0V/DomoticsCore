@@ -111,7 +111,7 @@ void loop() {
             doc["freeHeap"] = ESP.getFreeHeap();
             if (wifi) doc["rssi"] = wifi->getRSSI();
             doc["temp"] = 20.0 + (random(0, 100) / 10.0);
-            String topic = mqtt->getMQTTConfig().clientId + "/telemetry";
+            String topic = mqtt->getConfig().clientId + "/telemetry";
             mqtt->publishJSON(topic, doc, 0, false);
         }
     }

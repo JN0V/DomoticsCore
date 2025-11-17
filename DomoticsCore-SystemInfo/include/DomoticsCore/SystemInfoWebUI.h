@@ -13,6 +13,21 @@ namespace WebUI {
 class SystemInfoWebUI : public IWebUIProvider {
 private:
     SystemInfoComponent* sys; // non-owning
+    std::function<void(const String&)> onDeviceNameChanged; // callback for device name persistence
+
+    // State tracking using LazyState for change detection
+    struct SystemInfoState {
+        String deviceName;
+        String manufacturer;
+        String firmwareVersion;
+        bool operator==(const SystemInfoState& other) const {
+            return deviceName == other.deviceName && 
+                   manufacturer == other.manufacturer && 
+                   firmwareVersion == other.firmwareVersion;
+        }
+        bool operator!=(const SystemInfoState& other) const { return !(*this == other); }
+    };
+    LazyState<SystemInfoState> systemInfoState;
 
     // Chart data storage (circular buffer for efficiency)
     static const int CHART_DATA_SIZE = 20;
@@ -67,6 +82,11 @@ public:
     explicit SystemInfoWebUI(SystemInfoComponent* component)
         : sys(component) {}
 
+    // Set callback for device name persistence (optional)
+    void setDeviceNameCallback(std::function<void(const String&)> callback) {
+        onDeviceNameChanged = callback;
+    }
+
     // IWebUIProvider
     String getWebUIName() const override { return sys ? sys->metadata.name : String("System Info"); }
     String getWebUIVersion() const override { return sys ? sys->metadata.version : String("1.0.0"); }
@@ -105,6 +125,11 @@ public:
 
             // Merged settings card (Hardware + Memory)
             WebUIContext sysSettings = WebUIContext::settings("system_info", "System Info");
+            // Device identity (editable)
+            const auto& cfg = sys->getConfig();
+            sysSettings.withField(WebUIField("device_name", "Device Name", WebUIFieldType::Text, cfg.deviceName));
+            sysSettings.withField(WebUIField("manufacturer", "Manufacturer", WebUIFieldType::Display, cfg.manufacturer, "", true));
+            sysSettings.withField(WebUIField("firmware_version", "Firmware Version", WebUIFieldType::Display, cfg.firmwareVersion, "", true));
             // Hardware details
             sysSettings.withField(WebUIField("chip_model", "Chip", WebUIFieldType::Display, metrics.chipModel, "", true));
             sysSettings.withField(WebUIField("chip_revision", "Revision", WebUIFieldType::Display, String(metrics.chipRevision), "", true));
@@ -155,6 +180,10 @@ public:
             String json; serializeJson(doc, json); return json;
         } else if (contextId == "system_info") {
             JsonDocument doc;
+            const auto& cfg = sys->getConfig();
+            doc["device_name"] = cfg.deviceName;
+            doc["manufacturer"] = cfg.manufacturer;
+            doc["firmware_version"] = cfg.firmwareVersion;
             doc["chip_model"] = metrics.chipModel;
             doc["chip_revision"] = String(metrics.chipRevision);
             doc["cpu_freq"] = String(metrics.cpuFreq) + " MHz";
@@ -166,8 +195,50 @@ public:
         return "{}";
     }
 
-    String handleWebUIRequest(const String& /*contextId*/, const String& /*endpoint*/, const String& /*method*/, const std::map<String, String>& /*params*/) override {
-        return "{\"success\":false, \"error\":\"Not supported\"}";
+    String handleWebUIRequest(const String& contextId, const String& /*endpoint*/, const String& method, const std::map<String, String>& params) override {
+        if (contextId == "system_info" && method == "POST") {
+            auto fieldIt = params.find("field");
+            auto valueIt = params.find("value");
+            if (fieldIt != params.end() && valueIt != params.end()) {
+                const String& field = fieldIt->second;
+                const String& value = valueIt->second;
+                
+                if (field == "device_name") {
+                    // Use Get → Override → Set pattern
+                    SystemInfoConfig cfg = sys->getConfig();
+                    cfg.deviceName = value;
+                    sys->setConfig(cfg);
+                    
+                    // Invoke persistence callback
+                    if (onDeviceNameChanged) {
+                        onDeviceNameChanged(value);
+                    }
+                    
+                    // Force state reset to push update immediately
+                    systemInfoState.reset();
+                    
+                    return "{\"success\":true}";
+                }
+            }
+        }
+        return "{\"success\":false}";
+    }
+
+    bool hasDataChanged(const String& contextId) override {
+        if (!sys) return false;
+        
+        if (contextId == "system_info") {
+            const auto& cfg = sys->getConfig();
+            SystemInfoState current{
+                cfg.deviceName,
+                cfg.manufacturer,
+                cfg.firmwareVersion
+            };
+            return systemInfoState.hasChanged(current);
+        }
+        
+        // Always send updates for other contexts (metrics change frequently)
+        return true;
     }
 };
 

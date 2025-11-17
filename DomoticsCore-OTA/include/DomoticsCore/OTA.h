@@ -9,6 +9,7 @@
 #include <functional>
 
 #include "DomoticsCore/IComponent.h"
+#include "DomoticsCore/Logger.h"
 #include <ArduinoJson.h>
 
 namespace DomoticsCore {
@@ -79,8 +80,14 @@ public:
     const String& getLastResult() const { return lastResult; }
     const String& getLastError() const { return lastError; }
     const String& getLastVersion() const { return lastVersionSeen; }
-    OTAConfig& mutableConfig() { return config; }
-    const OTAConfig& getOTAConfig() const { return config; }
+    
+    // Standard config accessors (matching other components)
+    const OTAConfig& getConfig() const { return config; }
+    void setConfig(const OTAConfig& cfg) {
+        config = cfg;
+        DLOG_I(LOG_OTA, "OTA config updated: updateUrl='%s', autoReboot=%d, enableWebUIUpload=%d",
+               config.updateUrl.c_str(), config.autoReboot, config.enableWebUIUpload);
+    }
 
     // Set providers. If not set, network-based features are disabled and will error gracefully.
     void setManifestFetcher(ManifestFetcher fetcher) { manifestFetcher = std::move(fetcher); }

@@ -39,6 +39,13 @@ public:
     explicit MQTTWebUI(MQTTComponent* component) 
         : mqtt(component) {}
     
+    /**
+     * @brief Set callback for MQTT configuration persistence (optional)
+     */
+    void setConfigSaveCallback(std::function<void(const MQTTConfig&)> callback) {
+        onConfigSaved = callback;
+    }
+    
     // ========== IWebUIProvider Interface ==========
     
     String getWebUIName() const override { 
@@ -53,7 +60,7 @@ public:
         std::vector<WebUIContext> contexts;
         if (!mqtt) return contexts;
         
-        const MQTTConfig& cfg = mqtt->getMQTTConfig();
+        const MQTTConfig& cfg = mqtt->getConfig();
         
         // Header status badge
         // Frontend toggles color when first field is truthy; use boolean-like value for 'state'
@@ -123,7 +130,7 @@ public:
             doc["state_code"] = code;
             
         } else if (contextId == "mqtt_settings") {
-            const MQTTConfig& cfg = mqtt->getMQTTConfig();
+            const MQTTConfig& cfg = mqtt->getConfig();
             doc["enabled"] = cfg.enabled;
             doc["broker"] = cfg.broker;
             doc["port"] = cfg.port;
@@ -137,7 +144,7 @@ public:
             doc["connected"] = mqtt->isConnected();
             
         } else if (contextId == "mqtt_detail") {
-            const MQTTConfig& cfg = mqtt->getMQTTConfig();
+            const MQTTConfig& cfg = mqtt->getConfig();
             const auto& stats = mqtt->getStatistics();
             
             doc["broker_addr"] = cfg.broker + ":" + String(cfg.port);
@@ -193,7 +200,7 @@ public:
             auto fieldIt = params.find("field");
             auto valueIt = params.find("value");
             
-            MQTTConfig cfg = mqtt->getMQTTConfig();
+            MQTTConfig cfg = mqtt->getConfig();
             
             // Handle field updates
             if (fieldIt != params.end() && valueIt != params.end()) {
@@ -240,6 +247,12 @@ public:
                 }
                 
                 mqtt->setConfig(cfg);
+                
+                // Invoke persistence callback if set
+                if (onConfigSaved) {
+                    onConfigSaved(cfg);
+                }
+                
                 return "{\"success\":true}";
             }
         }
@@ -249,6 +262,7 @@ public:
 
 private:
     MQTTComponent* mqtt;  // Non-owning pointer
+    std::function<void(const MQTTConfig&)> onConfigSaved;  // Callback for persistence
     LazyState<String> statusState;
 };
 

@@ -401,6 +401,197 @@ bool loadConfig(DeviceConfig& cfg) {
 
 ---
 
+## Component Configuration and Persistence
+
+### The `setConfig()` Pattern
+
+**Critical Rule:** If your component has a configuration structure and you want to load it from Storage AFTER component creation, you **MUST** provide a `setConfig()` method.
+
+**Why?** Components are created and initialized (`begin()` called) BEFORE the Storage component is available. To support loading configuration from Storage, components need a way to update their configuration after initialization.
+
+### Configuration Structure
+
+```cpp
+// Define your component's configuration
+struct MyComponentConfig {
+    bool enabled = true;
+    int updateInterval = 5000;
+    String serverUrl = "";
+    float threshold = 23.5;
+};
+
+class MyComponent : public IComponent {
+private:
+    MyComponentConfig config;
+    
+public:
+    // Constructor takes initial config (may have defaults)
+    explicit MyComponent(const MyComponentConfig& cfg = MyComponentConfig())
+        : config(cfg) {
+        metadata.name = "MyComponent";
+        metadata.version = "1.0.0";
+    }
+    
+    ComponentStatus begin() override {
+        // Component initialized with constructor config
+        DLOG_I("MyComponent", "Init with interval: %d ms", config.updateInterval);
+        return ComponentStatus::Success;
+    }
+    
+    /**
+     * @brief Update configuration after component creation
+     * @param cfg New configuration
+     * 
+     * Allows updating settings loaded from Storage component.
+     * Call this after core.begin() when loading config from Storage.
+     */
+    void setConfig(const MyComponentConfig& cfg) {
+        bool needsRestart = (cfg.updateInterval != config.updateInterval);
+        
+        config = cfg;
+        
+        // Apply changes that require restart
+        if (needsRestart) {
+            // Reinitialize with new settings
+            restart();
+        }
+        
+        DLOG_I("MyComponent", "Config updated: interval=%d ms", config.updateInterval);
+    }
+    
+    /**
+     * @brief Get current configuration (for saving to Storage)
+     */
+    const MyComponentConfig& getConfig() const {
+        return config;
+    }
+    
+    String getName() const override { return "MyComponent"; }
+};
+```
+
+### Loading Config from Storage (in System or main.cpp)
+
+```cpp
+// After core.begin(), components and Storage are initialized
+auto* storageComp = core.getComponent<StorageComponent>("Storage");
+auto* myComp = core.getComponent<MyComponent>("MyComponent");
+
+if (storageComp && myComp) {
+    // Load configuration from Storage
+    MyComponentConfig cfg;
+    cfg.enabled = storageComp->getBool("my_enabled", true);
+    cfg.updateInterval = storageComp->getInt("my_interval", 5000);
+    cfg.serverUrl = storageComp->getString("my_server", "");
+    cfg.threshold = storageComp->getFloat("my_threshold", 23.5);
+    
+    DLOG_I(LOG_SYSTEM, "Loading MyComponent config from Storage");
+    
+    // Apply loaded configuration
+    myComp->setConfig(cfg);
+}
+```
+
+### Saving Config to Storage (in WebUI or component)
+
+```cpp
+void onConfigChanged(const MyComponentConfig& cfg) {
+    auto* storage = getCore()->getComponent<StorageComponent>("Storage");
+    if (storage) {
+        storage->putBool("my_enabled", cfg.enabled);
+        storage->putInt("my_interval", cfg.updateInterval);
+        storage->putString("my_server", cfg.serverUrl);
+        storage->putFloat("my_threshold", cfg.threshold);
+        
+        DLOG_I("MyComponent", "Config saved to Storage");
+    }
+}
+```
+
+### Components That Need `setConfig()`
+
+✅ **Have `setConfig()`:**
+- `NTPComponent` - timezone, servers, sync interval
+- `WebUIComponent` - theme, device name
+- `MQTTComponent` - broker, port, credentials
+- `HomeAssistantComponent` - node ID, discovery prefix
+
+❌ **Don't need `setConfig()`:**
+- `StorageComponent` - initialized first, config at construction only
+- `CoreComponent` - no persistent config
+- Simple hardware components without configuration
+
+### Best Practices
+
+1. **Always provide `getConfig()`** - Allows reading current configuration
+2. **Handle config changes gracefully** - Check what changed, only restart if needed
+3. **Log configuration updates** - Use `DLOG_I()` for visibility
+4. **Validate new config** - Check ranges, required fields before applying
+5. **Support partial updates** - Start from current config, update only changed fields
+
+### Complete Example with WebUI Integration
+
+```cpp
+struct SensorConfig {
+    bool enabled = true;
+    int readInterval = 10000;
+    float calibrationOffset = 0.0;
+    String mqttTopic = "sensor/data";
+};
+
+class SensorComponent : public IComponent {
+private:
+    SensorConfig config;
+    Utils::NonBlockingDelay readTimer;
+    
+public:
+    explicit SensorComponent(const SensorConfig& cfg = SensorConfig())
+        : config(cfg), readTimer(cfg.readInterval) {
+        metadata.name = "Sensor";
+    }
+    
+    ComponentStatus begin() override {
+        pinMode(SENSOR_PIN, INPUT);
+        return ComponentStatus::Success;
+    }
+    
+    void setConfig(const SensorConfig& cfg) {
+        bool intervalChanged = (cfg.readInterval != config.readInterval);
+        
+        config = cfg;
+        
+        if (intervalChanged) {
+            readTimer.setInterval(config.readInterval);
+        }
+        
+        DLOG_I("Sensor", "Config updated: interval=%d, offset=%.2f", 
+               config.readInterval, config.calibrationOffset);
+    }
+    
+    const SensorConfig& getConfig() const { return config; }
+    
+    void loop() override {
+        if (!config.enabled) return;
+        
+        if (readTimer.isReady()) {
+            float raw = analogRead(SENSOR_PIN);
+            float value = raw + config.calibrationOffset;
+            
+            emit("sensor/reading", value, true);
+            
+            auto* mqtt = getCore()->getComponent<MQTTComponent>("MQTT");
+            if (mqtt && mqtt->isConnected()) {
+                mqtt->publish(config.mqttTopic, String(value));
+            }
+        }
+    }
+    
+    String getName() const override { return "Sensor"; }
+};
+```
+
+---
+
 ## Event Bus Communication
 
 The Event Bus allows components to communicate without direct coupling.

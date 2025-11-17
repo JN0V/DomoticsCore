@@ -104,7 +104,7 @@ public:
         std::vector<WebUIContext> contexts;
         if (!ntp) return contexts;
 
-        const NTPConfig& cfg = ntp->getNTPConfig();
+        const NTPConfig& cfg = ntp->getConfig();
 
         // Header info - NTP provides time to the header zone
         String timeStr = ntp->isSynced() ? ntp->getFormattedTime("%H:%M:%S") : "--:--:--";
@@ -186,7 +186,6 @@ public:
                 .withField(WebUIField("servers", "NTP Servers", WebUIFieldType::Text, serversStr))
                 .withField(WebUIField("sync_interval", "Sync Interval (hours)", WebUIFieldType::Number, String(cfg.syncInterval / 3600)))
                 .withField(timezoneField)
-                .withField(WebUIField("sync_now_btn", "Sync Now", WebUIFieldType::Button, ""))
                 .withAPI("/api/ntp/settings");
 
         contexts.push_back(settings);
@@ -237,7 +236,7 @@ public:
             doc["timezone"] = getTimezoneFriendlyName(ntp->getTimezone());
 
         } else if (contextId == "ntp_settings") {
-            const NTPConfig& cfg = ntp->getNTPConfig();
+            const NTPConfig& cfg = ntp->getConfig();
             doc["enabled"] = cfg.enabled;
             
             // Servers as comma-separated
@@ -251,7 +250,7 @@ public:
             doc["timezone"] = cfg.timezone;
 
         } else if (contextId == "ntp_detail") {
-            const NTPConfig& cfg = ntp->getNTPConfig();
+            const NTPConfig& cfg = ntp->getConfig();
             const auto& stats = ntp->getStatistics();
 
             doc["synced"] = ntp->isSynced() ? "Yes" : "No";
@@ -309,19 +308,12 @@ public:
                 DLOG_D(LOG_NTP, "[WebUI] Value: %s", valueIt->second.c_str());
             }
 
-            NTPConfig cfg = ntp->getNTPConfig();
+            NTPConfig cfg = ntp->getConfig();
 
-            // Handle field updates and button actions
+            // Handle field updates
             if (fieldIt != params.end() && valueIt != params.end()) {
                 const String& field = fieldIt->second;
                 const String& value = valueIt->second;
-
-                // Check for button actions first
-                if (field == "sync_now_btn") {
-                    DLOG_I(LOG_NTP, "[WebUI] Sync Now button clicked");
-                    bool success = ntp->syncNow();
-                    return success ? "{\"success\":true}" : "{\"success\":false,\"error\":\"Sync failed to start\"}";
-                }
                 
                 // Handle configuration field updates
                 if (field == "enabled") {
@@ -368,6 +360,12 @@ public:
                     onConfigSaved(cfg);
                 }
                 
+                // Trigger immediate sync after configuration change
+                if (cfg.enabled) {
+                    DLOG_I(LOG_NTP, "[WebUI] Triggering immediate sync after config save");
+                    ntp->syncNow();
+                }
+                
                 return "{\"success\":true}";
             }
         }
@@ -386,7 +384,7 @@ public:
             return ntpDashboardState.hasChanged(ntp->getUnixTime());
         }
         else if (contextId == "ntp_settings") {
-            const NTPConfig& cfg = ntp->getNTPConfig();
+            const NTPConfig& cfg = ntp->getConfig();
             NTPSettingsState current = {cfg.enabled, cfg.timezone};
             return ntpSettingsState.hasChanged(current);
         }

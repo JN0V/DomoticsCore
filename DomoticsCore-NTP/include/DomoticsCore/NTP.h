@@ -476,6 +476,14 @@ public:
     // ========== Configuration ==========
 
     /**
+     * @brief Get current NTP configuration
+     * @return Current NTPConfig
+     */
+    const NTPConfig& getConfig() const {
+        return config;
+    }
+
+    /**
      * @brief Update configuration
      * @param cfg New configuration
      */
@@ -500,14 +508,6 @@ public:
             begin();
 #endif
         }
-    }
-
-    /**
-     * @brief Get current configuration
-     * @return Current NTP configuration
-     */
-    const NTPConfig& getNTPConfig() const {
-        return config;
     }
 
     // ========== Callbacks ==========

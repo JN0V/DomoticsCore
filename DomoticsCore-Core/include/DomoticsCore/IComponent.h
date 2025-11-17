@@ -40,7 +40,6 @@ class IComponent {
 public:
     // Public metadata for dependency resolution and identification
     ComponentMetadata metadata;
-    ComponentConfig config;
     
 protected:
     bool active = false;
@@ -124,31 +123,6 @@ public:
         return metadata;
     }
     
-    /**
-     * Get component configuration
-     * @return ComponentConfig for parameter access
-     */
-    virtual ComponentConfig& getConfig() {
-        return config;
-    }
-    
-    /**
-     * Get component configuration (const)
-     * @return ComponentConfig for parameter access
-     */
-    virtual const ComponentConfig& getConfig() const {
-        return config;
-    }
-    
-    /**
-     * Validate component configuration
-     * @return ValidationResult with detailed error information
-     */
-    virtual ValidationResult validateConfig() const {
-        return config.validate();
-    }
-    
-
     /**
      * Optional: Stable type key to identify component kind (e.g., "system_info").
      * Used by WebUI to attach composition-based UI wrappers automatically.

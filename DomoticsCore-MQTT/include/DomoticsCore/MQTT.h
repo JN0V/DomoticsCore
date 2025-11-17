@@ -291,10 +291,10 @@ public:
     void setConfig(const MQTTConfig& cfg);
     
     /**
-     * Get current MQTT-specific configuration
+     * Get current MQTT configuration
      * @return MQTT configuration reference
      */
-    const MQTTConfig& getMQTTConfig() const { return config; }
+    const MQTTConfig& getConfig() const { return config; }
     
     /**
      * @brief Set broker address and port

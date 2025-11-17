@@ -47,7 +47,7 @@ public:
         std::vector<WebUIContext> contexts;
         if (!ota) return contexts;
 
-        const OTAConfig& cfg = ota->getOTAConfig();
+        const OTAConfig& cfg = ota->getConfig();
 
         // Unified OTA card with mode selector
         WebUIContext otaCard = WebUIContext::settings("ota_unified", "Firmware Update");
@@ -347,8 +347,8 @@ public:
             doc["progress"] = ota->getProgress(); // Send numeric value
             doc["bytes"] = ota->getDownloadedBytes();
             doc["total"] = ota->getTotalBytes();
-            doc["update_url"] = ota->getOTAConfig().updateUrl;
-            doc["auto_reboot"] = ota->getOTAConfig().autoReboot;
+            doc["update_url"] = ota->getConfig().updateUrl;
+            doc["auto_reboot"] = ota->getConfig().autoReboot;
             doc["buttonEnabled"] = !ota->isBusy();
         } else {
             return "{}";
@@ -402,7 +402,10 @@ public:
 
         if (contextId == "ota_unified" || contextId == "ota_manager") {
             if (field == "update_url") {
-                ota->mutableConfig().updateUrl = value;
+                // Use Get → Override → Set pattern
+                OTAConfig cfg = ota->getConfig();
+                cfg.updateUrl = value;
+                ota->setConfig(cfg);
                 return "{\"success\":true}";
             }
             if (field == "check_now") {
@@ -410,7 +413,7 @@ public:
                 return "{\"success\":true}";
             }
             if (field == "start_update") {
-                String url = value.isEmpty() || value == "clicked" ? ota->getOTAConfig().updateUrl : value;
+                String url = value.isEmpty() || value == "clicked" ? ota->getConfig().updateUrl : value;
                 if (url.isEmpty()) {
                     return "{\"success\":false,\"error\":\"No firmware URL configured\"}";
                 }
@@ -419,7 +422,10 @@ public:
             }
             if (field == "auto_reboot") {
                 bool enable = (value == "true" || value == "1" || value == "on");
-                ota->mutableConfig().autoReboot = enable;
+                // Use Get → Override → Set pattern
+                OTAConfig cfg = ota->getConfig();
+                cfg.autoReboot = enable;
+                ota->setConfig(cfg);
                 return "{\"success\":true}";
             }
         }
@@ -482,8 +488,8 @@ private:
                 doc["progress"] = ota->getProgress();
                 doc["bytes"] = ota->getDownloadedBytes();
                 doc["total"] = ota->getTotalBytes();
-                doc["update_url"] = ota->getOTAConfig().updateUrl;
-                doc["auto_reboot"] = ota->getOTAConfig().autoReboot;
+                doc["update_url"] = ota->getConfig().updateUrl;
+                doc["auto_reboot"] = ota->getConfig().autoReboot;
             });
         });
 
@@ -515,7 +521,7 @@ private:
                 doc["total"] = ota->getTotalBytes();
                 doc["lastResult"] = ota->getLastResult();
                 doc["lastVersion"] = ota->getLastVersion();
-                doc["autoReboot"] = ota->getOTAConfig().autoReboot;
+                doc["autoReboot"] = ota->getConfig().autoReboot;
             });
         });
 
@@ -544,14 +550,14 @@ private:
                     doc["status"] = ota->getLastResult();
                     doc["progress"] = formatProgress();
                     doc["downloaded"] = String(ota->getDownloadedBytes());
-                    doc["update_url"] = ota->getOTAConfig().updateUrl;
-                    doc["auto_reboot"] = ota->getOTAConfig().autoReboot ? "true" : "false";
+                    doc["update_url"] = ota->getConfig().updateUrl;
+                    doc["auto_reboot"] = ota->getConfig().autoReboot ? "true" : "false";
                 });
                 return;
             }
             
             // Action request: trigger update
-            String url = request->hasParam("url", true) ? request->getParam("url", true)->value() : ota->getOTAConfig().updateUrl;
+            String url = request->hasParam("url", true) ? request->getParam("url", true)->value() : ota->getConfig().updateUrl;
             bool force = false;
             if (request->hasParam("force", true)) {
                 String v = request->getParam("force", true)->value();
@@ -564,7 +570,7 @@ private:
             });
         });
 
-        if (ota && ota->getOTAConfig().enableWebUIUpload) {
+        if (ota && ota->getConfig().enableWebUIUpload) {
             // Simple HTML upload page for demonstration
             webui->registerApiRoute("/ota/upload", HTTP_GET, [this](AsyncWebServerRequest* request){
                 const char* html =

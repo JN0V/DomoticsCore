@@ -17,6 +17,29 @@ namespace DomoticsCore {
 namespace Components {
 
 /**
+ * WiFi Component Configuration
+ * 
+ * Behavior:
+ * - If ssid is empty: Device starts in AP mode (enableAP ignored, always true)
+ * - If ssid is set: Device connects to WiFi, AP enabled only if enableAP=true
+ */
+struct WifiConfig {
+    // Station (STA) mode settings
+    String ssid = "";                   // WiFi network SSID (empty = AP-only mode)
+    String password = "";               // WiFi network password
+    bool autoConnect = true;            // Auto-connect on boot if SSID set
+    
+    // Access Point (AP) mode settings
+    bool enableAP = false;              // Enable AP alongside STA (ignored if no SSID)
+    String apSSID = "";                 // AP SSID (auto-generated if empty)
+    String apPassword = "";             // AP password (open if empty)
+    
+    // Advanced settings
+    uint32_t reconnectInterval = 5000;  // Reconnection interval in ms
+    uint32_t connectionTimeout = 15000; // Connection timeout in ms
+};
+
+/**
  * @class DomoticsCore::Components::WifiComponent
  * @brief Manages WiFi connectivity for ESP32, including STA/AP modes and async scanning.
  *
@@ -71,30 +94,8 @@ public:
         metadata.description = "Wifi connectivity management component";
     }
     
-    /**
-     * Set WiFi credentials (call before begin() or in afterAllComponentsReady())
-     * @param newSsid Network SSID
-     * @param newPassword Network password
-     */
-    void setCredentials(const String& newSsid, const String& newPassword = "") {
-        ssid = newSsid;
-        password = newPassword;
-    }
-    
     ComponentStatus begin() override {
         DLOG_I(LOG_WIFI, "Initializing...");
-        
-        // Define configuration parameters
-        config.defineParameter(ConfigParam("ssid", ConfigType::String, true, ssid, "Wifi network name")
-                              .length(32));
-        config.defineParameter(ConfigParam("password", ConfigType::String, false, "", "Wifi password")
-                              .length(64));
-        config.defineParameter(ConfigParam("reconnect_interval", ConfigType::Integer, false, "5000", 
-                                         "Reconnection attempt interval in ms").min(1000).max(60000));
-        config.defineParameter(ConfigParam("connection_timeout", ConfigType::Integer, false, "15000",
-                                         "Connection timeout in ms").min(5000).max(60000));
-        config.defineParameter(ConfigParam("auto_reconnect", ConfigType::Boolean, false, "true",
-                                         "Enable automatic reconnection"));
         
         // If no STA credentials
         if (ssid.isEmpty()) {
@@ -132,7 +133,7 @@ public:
      * Called after all components ready - connect to WiFi if credentials were set late
      */
     void afterAllComponentsReady() override {
-        // If credentials were set via setCredentials() but not connected yet
+        // If credentials were set via setConfig() but not connected yet
         if (!ssid.isEmpty() && !isSTAConnected() && wifiEnabled) {
             DLOG_I(LOG_WIFI, "Connecting to WiFi with late-configured credentials...");
             connectToWifi();
@@ -476,61 +477,44 @@ public:
     bool isWifiEnabled() const { return wifiEnabled; }
     bool isAPEnabled() const { return apEnabled; }
     String getAPSSID() const { return apSSID_; }
-
-private:
-    ComponentStatus connectToWifi() {
-        if (ssid.isEmpty()) {
-            DLOG_I(LOG_WIFI, "Wifi SSID not configured - starting in AP mode");
-            
-            // Generate AP SSID from MAC address for uniqueness
-            String macAddress = WiFi.macAddress();
-            macAddress.replace(":", "");
-            String apSSID = "DomoticsCore-" + macAddress.substring(6); // Last 6 chars of MAC
-            
-            WiFi.mode(WIFI_AP);
-            WiFi.softAP(apSSID.c_str()); // No password for easy access
-            DLOG_I(LOG_WIFI, "AP mode started: %s (open network)", apSSID.c_str());
-            DLOG_I(LOG_WIFI, "AP IP address: %s", WiFi.softAPIP().toString().c_str());
-            // Reflect state in internal flags so UI initial values are correct
-            apEnabled = true;
-            wifiEnabled = false;
-            apSSID_ = apSSID;
-            return ComponentStatus::Success;
-        }
-        
-        // Start non-blocking connection
-        startConnection();
-        
-        // Return pending status - actual result will be determined in loop()
-        return ComponentStatus::Success;
+    
+    /**
+     * @brief Get current WiFi configuration
+     * @return Current WifiConfig (constructed from internal state)
+     */
+    WifiConfig getConfig() const {
+        WifiConfig cfg;
+        cfg.ssid = ssid;
+        cfg.password = password;
+        cfg.autoConnect = shouldConnect;
+        cfg.enableAP = apEnabled;
+        cfg.apSSID = apSSID_;
+        cfg.apPassword = apPassword_;
+        cfg.reconnectInterval = 5000; // Default from constructor
+        cfg.connectionTimeout = CONNECTION_TIMEOUT;
+        return cfg;
     }
     
-    void startConnection() {
-        if (isConnecting) return; // Already connecting
+    /**
+     * @brief Set WiFi configuration
+     * @param cfg New configuration to apply
+     */
+    void setConfig(const WifiConfig& cfg) {
+        ssid = cfg.ssid;
+        password = cfg.password;
+        shouldConnect = cfg.autoConnect;
+        wifiEnabled = cfg.autoConnect;  // Sync wifiEnabled with autoConnect for WebUI display
+        apEnabled = cfg.enableAP;
+        apSSID_ = cfg.apSSID;
+        apPassword_ = cfg.apPassword;
         
-        DLOG_I(LOG_WIFI, "Connecting to Wifi: %s", ssid.c_str());
-        WiFi.begin(ssid.c_str(), password.c_str());
+        DLOG_I(LOG_WIFI, "Config updated: SSID=%s, autoConnect=%d, AP=%s (enabled=%d)", 
+               ssid.c_str(), wifiEnabled, apSSID_.c_str(), apEnabled);
         
-        isConnecting = true;
-        connectionStartTime = millis();
-        connectionTimer.reset();
+        // Note: Caller should call updateWifiMode() after setConfig() to apply changes
     }
     
-    // Additional utility methods
-    String getConnectionStatusString() const {
-        switch (WiFi.status()) {
-            case WL_IDLE_STATUS: return "Idle";
-            case WL_NO_SSID_AVAIL: return "SSID not available";
-            case WL_SCAN_COMPLETED: return "Scan completed";
-            case WL_CONNECTED: return "Connected";
-            case WL_CONNECT_FAILED: return "Connection failed";
-            case WL_CONNECTION_LOST: return "Connection lost";
-            case WL_DISCONNECTED: return "Disconnected";
-            default: return "Unknown (" + String(WiFi.status()) + ")";
-        }
-    }
-    
-    // Internal method to update Wifi mode based on enabled features
+    // Update Wifi mode based on enabled features
     bool updateWifiMode() {
         DLOG_I(LOG_WIFI, "Updating Wifi mode - Wifi: %s, AP: %s", 
                wifiEnabled ? "enabled" : "disabled", 
@@ -605,7 +589,60 @@ private:
         }
     }
 
+private:
+    ComponentStatus connectToWifi() {
+        if (ssid.isEmpty()) {
+            DLOG_I(LOG_WIFI, "Wifi SSID not configured - starting in AP mode");
+            
+            // Generate AP SSID from MAC address for uniqueness
+            String macAddress = WiFi.macAddress();
+            macAddress.replace(":", "");
+            String apSSID = "DomoticsCore-" + macAddress.substring(6); // Last 6 chars of MAC
+            
+            WiFi.mode(WIFI_AP);
+            WiFi.softAP(apSSID.c_str()); // No password for easy access
+            DLOG_I(LOG_WIFI, "AP mode started: %s (open network)", apSSID.c_str());
+            DLOG_I(LOG_WIFI, "AP IP address: %s", WiFi.softAPIP().toString().c_str());
+            // Reflect state in internal flags so UI initial values are correct
+            apEnabled = true;
+            wifiEnabled = false;
+            apSSID_ = apSSID;
+            return ComponentStatus::Success;
+        }
+        
+        // Start non-blocking connection
+        startConnection();
+        
+        // Return pending status - actual result will be determined in loop()
+        return ComponentStatus::Success;
+    }
+    
+    void startConnection() {
+        if (isConnecting) return; // Already connecting
+        
+        DLOG_I(LOG_WIFI, "Connecting to Wifi: %s", ssid.c_str());
+        WiFi.begin(ssid.c_str(), password.c_str());
+        
+        isConnecting = true;
+        connectionStartTime = millis();
+        connectionTimer.reset();
+    }
+    
+    // Additional utility methods
+    String getConnectionStatusString() const {
+        switch (WiFi.status()) {
+            case WL_IDLE_STATUS: return "Idle";
+            case WL_NO_SSID_AVAIL: return "SSID not available";
+            case WL_SCAN_COMPLETED: return "Scan completed";
+            case WL_CONNECTED: return "Connected";
+            case WL_CONNECT_FAILED: return "Connection failed";
+            case WL_CONNECTION_LOST: return "Connection lost";
+            case WL_DISCONNECTED: return "Disconnected";
+            default: return "Unknown (" + String(WiFi.status()) + ")";
+        }
+    }
 };
+
 
 } // namespace Components
 } // namespace DomoticsCore

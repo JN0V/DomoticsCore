@@ -30,29 +30,21 @@ namespace Components {
  * Optimized WebUI Component Configuration
  */
 struct WebUIConfig {
-    String deviceName = "DomoticsCore Device";
-    String manufacturer = "DomoticsCore";
-    String version = "1.0.0";
-    String copyright = "© 2024 DomoticsCore";
+    // User-configurable fields (exposed in WebUI settings)
+    String deviceName = "DomoticsCore Device";  // Device display name
+    String theme = "auto";                      // UI theme: dark, light, auto (system detection)
     
-    uint16_t port = 80;
-    bool enableWebSocket = true;
-    int wsUpdateInterval = 5000;        // WebSocket update interval in ms
-    bool useFileSystem = false;         // Use SPIFFS/LittleFS for content
-    String staticPath = "/webui";
-    
-    // Theme and customization
-    String theme = "dark";              // dark, light, auto
-    String primaryColor = "#007acc";    // Primary accent color
-    String logoUrl = "";                // Custom logo URL
-    
-    // Security
-    bool enableAuth = false;            // Enable basic authentication
-    String username = "admin";          // Auth username
-    String password = "";               // Auth password
-    
-    // Performance
-    int maxWebSocketClients = 3;        // Max concurrent WebSocket connections
+    // Advanced fields (configured at compile-time, not exposed in WebUI)
+    uint16_t port = 80;                         // HTTP server port
+    bool enableWebSocket = true;                // Enable WebSocket for live updates
+    int wsUpdateInterval = 5000;                // WebSocket update interval in ms
+    bool useFileSystem = false;                 // Use SPIFFS/LittleFS for content
+    String staticPath = "/webui";               // Path for static files
+    String primaryColor = "#007acc";            // Primary UI accent color
+    bool enableAuth = false;                    // Enable basic authentication
+    String username = "admin";                  // Auth username
+    String password = "";                       // Auth password
+    int maxWebSocketClients = 3;                // Max concurrent WebSocket connections
     int apiTimeout = 5000;              // API request timeout in ms
     bool enableCompression = true;      // Enable gzip compression
     bool enableCaching = true;          // Enable browser caching
@@ -259,6 +251,27 @@ public:
         onConfigChanged = callback;
     }
 
+    /**
+     * @brief Get current WebUI configuration
+     * @return Current WebUIConfig
+     */
+    const WebUIConfig& getConfig() const {
+        return config;
+    }
+    
+    /**
+     * @brief Update WebUI configuration after component creation
+     * @param cfg New configuration
+     * 
+     * Allows updating theme, deviceName, and other settings loaded from storage.
+     * Call this after core.begin() when loading config from Storage component.
+     */
+    void setConfig(const WebUIConfig& cfg) {
+        config = cfg;
+        DLOG_I(LOG_WEB, "Config updated: theme=%s, deviceName=%s", 
+               config.theme.c_str(), config.deviceName.c_str());
+    }
+
     // Allow applications to register factories for their own components (composition-based UI)
     /**
      * @brief Register a factory that can create providers for components with a matching type key.
@@ -375,8 +388,11 @@ public:
         
         // Settings context
         contexts.push_back(WebUIContext::settings("webui_settings", "Web Interface")
-            .withField(WebUIField("device_name", "Device Name", WebUIFieldType::Text, config.deviceName))
             .withField(WebUIField("theme", "Theme", WebUIFieldType::Select, config.theme, "dark,light,auto"))
+            .withField(WebUIField("primary_color", "Primary Color", WebUIFieldType::Text, config.primaryColor))
+            .withField(WebUIField("enable_auth", "Enable Authentication", WebUIFieldType::Boolean, config.enableAuth ? "true" : "false"))
+            .withField(WebUIField("username", "Username", WebUIFieldType::Text, config.username))
+            .withField(WebUIField("password", "Password", WebUIFieldType::Password, ""))
         );
         return contexts;
     }
@@ -409,8 +425,11 @@ public:
         
         if (contextId == "webui_settings") {
             JsonDocument doc;
-            doc["device_name"] = config.deviceName;
             doc["theme"] = config.theme;
+            doc["primary_color"] = config.primaryColor;
+            doc["enable_auth"] = config.enableAuth ? "true" : "false";
+            doc["username"] = config.username;
+            doc["password"] = ""; // Never send password back
             String json; serializeJson(doc, json); return json;
         }
         return "{}"; 
@@ -454,21 +473,31 @@ public:
             auto fieldIt = params.find("field");
             auto valueIt = params.find("value");
             if (fieldIt != params.end() && valueIt != params.end()) {
-                if (fieldIt->second == "device_name") {
-                    config.deviceName = valueIt->second;
-                    // Invoke config save callback if set
-                    if (onConfigChanged) {
-                        onConfigChanged(config);
+                const String& field = fieldIt->second;
+                const String& value = valueIt->second;
+                
+                if (field == "theme") {
+                    config.theme = value;
+                } else if (field == "primary_color") {
+                    config.primaryColor = value;
+                } else if (field == "enable_auth") {
+                    config.enableAuth = (value == "true" || value == "1");
+                } else if (field == "username") {
+                    config.username = value;
+                } else if (field == "password") {
+                    // Only update if not empty (allows keeping existing password)
+                    if (value.length() > 0) {
+                        config.password = value;
                     }
-                    return "{\"success\":true}";
-                } else if (fieldIt->second == "theme") {
-                    config.theme = valueIt->second;
-                    // Invoke config save callback if set
-                    if (onConfigChanged) {
-                        onConfigChanged(config);
-                    }
-                    return "{\"success\":true}";
+                } else {
+                    return "{\"success\":false, \"error\":\"Unknown field\"}";
                 }
+                
+                // Invoke config save callback if set
+                if (onConfigChanged) {
+                    onConfigChanged(config);
+                }
+                return "{\"success\":true}";
             }
         }
         return "{\"success\":false, \"error\":\"Invalid request\"}";
@@ -954,9 +983,7 @@ private:
         message += "\"uptime\":" + String(millis()) + ",";
         message += "\"heap\":" + String(ESP.getFreeHeap()) + ",";
         message += "\"clients\":" + String(webSocket->count()) + ",";
-        message += "\"device_name\":\"" + config.deviceName + "\",";
-        message += "\"manufacturer\":\"" + config.manufacturer + "\",";
-        message += "\"version\":\"" + config.version + "\"";
+        message += "\"device_name\":\"" + config.deviceName + "\"";
         message += "},\"contexts\":{";
         
         int contextCount = 0;

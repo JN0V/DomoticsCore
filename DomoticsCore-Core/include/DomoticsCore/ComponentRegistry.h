@@ -90,16 +90,6 @@ public:
             return ComponentStatus::DependencyError;
         }
         
-        // Validate all component configurations first
-        for (const auto& component : initializationOrder) {
-            auto validation = component->validateConfig();
-            if (!validation.isValid()) {
-                DLOG_E(LOG_CORE, "Component %s config validation failed: %s", 
-                       component->metadata.name.c_str(), validation.toString().c_str());
-                return ComponentStatus::ConfigError;
-            }
-        }
-        
         // Initialize components in dependency order
         for (auto* component : initializationOrder) {
             // Skip if already initialized (e.g., early init by System)

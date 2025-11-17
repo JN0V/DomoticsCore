@@ -25,32 +25,49 @@ public:
         return console ? console->metadata.name : String("RemoteConsole"); 
     }
     
-    String getWebUIVersion() const override { return String("1.0.0"); }
+    String getWebUIVersion() const override { 
+        return console ? console->metadata.version : String("1.0.0"); 
+    }
     
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> ctxs;
         if (!console) return ctxs;
         
-        // Minimal component card - just shows it exists
+        // Component card
         ctxs.push_back(WebUIContext{
             "console_component", 
             "Remote Console", 
-            "dc-plug",  // Using plug icon (connection icon)
+            "dc-plug",
             WebUILocation::ComponentDetail, 
             WebUIPresentation::Card
         }
         .withField(WebUIField("status", "Status", WebUIFieldType::Display, "Active", "", true))
         .withField(WebUIField("port", "Port", WebUIFieldType::Display, "23 (Telnet)", "", true)));
         
+        // Settings context
+        ctxs.push_back(WebUIContext::settings("console_settings", "Remote Console")
+            .withField(WebUIField("port", "Telnet Port", WebUIFieldType::Display, "23"))
+            .withField(WebUIField("protocol", "Protocol", WebUIFieldType::Display, "Telnet"))
+            .withField(WebUIField("info", "Info", WebUIFieldType::Display, 
+                      "Connect via: telnet <device-ip> 23"))
+        );
+        
         return ctxs;
     }
     
     String getWebUIData(const String& contextId) override {
-        if (!console || contextId != "console_component") return "{}";
+        if (!console) return "{}";
         
         JsonDocument doc;
-        doc["status"] = "Active";
-        doc["port"] = "23 (Telnet)";
+        
+        if (contextId == "console_component") {
+            doc["status"] = "Active";
+            doc["port"] = "23 (Telnet)";
+        } else if (contextId == "console_settings") {
+            doc["port"] = "23";
+            doc["protocol"] = "Telnet";
+            doc["info"] = "Connect via: telnet <device-ip> 23";
+        }
         
         String json;
         serializeJson(doc, json);
