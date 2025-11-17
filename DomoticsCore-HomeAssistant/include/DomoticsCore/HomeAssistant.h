@@ -28,16 +28,19 @@ struct HAEntityAddedEvent {
  * @brief Configuration for Home Assistant component
  */
 struct HAConfig {
-    String nodeId = "esp32";            // Unique device ID
-    String deviceName = "ESP32 Device";
-    String manufacturer = "DomoticsCore";
-    String model = "ESP32";
-    String swVersion = "1.0.0";
-    bool retainDiscovery = true;
-    String discoveryPrefix = "homeassistant";
-    String availabilityTopic = "";      // Auto-generated if empty
-    String configUrl = "";              // Device configuration URL
-    String suggestedArea = "";          // Suggested area in HA
+    // Device identity (populated by System.h from SystemConfig)
+    String nodeId = "esp32";                        // Unique device ID (derived from deviceName)
+    String deviceName = "ESP32 Device";             // Device display name (from SystemConfig.deviceName)
+    String manufacturer = "DomoticsCore";           // Manufacturer name (from SystemConfig.manufacturer)
+    String model = "ESP32";                         // Hardware model (from SystemConfig.model, auto-detected via ESP.getChipModel())
+    String swVersion = "1.0.0";                     // Firmware version (from SystemConfig.firmwareVersion)
+    
+    // Home Assistant specific settings
+    bool retainDiscovery = true;                    // Retain discovery messages
+    String discoveryPrefix = "homeassistant";       // MQTT discovery prefix
+    String availabilityTopic = "";                  // Auto-generated if empty
+    String configUrl = "";                          // Device configuration URL
+    String suggestedArea = "";                      // Suggested area in HA
 };
 
 /**
@@ -347,7 +350,11 @@ public:
         }
     }
     
-    const HAConfig& getHAConfig() const { return config; }
+    /**
+     * @brief Get current HomeAssistant configuration
+     * @return Current HAConfig
+     */
+    const HAConfig& getConfig() const { return config; }
     
     void setDeviceInfo(const String& name, const String& model,
                        const String& manufacturer, const String& swVersion) {

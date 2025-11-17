@@ -88,6 +88,8 @@ enum class SystemState {
 struct SystemConfig {
     // Device identity
     String deviceName = "DomoticsCore";
+    String manufacturer = "DomoticsCore";
+    String model = "";                  // Auto-detected from ESP.getChipModel() if empty
     String firmwareVersion = "1.0.0";
     
     // WiFi behavior
@@ -300,6 +302,14 @@ public:
         DLOG_I(LOG_SYSTEM, "Device: %s v%s", config.deviceName.c_str(), config.firmwareVersion.c_str());
         DLOG_I(LOG_SYSTEM, "========================================");
         
+        // Auto-detect chip model if not set
+        if (config.model.isEmpty()) {
+            config.model = ESP.getChipModel();
+            DLOG_I(LOG_SYSTEM, "Auto-detected model: %s", config.model.c_str());
+        }
+        
+        DLOG_I(LOG_SYSTEM, "Manufacturer: %s, Model: %s", config.manufacturer.c_str(), config.model.c_str());
+        
         // Initialize state
         state = SystemState::BOOTING;
         
@@ -322,16 +332,14 @@ public:
         }
         
         // ====================================================================
-        // 2. Storage Component (if enabled) - NO EARLY-INIT since v1.1
+        // 2. Storage Component (if enabled)
         // ====================================================================
         #if __has_include(<DomoticsCore/Storage.h>)
         if (config.enableStorage) {
-            // Configure storage namespace
             Components::StorageConfig storageConfig;
             storageConfig.namespace_name = config.storageNamespace;
             
-            auto storagePtr = std::make_unique<Components::StorageComponent>(storageConfig);
-            core.addComponent(std::move(storagePtr));
+            core.addComponent(std::make_unique<Components::StorageComponent>(storageConfig));
             DLOG_I(LOG_SYSTEM, "✓ Storage component registered (namespace: %s)", 
                    config.storageNamespace.c_str());
         }
@@ -399,20 +407,6 @@ public:
             webuiConfig.port = config.webUIPort;
             webuiConfig.deviceName = config.deviceName;
             
-            // Load WebUI configuration from storage if available
-            #if __has_include(<DomoticsCore/Storage.h>)
-            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
-            if (storageComp) {
-                webuiConfig.theme = storageComp->getString("webui_theme", "dark");
-                String savedDeviceName = storageComp->getString("device_name", "");
-                if (savedDeviceName.length() > 0) {
-                    webuiConfig.deviceName = savedDeviceName;
-                }
-                DLOG_I(LOG_SYSTEM, "Loaded WebUI config from storage: theme=%s, deviceName=%s", 
-                       webuiConfig.theme.c_str(), webuiConfig.deviceName.c_str());
-            }
-            #endif
-            
             auto webuiPtr = std::make_unique<Components::WebUIComponent>(webuiConfig);
             core.addComponent(std::move(webuiPtr));
             DLOG_I(LOG_SYSTEM, "✓ WebUI component added (port %d)", config.webUIPort);
@@ -426,43 +420,8 @@ public:
         
         #if __has_include(<DomoticsCore/NTP.h>)
         if (config.enableNTP) {
-            Components::NTPConfig ntpConfig;
-            
-            // Load NTP configuration from storage if available
-            #if __has_include(<DomoticsCore/Storage.h>)
-            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
-            if (storageComp) {
-                ntpConfig.enabled = storageComp->getBool("ntp_enabled", true);
-                ntpConfig.timezone = storageComp->getString("ntp_timezone", "UTC0");
-                ntpConfig.syncInterval = (uint32_t)storageComp->getInt("ntp_interval", 3600);
-                
-                // Load servers from comma-separated string
-                String serversStr = storageComp->getString("ntp_servers", "");
-                if (serversStr.length() > 0) {
-                    ntpConfig.servers.clear();
-                    int start = 0;
-                    int commaPos;
-                    while ((commaPos = serversStr.indexOf(',', start)) != -1) {
-                        String server = serversStr.substring(start, commaPos);
-                        server.trim();
-                        if (server.length() > 0) {
-                            ntpConfig.servers.push_back(server);
-                        }
-                        start = commaPos + 1;
-                    }
-                    // Last server
-                    String server = serversStr.substring(start);
-                    server.trim();
-                    if (server.length() > 0) {
-                        ntpConfig.servers.push_back(server);
-                    }
-                }
-                DLOG_I(LOG_SYSTEM, "Loaded NTP config from storage: timezone=%s", ntpConfig.timezone.c_str());
-            }
-            #endif
-            
-            auto ntpPtr = std::make_unique<Components::NTPComponent>(ntpConfig);
-            core.addComponent(std::move(ntpPtr));
+            // NTP config will be loaded after core.begin()
+            core.addComponent(std::make_unique<Components::NTPComponent>());
             DLOG_I(LOG_SYSTEM, "✓ NTP component added");
         }
         #else
@@ -488,15 +447,19 @@ public:
             // Add HomeAssistant (communicates with MQTT via EventBus)
             #if __has_include(<DomoticsCore/HomeAssistant.h>)
             if (config.enableHomeAssistant) {
-                // Configure Home Assistant with proper node ID
+                // Populate HA config from SystemConfig
                 Components::HomeAssistant::HAConfig haConfig;
-                haConfig.nodeId = config.deviceName;
                 haConfig.deviceName = config.deviceName;
                 haConfig.swVersion = config.firmwareVersion;
-                haConfig.discoveryPrefix = config.haDiscoveryPrefix;
+                haConfig.manufacturer = config.manufacturer;
+                haConfig.model = config.model;  // Auto-detected chip model
+                haConfig.nodeId = config.deviceName.substring(0, 32);  // Derive from device name
+                haConfig.nodeId.toLowerCase();
+                haConfig.nodeId.replace(" ", "_");
                 
                 core.addComponent(std::make_unique<Components::HomeAssistant::HomeAssistantComponent>(haConfig));
-                DLOG_I(LOG_SYSTEM, "✓ Home Assistant component added (nodeId: %s)", haConfig.nodeId.c_str());
+                DLOG_I(LOG_SYSTEM, "✓ HomeAssistant component added (nodeId: %s, model: %s)", 
+                       haConfig.nodeId.c_str(), haConfig.model.c_str());
             }
             #else
             if (config.enableHomeAssistant) {
@@ -526,9 +489,16 @@ public:
         
         #if __has_include(<DomoticsCore/SystemInfo.h>)
         if (config.enableSystemInfo) {
-            auto sysInfoPtr = std::make_unique<Components::SystemInfoComponent>();
+            // Populate SystemInfo config from SystemConfig
+            Components::SystemInfoConfig sysInfoConfig;
+            sysInfoConfig.deviceName = config.deviceName;
+            sysInfoConfig.manufacturer = config.manufacturer;
+            sysInfoConfig.firmwareVersion = config.firmwareVersion;
+            
+            auto sysInfoPtr = std::make_unique<Components::SystemInfoComponent>(sysInfoConfig);
             core.addComponent(std::move(sysInfoPtr));
-            DLOG_I(LOG_SYSTEM, "✓ SystemInfo component added");
+            DLOG_I(LOG_SYSTEM, "✓ SystemInfo component added (device: %s, manufacturer: %s, version: %s)", 
+                   config.deviceName.c_str(), config.manufacturer.c_str(), config.firmwareVersion.c_str());
         }
         #else
         if (config.enableSystemInfo) {
@@ -547,40 +517,190 @@ public:
         }
         
         // ====================================================================
-        // 6.1. Load WiFi credentials from Storage (if credentials not in config)
+        // 6.0. Load device name from Storage (if available)
         // ====================================================================
         #if __has_include(<DomoticsCore/Storage.h>)
-        if (config.enableStorage && config.wifiSSID.isEmpty()) {
+        if (config.enableStorage) {
             auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
-            if (storageComp && wifi) {
-                String savedSSID = storageComp->getString("wifi_ssid", "");
-                String savedPassword = storageComp->getString("wifi_password", "");
-                
-                if (!savedSSID.isEmpty()) {
-                    DLOG_I(LOG_SYSTEM, "Loading WiFi credentials from Storage: %s", savedSSID.c_str());
-                    wifi->setCredentials(savedSSID, savedPassword, true);
+            if (storageComp) {
+                String savedDeviceName = storageComp->getString("device_name", "");
+                if (!savedDeviceName.isEmpty()) {
+                    config.deviceName = savedDeviceName;
+                    DLOG_I(LOG_SYSTEM, "✓ Loaded device name from Storage: %s", config.deviceName.c_str());
                     
-                    // Check and enable AP if configured
-                    bool apEnabled = storageComp->getBool("wifi_ap_enabled", false);
-                    if (apEnabled) {
-                        String apSSID = storageComp->getString("wifi_ap_ssid", "");
-                        if (apSSID.isEmpty()) {
-                            uint64_t chipid = ESP.getEfuseMac();
-                            apSSID = config.deviceName + "-" + String((uint32_t)(chipid >> 32), HEX);
-                        }
-                        String apPassword = storageComp->getString("wifi_ap_password", "");
-                        wifi->enableAP(apSSID, apPassword);
-                        DLOG_I(LOG_SYSTEM, "✓ WiFi AP mode enabled from Storage: %s", apSSID.c_str());
+                    // Update SystemInfo component if it exists
+                    #if __has_include(<DomoticsCore/SystemInfo.h>)
+                    auto* sysInfoComponent = core.getComponent<Components::SystemInfoComponent>("System Info");
+                    if (sysInfoComponent) {
+                        Components::SystemInfoConfig siCfg = sysInfoComponent->getConfig();
+                        siCfg.deviceName = savedDeviceName;
+                        sysInfoComponent->setConfig(siCfg);
+                        DLOG_I(LOG_SYSTEM, "✓ Updated SystemInfo component with saved device name");
                     }
-                } else {
-                    DLOG_I(LOG_SYSTEM, "No WiFi credentials in Storage - using AP mode");
+                    #endif
                 }
             }
         }
         #endif
         
         // ====================================================================
-        // 6.5. Register WebUI Providers (after components are initialized)
+        // 6.1. Load WiFi configuration from Storage (if credentials not in config)
+        // ====================================================================
+        #if __has_include(<DomoticsCore/Storage.h>)
+        if (config.enableStorage && config.wifiSSID.isEmpty()) {
+            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+            if (storageComp && wifi) {
+                // 1. GET current config (preserves defaults)
+                Components::WifiConfig wifiConfig = wifi->getConfig();
+                
+                // 2. OVERRIDE from Storage (keeps defaults if key missing)
+                wifiConfig.ssid = storageComp->getString("wifi_ssid", wifiConfig.ssid);
+                wifiConfig.password = storageComp->getString("wifi_pass", wifiConfig.password);
+                wifiConfig.autoConnect = storageComp->getBool("wifi_autocon", wifiConfig.autoConnect);
+                wifiConfig.enableAP = storageComp->getBool("wifi_ap_en", wifiConfig.enableAP);
+                wifiConfig.apSSID = storageComp->getString("wifi_ap_ssid", wifiConfig.apSSID);
+                wifiConfig.apPassword = storageComp->getString("wifi_ap_pass", wifiConfig.apPassword);
+                
+                // Auto-generate AP SSID if empty
+                if (wifiConfig.enableAP && wifiConfig.apSSID.isEmpty()) {
+                    uint64_t chipid = ESP.getEfuseMac();
+                    wifiConfig.apSSID = config.deviceName + "-" + String((uint32_t)(chipid >> 32), HEX);
+                }
+                
+                // 3. SET the merged config
+                if (!wifiConfig.ssid.isEmpty()) {
+                    wifi->setConfig(wifiConfig);
+                    wifi->updateWifiMode();  // Apply the configuration
+                    DLOG_I(LOG_SYSTEM, "✓ WiFi config loaded from Storage: SSID=%s, autoConnect=%d, AP=%d", 
+                           wifiConfig.ssid.c_str(), wifiConfig.autoConnect, wifiConfig.enableAP);
+                }
+            }
+        }
+        #endif
+        
+        // ====================================================================
+        // 6.2. Load WebUI configuration from Storage
+        // ====================================================================
+        #if __has_include(<DomoticsCore/WebUI.h>) && __has_include(<DomoticsCore/Storage.h>)
+        if (config.enableWebUI && config.enableStorage) {
+            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+            auto* webuiComp = core.getComponent<Components::WebUIComponent>("WebUI");
+            if (storageComp && webuiComp) {
+                // Get current config to preserve defaults
+                Components::WebUIConfig webuiConfig = webuiComp->getConfig();
+                
+                // Override only fields from Storage (uses current value as default if key missing)
+                webuiConfig.theme = storageComp->getString("webui_theme", webuiConfig.theme);
+                webuiConfig.deviceName = storageComp->getString("device_name", webuiConfig.deviceName);
+                webuiConfig.primaryColor = storageComp->getString("webui_color", webuiConfig.primaryColor);
+                webuiConfig.enableAuth = storageComp->getBool("webui_auth", webuiConfig.enableAuth);
+                webuiConfig.username = storageComp->getString("webui_user", webuiConfig.username);
+                webuiConfig.password = storageComp->getString("webui_pass", webuiConfig.password);
+                
+                DLOG_I(LOG_SYSTEM, "Loading WebUI config from Storage: theme=%s, deviceName=%s, auth=%d", 
+                       webuiConfig.theme.c_str(), webuiConfig.deviceName.c_str(), webuiConfig.enableAuth);
+                webuiComp->setConfig(webuiConfig);
+            }
+        }
+        #endif
+        
+        // ====================================================================
+        // 6.3. Load NTP configuration from Storage
+        // ====================================================================
+        #if __has_include(<DomoticsCore/NTP.h>) && __has_include(<DomoticsCore/Storage.h>)
+        if (config.enableNTP && config.enableStorage) {
+            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+            auto* ntpComp = core.getComponent<Components::NTPComponent>("NTP");
+            if (storageComp && ntpComp) {
+                // Get current config to preserve defaults
+                Components::NTPConfig ntpConfig = ntpComp->getConfig();
+                
+                // Override only fields from Storage (keeps defaults if key missing)
+                ntpConfig.enabled = storageComp->getBool("ntp_enabled", ntpConfig.enabled);
+                ntpConfig.timezone = storageComp->getString("ntp_timezone", ntpConfig.timezone);
+                ntpConfig.syncInterval = (uint32_t)storageComp->getInt("ntp_interval", ntpConfig.syncInterval);
+                
+                // Load servers from comma-separated string
+                String serversStr = storageComp->getString("ntp_servers", "");
+                if (serversStr.length() > 0) {
+                    ntpConfig.servers.clear();
+                    int start = 0;
+                    int commaPos;
+                    while ((commaPos = serversStr.indexOf(',', start)) != -1) {
+                        String server = serversStr.substring(start, commaPos);
+                        server.trim();
+                        if (server.length() > 0) {
+                            ntpConfig.servers.push_back(server);
+                        }
+                        start = commaPos + 1;
+                    }
+                    // Last server
+                    String server = serversStr.substring(start);
+                    server.trim();
+                    if (server.length() > 0) {
+                        ntpConfig.servers.push_back(server);
+                    }
+                }
+                
+                DLOG_I(LOG_SYSTEM, "Loading NTP config from Storage: timezone=%s", ntpConfig.timezone.c_str());
+                ntpComp->setConfig(ntpConfig);
+            }
+        }
+        #endif
+        
+        // ====================================================================
+        // 6.4. Load MQTT configuration from Storage
+        // ====================================================================
+        #if __has_include(<DomoticsCore/MQTT.h>) && __has_include(<DomoticsCore/Storage.h>)
+        if (config.enableMQTT && config.enableStorage) {
+            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+            auto* mqttComp = core.getComponent<Components::MQTTComponent>("MQTT");
+            if (storageComp && mqttComp) {
+                // Get current config to preserve defaults
+                Components::MQTTConfig mqttConfig = mqttComp->getConfig();
+                
+                // Override only fields from Storage (keeps defaults if key missing)
+                mqttConfig.broker = storageComp->getString("mqtt_broker", mqttConfig.broker);
+                mqttConfig.port = (uint16_t)storageComp->getInt("mqtt_port", mqttConfig.port);
+                mqttConfig.username = storageComp->getString("mqtt_user", mqttConfig.username);
+                mqttConfig.password = storageComp->getString("mqtt_pass", mqttConfig.password);
+                mqttConfig.clientId = storageComp->getString("mqtt_clientid", mqttConfig.clientId);
+                
+                DLOG_I(LOG_SYSTEM, "Loading MQTT config from Storage: broker=%s:%d", 
+                       mqttConfig.broker.c_str(), mqttConfig.port);
+                mqttComp->setConfig(mqttConfig);
+            }
+        }
+        #endif
+        
+        // ====================================================================
+        // 6.5. Load HomeAssistant configuration from Storage
+        // ====================================================================
+        #if __has_include(<DomoticsCore/HomeAssistant.h>) && __has_include(<DomoticsCore/Storage.h>)
+        if (config.enableHomeAssistant && config.enableStorage) {
+            auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+            auto* haComp = core.getComponent<Components::HomeAssistant::HomeAssistantComponent>("HomeAssistant");
+            if (storageComp && haComp) {
+                // Get current config (already populated from SystemConfig)
+                Components::HomeAssistant::HAConfig haConfig = haComp->getConfig();
+                
+                // Override only fields from Storage (keeps SystemConfig values if key missing)
+                haConfig.nodeId = storageComp->getString("ha_nodeid", haConfig.nodeId);
+                haConfig.deviceName = storageComp->getString("ha_device_name", haConfig.deviceName);
+                haConfig.manufacturer = storageComp->getString("ha_mfg", haConfig.manufacturer);
+                haConfig.model = storageComp->getString("ha_model", haConfig.model);
+                haConfig.swVersion = storageComp->getString("ha_sw_ver", haConfig.swVersion);
+                haConfig.discoveryPrefix = storageComp->getString("ha_disc_prefix", haConfig.discoveryPrefix);
+                
+                DLOG_I(LOG_SYSTEM, "Loading HomeAssistant config from Storage: nodeId=%s, device=%s", 
+                       haConfig.nodeId.c_str(), haConfig.deviceName.c_str());
+                haComp->setConfig(haConfig);
+            }
+        }
+        #endif
+        
+        // ====================================================================
+        // 6.6. Register WebUI Providers (after components are initialized)
         // ====================================================================
         #if __has_include(<DomoticsCore/WebUI.h>)
         DLOG_I(LOG_SYSTEM, "Registering WebUI providers...");
@@ -595,26 +715,20 @@ public:
                 // Set WebUI component reference for network change notifications
                 wifiWebUIProvider->setWebUIComponent(webuiComponent);
                 
-                // Set up credential persistence callback if Storage available
+                // Set up unified config persistence callback if Storage available
                 #if __has_include(<DomoticsCore/Storage.h>)
                 auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
                 if (storageComp) {
-                    wifiWebUIProvider->setCredentialsSaveCallback(
-                        [storageComp](const String& ssid, const String& password) {
-                            DLOG_I(LOG_SYSTEM, "Saving WiFi credentials: SSID='%s', Password=***", ssid.c_str());
-                            bool ssidOk = storageComp->putString("wifi_ssid", ssid);
-                            bool passOk = storageComp->putString("wifi_password", password);
-                            DLOG_I(LOG_SYSTEM, "Storage result: SSID=%s, Password=%s", ssidOk ? "OK" : "FAIL", passOk ? "OK" : "FAIL");
-                        }
-                    );
-                    
-                    wifiWebUIProvider->setAPStateCallback(
-                        [storageComp](bool enabled, const String& ssid) {
-                            DLOG_I(LOG_SYSTEM, "Saving WiFi AP state: enabled=%d, SSID='%s'", enabled, ssid.c_str());
-                            storageComp->putBool("wifi_ap_enabled", enabled);
-                            if (enabled && ssid.length() > 0) {
-                                storageComp->putString("wifi_ap_ssid", ssid);
-                            }
+                    wifiWebUIProvider->setConfigSaveCallback(
+                        [storageComp](const Components::WifiConfig& cfg) {
+                            DLOG_I(LOG_SYSTEM, "Saving WiFi config: SSID='%s', autoConnect=%d, AP=%d", 
+                                   cfg.ssid.c_str(), cfg.autoConnect, cfg.enableAP);
+                            storageComp->putString("wifi_ssid", cfg.ssid);
+                            storageComp->putString("wifi_pass", cfg.password);
+                            storageComp->putBool("wifi_autocon", cfg.autoConnect);
+                            storageComp->putBool("wifi_ap_en", cfg.enableAP);
+                            storageComp->putString("wifi_ap_ssid", cfg.apSSID);
+                            storageComp->putString("wifi_ap_pass", cfg.apPassword);
                         }
                     );
                     
@@ -674,6 +788,26 @@ public:
             if (mqttComponent) {
                 mqttWebUIProvider = new Components::WebUI::MQTTWebUI(mqttComponent);
                 webuiComponent->registerProviderWithComponent(mqttWebUIProvider, mqttComponent);
+                
+                // Set up MQTT configuration persistence callback if Storage available
+                #if __has_include(<DomoticsCore/Storage.h>)
+                auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+                if (storageComp && mqttWebUIProvider) {
+                    mqttWebUIProvider->setConfigSaveCallback(
+                        [storageComp](const Components::MQTTConfig& cfg) {
+                            DLOG_I(LOG_SYSTEM, "Saving MQTT config: broker=%s:%d", 
+                                   cfg.broker.c_str(), cfg.port);
+                            storageComp->putString("mqtt_broker", cfg.broker);
+                            storageComp->putInt("mqtt_port", cfg.port);
+                            storageComp->putString("mqtt_user", cfg.username);
+                            storageComp->putString("mqtt_pass", cfg.password);
+                            storageComp->putString("mqtt_clientid", cfg.clientId);
+                            storageComp->putBool("mqtt_enabled", cfg.enabled);
+                        }
+                    );
+                }
+                #endif
+                
                 DLOG_I(LOG_SYSTEM, "✓ MQTT WebUI provider registered");
             }
             #endif
@@ -695,8 +829,32 @@ public:
             auto* sysInfoComponent = core.getComponent<Components::SystemInfoComponent>("System Info");
             if (sysInfoComponent) {
                 systemInfoWebUIProvider = new Components::WebUI::SystemInfoWebUI(sysInfoComponent);
+                
+                // Set up device name persistence callback if Storage available
+                #if __has_include(<DomoticsCore/Storage.h>)
+                auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+                if (storageComp) {
+                    systemInfoWebUIProvider->setDeviceNameCallback(
+                        [storageComp, this, sysInfoComponent](const String& deviceName) {
+                            DLOG_I(LOG_SYSTEM, "Saving device name: '%s'", deviceName.c_str());
+                            storageComp->putString("device_name", deviceName);
+                            // Update system config
+                            config.deviceName = deviceName;
+                            // Update SystemInfo component config
+                            Components::SystemInfoConfig siCfg = sysInfoComponent->getConfig();
+                            siCfg.deviceName = deviceName;
+                            sysInfoComponent->setConfig(siCfg);
+                        }
+                    );
+                    DLOG_I(LOG_SYSTEM, "✓ SystemInfo WebUI provider registered (with storage persistence)");
+                } else {
+                    DLOG_I(LOG_SYSTEM, "✓ SystemInfo WebUI provider registered (no persistence)");
+                }
+                #else
+                DLOG_I(LOG_SYSTEM, "✓ SystemInfo WebUI provider registered (no persistence)");
+                #endif
+                
                 webuiComponent->registerProviderWithComponent(systemInfoWebUIProvider, sysInfoComponent);
-                DLOG_I(LOG_SYSTEM, "✓ SystemInfo WebUI provider registered");
             }
             #endif
             
@@ -715,6 +873,23 @@ public:
             if (haComponent) {
                 haWebUIProvider = new Components::WebUI::HomeAssistantWebUI(haComponent);
                 webuiComponent->registerProviderWithComponent(haWebUIProvider, haComponent);
+                
+                // Set up HomeAssistant configuration persistence callback if Storage available
+                #if __has_include(<DomoticsCore/Storage.h>)
+                auto* storageComp = core.getComponent<Components::StorageComponent>("Storage");
+                if (storageComp && haWebUIProvider) {
+                    haWebUIProvider->setConfigSaveCallback(
+                        [storageComp](const Components::HomeAssistant::HAConfig& cfg) {
+                            DLOG_I(LOG_SYSTEM, "Saving HomeAssistant config: nodeId=%s", 
+                                   cfg.nodeId.c_str());
+                            storageComp->putString("ha_nodeid", cfg.nodeId);
+                            storageComp->putString("ha_device_name", cfg.deviceName);
+                            storageComp->putString("ha_disc_prefix", cfg.discoveryPrefix);
+                        }
+                    );
+                }
+                #endif
+                
                 DLOG_I(LOG_SYSTEM, "✓ HomeAssistant WebUI provider registered");
             }
             #endif
@@ -725,10 +900,16 @@ public:
             if (storageComp) {
                 webuiComponent->setConfigCallback(
                     [storageComp](const Components::WebUIConfig& cfg) {
-                        DLOG_I(LOG_SYSTEM, "Saving WebUI config: theme='%s', deviceName='%s'", 
-                               cfg.theme.c_str(), cfg.deviceName.c_str());
+                        DLOG_I(LOG_SYSTEM, "Saving WebUI config: theme='%s', deviceName='%s', color='%s', auth=%d", 
+                               cfg.theme.c_str(), cfg.deviceName.c_str(), cfg.primaryColor.c_str(), cfg.enableAuth);
                         storageComp->putString("webui_theme", cfg.theme);
                         storageComp->putString("device_name", cfg.deviceName);
+                        storageComp->putString("webui_color", cfg.primaryColor);
+                        storageComp->putBool("webui_auth", cfg.enableAuth);
+                        storageComp->putString("webui_user", cfg.username);
+                        if (cfg.password.length() > 0) {
+                            storageComp->putString("webui_pass", cfg.password);
+                        }
                     }
                 );
                 DLOG_I(LOG_SYSTEM, "✓ WebUI config persistence enabled");

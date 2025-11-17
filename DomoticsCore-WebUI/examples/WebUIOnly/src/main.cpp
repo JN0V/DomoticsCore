@@ -291,9 +291,7 @@ void setup() {
     // Create WebUI component
     DomoticsCore::Components::WebUIConfig webUIConfig;
     webUIConfig.deviceName = "DomoticsCore WebUI Demo";
-    webUIConfig.manufacturer = "DomoticsCore";
-    webUIConfig.version = "v2.0.0-demo";
-    webUIConfig.copyright = "© 2024 DomoticsCore";
+    // Note: manufacturer, version, copyright have been moved to SystemInfo component
     webUIConfig.port = 80;
     webUIConfig.enableWebSocket = true;
     webUIConfig.wsUpdateInterval = 2000;

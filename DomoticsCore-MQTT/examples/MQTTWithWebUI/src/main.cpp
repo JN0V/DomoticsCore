@@ -182,7 +182,7 @@ void loop() {
             doc["rssi"] = WiFi.RSSI();
             doc["temperature"] = 20.0 + (random(0, 100) / 10.0);
             
-            String telemetryTopic = mqtt->getMQTTConfig().clientId + "/telemetry";
+            String telemetryTopic = mqtt->getConfig().clientId + "/telemetry";
             if (mqtt->publishJSON(telemetryTopic, doc, 0, false)) {
                 DLOG_I(LOG_APP, "📤 Published telemetry");
             }

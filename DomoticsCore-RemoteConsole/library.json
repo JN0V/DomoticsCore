@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-RemoteConsole",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Telnet-based remote console for DomoticsCore with log streaming and command execution",
   "keywords": ["esp32", "domotics", "telnet", "console", "debug", "logging"],
   "repository": {

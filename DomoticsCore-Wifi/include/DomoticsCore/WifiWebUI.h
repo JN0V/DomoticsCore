@@ -14,8 +14,7 @@ namespace WebUI {
 class WifiWebUI : public IWebUIProvider {
     WifiComponent* wifi; // non-owning
     Components::WebUIComponent* webui = nullptr; // non-owning, for network change notifications
-    std::function<void(const String&, const String&)> onCredentialsSaved; // callback for credentials persistence
-    std::function<void(bool, const String&)> onAPStateChanged; // callback for AP state persistence (enabled, ssid)
+    std::function<void(const Components::WifiConfig&)> onConfigChanged; // unified callback for config persistence
     // Keep pending credentials updated from UI
     String pendingSsid;
     String pendingPassword;
@@ -84,18 +83,13 @@ public:
         webui = webuiComp;
     }
 
-    // Set callback for credential persistence (optional)
-    void setCredentialsSaveCallback(std::function<void(const String&, const String&)> callback) {
-        onCredentialsSaved = callback;
-    }
-
-    // Set callback for AP state persistence (optional)
-    void setAPStateCallback(std::function<void(bool, const String&)> callback) {
-        onAPStateChanged = callback;
+    // Set callback for config persistence (optional) - unified callback
+    void setConfigSaveCallback(std::function<void(const Components::WifiConfig&)> callback) {
+        onConfigChanged = callback;
     }
 
     String getWebUIName() const override { return wifi ? wifi->metadata.name : String("Wifi"); }
-    String getWebUIVersion() const override { return String("1.0.0"); }
+    String getWebUIVersion() const override { return wifi ? wifi->metadata.version : String("1.0.0"); }
 
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> ctxs;
@@ -163,17 +157,26 @@ public:
             } else if (field == "wifi_enabled") {
                 bool enable = (value == "true" || value == "1" || value == "on");
                 
+                // Use Get → Override → Set pattern
+                Components::WifiConfig cfg = wifi->getConfig();
+                
                 if (enable) {
                     // Enabling: apply pending credentials and connect
                     DLOG_I(LOG_WIFI_WEBUI, "Enabling WiFi with SSID='%s'", pendingSsid.c_str());
-                    // Ensure internal enabled flag is set so UI reflects correct state
-                    wifi->enableWifi(true);
-                    wifi->setCredentials(pendingSsid, pendingPassword, true);
                     
-                    // Invoke persistence callback if set
-                    if (onCredentialsSaved) {
-                        DLOG_I(LOG_WIFI_WEBUI, "Invoking credentials save callback");
-                        onCredentialsSaved(pendingSsid, pendingPassword);
+                    // Override config with new values
+                    cfg.ssid = pendingSsid;
+                    cfg.password = pendingPassword;
+                    cfg.autoConnect = true;
+                    
+                    // Apply config
+                    wifi->setConfig(cfg);
+                    wifi->updateWifiMode();
+                    
+                    // Invoke persistence callback if set (unified callback)
+                    if (onConfigChanged) {
+                        DLOG_I(LOG_WIFI_WEBUI, "Invoking config save callback");
+                        onConfigChanged(cfg);
                     } else {
                         DLOG_W(LOG_WIFI_WEBUI, "WARNING: No save callback set!");
                     }
@@ -193,7 +196,20 @@ public:
                 } else {
                     // Disabling: just disable WiFi
                     DLOG_I(LOG_WIFI_WEBUI, "Disabling WiFi");
-                    wifi->enableWifi(false);
+                    
+                    // Override config
+                    cfg.autoConnect = false;
+                    
+                    // Apply config
+                    wifi->setConfig(cfg);
+                    wifi->updateWifiMode();
+                    
+                    // Invoke persistence callback if set (unified callback)
+                    if (onConfigChanged) {
+                        DLOG_I(LOG_WIFI_WEBUI, "Invoking config save callback");
+                        onConfigChanged(cfg);
+                    }
+                    
                     // Force next delta update for header badges and cards
                     wifiStatusState.reset();
                     apStatusState.reset();
@@ -214,22 +230,29 @@ public:
             String field = f->second; String value = v->second;
             if (field == "ap_enabled") {
                 bool en = (value == "true" || value == "1" || value == "on");
-                String apName;
+                
+                // Use Get → Override → Set pattern
+                Components::WifiConfig cfg = wifi->getConfig();
+                
                 if (en) {
                     // Use pending AP SSID if set; otherwise current configured AP SSID; else default
-                    apName = pendingApSsid.length() ? pendingApSsid : (wifi->getAPSSID().length() ? wifi->getAPSSID() : String("DomoticsCore-AP"));
-                    wifi->enableAP(apName);
+                    String apName = pendingApSsid.length() ? pendingApSsid : (cfg.apSSID.length() ? cfg.apSSID : String("DomoticsCore-AP"));
+                    cfg.enableAP = true;
+                    cfg.apSSID = apName;
                     // Clear pending once applied
                     pendingApSsid = "";
                 } else {
-                    wifi->disableAP();
-                    apName = "";
+                    cfg.enableAP = false;
                 }
                 
-                // Invoke AP state persistence callback if set
-                if (onAPStateChanged) {
-                    DLOG_I(LOG_WIFI_WEBUI, "Invoking AP state save callback: enabled=%d, ssid=%s", en, apName.c_str());
-                    onAPStateChanged(en, apName);
+                // Apply config
+                wifi->setConfig(cfg);
+                wifi->updateWifiMode();
+                
+                // Invoke persistence callback if set (unified callback)
+                if (onConfigChanged) {
+                    DLOG_I(LOG_WIFI_WEBUI, "Invoking config save callback");
+                    onConfigChanged(cfg);
                 }
                 
                 // Force next delta update for header badges and cards
@@ -242,13 +265,18 @@ public:
                 // Update AP SSID immediately if AP enabled
                 String newAp = value;
                 if (newAp.isEmpty()) newAp = "DomoticsCore-AP";
+                
                 if (wifi->isAPEnabled()) {
-                    wifi->enableAP(newAp);
+                    // Use Get → Override → Set pattern
+                    Components::WifiConfig cfg = wifi->getConfig();
+                    cfg.apSSID = newAp;
+                    wifi->setConfig(cfg);
+                    wifi->updateWifiMode();
                     
-                    // Invoke AP state persistence callback if set (save new SSID)
-                    if (onAPStateChanged) {
-                        DLOG_I(LOG_WIFI_WEBUI, "Invoking AP state save callback for SSID change: ssid=%s", newAp.c_str());
-                        onAPStateChanged(true, newAp);
+                    // Invoke persistence callback if set (unified callback)
+                    if (onConfigChanged) {
+                        DLOG_I(LOG_WIFI_WEBUI, "Invoking config save callback");
+                        onConfigChanged(cfg);
                     }
                 } else {
                     // Store for when AP gets enabled later

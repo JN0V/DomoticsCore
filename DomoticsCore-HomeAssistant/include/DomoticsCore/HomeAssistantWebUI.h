@@ -28,6 +28,13 @@ public:
      */
     explicit HomeAssistantWebUI(HomeAssistant::HomeAssistantComponent* ha) : ha(ha) {}
 
+    /**
+     * @brief Set callback for HomeAssistant configuration persistence (optional)
+     */
+    void setConfigSaveCallback(std::function<void(const HomeAssistant::HAConfig&)> callback) {
+        onConfigSaved = callback;
+    }
+
     // ========== IWebUIProvider Interface ==========
 
     String getWebUIName() const override {
@@ -42,7 +49,7 @@ public:
         std::vector<WebUIContext> contexts;
         if (!ha) return contexts;
 
-        const auto& cfg = ha->getHAConfig();
+        const auto& cfg = ha->getConfig();
         const auto& stats = ha->getStatistics();
 
         // Status badge - HA connection and entity count
@@ -98,7 +105,7 @@ public:
         if (!ha) return "{}";
 
         JsonDocument doc;
-        const auto& cfg = ha->getHAConfig();
+        const auto& cfg = ha->getConfig();
         const auto& stats = ha->getStatistics();
 
         if (contextId == "ha_status") {
@@ -141,7 +148,7 @@ public:
 
         if (contextId == "ha_settings" && method == "POST") {
             // Update configuration
-            HomeAssistant::HAConfig newCfg = ha->getHAConfig();
+            HomeAssistant::HAConfig newCfg = ha->getConfig();
 
             auto it = params.find("node_id");
             if (it != params.end()) newCfg.nodeId = it->second;
@@ -163,6 +170,11 @@ public:
 
             ha->setConfig(newCfg);
 
+            // Invoke persistence callback if set
+            if (onConfigSaved) {
+                onConfigSaved(newCfg);
+            }
+
             // Republish discovery with new configuration
             ha->publishDiscovery();
 
@@ -174,6 +186,7 @@ public:
 
 private:
     HomeAssistant::HomeAssistantComponent* ha;
+    std::function<void(const HomeAssistant::HAConfig&)> onConfigSaved;  // Callback for persistence
 };
 
 } // namespace WebUI

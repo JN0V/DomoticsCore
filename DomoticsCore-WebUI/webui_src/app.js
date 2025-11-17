@@ -31,6 +31,19 @@ class DomoticsApp {
             this.uiSchema = await response.json();
             console.log('UI Schema loaded:', this.uiSchema);
             
+            // Apply theme and primary color from webui_settings
+            const webuiSettings = this.uiSchema.find(ctx => ctx.contextId === 'webui_settings');
+            if (webuiSettings && webuiSettings.fields) {
+                const themeField = webuiSettings.fields.find(f => f.name === 'theme');
+                if (themeField && themeField.value) {
+                    this.applyTheme(themeField.value);
+                }
+                const colorField = webuiSettings.fields.find(f => f.name === 'primary_color');
+                if (colorField && colorField.value) {
+                    this.applyPrimaryColor(colorField.value);
+                }
+            }
+            
             // Inject custom CSS and JS from components
             this.injectCustomStyles();
             this.injectCustomScripts();
@@ -46,17 +59,25 @@ class DomoticsApp {
         this.renderSection(this.WebUILocation.Settings, 'settingsGrid');
         this.renderHeaderStatus();
         this.renderHeaderInfo();
+        this.renderFooter();
     }
 
     applyTheme(theme) {
-        // theme: 'dark' | 'light' | 'auto'
-        const root = document.documentElement;
-        const body = document.body;
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        let mode = theme || 'dark';
-        if (mode === 'auto') mode = prefersDark ? 'dark' : 'light';
-        body.classList.toggle('light', mode === 'light');
-        body.classList.toggle('dark', mode === 'dark');
+        document.body.classList.remove('light', 'dark');
+        if (theme === 'light') {
+            document.body.classList.add('light');
+        } else if (theme === 'dark') {
+            document.body.classList.add('dark');
+        } else {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.body.classList.add(prefersDark ? 'dark' : 'light');
+        }
+    }
+
+    applyPrimaryColor(color) {
+        if (color && color.startsWith('#')) {
+            document.documentElement.style.setProperty('--primary-color', color);
+        }
     }
 
     applyThemeFromSchema() {
@@ -92,7 +113,11 @@ class DomoticsApp {
         card.className = 'card';
         card.dataset.contextId = context.contextId;
 
-        const actionsHtml = (context.location === this.WebUILocation.Settings) ? `
+        // Only show Edit button if context has editable fields
+        const hasEditableFields = context.location === this.WebUILocation.Settings && 
+                                   Array.isArray(context.fields) && 
+                                   context.fields.some(f => !f.readOnly);
+        const actionsHtml = hasEditableFields ? `
                 <div class="card-actions">
                     <button class="btn btn-edit" data-action="edit">Edit</button>
                     <button class="btn btn-save" data-action="save" style="display:none">Save</button>
@@ -124,7 +149,7 @@ class DomoticsApp {
         } else {
             let fieldsHtml = '';
             context.fields.forEach(field => {
-                fieldsHtml += this.renderField(field);
+                fieldsHtml += this.renderField(field, context.contextId);
             });
 
             card.innerHTML = `
@@ -192,13 +217,62 @@ class DomoticsApp {
         });
     }
 
-    renderField(field) {
+    renderFooter() {
+        const footerText = document.getElementById('footerText');
+        if (!footerText) return;
+        
+        // Find system_info to get device name, manufacturer, firmware version
+        const systemInfo = this.uiSchema.find(ctx => ctx.contextId === 'system_info');
+        let deviceName = 'DomoticsCore';
+        let manufacturer = '';
+        let firmwareVersion = '';
+        
+        if (systemInfo && systemInfo.fields) {
+            const nameField = systemInfo.fields.find(f => f.name === 'device_name');
+            const mfgField = systemInfo.fields.find(f => f.name === 'manufacturer');
+            const versionField = systemInfo.fields.find(f => f.name === 'firmware_version');
+            
+            if (nameField) deviceName = nameField.value || deviceName;
+            if (mfgField) manufacturer = mfgField.value || '';
+            if (versionField) firmwareVersion = versionField.value || '';
+        }
+        
+        const parts = [];
+        if (deviceName) parts.push(deviceName);
+        if (manufacturer) parts.push(`by ${manufacturer}`);
+        if (firmwareVersion) parts.push(`v${firmwareVersion}`);
+        
+        footerText.textContent = parts.join(' • ');
+    }
+
+    updateFooterAndHeader(systemInfoData) {
+        // Update header device name
+        const deviceNameEl = document.getElementById('deviceName');
+        if (!this.isEditingDeviceName && deviceNameEl && systemInfoData.device_name) {
+            deviceNameEl.textContent = systemInfoData.device_name;
+        }
+        
+        // Update footer
+        const footerText = document.getElementById('footerText');
+        if (footerText) {
+            const parts = [];
+            if (systemInfoData.device_name) parts.push(systemInfoData.device_name);
+            if (systemInfoData.manufacturer) parts.push(`by ${systemInfoData.manufacturer}`);
+            if (systemInfoData.firmware_version) parts.push(`v${systemInfoData.firmware_version}`);
+            if (parts.length > 0) {
+                footerText.textContent = parts.join(' • ');
+            }
+        }
+    }
+
+    renderField(field, contextId) {
+        const fieldId = `${contextId}_${field.name}`;
         let fieldHtml = '';
         switch (field.type) {
             case this.WebUIFieldType.Boolean:
                 fieldHtml = `
                     <label class="toggle-switch">
-                        <input type="checkbox" id="${field.name}" ${field.value === 'true' ? 'checked' : ''} ${field.readOnly ? 'disabled' : ''}>
+                        <input type="checkbox" id="${fieldId}" ${field.value === 'true' ? 'checked' : ''} ${field.readOnly ? 'disabled' : ''}>
                         <span class="slider"></span>
                     </label>`;
                 break;
@@ -206,25 +280,25 @@ class DomoticsApp {
                 {
                     const inputType = field.name === 'password' ? 'password' : 'text';
                     const val = (field.value != null) ? String(field.value) : '';
-                    fieldHtml = `<input type="${inputType}" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
+                    fieldHtml = `<input type="${inputType}" id="${fieldId}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
                 }
                 break;
             case this.WebUIFieldType.Password:
                 {
                     const val = (field.value != null) ? String(field.value) : '';
-                    fieldHtml = `<input type="password" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
+                    fieldHtml = `<input type="password" id="${fieldId}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
                 }
                 break;
             case this.WebUIFieldType.Number:
                 {
                     const val = (field.value != null) ? String(field.value) : '';
-                    fieldHtml = `<input type="number" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
+                    fieldHtml = `<input type="number" id="${fieldId}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
                 }
                 break;
             case this.WebUIFieldType.Float:
                 {
                     const val = (field.value != null) ? String(field.value) : '';
-                    fieldHtml = `<input type="number" step="any" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
+                    fieldHtml = `<input type="number" step="any" id="${fieldId}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
                 }
                 break;
             case this.WebUIFieldType.Select:
@@ -237,24 +311,24 @@ class DomoticsApp {
                         const label = labels[opt] || opt;  // Use label if available, fallback to value
                         return `<option value="${opt}" ${sel}>${label}</option>`;
                     }).join('');
-                    fieldHtml = `<select id="${field.name}" ${field.readOnly ? 'disabled' : ''}>${optsHtml}</select>`;
+                    fieldHtml = `<select id="${fieldId}" ${field.readOnly ? 'disabled' : ''}>${optsHtml}</select>`;
                 }
                 break;
             case this.WebUIFieldType.Slider:
                 {
                     const min = (field.minValue !== undefined && field.minValue !== null) ? field.minValue : 0;
                     const max = (field.maxValue !== undefined && field.maxValue !== null) ? field.maxValue : 255;
-                    fieldHtml = `<input type="range" id="${field.name}" min="${min}" max="${max}" value="${field.value}" ${field.readOnly ? 'disabled' : ''}>`;
+                    fieldHtml = `<input type="range" id="${fieldId}" min="${min}" max="${max}" value="${field.value}" ${field.readOnly ? 'disabled' : ''}>`;
                 }
                  break;
             case this.WebUIFieldType.Color:
                 {
                     const val = (field.value != null) ? String(field.value) : '#000000';
-                    fieldHtml = `<input type="color" id="${field.name}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
+                    fieldHtml = `<input type="color" id="${fieldId}" value="${val}" ${field.readOnly ? 'disabled' : ''}>`;
                 }
                 break;
             case this.WebUIFieldType.Button:
-                fieldHtml = `<button class="btn" id="${field.name}" ${field.readOnly ? 'disabled' : ''}>${field.label}</button>`;
+                fieldHtml = `<button class="btn" id="${fieldId}" ${field.readOnly ? 'disabled' : ''}>${field.label}</button>`;
                 break;
             case this.WebUIFieldType.Display:
             default:
@@ -426,6 +500,11 @@ class DomoticsApp {
             const contextSchema = this.uiSchema.find(ctx => ctx.contextId === contextId);
             if (!contextSchema) return;
 
+            // Update footer when system_info changes
+            if (contextId === 'system_info' && data) {
+                this.updateFooterAndHeader(data);
+            }
+
             if (contextSchema.location === this.WebUILocation.HeaderStatus) {
                 this.updateHeaderStatus(contextId, data);
             } else if (contextSchema.location === this.WebUILocation.HeaderInfo) {
@@ -439,7 +518,8 @@ class DomoticsApp {
                     Object.entries(data).forEach(([fieldName, value]) => {
                         const fieldSchema = Array.isArray(contextSchema.fields) ? contextSchema.fields.find(f => f.name === fieldName) : null;
                         // Try to find an input element first (for toggles, sliders, etc.)
-                        const inputEl = card.querySelector(`#${fieldName}`);
+                        const fieldId = `${contextId}_${fieldName}`;
+                        const inputEl = card.querySelector(`#${fieldId}`);
                         if (inputEl) {
                             if (inputEl.type === 'checkbox') {
                                 const newChecked = (value === 'true' || value === true);
@@ -661,7 +741,8 @@ class DomoticsApp {
         context.fields.forEach(field => {
             if (field.readOnly) return;
 
-            const el = card.querySelector(`#${field.name}`);
+            const fieldId = `${context.contextId}_${field.name}`;
+            const el = card.querySelector(`#${fieldId}`);
             if (!el) return;
 
             const eventType = (field.type === this.WebUIFieldType.Slider) ? 'input' : (field.type === this.WebUIFieldType.Button ? 'click' : 'change');
@@ -680,9 +761,13 @@ class DomoticsApp {
                     return;
                 }
                 this.sendUICommand(context.contextId, field.name, value);
-                // Apply theme immediately on client side when changed from settings
-                if (context.contextId === 'webui_settings' && field.name === 'theme') {
-                    this.applyTheme(value);
+                // Apply theme and primary color immediately on client side when changed from settings
+                if (context.contextId === 'webui_settings') {
+                    if (field.name === 'theme') {
+                        this.applyTheme(value);
+                    } else if (field.name === 'primary_color') {
+                        this.applyPrimaryColor(value);
+                    }
                 }
             });
         });
@@ -718,8 +803,12 @@ class DomoticsApp {
             const entries = Object.entries(pending);
             for (const [fieldName, value] of entries) {
                 this.sendUICommand(context.contextId, fieldName, value);
-                if (context.contextId === 'webui_settings' && fieldName === 'theme') {
-                    this.applyTheme(value);
+                if (context.contextId === 'webui_settings') {
+                    if (fieldName === 'theme') {
+                        this.applyTheme(value);
+                    } else if (fieldName === 'primary_color') {
+                        this.applyPrimaryColor(value);
+                    }
                 }
             }
             card.dataset.pending = '{}';
@@ -797,8 +886,8 @@ class DomoticsApp {
             const newName = input.value.trim();
             if (newName && newName !== currentName) {
                 element.textContent = newName;
-                // The WebUI component is the provider for its own settings
-                this.sendUICommand('webui_settings', 'device_name', newName);
+                // Device name is now managed by System Info
+                this.sendUICommand('system_info', 'device_name', newName);
             } else {
                 element.textContent = currentName; // Revert if empty or unchanged
             }

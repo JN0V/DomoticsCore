@@ -12,12 +12,23 @@ using namespace DomoticsCore::Components;
 #define LOG_APP "APP"
 
 /**
+ * Example configuration struct for TestComponent
+ */
+struct TestComponentConfig {
+    unsigned long heartbeatInterval = 5000;  // Heartbeat interval in ms
+    unsigned long workInterval = 2000;       // Work iteration interval in ms
+    bool enableWork = true;                  // Enable work simulation
+    int maxIterations = 0;                   // Max iterations (0 = unlimited)
+};
+
+/**
  * Example custom component showing how to build new behaviors with DomoticsCore
  * This demonstrates the component development pattern for library users
  */
 class TestComponent : public IComponent {
 private:
     String componentName;
+    TestComponentConfig config;
     Utils::NonBlockingDelay heartbeatTimer;
     Utils::NonBlockingDelay workTimer;
     int counter;
@@ -28,17 +39,18 @@ public:
     /**
      * Constructor
      * @param name Component instance name
-     * @param heartbeatInterval Heartbeat logging interval in ms (default: 5000)
+     * @param cfg Component configuration
      * @param deps List of component dependencies (optional)
      */
     TestComponent(const String& name, 
-                  unsigned long heartbeatInterval = 5000,
+                  const TestComponentConfig& cfg = TestComponentConfig(),
                   const std::vector<String>& deps = {}) 
-        : componentName(name), 
-          heartbeatTimer(heartbeatInterval), 
-          workTimer(2000),
+        : componentName(name),
+          config(cfg),
+          heartbeatTimer(cfg.heartbeatInterval), 
+          workTimer(cfg.workInterval),
           counter(0), 
-          simulateWork(true),
+          simulateWork(cfg.enableWork),
           dependencies(deps) {
     }
     
@@ -50,22 +62,6 @@ public:
         metadata.version = "1.0.0-test";
         metadata.author = "DomoticsCore Example";
         metadata.description = "Test component for demonstration";
-        
-        // Define configuration parameters
-        config.defineParameter(ConfigParam("heartbeat_interval", ConfigType::Integer, false, 
-                                         String(heartbeatTimer.getInterval()), "Heartbeat interval in ms")
-                              .min(1000).max(60000));
-        config.defineParameter(ConfigParam("simulate_work", ConfigType::Boolean, false, "true", 
-                                         "Enable work simulation"));
-        
-        // Validate configuration
-        auto validation = validateConfig();
-        if (!validation.isValid()) {
-            DLOG_E(LOG_APP, "TestComponent '%s' config validation failed: %s", 
-                   componentName.c_str(), validation.toString().c_str());
-            setStatus(ComponentStatus::ConfigError);
-            return ComponentStatus::ConfigError;
-        }
         
         // Simulate some initialization work
         delay(50);
@@ -98,6 +94,13 @@ public:
             if (counter % 25 == 0) {
                 DLOG_W(LOG_APP, "TestComponent '%s' warning: high iteration count (%d)", 
                        componentName.c_str(), counter);
+            }
+            
+            // Check max iterations limit
+            if (config.maxIterations > 0 && counter >= config.maxIterations) {
+                simulateWork = false;
+                DLOG_I(LOG_APP, "TestComponent '%s' reached max iterations (%d)", 
+                       componentName.c_str(), config.maxIterations);
             }
         }
     }
@@ -192,13 +195,6 @@ public:
         metadata.author = "DomoticsCore Example";
         metadata.description = "LED blinker component for hardware demonstration";
         
-        // Define configuration parameters
-        config.defineParameter(ConfigParam("blink_interval", ConfigType::Integer, false, 
-                                         String(blinkTimer.getInterval()), "LED blink interval in ms")
-                              .min(100).max(10000));
-        config.defineParameter(ConfigParam("enabled", ConfigType::Boolean, false, "true", 
-                                         "Enable LED blinking"));
-        
         pinMode(ledPin, OUTPUT);
         digitalWrite(ledPin, LOW);
         ledState = false;
@@ -243,10 +239,21 @@ public:
  */
 inline std::unique_ptr<TestComponent> createTestComponent(
     const String& name, 
-    unsigned long heartbeatInterval = 5000,
+    const TestComponentConfig& config = TestComponentConfig(),
     const std::vector<String>& dependencies = {}
 ) {
-    return std::unique_ptr<TestComponent>(new TestComponent(name, heartbeatInterval, dependencies));
+    return std::unique_ptr<TestComponent>(new TestComponent(name, config, dependencies));
+}
+
+// Convenience overload for backward compatibility
+inline std::unique_ptr<TestComponent> createTestComponent(
+    const String& name, 
+    unsigned long heartbeatInterval,
+    const std::vector<String>& dependencies = {}
+) {
+    TestComponentConfig cfg;
+    cfg.heartbeatInterval = heartbeatInterval;
+    return std::unique_ptr<TestComponent>(new TestComponent(name, cfg, dependencies));
 }
 
 inline std::unique_ptr<LEDBlinkerComponent> createLEDBlinker(int pin, unsigned long blinkInterval = 1000) {

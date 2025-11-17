@@ -15,6 +15,12 @@ namespace Components {
  * System Information Component Configuration
  */
 struct SystemInfoConfig {
+    // Device identity (populated by System.h from SystemConfig)
+    String deviceName = "DomoticsCore Device";
+    String manufacturer = "DomoticsCore";
+    String firmwareVersion = "1.0.0";
+    
+    // Diagnostic settings
     bool enableDetailedInfo = true;     // Include detailed chip info
     bool enableMemoryInfo = true;       // Include memory statistics
     int updateInterval = 5000;          // Update interval in ms
@@ -140,7 +146,15 @@ public:
 
     // Public accessors for metrics (for WebUI extensions)
     const SystemMetrics& getMetrics() const { return metrics; }
-    const SystemInfoConfig& getSystemConfig() const { return config; }
+    
+    // Standard config accessors (matching other components)
+    const SystemInfoConfig& getConfig() const { return config; }
+    void setConfig(const SystemInfoConfig& cfg) {
+        config = cfg;
+        DLOG_I(LOG_SYSTEM, "SystemInfo config updated: device='%s', mfg='%s', version='%s'",
+               config.deviceName.c_str(), config.manufacturer.c_str(), config.firmwareVersion.c_str());
+    }
+    
     int getUpdateInterval() const { return config.updateInterval; }
     bool isDetailedInfoEnabled() const { return config.enableDetailedInfo; }
     bool isMemoryInfoEnabled() const { return config.enableMemoryInfo; }
