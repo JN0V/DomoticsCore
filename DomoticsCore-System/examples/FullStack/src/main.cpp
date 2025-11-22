@@ -200,14 +200,9 @@ void setup() {
         DLOG_I(LOG_APP, "✓ Home Assistant entities created (%d entities)", 
                haPtr->getStatistics().entityCount);
         
-        // Publish discovery messages for all entities
-        // (Must be called after adding all entities)
-        if (mqttPtr->isConnected()) {
-            haPtr->publishDiscovery();
-            DLOG_I(LOG_APP, "✓ Discovery messages published to Home Assistant");
-        } else {
-            DLOG_I(LOG_APP, "⏳ Discovery will be published when MQTT connects");
-        }
+        // Discovery is automatically published by the HomeAssistant component
+        // when MQTT connects (via EventBus "mqtt/connected" event)
+        DLOG_I(LOG_APP, "✓ Home Assistant integration ready (waiting for MQTT connection)");
     } else {
         if (!haPtr) {
             DLOG_W(LOG_APP, "⚠️  Home Assistant component not available");

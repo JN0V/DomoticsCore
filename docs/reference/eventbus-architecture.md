@@ -232,11 +232,10 @@ on<bool>("wifi/connected", [this](const bool&) {
 });
 
 // MQTT → HomeAssistant orchestration
-on<bool>("mqtt/connected", [this](const bool&) {
-    if (homeAssistant) {
-        homeAssistant->publishDiscovery();
-    }
-});
+// NOTE: NOT needed in System.h because HomeAssistant component 
+// listens to "mqtt/connected" internally!
+//
+// on<bool>("mqtt/connected", ...); // ❌ Don't do this in System.h
 ```
 
 ---
