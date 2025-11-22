@@ -967,15 +967,6 @@ public:
         auto* haComp = core.getComponent<Components::HomeAssistant::HomeAssistantComponent>("HomeAssistant");
         
         if (mqttComp && haComp) {
-            // When MQTT connects, trigger Home Assistant discovery
-            core.getEventBus().subscribe("mqtt/connected", [haComp](const void*) {
-                // Only publish if entities have been added by user code
-                if (haComp->getStatistics().entityCount > 0) {
-                    DLOG_I(LOG_SYSTEM, "📡 MQTT connected → triggering HA discovery");
-                    haComp->publishDiscovery();
-                }
-            });
-            
             // Log HA discovery events
             core.getEventBus().subscribe("ha/discovery_published", [](const void* payload) {
                 int count = payload ? *static_cast<const int*>(payload) : 0;
