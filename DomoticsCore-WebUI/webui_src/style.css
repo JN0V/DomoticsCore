@@ -448,3 +448,51 @@ input:checked + .slider:before {
   transition: width 0.3s ease;
   border-radius: 10px;
 }
+
+.progress-text {
+  text-align: center;
+  font-size: 0.8em;
+  margin-top: 0.2rem;
+  color: var(--text-secondary);
+}
+
+/* File Upload Component */
+.file-upload-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.file-select-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.file-name {
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-name.has-file {
+  color: var(--text-primary);
+}
+
+.file-upload-btn {
+  width: auto;
+  align-self: flex-start;
+}
+
+.file-status {
+  font-size: 0.8em;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.file-status.success { color: var(--success-color); }
+.file-status.error { color: var(--danger-color); }

@@ -40,7 +40,7 @@ const char* stateToString(OTAComponent::State state) {
 // Restore constructor and helper methods outside anonymous namespace
 OTAComponent::OTAComponent(const OTAConfig& cfg) : config(cfg) {
     metadata.name = "OTA";
-    metadata.version = "1.0.0";
+    metadata.version = "1.1.0";
     metadata.description = "Secure over-the-air firmware updates";
     metadata.author = "DomoticsCore";
     metadata.category = "system";

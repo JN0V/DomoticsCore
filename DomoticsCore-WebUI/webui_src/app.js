@@ -8,7 +8,7 @@ class DomoticsApp {
 
         // Enum mappings from C++ backend
         this.WebUILocation = { Dashboard: 0, ComponentDetail: 1, HeaderStatus: 2, QuickControls: 3, Settings: 4, HeaderInfo: 5 };
-        this.WebUIFieldType = { Text: 0, Number: 1, Float: 2, Boolean: 3, Select: 4, Slider: 5, Color: 6, Button: 7, Display: 8, Chart: 9, Status: 10, Progress: 11, Password: 12 };
+        this.WebUIFieldType = { Text: 0, Number: 1, Float: 2, Boolean: 3, Select: 4, Slider: 5, Color: 6, Button: 7, Display: 8, Chart: 9, Status: 10, Progress: 11, Password: 12, File: 13 };
 
         this.init();
     }
@@ -113,8 +113,9 @@ class DomoticsApp {
         card.className = 'card';
         card.dataset.contextId = context.contextId;
 
-        // Only show Edit button if context has editable fields
+        // Only show Edit button if context has editable fields and is not always interactive
         const hasEditableFields = context.location === this.WebUILocation.Settings && 
+                                   !context.alwaysInteractive &&
                                    Array.isArray(context.fields) && 
                                    context.fields.some(f => !f.readOnly);
         const actionsHtml = hasEditableFields ? `
@@ -161,7 +162,7 @@ class DomoticsApp {
             `;
         }
 
-        if (context.location === this.WebUILocation.Settings) {
+        if (context.location === this.WebUILocation.Settings && !context.alwaysInteractive) {
             card.dataset.editing = 'false';
             this.setCardEditing(card, false);
         }
@@ -329,6 +330,37 @@ class DomoticsApp {
                 break;
             case this.WebUIFieldType.Button:
                 fieldHtml = `<button class="btn" id="${fieldId}" ${field.readOnly ? 'disabled' : ''}>${field.label}</button>`;
+                break;
+            case this.WebUIFieldType.Status:
+                {
+                    // Status field handling (generic)
+                    fieldHtml = `<span class="card-status status-success" id="${fieldId}">${field.value}</span>`;
+                }
+                break;
+            case this.WebUIFieldType.Progress:
+                {
+                    // field.value might be "50%" or just "50"
+                    let percent = parseFloat(field.value) || 0;
+                    fieldHtml = `
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" id="${fieldId}" style="width: ${percent}%"></div>
+                        </div>
+                        <div id="${fieldId}_text" class="progress-text">${field.value || '0%'}</div>
+                    `;
+                }
+                break;
+            case this.WebUIFieldType.File:
+                fieldHtml = `
+                    <div class="file-upload-container">
+                        <input type="file" id="${fieldId}" accept="${field.unit || ''}" style="display:none;" ${field.readOnly ? 'disabled' : ''}>
+                        <div class="file-select-row">
+                            <button class="btn btn-secondary" id="${fieldId}_select" ${field.readOnly ? 'disabled' : ''}>Select File...</button>
+                            <span id="${fieldId}_filename" class="file-name">No file selected</span>
+                        </div>
+                        <button class="btn btn-primary file-upload-btn" id="${fieldId}_btn" disabled>Upload</button>
+                        <div id="${fieldId}_status" class="file-status"></div>
+                    </div>
+                `;
                 break;
             case this.WebUIFieldType.Display:
             default:
@@ -517,6 +549,22 @@ class DomoticsApp {
                     }
                     Object.entries(data).forEach(([fieldName, value]) => {
                         const fieldSchema = Array.isArray(contextSchema.fields) ? contextSchema.fields.find(f => f.name === fieldName) : null;
+                        
+                        // Special handling for Progress fields
+                        if (fieldSchema && fieldSchema.type === this.WebUIFieldType.Progress) {
+                            const fieldId = `${contextId}_${fieldName}`;
+                            const barEl = card.querySelector(`#${fieldId}`);
+                            const textEl = card.querySelector(`#${fieldId}_text`);
+                            if (barEl) {
+                                let percent = parseFloat(value) || 0;
+                                barEl.style.width = `${percent}%`;
+                            }
+                            if (textEl) {
+                                textEl.textContent = value || '0%';
+                            }
+                            return;
+                        }
+
                         // Try to find an input element first (for toggles, sliders, etc.)
                         const fieldId = `${contextId}_${fieldName}`;
                         const inputEl = card.querySelector(`#${fieldId}`);
@@ -742,6 +790,95 @@ class DomoticsApp {
             if (field.readOnly) return;
 
             const fieldId = `${context.contextId}_${field.name}`;
+            
+            // Special handling for File upload fields
+            if (field.type === this.WebUIFieldType.File) {
+                const btn = card.querySelector(`#${fieldId}_btn`);
+                const selectBtn = card.querySelector(`#${fieldId}_select`);
+                const input = card.querySelector(`#${fieldId}`);
+                const status = card.querySelector(`#${fieldId}_status`);
+                const filenameEl = card.querySelector(`#${fieldId}_filename`);
+                
+                if (input) {
+                    if (selectBtn) {
+                        selectBtn.addEventListener('click', () => input.click());
+                    }
+
+                    input.addEventListener('change', () => {
+                        if (input.files && input.files.length > 0) {
+                            const file = input.files[0];
+                            if (filenameEl) {
+                                filenameEl.textContent = file.name + ' (' + (file.size / 1024 / 1024).toFixed(2) + ' MB)';
+                                filenameEl.classList.add('has-file');
+                            }
+                            if (btn) btn.disabled = false;
+                        } else {
+                            if (filenameEl) {
+                                filenameEl.textContent = 'No file selected';
+                                filenameEl.classList.remove('has-file');
+                            }
+                            if (btn) btn.disabled = true;
+                        }
+                    });
+                }
+                
+                if (btn && input) {
+                    btn.addEventListener('click', async () => {
+                        if (!input.files.length) {
+                            if (status) status.textContent = 'Please select a file first.';
+                            return;
+                        }
+                        const file = input.files[0];
+                        const formData = new FormData();
+                        // Use field name as the form key (OTA expects 'firmware')
+                        formData.append(field.name, file);
+                        
+                        if (status) {
+                            status.textContent = 'Uploading...';
+                            status.className = 'file-status';
+                        }
+                        btn.disabled = true;
+                        input.disabled = true;
+                        if (selectBtn) selectBtn.disabled = true;
+                        
+                        try {
+                            // Endpoint is in field.endpoint
+                            const endpoint = field.endpoint || `/api/upload/${context.contextId}/${field.name}`;
+                            const resp = await fetch(endpoint, {
+                                method: 'POST',
+                                body: formData
+                            });
+                            const result = await resp.json();
+                            if (status) {
+                                if (result.success) {
+                                    status.textContent = result.message || 'Upload successful.';
+                                    status.className = 'file-status success';
+                                    input.value = ''; // Clear selection
+                                    if (filenameEl) {
+                                        filenameEl.textContent = 'No file selected';
+                                        filenameEl.classList.remove('has-file');
+                                    }
+                                    if (btn) btn.disabled = true;
+                                } else {
+                                    status.textContent = 'Error: ' + (result.error || 'Upload failed');
+                                    status.className = 'file-status error';
+                                }
+                            }
+                        } catch (err) {
+                            if (status) {
+                                status.textContent = 'Error: ' + err.message;
+                                status.className = 'file-status error';
+                            }
+                        } finally {
+                            if (btn) btn.disabled = !input.files.length; // keep disabled if no file, though we cleared it on success
+                            input.disabled = false;
+                            if (selectBtn) selectBtn.disabled = false;
+                        }
+                    });
+                }
+                return; // Skip standard change listener
+            }
+
             const el = card.querySelector(`#${fieldId}`);
             if (!el) return;
 
@@ -774,7 +911,7 @@ class DomoticsApp {
     }
 
     attachCardActions(card, context) {
-        if (context.location !== this.WebUILocation.Settings) return;
+        if (context.location !== this.WebUILocation.Settings || context.alwaysInteractive) return;
         const editBtn = card.querySelector('.btn-edit');
         const saveBtn = card.querySelector('.btn-save');
         const cancelBtn = card.querySelector('.btn-cancel');
