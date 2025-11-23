@@ -94,7 +94,7 @@ public:
         : config(cfg) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "WebUI";
-        metadata.version = "1.0.0";
+        metadata.version = "1.1.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Web dashboard and API component";
     }
@@ -1127,6 +1127,7 @@ private:
         obj["presentation"] = (int)context.presentation;
         obj["priority"] = context.priority;
         obj["apiEndpoint"] = context.apiEndpoint;
+        obj["alwaysInteractive"] = context.alwaysInteractive;
         
         // Include custom UI elements if provided
         if (!context.customHtml.isEmpty()) {

@@ -125,7 +125,8 @@ enum class WebUIFieldType {
     Chart,             // Chart data
     Status,            // Status indicator
     Progress,          // Progress value
-    Password           // Password input (appended to preserve existing ordinals)
+    Password,          // Password input
+    File               // File upload input
 };
 
 /**
@@ -188,6 +189,7 @@ struct WebUIContext {
     String apiEndpoint;             // API endpoint for this context
     bool realTime = false;          // Enable real-time updates
     int updateInterval = 5000;      // Update interval in ms
+    bool alwaysInteractive = false; // If true, controls are always enabled (bypassing Settings lock)
     
     // Context-specific configuration
     JsonDocument contextConfig;     // Custom presentation config
@@ -214,6 +216,11 @@ struct WebUIContext {
         realTime = true; 
         updateInterval = interval; 
         return *this; 
+    }
+
+    WebUIContext& withAlwaysInteractive(bool interactive = true) {
+        alwaysInteractive = interactive;
+        return *this;
     }
     
     WebUIContext& withPriority(int p) { 
