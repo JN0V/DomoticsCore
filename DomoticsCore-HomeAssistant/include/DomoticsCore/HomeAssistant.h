@@ -131,8 +131,11 @@ public:
      * @brief Add a sensor entity
      */
     void addSensor(const String& id, const String& name, const String& unit = "", 
-                   const String& deviceClass = "", const String& icon = "") {
+                   const String& deviceClass = "", const String& icon = "", const String& stateClass = "") {
         auto sensor = std::make_unique<HASensor>(id, name, unit, deviceClass, icon);
+        if (!stateClass.isEmpty()) {
+            sensor->stateClass = stateClass;
+        }
         entities.push_back(std::move(sensor));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added sensor: %s", id.c_str());

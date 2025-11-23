@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-HomeAssistant",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "DomoticsCore Home Assistant component (header-only) with EventBus-based MQTT communication, auto-discovery, entity management, and WebUI integration",
   "keywords": ["homeassistant", "mqtt", "discovery", "automation", "iot", "esp32", "arduino"],
   "repository": {
