@@ -1,4 +1,5 @@
 #include "DomoticsCore/OTA.h"
+#include "DomoticsCore/Events.h"
 
 #include <Update.h>
 #include <esp_system.h>
@@ -166,7 +167,7 @@ bool OTAComponent::beginUpload(size_t expectedSize) {
     } else {
         DLOG_I(LOG_OTA, "Upload started | expected bytes=unknown");
     }
-    publishStatusEvent("info", [this](JsonDocument& doc){
+    publishStatusEvent(DomoticsCore::Events::EVENT_OTA_INFO, [this](JsonDocument& doc){
         doc["success"] = true;
         doc["message"] = "Upload started";
         doc["source"] = "upload";
@@ -191,7 +192,7 @@ bool OTAComponent::acceptUploadChunk(const uint8_t* data, size_t length) {
         Update.abort();
         uploadSession.active = false;
         transition(State::Error, lastError);
-        publishStatusEvent("failed", [this](JsonDocument& doc){
+        publishStatusEvent(DomoticsCore::Events::EVENT_OTA_ERROR, [this](JsonDocument& doc){
             doc["success"] = false;
             doc["error"] = lastError;
             doc["source"] = "upload";
@@ -224,7 +225,7 @@ bool OTAComponent::acceptUploadChunk(const uint8_t* data, size_t length) {
     // Throttle progress broadcasts to avoid EventBus queue overflow (every 1 second)
     const unsigned long now = millis();
     if ((now - lastProgressPublishMillis) > 1000) {
-        publishStatusEvent("progress", [this](JsonDocument& doc){
+        publishStatusEvent(DomoticsCore::Events::EVENT_OTA_PROGRESS, [this](JsonDocument& doc){
             doc["success"] = true;
             doc["source"] = "upload";
             doc["bytes"] = downloadedBytes;
@@ -248,7 +249,7 @@ bool OTAComponent::finalizeUpload() {
         Update.abort();
         uploadSession.active = false;
         transition(State::Error, lastError);
-        publishStatusEvent("failed", [this](JsonDocument& doc){
+        publishStatusEvent(DomoticsCore::Events::EVENT_OTA_ERROR, [this](JsonDocument& doc){
             doc["success"] = false;
             doc["error"] = lastError;
             doc["source"] = "upload";
@@ -273,7 +274,7 @@ void OTAComponent::abortUpload(const String& reason) {
     uploadSession.error = reason;
     lastError = reason;
     transition(State::Error, reason);
-    publishStatusEvent("failed", [this](JsonDocument& doc){
+    publishStatusEvent(DomoticsCore::Events::EVENT_OTA_ERROR, [this](JsonDocument& doc){
         doc["success"] = false;
         doc["error"] = lastError;
         doc["source"] = "upload";
@@ -422,7 +423,7 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
         Update.abort();
         mbedtls_sha256_free(&shaCtx);
         transition(State::Error, lastError.isEmpty() ? String("Download failed") : lastError);
-        publishStatusEvent("failed", [this](JsonDocument& doc){
+        publishStatusEvent(DomoticsCore::Events::EVENT_OTA_ERROR, [this](JsonDocument& doc){
             doc["success"] = false;
             doc["error"] = lastError;
             doc["source"] = "download";
@@ -500,7 +501,7 @@ bool OTAComponent::finalizeUpdateOperation(const String& source, bool autoReboot
     downloadedBytes = totalBytes;  // Ensure bytes match total
     
     // Final progress update via status event
-    publishStatusEvent("complete", [this](JsonDocument& doc){
+    publishStatusEvent(DomoticsCore::Events::EVENT_OTA_COMPLETE, [this](JsonDocument& doc){
         doc["success"] = true;
         doc["progress"] = 100.0f;
         doc["bytes"] = totalBytes;
@@ -517,7 +518,7 @@ bool OTAComponent::finalizeUpdateOperation(const String& source, bool autoReboot
         DLOG_I(LOG_OTA, "%s complete. Manual reboot required.", source.c_str());
     }
 
-    publishStatusEvent("completed", [this, &source](JsonDocument& doc){
+    publishStatusEvent(DomoticsCore::Events::EVENT_OTA_COMPLETED, [this, &source](JsonDocument& doc){
         doc["success"] = true;
         doc["source"] = source;
         doc["autoReboot"] = config.autoReboot;
@@ -536,10 +537,10 @@ void OTAComponent::broadcastProgress() {
     doc["state"] = stateToString(state);
     String payload;
     serializeJson(doc, payload);
-    emit<String>("ota.progress", payload, false);
+    emit<String>(DomoticsCore::Events::EVENT_OTA_PROGRESS, payload, false);
 }
 
-void OTAComponent::publishStatusEvent(const String& topicSuffix, std::function<void(JsonDocument&)> fn, bool sticky) {
+void OTAComponent::publishStatusEvent(const String& topic, std::function<void(JsonDocument&)> fn, bool sticky) {
     JsonDocument doc;
     fn(doc);
     doc["state"] = stateToString(state);
@@ -547,5 +548,5 @@ void OTAComponent::publishStatusEvent(const String& topicSuffix, std::function<v
     doc["lastResult"] = lastResult;
     String payload;
     serializeJson(doc, payload);
-    emit<String>(String("ota.") + topicSuffix, payload, sticky);
+    emit<String>(topic, payload, sticky);
 }
