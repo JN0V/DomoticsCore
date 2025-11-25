@@ -8,6 +8,11 @@ using namespace DomoticsCore::Components;
 // Mock Storage
 class MockStorageComponent : public IComponent {
 public:
+    MockStorageComponent() {
+        metadata.name = "Storage";
+        metadata.version = "1.0.0";
+    }
+
     ComponentStatus begin() override {
         DLOG_I("TEST", "[Storage] begin() called");
         return ComponentStatus::Success;
@@ -20,7 +25,6 @@ public:
     
     void loop() override {}
     ComponentStatus shutdown() override { return ComponentStatus::Success; }
-    String getName() const override { return "Storage"; }
 };
 
 // Custom component with optional dependency (like WaterMeter)
@@ -29,6 +33,11 @@ private:
     MockStorageComponent* storage_ = nullptr;
     
 public:
+    WaterMeterComponent() {
+        metadata.name = "WaterMeter";
+        metadata.version = "1.0.0";
+    }
+
     // Bug report says this causes crash
     std::vector<Dependency> getDependencies() const override {
         return {
@@ -58,7 +67,6 @@ public:
     
     void loop() override {}
     ComponentStatus shutdown() override { return ComponentStatus::Success; }
-    String getName() const override { return "WaterMeter"; }
 };
 
 Core core;
