@@ -3,6 +3,7 @@
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/MQTT.h>  // Only for event structures
+#include <DomoticsCore/Events.h>
 #include "HAEntity.h"
 #include "HASensor.h"
 #include "HABinarySensor.h"
@@ -77,7 +78,7 @@ public:
         DLOG_I(LOG_HA, "Discovery prefix: %s", config.discoveryPrefix.c_str());
         
         // Subscribe to MQTT events via EventBus
-        on<bool>("mqtt/connected", [this](const bool&) {
+        on<bool>(DomoticsCore::Events::EVENT_MQTT_CONNECTED, [this](const bool&) {
             DLOG_I(LOG_HA, "MQTT connected (via EventBus), publishing availability");
             mqttConnected = true;
             setAvailable(true);
@@ -91,13 +92,13 @@ public:
             }
         });
         
-        on<bool>("mqtt/disconnected", [this](const bool&) {
+        on<bool>(DomoticsCore::Events::EVENT_MQTT_DISCONNECTED, [this](const bool&) {
             DLOG_W(LOG_HA, "MQTT disconnected (via EventBus)");
             mqttConnected = false;
         });
         
         // Subscribe to incoming MQTT messages
-        on<DomoticsCore::Components::MQTTMessageEvent>("mqtt/message", [this](const DomoticsCore::Components::MQTTMessageEvent& ev) {
+        on<DomoticsCore::Components::MQTTMessageEvent>(DomoticsCore::Events::EVENT_MQTT_MESSAGE, [this](const DomoticsCore::Components::MQTTMessageEvent& ev) {
             handleCommand(String(ev.topic), String(ev.payload));
         });
         
@@ -139,7 +140,7 @@ public:
         entities.push_back(std::move(sensor));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added sensor: %s", id.c_str());
-        emit("ha/entity_added", id);
+        emit(DomoticsCore::Events::EVENT_HA_ENTITY_ADDED, id);
         if (mqttConnected) {
             republishEntity(id);
         }
@@ -315,7 +316,7 @@ public:
         stats.discoveryCount++;
         
         // Emit event for monitoring
-        emit("ha/discovery_published", (int)entities.size());
+        emit(DomoticsCore::Events::EVENT_HA_DISCOVERY_PUBLISHED, (int)entities.size());
     }
     
     /**
@@ -417,7 +418,7 @@ private:
         ev.payload[sizeof(ev.payload) - 1] = '\0';
         ev.qos = qos;
         ev.retain = retain;
-        emit("mqtt/publish", ev);
+        emit(DomoticsCore::Events::EVENT_MQTT_PUBLISH, ev);
         return true;  // EventBus emit is fire-and-forget
     }
     
@@ -478,7 +479,7 @@ private:
         strncpy(ev.topic, commandTopic.c_str(), sizeof(ev.topic) - 1);
         ev.topic[sizeof(ev.topic) - 1] = '\0';
         ev.qos = 0;
-        emit("mqtt/subscribe", ev);
+        emit(DomoticsCore::Events::EVENT_MQTT_SUBSCRIBE, ev);
         
         DLOG_D(LOG_HA, "Subscribed to commands via EventBus: %s", commandTopic.c_str());
         // Message handling is done via "mqtt/message" event listener in begin()
