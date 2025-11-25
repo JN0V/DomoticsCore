@@ -49,7 +49,7 @@ void setup() {
             std::unique_ptr<WiFiClient> client;
             if (manifestUrl.startsWith("https://")) {
                 auto* secure = new WiFiClientSecure();
-                const auto& cfg = ota->getOTAConfig();
+                const auto& cfg = ota->getConfig();
                 if (!cfg.rootCA.isEmpty()) secure->setCACert(cfg.rootCA.c_str()); else secure->setInsecure();
                 client.reset(secure);
             } else {
@@ -59,7 +59,7 @@ void setup() {
             if (!http.begin(*client, manifestUrl)) {
                 return false;
             }
-            const auto& cfg = ota->getOTAConfig();
+            const auto& cfg = ota->getConfig();
             if (!cfg.bearerToken.isEmpty()) http.addHeader("Authorization", String("Bearer ") + cfg.bearerToken);
             if (!cfg.basicAuthUser.isEmpty()) http.setAuthorization(cfg.basicAuthUser.c_str(), cfg.basicAuthPassword.c_str());
             int code = http.GET();
@@ -73,7 +73,7 @@ void setup() {
             std::unique_ptr<WiFiClient> client;
             if (url.startsWith("https://")) {
                 auto* secure = new WiFiClientSecure();
-                const auto& cfg = ota->getOTAConfig();
+                const auto& cfg = ota->getConfig();
                 if (!cfg.rootCA.isEmpty()) secure->setCACert(cfg.rootCA.c_str()); else secure->setInsecure();
                 client.reset(secure);
             } else {
@@ -83,7 +83,7 @@ void setup() {
             if (!http.begin(*client, url)) {
                 return false;
             }
-            const auto& cfg = ota->getOTAConfig();
+            const auto& cfg = ota->getConfig();
             if (!cfg.bearerToken.isEmpty()) http.addHeader("Authorization", String("Bearer ") + cfg.bearerToken);
             if (!cfg.basicAuthUser.isEmpty()) http.setAuthorization(cfg.basicAuthUser.c_str(), cfg.basicAuthPassword.c_str());
             int code = http.GET();
