@@ -8,6 +8,7 @@
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Logger.h"
 #include "DomoticsCore/Timer.h"
+#include "DomoticsCore/Events.h"
 #include <Arduino.h>
 #include <time.h>
 #include <sys/time.h>
@@ -203,7 +204,7 @@ public:
                 }
                 
                 // Emit event for orchestration
-                emit("ntp/synced", true);
+                emit(DomoticsCore::Events::EVENT_NTP_SYNCED, true);
                 
                 if (syncCallback) {
                     syncCallback(true);
@@ -220,7 +221,7 @@ public:
                 DLOG_I(LOG_NTP, "Time re-synchronized after %lu ms: %s", stats.lastSyncDuration, getFormattedTime().c_str());
                 
                 // Emit event for orchestration
-                emit("ntp/synced", true);
+                emit(DomoticsCore::Events::EVENT_NTP_SYNCED, true);
                 
                 if (syncCallback) {
                     syncCallback(true);
@@ -239,7 +240,7 @@ public:
             DLOG_W(LOG_NTP, "Sync timeout after %lu ms (no response from NTP servers)", syncTimeoutTimer.getInterval());
             
             // Emit event for orchestration
-            emit("ntp/sync_failed", true);
+            emit(DomoticsCore::Events::EVENT_NTP_SYNC_FAILED, true);
             
             if (syncCallback) {
                 syncCallback(false);

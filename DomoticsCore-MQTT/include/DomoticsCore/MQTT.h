@@ -6,6 +6,7 @@
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Timer.h>
+#include <DomoticsCore/Events.h>
 #include <Preferences.h>
 #include <PubSubClient.h>
 #include <WiFiClient.h>

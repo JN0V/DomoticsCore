@@ -50,11 +50,11 @@ inline ComponentStatus MQTTComponent::begin() {
     
     // CRITICAL: Register EventBus listeners FIRST, even if no config yet
     // This ensures listeners are ready when broker gets configured via WebUI
-    on<MQTTPublishEvent>("mqtt/publish", [this](const MQTTPublishEvent& ev) {
+    on<MQTTPublishEvent>(DomoticsCore::Events::EVENT_MQTT_PUBLISH, [this](const MQTTPublishEvent& ev) {
         publish(String(ev.topic), String(ev.payload), ev.qos, ev.retain);
     });
     
-    on<MQTTSubscribeEvent>("mqtt/subscribe", [this](const MQTTSubscribeEvent& ev) {
+    on<MQTTSubscribeEvent>(DomoticsCore::Events::EVENT_MQTT_SUBSCRIBE, [this](const MQTTSubscribeEvent& ev) {
         subscribe(String(ev.topic), ev.qos);
     });
     
@@ -157,7 +157,7 @@ inline bool MQTTComponent::connect() {
         }
         
         // Emit event for decoupled components
-        emit("mqtt/connected", true);
+        emit(DomoticsCore::Events::EVENT_MQTT_CONNECTED, true);
     } else {
         state = MQTTState::Error;
         stateChangeTime = millis();
@@ -178,7 +178,7 @@ inline void MQTTComponent::disconnect() {
     DLOG_I(LOG_MQTT, "Disconnected from broker");
     
     // Emit event for decoupled components
-    emit("mqtt/disconnected", true);
+    emit(DomoticsCore::Events::EVENT_MQTT_DISCONNECTED, true);
 }
 
 inline void MQTTComponent::resetReconnect() {
@@ -444,7 +444,7 @@ inline void MQTTComponent::handleIncomingMessage(char* topic, byte* payload, uns
     ev.topic[sizeof(ev.topic) - 1] = '\0';
     strncpy(ev.payload, payloadStr.c_str(), sizeof(ev.payload) - 1);
     ev.payload[sizeof(ev.payload) - 1] = '\0';
-    emit("mqtt/message", ev);
+    emit(DomoticsCore::Events::EVENT_MQTT_MESSAGE, ev);
 }
 
 inline void MQTTComponent::updateStatistics() {
