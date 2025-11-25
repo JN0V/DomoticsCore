@@ -54,7 +54,6 @@ public:
     
     void loop() override {}
     ComponentStatus shutdown() override { return ComponentStatus::Success; }
-    String getName() const override { return name_; }
     
     bool didFindRequired() const { return foundRequired; }
     bool didFindOptional() const { return foundOptional; }
@@ -78,7 +77,6 @@ public:
     
     void loop() override {}
     ComponentStatus shutdown() override { return ComponentStatus::Success; }
-    String getName() const override { return name_; }
 };
 
 Core core;
