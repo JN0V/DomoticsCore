@@ -53,7 +53,6 @@ public:
     
     void loop() override {}
     ComponentStatus shutdown() override { return ComponentStatus::Success; }
-    String getName() const override { return name_; }
     
     int getBeginOrder() const { return beginOrder; }
     int getAfterAllOrder() const { return afterAllOrder; }

@@ -11,6 +11,10 @@ private:
     String name_ = "Storage";
     
 public:
+    MockStorageComponent() {
+        metadata.name = name_;
+    }
+
     ComponentStatus begin() override {
         DLOG_I("TEST", "[Storage] Initialized");
         return ComponentStatus::Success;
@@ -18,7 +22,6 @@ public:
     
     void loop() override {}
     ComponentStatus shutdown() override { return ComponentStatus::Success; }
-    String getName() const override { return name_; }
 };
 
 // Custom component that declares optional dependency on Storage
@@ -59,7 +62,6 @@ public:
     
     void loop() override {}
     ComponentStatus shutdown() override { return ComponentStatus::Success; }
-    String getName() const override { return name_; }
 };
 
 Core core;
