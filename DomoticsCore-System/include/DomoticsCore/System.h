@@ -6,6 +6,7 @@
 #include <DomoticsCore/RemoteConsole.h>
 #include <DomoticsCore/Wifi.h>
 #include <DomoticsCore/Logger.h>
+#include <DomoticsCore/Events.h>
 
 // Optional components - include if available (will fail gracefully if not installed)
 #if __has_include(<DomoticsCore/WebUI.h>)
@@ -930,7 +931,7 @@ public:
         auto* mqttComp = core.getComponent<Components::MQTTComponent>("MQTT");
         if (mqttComp && wifi) {
             // When WiFi connects, trigger MQTT connection attempt
-            core.getEventBus().subscribe("wifi/sta/connected", [mqttComp](const void* payload) {
+            core.getEventBus().subscribe(DomoticsCore::Events::EVENT_WIFI_STA_CONNECTED, [mqttComp](const void* payload) {
                 bool connected = payload ? *static_cast<const bool*>(payload) : false;
                 if (connected) {
                     DLOG_I(LOG_SYSTEM, "📶 WiFi connected → triggering MQTT connection");
@@ -952,10 +953,10 @@ public:
         auto* ntpComp = core.getComponent<Components::NTPComponent>("NTP");
         if (ntpComp && wifi) {
             // Log NTP sync events
-            core.getEventBus().subscribe("ntp/synced", [](const void*) {
+            core.getEventBus().subscribe(DomoticsCore::Events::EVENT_NTP_SYNCED, [](const void*) {
                 DLOG_I(LOG_SYSTEM, "⏰ NTP time synchronized");
             });
-            core.getEventBus().subscribe("ntp/sync_failed", [](const void*) {
+            core.getEventBus().subscribe(DomoticsCore::Events::EVENT_NTP_SYNC_FAILED, [](const void*) {
                 DLOG_W(LOG_SYSTEM, "⏰ NTP sync failed");
             });
             DLOG_I(LOG_SYSTEM, "✓ NTP event monitoring configured");
@@ -968,7 +969,7 @@ public:
         
         if (mqttComp && haComp) {
             // Log HA discovery events
-            core.getEventBus().subscribe("ha/discovery_published", [](const void* payload) {
+            core.getEventBus().subscribe(DomoticsCore::Events::EVENT_HA_DISCOVERY_PUBLISHED, [](const void* payload) {
                 int count = payload ? *static_cast<const int*>(payload) : 0;
                 DLOG_I(LOG_SYSTEM, "🏠 Home Assistant discovery published (%d entities)", count);
             });
