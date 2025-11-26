@@ -1,12 +1,12 @@
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.2.1)
+[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.2.2)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 1.2.1 Released!** EventBus architecture with `core.on<>()`/`core.emit()` - fully decoupled components, no reboot for MQTT/HA config! See [CHANGELOG.md](CHANGELOG.md) and [Migration Guide](docs/migration/v1.2.1.md).
+> **🎉 Version 1.2.2 Released!** EventBus architecture with `core.on<>()`/`core.emit()` - fully decoupled components, no reboot for MQTT/HA config! See [CHANGELOG.md](CHANGELOG.md) and [Migration Guide](docs/migration/v1.2.1.md).
 
 ## ✨ What Makes DomoticsCore Different
 
@@ -121,7 +121,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps = 
-    https://github.com/JN0V/DomoticsCore.git#v1.0.0
+    https://github.com/JN0V/DomoticsCore.git#v1.2.2
 ```
 
 ### Specific Components Only
@@ -151,6 +151,54 @@ lib_deps =
 | **SystemInfo** | Real-time monitoring with charts | ~25KB | ✅ Stable |
 
 **Total with everything:** ~545KB flash, ~50KB RAM
+
+## Versioning
+
+DomoticsCore uses [Semantic Versioning](https://semver.org/) with **per-component versions** and a **root framework version**:
+
+- **Root library**: The top-level `library.json` defines the `DomoticsCore` framework version (`X.Y.Z`).
+- **Component libraries**: Each `DomoticsCore-*` sub-library has its own `library.json` `version` and a matching `metadata.version` in its C++ component class.
+- **Propagation rules** (Model B):
+  - Bumping a component **patch** -> bump the **root patch**.
+  - Bumping a component **minor** -> bump the **root minor** (and reset root patch).
+  - Bumping a component **major** -> bump the **root major** (and reset root minor/patch).
+  - Only the changed component and the root are bumped; other components keep their current versions.
+
+### Versioning tools
+
+- **Consistency check** (used in CI):
+
+  ```bash
+  python tools/check_versions.py --verbose
+  ```
+
+  This script ensures that, for every `DomoticsCore-*` directory:
+
+  - `library.json.version` matches all `metadata.version = "X.Y.Z"` assignments under `include/` and `src/`.
+  - (Optionally) with `--check-tag`, the root `library.json.version` matches the Git tag `vX.Y.Z` when run on a tagged commit.
+
+- **Version bump helper**:
+
+  ```bash
+  # Bump MQTT component and propagate the same level to the root DomoticsCore version
+  python tools/bump_version.py MQTT minor
+
+  # Equivalent explicit component name
+  python tools/bump_version.py DomoticsCore-MQTT patch
+
+  # Bump only the root DomoticsCore version
+  python tools/bump_version.py root major
+
+  # Preview changes without modifying files
+  python tools/bump_version.py MQTT minor --dry-run --verbose
+  ```
+
+The bump script:
+
+- Reads the current component `library.json.version`.
+- Computes the new SemVer according to the requested level.
+- Updates the component `library.json` and all `metadata.version` assignments inside that component.
+- Bumps the root `library.json.version` by the same level whenever a component is bumped.
 
 ## 📖 Documentation
 

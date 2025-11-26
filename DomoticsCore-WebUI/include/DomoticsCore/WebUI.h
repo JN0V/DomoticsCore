@@ -65,7 +65,7 @@ public:
         : config(cfg) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "WebUI";
-        metadata.version = "1.1.0";
+        metadata.version = "1.2.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Web dashboard and API component";
 
@@ -193,7 +193,7 @@ public:
 
     // IWebUIProvider implementation for self-registration
     String getWebUIName() const override { return "WebUI"; }
-    String getWebUIVersion() const override { return "2.0.0"; }
+    String getWebUIVersion() const override { return metadata.version; }
     IWebUIProvider* getWebUIProvider() override { return this; }
 
     std::vector<WebUIContext> getWebUIContexts() override {
