@@ -109,7 +109,7 @@ public:
           syncTimeoutTimer(cfg.timeoutMs) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "NTP";
-        metadata.version = "1.0.0";
+        metadata.version = "1.2.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Network Time Protocol synchronization component";
         syncTimeoutTimer.disable();  // Start disabled

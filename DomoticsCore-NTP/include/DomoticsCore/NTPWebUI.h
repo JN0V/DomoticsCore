@@ -97,7 +97,7 @@ public:
     }
 
     String getWebUIVersion() const override {
-        return ntp ? ntp->metadata.version : String("0.1.0");
+        return ntp ? ntp->metadata.version : String("1.0.2");
     }
 
     std::vector<WebUIContext> getWebUIContexts() override {
