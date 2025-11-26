@@ -53,7 +53,7 @@ public:
     }
     
     String getWebUIVersion() const override { 
-        return mqtt ? mqtt->metadata.version : String("0.1.0"); 
+        return mqtt ? mqtt->metadata.version : String("1.2.1"); 
     }
     
     std::vector<WebUIContext> getWebUIContexts() override {

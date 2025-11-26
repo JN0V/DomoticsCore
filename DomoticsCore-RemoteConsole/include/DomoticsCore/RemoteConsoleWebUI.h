@@ -26,7 +26,7 @@ public:
     }
     
     String getWebUIVersion() const override { 
-        return console ? console->metadata.version : String("1.0.0"); 
+        return console ? console->metadata.version : String("1.2.1"); 
     }
     
     std::vector<WebUIContext> getWebUIContexts() override {

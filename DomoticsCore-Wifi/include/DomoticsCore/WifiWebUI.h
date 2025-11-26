@@ -89,7 +89,7 @@ public:
     }
 
     String getWebUIName() const override { return wifi ? wifi->metadata.name : String("Wifi"); }
-    String getWebUIVersion() const override { return wifi ? wifi->metadata.version : String("1.0.0"); }
+    String getWebUIVersion() const override { return wifi ? wifi->metadata.version : String("1.2.1"); }
 
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> ctxs;

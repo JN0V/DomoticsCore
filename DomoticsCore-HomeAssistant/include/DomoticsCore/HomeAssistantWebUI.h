@@ -42,7 +42,7 @@ public:
     }
 
     String getWebUIVersion() const override {
-        return ha ? ha->getMetadata().version : String("0.1.0");
+        return ha ? ha->getMetadata().version : String("1.2.2");
     }
 
     std::vector<WebUIContext> getWebUIContexts() override {

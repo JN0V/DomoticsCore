@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-Storage",
-  "version": "1.0.2",
+  "version": "1.2.1",
   "description": "DomoticsCore Storage component for ESP32 NVS preferences and data",
   "keywords": ["esp32", "domotics", "storage", "nvs"],
   "repository": {"type": "git", "url": "https://github.com/JN0V/DomoticsCore.git"},
