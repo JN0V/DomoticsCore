@@ -1,12 +1,12 @@
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.2.2)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.3.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-ESP32-orange.svg)](https://platformio.org/)
+[![Platform](https://img.shields.io/badge/platform-ESP32%20|%20ESP8266-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 1.2.2 Released!** EventBus architecture with `core.on<>()`/`core.emit()` - fully decoupled components, no reboot for MQTT/HA config! See [CHANGELOG.md](CHANGELOG.md) and [Migration Guide](docs/migration/v1.2.1.md).
+> **🎉 Version 1.3.0 Released!** Hardware Abstraction Layer (HAL) for ESP8266 portability + EventBus architecture with `core.on<>()`/`core.emit()` - fully decoupled components, no reboot for MQTT/HA config! See [CHANGELOG.md](CHANGELOG.md) and [Migration Guide](docs/migration/v1.2.1.md).
 
 ## ✨ What Makes DomoticsCore Different
 
@@ -121,7 +121,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps = 
-    https://github.com/JN0V/DomoticsCore.git#v1.2.2
+    https://github.com/JN0V/DomoticsCore.git#v1.3.0
 ```
 
 ### Specific Components Only
@@ -151,6 +151,25 @@ lib_deps =
 | **SystemInfo** | Real-time monitoring with charts | ~25KB | ✅ Stable |
 
 **Total with everything:** ~545KB flash, ~50KB RAM
+
+## 🌐 Platform Compatibility
+
+DomoticsCore includes a **Hardware Abstraction Layer (HAL)** for platform portability.
+
+| Platform | Status | WiFi | Storage | NTP | Full Framework |
+|----------|--------|------|---------|-----|----------------|
+| **ESP32** | ✅ Full Support | ✅ | ✅ NVS | ✅ SNTP | ✅ |
+| **ESP8266** | ⚠️ In Progress | ✅ | ✅ LittleFS | ✅ configTime | ⚠️ (limited RAM) |
+| **AVR** | ❌ Not Suitable | ❌ | ❌ | ❌ | ❌ (2KB RAM) |
+| **ARM** | 🔬 Experimental | ⚠️ shields | ⚠️ | ⚠️ | ⚠️ |
+
+> **Note:** Arduino UNO (AVR ATmega328P) has only 2KB RAM - not enough for EventBus, JSON, or WebUI. Only LEDComponent could theoretically work.
+
+HAL headers are in `DomoticsCore-Core/include/DomoticsCore/HAL/`:
+- `Platform.h` - Platform detection macros
+- `WiFi.h` - Unified WiFi interface
+- `Storage.h` - Key-value storage abstraction
+- `NTP.h` - Time synchronization
 
 ## Versioning
 

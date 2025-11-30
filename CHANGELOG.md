@@ -5,6 +5,38 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-11-30
+
+### 🏗️ Architecture: Hardware Abstraction Layer (HAL)
+
+Complete HAL refactoring for ESP8266 portability preparation.
+
+#### HAL Files Structure
+- **Platform_HAL.h**: Platform detection macros, `getChipId()`, `restart()`, `getFreeHeap()`, `getChipModel()`, `getChipRevision()`, `getCpuFreqMHz()`, `SHA256` class
+- **Wifi_HAL.h**: WiFi functions + `NetworkClient`, `SecureNetworkClient` type aliases
+- **Storage_HAL.h**: `PlatformStorage` abstraction (Preferences/LittleFS)
+- **SystemInfo_HAL.h**: System metrics abstraction
+- **NTP_HAL.h**: Time synchronization abstraction
+
+#### Architectural Improvements
+- **All platform conditionals** (`#if DOMOTICS_PLATFORM_*`) now only in `*_HAL.h` files
+- **MQTT storage removed**: Config persistence now handled by SystemPersistence (consistent with other components)
+- **No direct ESP/WiFi calls** outside HAL files
+- **Component dependencies updated**: MQTT and RemoteConsole now depend on Wifi component
+
+### 🔧 Components Updated (all to v1.3.0)
+- Core, MQTT, OTA, WiFi, Storage, System, WebUI, RemoteConsole, SystemInfo, NTP
+
+### 📦 Dependency Changes
+- `DomoticsCore-MQTT` now requires `DomoticsCore-Wifi`
+- `DomoticsCore-RemoteConsole` now requires `DomoticsCore-Wifi`
+
+### 🐛 Bug Fixes
+- Fixed cross-component HAL dependencies in examples
+- Fixed `getChipRevision()` missing from Platform_HAL
+
+---
+
 ## [1.2.1] - 2025-11-14
 
 ### 🚨 Breaking Changes

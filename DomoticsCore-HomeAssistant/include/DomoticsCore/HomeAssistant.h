@@ -1,5 +1,13 @@
 #pragma once
 
+/**
+ * @file HomeAssistant.h
+ * @brief Home Assistant MQTT Discovery component.
+ * 
+ * @example DomoticsCore-HomeAssistant/examples/BasicHA/src/main.cpp
+ * @example DomoticsCore-HomeAssistant/examples/HAWithWebUI/src/main.cpp
+ */
+
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/MQTT.h>  // Only for event structures

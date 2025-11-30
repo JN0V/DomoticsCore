@@ -2,13 +2,22 @@
 
 /**
  * @file Storage.h
- * @brief Declares the DomoticsCore Storage component built on ESP32 Preferences.
+ * 
+ * @example DomoticsCore-Storage/examples/BasicStorage/src/main.cpp
+ * @example DomoticsCore-Storage/examples/NamespaceDemo/src/main.cpp
+ * @example DomoticsCore-Storage/examples/StorageWithWebUI/src/main.cpp
+ * @brief Declares the DomoticsCore Storage component with HAL abstraction.
+ * 
+ * Uses HAL::PlatformStorage for multi-platform support:
+ * - ESP32: Uses Preferences (NVS)
+ * - ESP8266: Uses LittleFS + JSON
+ * - Other: RAM-only storage
  */
 
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Timer.h"
+#include "Storage_HAL.h"  // Hardware Abstraction Layer for Storage
 #include <Arduino.h>
-#include <Preferences.h>
 #include <map>
 #include <vector>
 
@@ -48,16 +57,16 @@ struct StorageConfig {
 
 /**
  * @class DomoticsCore::Components::StorageComponent
- * @brief Key-value storage manager wrapping ESP32 Preferences with caching and maintenance.
+ * @brief Key-value storage manager with HAL abstraction for multi-platform support.
  *
- * Opens an ESP32 Preferences namespace, provides typed getters/setters, optional auto-commit,
- * and periodic maintenance/status reporting. Can be paired with a WebUI provider to expose
- * diagnostic data and CRUD helpers.
+ * Opens a storage namespace, provides typed getters/setters, optional auto-commit,
+ * and periodic maintenance/status reporting. Uses HAL::PlatformStorage which maps to
+ * Preferences (ESP32), LittleFS (ESP8266), or RAM-only storage (other platforms).
  */
 class StorageComponent : public IComponent {
 private:
     StorageConfig storageConfig;
-    Preferences preferences;
+    HAL::PlatformStorage storage;  // HAL abstraction for multi-platform
     Utils::NonBlockingDelay statusTimer;
     Utils::NonBlockingDelay maintenanceTimer;
     std::map<String, StorageEntry> cache;
@@ -104,7 +113,7 @@ public:
         }
         
         // Initialize preferences storage
-        ComponentStatus status = initializePreferences();
+        ComponentStatus status = initializeStorage();
         setStatus(status);
         return status;
     }
@@ -128,7 +137,7 @@ public:
         DLOG_I(LOG_STORAGE, "Shutting down...");
         
         if (isOpen) {
-            preferences.end();
+            storage.end();
             isOpen = false;
         }
         cache.clear();
@@ -145,7 +154,7 @@ public:
             return false;
         }
         
-        size_t written = preferences.putString(key.c_str(), value);
+        size_t written = storage.putString(key.c_str(), value);
         if (written > 0) {
             StorageEntry entry;
             entry.key = key;
@@ -166,7 +175,7 @@ public:
             return false;
         }
         
-        size_t written = preferences.putInt(key.c_str(), value);
+        size_t written = storage.putInt(key.c_str(), value);
         if (written > 0) {
             StorageEntry entry;
             entry.key = key;
@@ -187,7 +196,7 @@ public:
             return false;
         }
         
-        size_t written = preferences.putFloat(key.c_str(), value);
+        size_t written = storage.putFloat(key.c_str(), value);
         if (written > 0) {
             StorageEntry entry;
             entry.key = key;
@@ -208,7 +217,7 @@ public:
             return false;
         }
         
-        size_t written = preferences.putBool(key.c_str(), value);
+        size_t written = storage.putBool(key.c_str(), value);
         if (written > 0) {
             StorageEntry entry;
             entry.key = key;
@@ -229,7 +238,7 @@ public:
             return false;
         }
         
-        size_t written = preferences.putULong64(key.c_str(), value);
+        size_t written = storage.putULong64(key.c_str(), value);
         if (written > 0) {
             DLOG_D(LOG_STORAGE, "Stored uint64 '%s' = %llu", key.c_str(), value);
             return true;
@@ -243,7 +252,7 @@ public:
             return false;
         }
         
-        size_t written = preferences.putBytes(key.c_str(), data, length);
+        size_t written = storage.putBytes(key.c_str(), data, length);
         if (written == length) {
             StorageEntry entry;
             entry.key = key;
@@ -264,7 +273,7 @@ public:
             return defaultValue;
         }
         
-        String value = preferences.getString(key.c_str(), defaultValue);
+        String value = storage.getString(key.c_str(), defaultValue);
         DLOG_D(LOG_STORAGE, "Retrieved string '%s' = '%s'", key.c_str(), value.c_str());
         return value;
     }
@@ -275,7 +284,7 @@ public:
             return defaultValue;
         }
         
-        int32_t value = preferences.getInt(key.c_str(), defaultValue);
+        int32_t value = storage.getInt(key.c_str(), defaultValue);
         DLOG_D(LOG_STORAGE, "Retrieved int '%s' = %d", key.c_str(), value);
         return value;
     }
@@ -286,7 +295,7 @@ public:
             return defaultValue;
         }
         
-        float value = preferences.getFloat(key.c_str(), defaultValue);
+        float value = storage.getFloat(key.c_str(), defaultValue);
         DLOG_D(LOG_STORAGE, "Retrieved float '%s' = %.2f", key.c_str(), value);
         return value;
     }
@@ -297,7 +306,7 @@ public:
             return defaultValue;
         }
         
-        bool value = preferences.getBool(key.c_str(), defaultValue);
+        bool value = storage.getBool(key.c_str(), defaultValue);
         DLOG_D(LOG_STORAGE, "Retrieved bool '%s' = %s", key.c_str(), value ? "true" : "false");
         return value;
     }
@@ -308,7 +317,7 @@ public:
             return defaultValue;
         }
         
-        uint64_t value = preferences.getULong64(key.c_str(), defaultValue);
+        uint64_t value = storage.getULong64(key.c_str(), defaultValue);
         DLOG_D(LOG_STORAGE, "Retrieved uint64 '%s' = %llu", key.c_str(), value);
         return value;
     }
@@ -319,7 +328,7 @@ public:
             return 0;
         }
         
-        size_t length = preferences.getBytesLength(key.c_str());
+        size_t length = storage.getBytesLength(key.c_str());
         if (length == 0) {
             DLOG_D(LOG_STORAGE, "Blob '%s' not found", key.c_str());
             return 0;
@@ -330,7 +339,7 @@ public:
             length = maxLength;
         }
         
-        size_t read = preferences.getBytes(key.c_str(), buffer, length);
+        size_t read = storage.getBytes(key.c_str(), buffer, length);
         DLOG_D(LOG_STORAGE, "Retrieved blob '%s' (%d bytes)", key.c_str(), read);
         return read;
     }
@@ -341,7 +350,7 @@ public:
             return false;
         }
         
-        bool success = preferences.remove(key.c_str());
+        bool success = storage.remove(key.c_str());
         if (success) {
             cache.erase(key);
             DLOG_I(LOG_STORAGE, "Removed key: %s", key.c_str());
@@ -357,7 +366,7 @@ public:
             return false;
         }
         
-        bool success = preferences.clear();
+        bool success = storage.clear();
         if (success) {
             cache.clear();
             DLOG_I(LOG_STORAGE, "Cleared all entries");
@@ -369,7 +378,7 @@ public:
     
     bool exists(const String& key) {
         if (!isOpen) return false;
-        return preferences.isKey(key.c_str());
+        return storage.isKey(key.c_str());
     }
     
     // Storage information
@@ -384,7 +393,7 @@ public:
     }
     
     String getStorageInfo() const {
-        String info = "Storage: NVS Preferences";
+        String info = "Storage: HAL PlatformStorage";
         info += "\nNamespace: " + storageConfig.namespace_name;
         info += "\nOpen: " + String(isOpen ? "Yes" : "No");
         info += "\nRead-only: " + String(storageConfig.readOnly ? "Yes" : "No");
@@ -399,7 +408,7 @@ public:
         std::vector<String> keys;
         if (!isOpen) return keys;
         
-        // Note: ESP32 Preferences doesn't provide a direct way to list all keys
+        // Note: Storage backend may not provide a direct way to list all keys
         // We return cached keys instead
         for (const auto& pair : cache) {
             keys.push_back(pair.first);
@@ -409,16 +418,16 @@ public:
     }
 
 private:
-    ComponentStatus initializePreferences() {
-        DLOG_I(LOG_STORAGE, "Initializing NVS preferences...");
+    ComponentStatus initializeStorage() {
+        DLOG_I(LOG_STORAGE, "Initializing storage via HAL...");
         
         // Open preferences with namespace
-        bool success = preferences.begin(storageConfig.namespace_name.c_str(), storageConfig.readOnly);
+        bool success = storage.begin(storageConfig.namespace_name.c_str(), storageConfig.readOnly);
         
         if (success) {
             isOpen = true;
             updateStorageInfo();
-            DLOG_I(LOG_STORAGE, "Preferences opened successfully (namespace: %s)", 
+            DLOG_I(LOG_STORAGE, "Storage opened successfully (namespace: %s)", 
                    storageConfig.namespace_name.c_str());
             return ComponentStatus::Success;
         } else {
