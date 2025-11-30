@@ -3,6 +3,9 @@
 /**
  * @file LED.h
  * @brief Declares the DomoticsCore LED component for single-color and RGB LED control.
+ * 
+ * @example DomoticsCore-LED/examples/BasicLED/src/main.cpp
+ * @example DomoticsCore-LED/examples/LEDWithWebUI/src/main.cpp
  */
 
 #include <DomoticsCore/IComponent.h>

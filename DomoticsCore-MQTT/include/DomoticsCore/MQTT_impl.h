@@ -49,7 +49,7 @@ inline ComponentStatus MQTTComponent::begin() {
     DLOG_I(LOG_MQTT, "Initializing");
     
     // CRITICAL: Register EventBus listeners FIRST, even if no config yet
-    // This ensures listeners are ready when broker gets configured via WebUI
+    // This ensures listeners are ready when broker gets configured dynamically
     on<MQTTPublishEvent>(DomoticsCore::Events::EVENT_MQTT_PUBLISH, [this](const MQTTPublishEvent& ev) {
         publish(String(ev.topic), String(ev.payload), ev.qos, ev.retain);
     });
@@ -61,16 +61,16 @@ inline ComponentStatus MQTTComponent::begin() {
     DLOG_D(LOG_MQTT, "EventBus listeners registered (mqtt/publish, mqtt/subscribe)");
     
     // CRITICAL: Set PubSubClient callback BEFORE config check
-    // This ensures callback is ready when broker gets configured via WebUI
+    // This ensures callback is ready when broker gets configured dynamically
     mqttClient.setCallback(mqttCallback);
     DLOG_D(LOG_MQTT, "PubSubClient callback registered");
     
-    loadConfiguration();
+    // Config is loaded by SystemPersistence via setConfig()
     
     // Auto-disable if no broker configured (similar to WiFi auto-switching to AP)
     if (config.broker.isEmpty()) {
         config.enabled = false;
-        DLOG_W(LOG_MQTT, "No broker configured - component disabled (can be configured via WebUI)");
+        DLOG_W(LOG_MQTT, "No broker configured - component disabled");
         return ComponentStatus::Success;  // Success but inactive
     }
     
@@ -126,7 +126,7 @@ inline bool MQTTComponent::connect() {
     }
     
     // Check if WiFi is connected before attempting MQTT connection
-    if (WiFi.status() != WL_CONNECTED) {
+    if (!HAL::WiFiHAL::isConnected()) {
         lastError = "WiFi not connected";
         DLOG_D(LOG_MQTT, "Cannot connect to MQTT - WiFi not connected");
         return false;
@@ -316,24 +316,22 @@ inline void MQTTComponent::setConfig(const MQTTConfig& cfg) {
     config = cfg;
     // Ensure PubSubClient stores a valid pointer to the current broker string.
     // PubSubClient retains the const char* pointer passed to setServer without copying,
-    // so if our String storage changes (e.g., via WebUI updates), the old pointer becomes invalid.
+    // so if our String storage changes, the old pointer becomes invalid.
     if (!config.broker.isEmpty()) {
         mqttClient.setServer(config.broker.c_str(), config.port);
     }
-    saveConfiguration();
+    // Config persistence handled externally (SystemPersistence)
 }
 
 inline void MQTTComponent::setBroker(const String& broker, uint16_t port) {
     config.broker = broker;
     config.port = port;
     mqttClient.setServer(broker.c_str(), port);
-    saveConfiguration();
 }
 
 inline void MQTTComponent::setCredentials(const String& username, const String& password) {
     config.username = username;
     config.password = password;
-    saveConfiguration();
 }
 
 // Note: getName() already defined inline in MQTT.h
@@ -453,35 +451,11 @@ inline void MQTTComponent::updateStatistics() {
     }
 }
 
-inline void MQTTComponent::loadConfiguration() {
-    Preferences prefs;
-    if (prefs.begin("mqtt", true)) {
-        config.enabled = prefs.getBool("enabled", config.enabled);
-        config.broker = prefs.getString("broker", config.broker);
-        config.port = prefs.getUShort("port", config.port);
-        config.username = prefs.getString("username", config.username);
-        config.password = prefs.getString("password", config.password);
-        prefs.end();
-    }
-}
-
-inline void MQTTComponent::saveConfiguration() {
-    Preferences prefs;
-    if (prefs.begin("mqtt", false)) {
-        prefs.putBool("enabled", config.enabled);
-        prefs.putString("broker", config.broker);
-        prefs.putUShort("port", config.port);
-        prefs.putString("username", config.username);
-        prefs.putString("password", config.password);
-        prefs.end();
-    }
-}
-
 inline String MQTTComponent::generateClientId() {
-    uint64_t mac = ESP.getEfuseMac();
+    uint64_t chipId = HAL::getChipId();
     char clientId[32];
-    snprintf(clientId, sizeof(clientId), "esp32-%04x%08x", 
-             (uint16_t)(mac >> 32), (uint32_t)mac);
+    snprintf(clientId, sizeof(clientId), "%s-%04x%08x", 
+             HAL::getPlatformName(), (uint16_t)(chipId >> 32), (uint32_t)chipId);
     return String(clientId);
 }
 

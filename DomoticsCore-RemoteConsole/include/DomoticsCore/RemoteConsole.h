@@ -7,7 +7,9 @@
 
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
-#include <WiFi.h>
+#include <DomoticsCore/Platform_HAL.h>    // For restart()
+#include <DomoticsCore/Wifi_HAL.h>        // For WiFi functions
+// Platform_HAL.h provides: getFreeHeap(), getChipModel(), getChipRevision(), getCpuFreqMHz()
 #include <vector>
 #include <map>
 #include <functional>
@@ -125,7 +127,7 @@ public:
         if (getLastStatus() != ComponentStatus::Success || !telnetServer) return;
         
         // Check if WiFi connected and we haven't displayed info yet
-        if (!connectionInfoDisplayed && WiFi.status() == WL_CONNECTED) {
+        if (!connectionInfoDisplayed && HAL::WiFiHAL::isConnected()) {
             displayConnectionInfo();
         }
         
@@ -336,17 +338,17 @@ private:
         registerCommand("info", [this](const String& args) {
             String info = "\nSystem Information:\n";
             info += "  Uptime: " + String(millis() / 1000) + "s\n";
-            info += "  Free Heap: " + String(ESP.getFreeHeap()) + " bytes\n";
-            info += "  Chip: " + String(ESP.getChipModel()) + " Rev" + String(ESP.getChipRevision()) + "\n";
-            info += "  CPU Freq: " + String(ESP.getCpuFreqMHz()) + " MHz\n";
-            info += "  WiFi: " + WiFi.SSID() + " (" + WiFi.localIP().toString() + ")\n";
-            info += "  RSSI: " + String(WiFi.RSSI()) + " dBm\n";
+            info += "  Free Heap: " + String(HAL::getFreeHeap()) + " bytes\n";
+            info += "  Chip: " + HAL::getChipModel() + " Rev" + String(HAL::getChipRevision()) + "\n";
+            info += "  CPU Freq: " + String(HAL::getCpuFreqMHz()) + " MHz\n";
+            info += "  WiFi: " + HAL::WiFiHAL::getSSID() + " (" + HAL::WiFiHAL::getLocalIP() + ")\n";
+            info += "  RSSI: " + String(HAL::WiFiHAL::getRSSI()) + " dBm\n";
             return info;
         });
         
         // Heap command
         registerCommand("heap", [this](const String& args) {
-            return "Free Heap: " + String(ESP.getFreeHeap()) + " bytes\n";
+            return "Free Heap: " + String(HAL::getFreeHeap()) + " bytes\n";
         });
         
         // Reboot command
@@ -355,7 +357,7 @@ private:
                 client.println("Rebooting...");
             }
             delay(100);
-            ESP.restart();
+            HAL::restart();
             return "";
         });
         
@@ -524,9 +526,9 @@ private:
     void displayConnectionInfo() {
         if (connectionInfoDisplayed) return;
         
-        if (WiFi.status() == WL_CONNECTED) {
+        if (HAL::WiFiHAL::isConnected()) {
             DLOG_I(LOG_CONSOLE, "Connect via: telnet %s %d", 
-                   WiFi.localIP().toString().c_str(), config.port);
+                   HAL::WiFiHAL::getLocalIP().c_str(), config.port);
             connectionInfoDisplayed = true;
         }
     }

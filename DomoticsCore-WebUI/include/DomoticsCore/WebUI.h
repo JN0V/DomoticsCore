@@ -21,6 +21,7 @@
 
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Logger.h"
+#include "DomoticsCore/Platform_HAL.h"  // For HAL::getFreeHeap()
 #include "DomoticsCore/Generated/WebUIAssets.h"
 
 // New modular headers
@@ -332,7 +333,7 @@ private:
         // System info API
         webServer->registerRoute("/api/system/info", HTTP_GET, [this](AsyncWebServerRequest* request) {
             String sysInfo = "{\"uptime\":" + String(millis()) + 
-                           ",\"heap\":" + String(ESP.getFreeHeap()) + 
+                           ",\"heap\":" + String(HAL::getFreeHeap()) + 
                            ",\"clients\":" + String(getWebSocketClients()) + "}";
             AsyncWebServerResponse* response = request->beginResponse(200, "application/json", sysInfo);
             addCorsHeaders(response);
@@ -572,7 +573,7 @@ private:
         // Build JSON manually
         String message = "{\"system\":{";
         message += "\"uptime\":" + String(millis()) + ",";
-        message += "\"heap\":" + String(ESP.getFreeHeap()) + ",";
+        message += "\"heap\":" + String(HAL::getFreeHeap()) + ",";
         message += "\"clients\":" + String(getWebSocketClients()) + ",";
         message += "\"device_name\":\"" + config.deviceName + "\"";
         message += "},\"contexts\":{";
