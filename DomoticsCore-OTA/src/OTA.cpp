@@ -1,10 +1,8 @@
 #include "DomoticsCore/OTA.h"
 #include "DomoticsCore/Events.h"
+#include "DomoticsCore/Platform_HAL.h"  // For HAL::SHA256
 
 #include <Update.h>
-#include <esp_system.h>
-#include <mbedtls/sha256.h>
-
 #include <ArduinoJson.h>
 
 #include "DomoticsCore/Logger.h"
@@ -115,7 +113,7 @@ void OTAComponent::loop() {
         if (now - stateChangeMillis > 2000UL) {  // 2 seconds to allow final UI update
             DLOG_I(LOG_OTA, "Rebooting to apply firmware update");
             delay(100);
-            ESP.restart();
+            HAL::restart();
         }
     }
 }
@@ -384,9 +382,7 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
     downloadedBytes = 0;
     progress = 0.0f;
 
-    mbedtls_sha256_context shaCtx;
-    mbedtls_sha256_init(&shaCtx);
-    mbedtls_sha256_starts_ret(&shaCtx, 0);
+    HAL::SHA256 shaCtx;
 
     bool started = false;
     size_t announcedSize = 0;
@@ -410,7 +406,7 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
             lastError = Update.errorString();
             return false;
         }
-        mbedtls_sha256_update_ret(&shaCtx, data, written);
+        shaCtx.update(data, written);
         downloadedBytes += written;
         if (totalBytes > 0) {
             progress = (downloadedBytes * 100.0f) / static_cast<float>(totalBytes);
@@ -421,7 +417,7 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
 
     if (!ok) {
         Update.abort();
-        mbedtls_sha256_free(&shaCtx);
+        shaCtx.abort();
         transition(State::Error, lastError.isEmpty() ? String("Download failed") : lastError);
         publishStatusEvent(DomoticsCore::Events::EVENT_OTA_ERROR, [this](JsonDocument& doc){
             doc["success"] = false;
@@ -434,14 +430,13 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
     if (!Update.end(true)) {
         lastError = Update.errorString();
         Update.abort();
-        mbedtls_sha256_free(&shaCtx);
+        shaCtx.abort();
         transition(State::Error, lastError);
         return false;
     }
 
     uint8_t digest[32];
-    mbedtls_sha256_finish_ret(&shaCtx, digest);
-    mbedtls_sha256_free(&shaCtx);
+    shaCtx.finish(digest);
 
     if (!expectedSha256.isEmpty()) {
         if (!verifySha256(digest, expectedSha256)) {

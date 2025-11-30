@@ -1,16 +1,25 @@
 #pragma once
 
+/**
+ * @file MQTT.h
+ * @brief Declares the DomoticsCore MQTT component.
+ * 
+ * @example DomoticsCore-MQTT/examples/BasicMQTT/src/main.cpp
+ * @example DomoticsCore-MQTT/examples/MQTTWithWebUI/src/main.cpp
+ * 
+ * Uses Wifi_HAL for WiFi connectivity checks (multi-platform support).
+ */
+
 // Set PubSubClient buffer size before including the library
 #define MQTT_MAX_PACKET_SIZE 1024
 
 #include <DomoticsCore/IComponent.h>
+#include <DomoticsCore/Platform_HAL.h>  // For chip ID and platform info
+#include <DomoticsCore/Wifi_HAL.h>      // For WiFi connectivity check
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Timer.h>
 #include <DomoticsCore/Events.h>
-#include <Preferences.h>
 #include <PubSubClient.h>
-#include <WiFiClient.h>
-#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <functional>
 #include <vector>
@@ -353,9 +362,9 @@ private:
     // Configuration
     MQTTConfig config;
     
-    // Network clients
-    WiFiClient wifiClient;
-    WiFiClientSecure wifiClientSecure;
+    // Network clients (using HAL types for platform independence)
+    HAL::NetworkClient wifiClient;
+    HAL::SecureNetworkClient wifiClientSecure;
     PubSubClient mqttClient;
     
     // State management
@@ -395,8 +404,6 @@ private:
     void processMessageQueue();
     void handleIncomingMessage(char* topic, byte* payload, unsigned int length);
     void updateStatistics();
-    void loadConfiguration();
-    void saveConfiguration();
     String generateClientId();
     
     // Static callback for PubSubClient

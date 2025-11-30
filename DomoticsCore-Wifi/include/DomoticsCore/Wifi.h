@@ -2,11 +2,16 @@
 
 /**
  * @file Wifi.h
+ * @brief WiFi component for managing WiFi connectivity.
+ * 
+ * @example DomoticsCore-Wifi/examples/BasicWifi/src/main.cpp
+ * @example DomoticsCore-Wifi/examples/WifiWithWebUI/src/main.cpp
+ * 
  * @brief Declares the DomoticsCore WiFi component providing STA/AP management and async scanning.
  */
 
 #include <Arduino.h>
-#include <WiFi.h>
+#include "Wifi_HAL.h"  // Hardware Abstraction Layer for WiFi
 #include "INetworkProvider.h"
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Logger.h"
@@ -16,6 +21,9 @@
 
 namespace DomoticsCore {
 namespace Components {
+
+// Use HAL WiFi abstraction for multi-platform support
+// All calls use HAL::WiFiHAL:: prefix for clarity
 
 /**
  * WiFi Component Configuration
@@ -42,7 +50,8 @@ struct WifiConfig {
 
 /**
  * @class DomoticsCore::Components::WifiComponent
- * @brief Manages WiFi connectivity for ESP32, including STA/AP modes and async scanning.
+ * @brief Manages WiFi connectivity including STA/AP modes and async scanning.
+ * Uses HAL abstraction for multi-platform support (ESP32, ESP8266).
  *
  * Handles connection lifecycle, reconnection strategies, and exposes helpers for enabling AP,
  * switching credentials, and collecting scan results without blocking the event loop. Can be
@@ -103,13 +112,9 @@ public:
             // If AP was pre-enabled (e.g., by System with deviceName-based SSID), start AP-only with that SSID
             if (apEnabled && apSSID_.length() > 0) {
                 DLOG_I(LOG_WIFI, "No STA credentials - starting preconfigured AP: %s", apSSID_.c_str());
-                WiFi.mode(WIFI_AP);
-                if (apPassword_.isEmpty()) {
-                    WiFi.softAP(apSSID_.c_str());
-                } else {
-                    WiFi.softAP(apSSID_.c_str(), apPassword_.c_str());
-                }
-                DLOG_I(LOG_WIFI, "AP IP address: %s", WiFi.softAPIP().toString().c_str());
+                HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::AccessPoint);
+                HAL::WiFiHAL::startAP(apSSID_.c_str(), apPassword_.isEmpty() ? nullptr : apPassword_.c_str());
+                DLOG_I(LOG_WIFI, "AP IP address: %s", HAL::WiFiHAL::getAPIP().c_str());
                 // Reflect state in internal flags so UI initial values are correct
                 wifiEnabled = false;
                 setStatus(ComponentStatus::Success);
@@ -123,8 +128,8 @@ public:
         }
         
         // Normal STA connection
-        WiFi.mode(WIFI_STA);
-        WiFi.setAutoReconnect(false);
+        HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
+        HAL::WiFiHAL::setAutoReconnect(false);
         ComponentStatus status = connectToWifi();
         setStatus(status);
         return status;
@@ -150,20 +155,20 @@ public:
         // Handle ongoing connection attempt
         if (isConnecting) {
             if (connectionTimer.isReady()) {
-                wl_status_t status = WiFi.status();
+                bool connected = HAL::WiFiHAL::isConnected();
                 
-                if (status == WL_CONNECTED) {
+                if (connected) {
                     // Connection successful
                     isConnecting = false;
                     DLOG_I(LOG_WIFI, "Wifi connected successfully");
-                    DLOG_I(LOG_WIFI, "IP address: %s", WiFi.localIP().toString().c_str());
+                    DLOG_I(LOG_WIFI, "IP address: %s", HAL::WiFiHAL::getLocalIP().c_str());
                     setStatus(ComponentStatus::Success);
                     // Emit event to trigger immediate WebUI update
                     emit(DomoticsCore::Events::EVENT_WIFI_STA_CONNECTED, true);
                 } else if (millis() - connectionStartTime > CONNECTION_TIMEOUT) {
                     // Connection timeout
                     isConnecting = false;
-                    DLOG_E(LOG_WIFI, "Wifi connection timeout - status: %d", status);
+                    DLOG_E(LOG_WIFI, "Wifi connection timeout - status: %d", HAL::WiFiHAL::getRawStatus());
                     setStatus(ComponentStatus::TimeoutError);
                     emit(DomoticsCore::Events::EVENT_WIFI_STA_CONNECTED, false);
                 }
@@ -180,7 +185,7 @@ public:
         if (statusTimer.isReady()) {
             if (isSTAConnected()) {
                 DLOG_D(LOG_WIFI, "Wifi connected - IP: %s, RSSI: %d dBm", 
-                      WiFi.localIP().toString().c_str(), WiFi.RSSI());
+                      HAL::WiFiHAL::getLocalIP().c_str(), HAL::WiFiHAL::getRSSI());
             } else {
                 DLOG_D(LOG_WIFI, "Wifi disconnected - status: %s", 
                       getConnectionStatusString().c_str());
@@ -189,8 +194,8 @@ public:
 
         // Poll async scan completion without blocking
         if (scanInProgress) {
-            int res = WiFi.scanComplete();
-            if (res == WIFI_SCAN_FAILED) {
+            int res = HAL::WiFiHAL::scanComplete();
+            if (res == -2) {  // WIFI_SCAN_FAILED
                 DLOG_W(LOG_WIFI, "Wifi async scan failed");
                 lastScanSummary_ = "Scan failed";
                 scanInProgress = false;
@@ -198,10 +203,10 @@ public:
                 String summary;
                 for (int i = 0; i < res && i < 10; ++i) {
                     if (i) summary += ", ";
-                    summary += WiFi.SSID(i) + " (" + String(WiFi.RSSI(i)) + " dBm)";
+                    summary += HAL::WiFiHAL::getScannedSSID(i) + " (" + String(HAL::WiFiHAL::getScannedRSSI(i)) + " dBm)";
                 }
                 lastScanSummary_ = summary;
-                WiFi.scanDelete();
+                HAL::WiFiHAL::scanDelete();
                 scanInProgress = false;
                 DLOG_I(LOG_WIFI, "Async scan complete: %d networks", res);
             }
@@ -211,8 +216,7 @@ public:
     ComponentStatus shutdown() override {
         DLOG_I(LOG_WIFI, "Wifi Shutting down component...");
         shouldConnect = false;
-        WiFi.disconnect(true);
-        WiFi.mode(WIFI_OFF);
+        HAL::WiFiHAL::disconnectAndOff();
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
     }
@@ -227,7 +231,7 @@ public:
      * This checks actual WiFi network connectivity (STA mode).
      */
     bool isSTAConnected() const {
-        return WiFi.status() == WL_CONNECTED;
+        return HAL::WiFiHAL::isConnected();
     }
     
     /**
@@ -263,38 +267,38 @@ public:
     
     String getLocalIP() const override {
         // In STA+AP mode, prioritize station IP for connectivity
-        if (isSTAAPMode() && WiFi.status() == WL_CONNECTED) {
-            return WiFi.localIP().toString();
+        if (isSTAAPMode() && HAL::WiFiHAL::isConnected()) {
+            return HAL::WiFiHAL::getLocalIP();
         }
         // In AP-only mode, return AP IP
         else if (isAPMode()) {
-            return WiFi.softAPIP().toString();
+            return HAL::WiFiHAL::getAPIP();
         }
         // In station mode, return station IP
-        return WiFi.localIP().toString();
+        return HAL::WiFiHAL::getLocalIP();
     }
     
     String getSSID() const {
         // In STA+AP mode, prioritize station SSID for connectivity
-        if (isSTAAPMode() && WiFi.status() == WL_CONNECTED) {
-            return WiFi.SSID();
+        if (isSTAAPMode() && HAL::WiFiHAL::isConnected()) {
+            return HAL::WiFiHAL::getSSID();
         }
         // In AP-only mode, return AP SSID
         else if (isAPMode()) {
-            return WiFi.softAPSSID();
+            return HAL::WiFiHAL::getAPSSID();
         }
         // In station mode, return station SSID
-        return WiFi.SSID();
+        return HAL::WiFiHAL::getSSID();
     }
     // Configured (target) SSID string (not necessarily connected)
     String getConfiguredSSID() const { return ssid; }
     
     int32_t getRSSI() const {
-        return WiFi.RSSI();
+        return HAL::WiFiHAL::getRSSI();
     }
     
     String getMacAddress() const {
-        return WiFi.macAddress();
+        return HAL::WiFiHAL::getMacAddress();
     }
 
     // Update credentials and (optionally) start reconnecting
@@ -332,11 +336,11 @@ public:
         }
         
         // AP mode info
-        bool apMode = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
+        bool apMode = isAPMode();
         info["ap_mode"] = apMode;
         if (apMode) {
-            info["ap_ssid"] = WiFi.softAPSSID();
-            info["ap_ip"] = WiFi.softAPIP().toString();
+            info["ap_ssid"] = HAL::WiFiHAL::getAPSSID();
+            info["ap_ip"] = HAL::WiFiHAL::getAPIP();
         }
         
         String result;
@@ -346,7 +350,7 @@ public:
     
     void disconnect() {
         shouldConnect = false;
-        WiFi.disconnect();
+        HAL::WiFiHAL::disconnect();
         DLOG_I(LOG_WIFI, "Wifi manually disconnected");
     }
     
@@ -368,17 +372,17 @@ public:
         
         if (isAPMode()) {
             status = "Wifi Status: AP Mode Active";
-            status += "\n  AP SSID: " + WiFi.softAPSSID();
-            status += "\n  AP IP: " + WiFi.softAPIP().toString();
-            status += "\n  Clients: " + String(WiFi.softAPgetStationNum());
-            status += "\n  MAC: " + WiFi.macAddress();
+            status += "\n  AP SSID: " + HAL::WiFiHAL::getAPSSID();
+            status += "\n  AP IP: " + HAL::WiFiHAL::getAPIP();
+            status += "\n  Clients: " + String(HAL::WiFiHAL::getAPStationCount());
+            status += "\n  MAC: " + HAL::WiFiHAL::getMacAddress();
         } else {
             status = "Wifi Status: " + getConnectionStatusString();
-            if (WiFi.status() == WL_CONNECTED) {
-                status += "\n  IP: " + WiFi.localIP().toString();
-                status += "\n  SSID: " + WiFi.SSID();
-                status += "\n  RSSI: " + String(WiFi.RSSI()) + " dBm";
-                status += "\n  MAC: " + WiFi.macAddress();
+            if (HAL::WiFiHAL::isConnected()) {
+                status += "\n  IP: " + HAL::WiFiHAL::getLocalIP();
+                status += "\n  SSID: " + HAL::WiFiHAL::getSSID();
+                status += "\n  RSSI: " + String(HAL::WiFiHAL::getRSSI()) + " dBm";
+                status += "\n  MAC: " + HAL::WiFiHAL::getMacAddress();
             }
             if (isConnecting) {
                 unsigned long elapsed = millis() - connectionStartTime;
@@ -390,7 +394,7 @@ public:
     }
     
     bool scanNetworks(std::vector<String>& networks) {
-        int n = WiFi.scanNetworks();
+        int n = HAL::WiFiHAL::scanNetworks(false);
         networks.clear();
         
         if (n == -1) {
@@ -400,7 +404,7 @@ public:
         
         DLOG_I(LOG_WIFI, "Found %d Wifi networks", n);
         for (int i = 0; i < n; i++) {
-            String network = WiFi.SSID(i) + " (" + String(WiFi.RSSI(i)) + " dBm)";
+            String network = HAL::WiFiHAL::getScannedSSID(i) + " (" + String(HAL::WiFiHAL::getScannedRSSI(i)) + " dBm)";
             networks.push_back(network);
             DLOG_D(LOG_WIFI, "  %s", network.c_str());
         }
@@ -411,7 +415,7 @@ public:
     // Start non-blocking scan (returns immediately)
     void startScanAsync() {
         if (scanInProgress) return;
-        WiFi.scanNetworks(true /* async */);
+        HAL::WiFiHAL::scanNetworks(true /* async */);
         scanInProgress = true;
         lastScanSummary_ = "Scanning...";
         DLOG_I(LOG_WIFI, "Started async WiFi scan");
@@ -420,7 +424,7 @@ public:
     String getLastScanSummary() const { return lastScanSummary_; }
     
     bool isSTAAPMode() const {
-        return WiFi.getMode() == WIFI_AP_STA;
+        return HAL::WiFiHAL::getMode() == HAL::WiFiHAL::Mode::StationAndAP;
     }
     
     /**
@@ -428,8 +432,8 @@ public:
      * @return true if in AP mode
      */
     bool isAPMode() const {
-        wifi_mode_t mode = WiFi.getMode();
-        return (mode == WIFI_AP || mode == WIFI_AP_STA);
+        HAL::WiFiHAL::Mode mode = HAL::WiFiHAL::getMode();
+        return (mode == HAL::WiFiHAL::Mode::AccessPoint || mode == HAL::WiFiHAL::Mode::StationAndAP);
     }
     
     /**
@@ -441,9 +445,9 @@ public:
         
         if (isAPMode()) {
             info["active"] = true;
-            info["ssid"] = WiFi.softAPSSID();
-            info["ip"] = WiFi.softAPIP().toString();
-            info["clients"] = WiFi.softAPgetStationNum();
+            info["ssid"] = HAL::WiFiHAL::getAPSSID();
+            info["ip"] = HAL::WiFiHAL::getAPIP();
+            info["clients"] = HAL::WiFiHAL::getAPStationCount();
         } else {
             info["active"] = false;
         }
@@ -524,19 +528,14 @@ public:
         if (wifiEnabled && apEnabled) {
             // Both Wifi and AP requested - use STA+AP mode
             DLOG_I(LOG_WIFI, "Enabling STA+AP mode");
-            WiFi.mode(WIFI_AP_STA);
+            HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::StationAndAP);
             delay(100);
             
             // Start AP
-            bool apSuccess;
-            if (apPassword_.isEmpty()) {
-                apSuccess = WiFi.softAP(apSSID_.c_str());
-            } else {
-                apSuccess = WiFi.softAP(apSSID_.c_str(), apPassword_.c_str());
-            }
+            bool apSuccess = HAL::WiFiHAL::startAP(apSSID_.c_str(), apPassword_.isEmpty() ? nullptr : apPassword_.c_str());
             
             if (apSuccess) {
-                DLOG_I(LOG_WIFI, "AP started: %s (IP: %s)", apSSID_.c_str(), WiFi.softAPIP().toString().c_str());
+                DLOG_I(LOG_WIFI, "AP started: %s (IP: %s)", apSSID_.c_str(), HAL::WiFiHAL::getAPIP().c_str());
                 emit(DomoticsCore::Events::EVENT_WIFI_AP_ENABLED, true);
             }
             
@@ -548,10 +547,10 @@ public:
         } else if (wifiEnabled && !apEnabled) {
             // Only Wifi requested - use STA mode
             DLOG_I(LOG_WIFI, "Enabling station mode only");
-            WiFi.softAPdisconnect(true);
+            HAL::WiFiHAL::stopAP();
             emit(DomoticsCore::Events::EVENT_WIFI_AP_ENABLED, false);
             delay(100);
-            WiFi.mode(WIFI_STA);
+            HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
             delay(100);
             shouldConnect = true;
             reconnectTimer.reset();
@@ -561,19 +560,14 @@ public:
             DLOG_I(LOG_WIFI, "Enabling AP mode only");
             shouldConnect = false;
             isConnecting = false;
-            WiFi.disconnect();
-            WiFi.mode(WIFI_AP);
+            HAL::WiFiHAL::disconnect();
+            HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::AccessPoint);
             delay(100);
             
-            bool success;
-            if (apPassword_.isEmpty()) {
-                success = WiFi.softAP(apSSID_.c_str());
-            } else {
-                success = WiFi.softAP(apSSID_.c_str(), apPassword_.c_str());
-            }
+            bool success = HAL::WiFiHAL::startAP(apSSID_.c_str(), apPassword_.isEmpty() ? nullptr : apPassword_.c_str());
             
             if (success) {
-                DLOG_I(LOG_WIFI, "AP-only mode started: %s (IP: %s)", apSSID_.c_str(), WiFi.softAPIP().toString().c_str());
+                DLOG_I(LOG_WIFI, "AP-only mode started: %s (IP: %s)", apSSID_.c_str(), HAL::WiFiHAL::getAPIP().c_str());
                 emit(DomoticsCore::Events::EVENT_WIFI_AP_ENABLED, true);
             }
             
@@ -583,9 +577,8 @@ public:
             DLOG_I(LOG_WIFI, "Disabling all Wifi features");
             shouldConnect = false;
             isConnecting = false;
-            WiFi.softAPdisconnect(true);
-            WiFi.disconnect();
-            WiFi.mode(WIFI_OFF);
+            HAL::WiFiHAL::stopAP();
+            HAL::WiFiHAL::disconnectAndOff();
             return true;
         }
     }
@@ -596,14 +589,14 @@ private:
             DLOG_I(LOG_WIFI, "Wifi SSID not configured - starting in AP mode");
             
             // Generate AP SSID from MAC address for uniqueness
-            String macAddress = WiFi.macAddress();
+            String macAddress = HAL::WiFiHAL::getMacAddress();
             macAddress.replace(":", "");
             String apSSID = "DomoticsCore-" + macAddress.substring(6); // Last 6 chars of MAC
             
-            WiFi.mode(WIFI_AP);
-            WiFi.softAP(apSSID.c_str()); // No password for easy access
+            HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::AccessPoint);
+            HAL::WiFiHAL::startAP(apSSID.c_str()); // No password for easy access
             DLOG_I(LOG_WIFI, "AP mode started: %s (open network)", apSSID.c_str());
-            DLOG_I(LOG_WIFI, "AP IP address: %s", WiFi.softAPIP().toString().c_str());
+            DLOG_I(LOG_WIFI, "AP IP address: %s", HAL::WiFiHAL::getAPIP().c_str());
             // Reflect state in internal flags so UI initial values are correct
             apEnabled = true;
             wifiEnabled = false;
@@ -622,7 +615,7 @@ private:
         if (isConnecting) return; // Already connecting
         
         DLOG_I(LOG_WIFI, "Connecting to Wifi: %s", ssid.c_str());
-        WiFi.begin(ssid.c_str(), password.c_str());
+        HAL::WiFiHAL::connect(ssid.c_str(), password.c_str());
         
         isConnecting = true;
         connectionStartTime = millis();
@@ -631,15 +624,16 @@ private:
     
     // Additional utility methods
     String getConnectionStatusString() const {
-        switch (WiFi.status()) {
-            case WL_IDLE_STATUS: return "Idle";
-            case WL_NO_SSID_AVAIL: return "SSID not available";
-            case WL_SCAN_COMPLETED: return "Scan completed";
-            case WL_CONNECTED: return "Connected";
-            case WL_CONNECT_FAILED: return "Connection failed";
-            case WL_CONNECTION_LOST: return "Connection lost";
-            case WL_DISCONNECTED: return "Disconnected";
-            default: return "Unknown (" + String(WiFi.status()) + ")";
+        uint8_t status = HAL::WiFiHAL::getRawStatus();
+        switch (status) {
+            case 0: return "Idle";            // WL_IDLE_STATUS
+            case 1: return "SSID not available"; // WL_NO_SSID_AVAIL
+            case 2: return "Scan completed";   // WL_SCAN_COMPLETED
+            case 3: return "Connected";        // WL_CONNECTED
+            case 4: return "Connection failed"; // WL_CONNECT_FAILED
+            case 5: return "Connection lost";  // WL_CONNECTION_LOST
+            case 6: return "Disconnected";     // WL_DISCONNECTED
+            default: return "Unknown (" + String(status) + ")";
         }
     }
 };

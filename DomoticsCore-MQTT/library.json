@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-MQTT",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "DomoticsCore MQTT component (header-only) with EventBus communication, auto-reconnection, QoS support, and WebUI integration",
   "keywords": ["mqtt", "iot", "esp32", "arduino", "pubsub", "messaging"],
   "repository": {
@@ -20,6 +20,7 @@
   },
   "dependencies": [
     { "name": "DomoticsCore-Core", "version": ">=1.0.0" },
+    { "name": "DomoticsCore-Wifi", "version": ">=1.0.0" },
     { "name": "PubSubClient", "version": "^2.8" },
     { "name": "ArduinoJson", "version": "^7.0.0" }
   ]
