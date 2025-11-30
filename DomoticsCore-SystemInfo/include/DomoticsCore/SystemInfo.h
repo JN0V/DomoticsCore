@@ -3,10 +3,13 @@
 /**
  * @file SystemInfo.h
  * @brief Declares the DomoticsCore SystemInfo component for runtime diagnostics.
+ * 
+ * Uses HAL abstraction for multi-platform support (ESP32, ESP8266).
  */
 
 #include <Arduino.h>
 #include "DomoticsCore/IComponent.h"
+#include "SystemInfo_HAL.h"  // Hardware Abstraction Layer for SystemInfo
 
 namespace DomoticsCore {
 namespace Components {
@@ -96,7 +99,7 @@ protected:
         // On ESP32 Arduino, direct CPU usage isn't available without special FreeRTOS config.
         // We therefore estimate activity over time and smooth it with an EMA.
         unsigned long currentTime = millis();
-        uint32_t currentHeap = ESP.getFreeHeap();
+        uint32_t currentHeap = HAL::SystemInfo::getFreeHeap();
 
         if (lastHeapCheck > 0) {
             unsigned long dt = currentTime - lastHeapCheck;
@@ -164,16 +167,16 @@ public:
 
 private:
     void updateMetrics() {
-        metrics.freeHeap = ESP.getFreeHeap();
-        metrics.totalHeap = ESP.getHeapSize();
-        metrics.minFreeHeap = ESP.getMinFreeHeap();
-        metrics.maxAllocHeap = ESP.getMaxAllocHeap();
-        metrics.cpuFreq = ESP.getCpuFreqMHz();
-        metrics.flashSize = ESP.getFlashChipSize();
-        metrics.sketchSize = ESP.getSketchSize();
-        metrics.freeSketchSpace = ESP.getFreeSketchSpace();
-        metrics.chipModel = ESP.getChipModel();
-        metrics.chipRevision = ESP.getChipRevision();
+        metrics.freeHeap = HAL::SystemInfo::getFreeHeap();
+        metrics.totalHeap = HAL::SystemInfo::getTotalHeap();
+        metrics.minFreeHeap = HAL::SystemInfo::getMinFreeHeap();
+        metrics.maxAllocHeap = HAL::SystemInfo::getMaxAllocHeap();
+        metrics.cpuFreq = HAL::SystemInfo::getCpuFreqMHz();
+        metrics.flashSize = HAL::SystemInfo::getFlashSize();
+        metrics.sketchSize = HAL::SystemInfo::getSketchSize();
+        metrics.freeSketchSpace = HAL::SystemInfo::getFreeSketchSpace();
+        metrics.chipModel = HAL::SystemInfo::getChipModel();
+        metrics.chipRevision = HAL::SystemInfo::getChipRevision();
         metrics.uptime = millis() / 1000;
         
         // Calculate CPU load (simplified estimation)

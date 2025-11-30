@@ -1,6 +1,7 @@
 #include "DomoticsCore/Core.h"
 #include "DomoticsCore/Logger.h"
 #include "DomoticsCore/ComponentConfig.h"
+#include "DomoticsCore/Platform_HAL.h"      // For HAL::getChipId(), HAL::getFreeHeap()
 
 namespace DomoticsCore {
 
@@ -29,13 +30,13 @@ bool Core::begin(const CoreConfig& cfg) {
     
     // Generate device ID if not provided
     if (config.deviceId.isEmpty()) {
-        config.deviceId = "DC" + String((uint32_t)ESP.getEfuseMac(), HEX);
+        config.deviceId = "DC" + String((uint32_t)HAL::getChipId(), HEX);
         config.deviceId.toUpperCase();
     }
     
     DLOG_I(LOG_CORE, "DomoticsCore initializing...");
     DLOG_I(LOG_CORE, "Device: %s (ID: %s)", config.deviceName.c_str(), config.deviceId.c_str());
-    DLOG_I(LOG_CORE, "Free heap: %d bytes", ESP.getFreeHeap());
+    DLOG_I(LOG_CORE, "Free heap: %d bytes", HAL::getFreeHeap());
     
     // Provide Core reference to registry for component injection
     componentRegistry.setCore(this);

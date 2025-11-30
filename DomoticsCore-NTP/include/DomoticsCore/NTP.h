@@ -3,21 +3,24 @@
 /**
  * @file NTP.h
  * @brief Declares the DomoticsCore NTP component for network time synchronization.
+ * 
+ * Provides NTP time synchronization with timezone support, formatted time strings,
+ * and uptime tracking. Uses HAL abstraction for multi-platform support.
+ * 
+ * @example DomoticsCore-NTP/examples/BasicNTP/src/main.cpp
+ * @example DomoticsCore-NTP/examples/NTPWithWebUI/src/main.cpp
  */
 
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Logger.h"
 #include "DomoticsCore/Timer.h"
 #include "DomoticsCore/Events.h"
+#include "NTP_HAL.h"  // Hardware Abstraction Layer for NTP
 #include <Arduino.h>
 #include <time.h>
 #include <sys/time.h>
 #include <vector>
 #include <functional>
-
-#ifdef ESP32
-#include "esp_sntp.h"
-#endif
 
 namespace DomoticsCore {
 namespace Components {
@@ -73,7 +76,7 @@ struct NTPStatistics {
  * @brief Network Time Protocol component
  * 
  * Provides NTP time synchronization with timezone support, formatted time strings,
- * and uptime tracking. Uses ESP32 SNTP client for automatic synchronization.
+ * and uptime tracking. Uses HAL abstraction for multi-platform support.
  * 
  * Features:
  * - Multiple NTP servers with automatic fallback
@@ -117,11 +120,9 @@ public:
     }
 
     virtual ~NTPComponent() {
-#ifdef ESP32
         if (config.enabled) {
-            sntp_stop();
+            HAL::NTP::stop();
         }
-#endif
         DLOG_D(LOG_NTP, "Component destroyed");
     }
 
@@ -135,46 +136,34 @@ public:
             return ComponentStatus::Success;
         }
 
-        // Set timezone
-        setenv("TZ", config.timezone.c_str(), 1);
-        tzset();
+        // Set timezone via HAL
+        HAL::NTP::setTimezone(config.timezone.c_str());
         DLOG_I(LOG_NTP, "Timezone set to: %s", config.timezone.c_str());
 
-#ifdef ESP32
-        // Configure SNTP
-        sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        // Configure NTP servers via HAL
+        const char* srv1 = config.servers.size() > 0 ? config.servers[0].c_str() : "pool.ntp.org";
+        const char* srv2 = config.servers.size() > 1 ? config.servers[1].c_str() : nullptr;
+        const char* srv3 = config.servers.size() > 2 ? config.servers[2].c_str() : nullptr;
         
-        // Set NTP servers
         for (size_t i = 0; i < config.servers.size() && i < 3; i++) {
-            sntp_setservername(i, config.servers[i].c_str());
             DLOG_I(LOG_NTP, "NTP server %d: %s", i, config.servers[i].c_str());
         }
         
-        // Set sync interval
-        sntp_set_sync_interval(config.syncInterval * 1000);  // Convert to ms
+        // Set sync interval via HAL
+        HAL::NTP::setSyncInterval(config.syncInterval * 1000);  // Convert to ms
         
-        // Set sync notification callback
-        sntp_set_time_sync_notification_cb([](struct timeval *tv) {
-            // This runs in ISR context, just set flag
-        });
-        
-        // Start SNTP
-        sntp_init();
-        DLOG_I(LOG_NTP, "SNTP client started");
-#else
-        DLOG_W(LOG_NTP, "Not supported on this platform");
-#endif
+        // Initialize NTP client via HAL
+        HAL::NTP::init(srv1, srv2, srv3);
+        DLOG_I(LOG_NTP, "SNTP client started via HAL");
 
         return ComponentStatus::Success;
     }
 
     ComponentStatus shutdown() override {
-#ifdef ESP32
         if (config.enabled) {
-            sntp_stop();
-            DLOG_I(LOG_NTP, "SNTP client stopped");
+            HAL::NTP::stop();
+            DLOG_I(LOG_NTP, "SNTP client stopped via HAL");
         }
-#endif
         return ComponentStatus::Success;
     }
 
@@ -268,8 +257,7 @@ public:
             return false;
         }
 
-#ifdef ESP32
-        DLOG_I(LOG_NTP, "Requesting immediate SNTP sync...");
+        DLOG_I(LOG_NTP, "Requesting immediate SNTP sync via HAL...");
         syncInProgress = true;
         
         // Use configured timeout for sync
@@ -277,16 +265,11 @@ public:
         syncTimeoutTimer.reset();
         syncTimeoutTimer.enable();
         
-        // Request immediate sync (non-blocking)
-        // Note: sntp_restart() stops and restarts the service, actual sync is async
-        sntp_restart();
+        // Request immediate sync via HAL (non-blocking)
+        HAL::NTP::forceSync();
         
-        DLOG_I(LOG_NTP, "SNTP restart requested, sync in progress (timeout: %lu ms)", config.timeoutMs);
+        DLOG_I(LOG_NTP, "SNTP sync requested, timeout: %lu ms", config.timeoutMs);
         return true;
-#else
-        DLOG_W(LOG_NTP, "NTP sync not supported on this platform");
-        return false;
-#endif
     }
 
     /**
@@ -435,8 +418,7 @@ public:
      */
     void setTimezone(const String& tz) {
         config.timezone = tz;
-        setenv("TZ", tz.c_str(), 1);
-        tzset();
+        HAL::NTP::setTimezone(tz.c_str());
         DLOG_I(LOG_NTP, "Timezone changed to: %s", tz.c_str());
     }
 
@@ -504,10 +486,8 @@ public:
         }
 
         if (needsRestart && config.enabled) {
-#ifdef ESP32
-            sntp_stop();
+            HAL::NTP::stop();
             begin();
-#endif
         }
     }
 
