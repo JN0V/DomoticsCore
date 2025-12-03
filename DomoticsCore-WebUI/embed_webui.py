@@ -1,8 +1,129 @@
 import os
 import gzip
+import re
 from pathlib import Path
 
 Import("env")
+
+# ============================================================================
+# Minification functions (no external dependencies)
+# ============================================================================
+
+def minify_js(content: str) -> str:
+    """
+    Simple JS minification without external dependencies.
+    Removes comments, unnecessary whitespace while preserving strings.
+    """
+    result = []
+    i = 0
+    in_string = None
+    in_single_comment = False
+    in_multi_comment = False
+    
+    while i < len(content):
+        c = content[i]
+        next_c = content[i + 1] if i + 1 < len(content) else ''
+        
+        # Handle string literals
+        if in_string:
+            result.append(c)
+            if c == '\\':
+                i += 1
+                if i < len(content):
+                    result.append(content[i])
+            elif c == in_string:
+                in_string = None
+            i += 1
+            continue
+        
+        # Handle comments
+        if in_single_comment:
+            if c == '\n':
+                in_single_comment = False
+                result.append('\n')
+            i += 1
+            continue
+        
+        if in_multi_comment:
+            if c == '*' and next_c == '/':
+                in_multi_comment = False
+                i += 2
+            else:
+                i += 1
+            continue
+        
+        # Detect comment start
+        if c == '/' and next_c == '/':
+            in_single_comment = True
+            i += 2
+            continue
+        
+        if c == '/' and next_c == '*':
+            in_multi_comment = True
+            i += 2
+            continue
+        
+        # Detect string start
+        if c in '"\'`':
+            in_string = c
+            result.append(c)
+            i += 1
+            continue
+        
+        # Collapse whitespace
+        if c in ' \t':
+            if result and result[-1] not in ' \t\n':
+                result.append(' ')
+            i += 1
+            continue
+        
+        if c == '\n':
+            if result and result[-1] not in '\n ':
+                result.append('\n')
+            i += 1
+            continue
+        
+        result.append(c)
+        i += 1
+    
+    text = ''.join(result)
+    
+    # Additional cleanup passes
+    text = re.sub(r'\s*([{}\[\];:,<>=+\-*/%&|^!?()])\s*', r'\1', text)
+    # Restore space after keywords
+    text = re.sub(r'\b(return|typeof|new|delete|throw|in|of|const|let|var|if|else|for|while|do|switch|case|break|continue|function|class|extends|async|await|yield|import|export|from|default)\b([^\s\w])', r'\1 \2', text)
+    text = re.sub(r'\n+', '\n', text)
+    return text.strip()
+
+def minify_css(content: str) -> str:
+    """
+    Simple CSS minification.
+    """
+    # Remove comments
+    content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+    # Remove whitespace around symbols
+    content = re.sub(r'\s*([{};:,>~+])\s*', r'\1', content)
+    # Collapse whitespace
+    content = re.sub(r'\s+', ' ', content)
+    # Remove space before {
+    content = re.sub(r'\s*{\s*', '{', content)
+    # Remove trailing semicolons before }
+    content = re.sub(r';}', '}', content)
+    # Remove newlines
+    content = content.replace('\n', '')
+    return content.strip()
+
+def minify_html(content: str) -> str:
+    """
+    Simple HTML minification.
+    """
+    # Remove HTML comments (but not conditional comments)
+    content = re.sub(r'<!--(?!\[).*?-->', '', content, flags=re.DOTALL)
+    # Collapse whitespace between tags
+    content = re.sub(r'>\s+<', '><', content)
+    # Collapse multiple spaces
+    content = re.sub(r'\s+', ' ', content)
+    return content.strip()
 
 # Force C++14 for library compilation (required for std::make_unique)
 # Must be applied early before any compilation
@@ -182,39 +303,66 @@ def to_c_array(data: bytes) -> str:
     body = ",\n        ".join(lines)
     return body
 
+def process_asset(filename: str, src_dir: Path) -> tuple:
+    """
+    Read, minify, and gzip an asset file.
+    Returns (original_size, minified_size, gzipped_bytes)
+    """
+    path = src_dir / filename
+    if not path.exists():
+        raise RuntimeError(f"Missing asset: {path}")
+    
+    raw_content = path.read_text(encoding='utf-8')
+    original_size = len(raw_content.encode('utf-8'))
+    
+    # Apply minification based on file type
+    if filename.endswith('.js'):
+        minified = minify_js(raw_content)
+    elif filename.endswith('.css'):
+        minified = minify_css(raw_content)
+    elif filename.endswith('.html'):
+        minified = minify_html(raw_content)
+    else:
+        minified = raw_content
+    
+    minified_bytes = minified.encode('utf-8')
+    minified_size = len(minified_bytes)
+    gzipped = gzip.compress(minified_bytes, compresslevel=9)
+    
+    return original_size, minified_size, gzipped
+
+# Process all assets
+processed_assets = {}
+for filename, sym in assets:
+    original_size, minified_size, gzipped = process_asset(filename, src_dir)
+    processed_assets[filename] = (sym, original_size, minified_size, gzipped)
+    reduction = 100 * (1 - minified_size / original_size) if original_size > 0 else 0
+    print(f"[WebUI] {filename}: {original_size} -> {minified_size} bytes ({reduction:.1f}% minified) -> {len(gzipped)} bytes gzipped")
+
 header_lines = [
     "#pragma once",
     "#include <Arduino.h>",
     "",
-    "// Auto-generated by scripts/embed_webui.py. DO NOT EDIT MANUALLY.",
+    "// Auto-generated by embed_webui.py. DO NOT EDIT MANUALLY.",
 ]
 
+# Generate header declarations
 for filename, sym in assets:
-    path = src_dir / filename
-    if not path.exists():
-        raise RuntimeError(f"Missing asset: {path}")
-    raw = path.read_bytes()
-    gz = gzip.compress(raw, compresslevel=9)
+    sym, original_size, minified_size, gzipped = processed_assets[filename]
     header_lines.append("")
-    header_lines.append(f"// {filename} (gzip), original {len(raw)} bytes, gzip {len(gz)} bytes")
+    header_lines.append(f"// {filename}: original {original_size} -> minified {minified_size} -> gzip {len(gzipped)} bytes")
     header_lines.append(f"extern const uint8_t {sym}[] PROGMEM;")
     header_lines.append(f"extern const size_t {sym}_LEN;")
 
-# Write externs header first (declarations)
-# We will also write definitions alongside (in the same header for simplicity)
-# Some compilers allow this as 'inline' style for constants; for clarity we emit both declarations and definitions.
-
-# Append a separator and actual definitions
+# Append definitions
 header_lines.append("")
 header_lines.append("// Definitions")
 
 for filename, sym in assets:
-    path = src_dir / filename
-    raw = path.read_bytes()
-    gz = gzip.compress(raw, compresslevel=9)
+    sym, original_size, minified_size, gzipped = processed_assets[filename]
     header_lines.append("")
     header_lines.append(f"const uint8_t {sym}[] PROGMEM = {{")
-    header_lines.append(f"        {to_c_array(gz)}")
+    header_lines.append(f"        {to_c_array(gzipped)}")
     header_lines.append("};")
     header_lines.append(f"const size_t {sym}_LEN = sizeof({sym});")
 
