@@ -99,7 +99,7 @@ public:
           wifiEnabled(true), apEnabled(false) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "Wifi";
-        metadata.version = "1.2.1";
+        metadata.version = "1.3.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Wifi connectivity management component";
     }

@@ -94,7 +94,7 @@ public:
           isOpen(false), entryCount(0) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "Storage";
-        metadata.version = "1.2.1";
+        metadata.version = "1.3.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Key-value storage component for preferences and app data";
         metadata.category = "Storage";
