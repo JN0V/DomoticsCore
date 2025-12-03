@@ -93,6 +93,17 @@ public:
         
         if (config.enableWebSocket) {
             webSocket->begin(webServer->getServer());
+            
+            // Restored: callbacks for initial data and UI actions
+            webSocket->setClientConnectedCallback([this](AsyncWebSocketClient* client) {
+                sendWebSocketUpdate(client);
+            });
+            webSocket->setForceUpdateCallback([this]() {
+                forceNextUpdate = true;
+            });
+            webSocket->setUIActionCallback([this](const String& ctx, const String& field, const String& value) {
+                handleUIAction(ctx, field, value);
+            });
         }
         
         setupApiRoutes();
@@ -466,28 +477,12 @@ private:
                         // Re-reading ProviderRegistry.h... I didn't add `firstContext` to `SchemaChunkState`.
                         // I'll rely on `state->pending` being empty initially.
                         
-                        String out = ctx;
-                        // Check if we already sent a context
-                         // We need a flag in state.
-                         // Since I can't modify ProviderRegistry.h right now easily without rewriting it,
-                         // I will use a static-like property or `totalContexts` if I added it.
-                         // I added `int totalContexts = 0;` in the original file, but let's check ProviderRegistry.h content I wrote.
-                         // I did NOT include `totalContexts` or `firstContext` in `ProviderRegistry.h`'s `SchemaChunkState`.
-                         // This is a minor oversight.
-                         
-                         // Workaround: Check if written > 1 (meaning we wrote `[`). 
-                         // But this is chunked, so `written` resets.
-                         // I will assume I can patch this in a followup if needed, but let's try to use `state->began` which is true.
-                         // I'll assume the client handles trailing commas or I'll try to be smart.
-                         
-                         // Actually, JSON list: `[a, b, c]`
-                         // If I can't track strict "firstness", I might emit `[a,b,c,]` which is invalid JSON.
-                         // Let's hope I can re-edit ProviderRegistry.h quickly to add `bool firstItem = true;`
-                         
-                        if (state->pending == "") {
-                             state->pending = out;
+                        // Add comma before item if not first
+                        if (state->firstItem) {
+                            state->pending = ctx;
+                            state->firstItem = false;
                         } else {
-                             state->pending += "," + out; 
+                            state->pending = "," + ctx;
                         }
                     }
                     return written;
@@ -533,6 +528,43 @@ private:
                 JsonObject labels = fieldObj["optionLabels"].to<JsonObject>();
                 for (const auto& pair : field.optionLabels) labels[pair.first] = pair.second;
             }
+        }
+    }
+
+    // Restored: send update to specific client on connect
+    void sendWebSocketUpdate(AsyncWebSocketClient* client) {
+        if (!client || client->status() != WS_CONNECTED) return;
+        
+        String msg = "{\"system\":{";
+        msg += "\"uptime\":" + String(millis()) + ",";
+        msg += "\"heap\":" + String(ESP.getFreeHeap()) + ",";
+        msg += "\"clients\":" + String(getWebSocketClients()) + ",";
+        msg += "\"device_name\":\"" + config.deviceName + "\"";
+        msg += "},\"contexts\":{";
+        
+        int count = 0;
+        for (const auto& p : registry->getContextProviders()) {
+            if (msg.length() > 3584) break;
+            String data = p.second->getWebUIData(p.first);
+            if (!data.isEmpty() && data != "{}") {
+                if (count++ > 0) msg += ",";
+                msg += "\"" + p.first + "\":" + data;
+            }
+        }
+        msg += "}}";
+        if (msg.length() < 4096 && client->canSend()) client->text(msg);
+    }
+    
+    // Restored: handle UI action from WebSocket
+    void handleUIAction(const String& contextId, const String& field, const String& value) {
+        auto providers = registry->getContextProviders();
+        auto it = providers.find(contextId);
+        if (it != providers.end()) {
+            std::map<String, String> params;
+            params["field"] = field;
+            params["value"] = value;
+            it->second->handleWebUIRequest(contextId, "/", "POST", params);
+            forceNextUpdate = true;
         }
     }
 

@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <vector>
+#include <functional>
 #include <ArduinoJson.h>
 #include "DomoticsCore/Logger.h"
 #include "WebUIConfig.h"
@@ -16,9 +17,18 @@ namespace WebUI {
  * @brief Manages WebSocket connections and real-time updates.
  */
 class WebSocketHandler {
+public:
+    using ClientConnectedCallback = std::function<void(AsyncWebSocketClient*)>;
+    using UIActionCallback = std::function<void(const String&, const String&, const String&)>;
+
 private:
     AsyncWebSocket* webSocket = nullptr;
     WebUIConfig config;
+    
+    // Callbacks to WebUIComponent
+    ClientConnectedCallback onClientConnected;
+    UIActionCallback onUIAction;
+    std::function<void()> onForceUpdate;
     
     // Connection management
     std::vector<uint32_t> activeClientIds;
@@ -30,6 +40,10 @@ private:
 
 public:
     WebSocketHandler(const WebUIConfig& cfg) : config(cfg) {}
+    
+    void setClientConnectedCallback(ClientConnectedCallback cb) { onClientConnected = cb; }
+    void setUIActionCallback(UIActionCallback cb) { onUIAction = cb; }
+    void setForceUpdateCallback(std::function<void()> cb) { onForceUpdate = cb; }
 
     ~WebSocketHandler() {
         if (webSocket) {
@@ -111,7 +125,10 @@ private:
                 return;
             }
             activeClientIds.push_back(client->id());
-            // Send initial handshake or data could be done here
+            
+            // Send initial data to new client
+            if (onClientConnected) onClientConnected(client);
+            if (onForceUpdate) onForceUpdate();
         } else if (type == WS_EVT_DISCONNECT) {
             DLOG_I(LOG_WEB, "WS Client disconnected: #%u", client->id());
             auto it = std::find(activeClientIds.begin(), activeClientIds.end(), client->id());
@@ -119,7 +136,11 @@ private:
                 activeClientIds.erase(it);
             }
         } else if (type == WS_EVT_DATA) {
-            // Handle incoming data (e.g. pings)
+            if (!arg || !data || len == 0 || len > 512) return;
+            AwsFrameInfo* info = (AwsFrameInfo*)arg;
+            if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT && len < 256) {
+                handleWebSocketMessage(String((char*)data, len));
+            }
         } else if (type == WS_EVT_ERROR) {
             DLOG_E(LOG_WEB, "WS Error client #%u", client->id());
         }
@@ -127,10 +148,20 @@ private:
 
     void cleanupStaleConnections() {
         if (!webSocket) return;
+    }
+    
+    void handleWebSocketMessage(const String& message) {
+        JsonDocument doc;
+        if (deserializeJson(doc, message)) return;
         
-        // Logic to ping clients or remove inactive ones could go here.
-        // AsyncWebSocket handles ping/pong internally mostly.
-        // This is a placeholder for custom timeout logic if needed.
+        const char* type = doc["type"];
+        if (type && strcmp(type, "ui_action") == 0 && onUIAction) {
+            String contextId = doc["contextId"].as<String>();
+            String field = doc["field"].as<String>();
+            JsonVariant v = doc["value"];
+            String value = v.is<bool>() ? (v.as<bool>() ? "true" : "false") : v.as<String>();
+            onUIAction(contextId, field, value);
+        }
     }
 };
 

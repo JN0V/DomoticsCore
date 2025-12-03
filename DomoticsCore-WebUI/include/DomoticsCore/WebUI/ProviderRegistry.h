@@ -236,6 +236,7 @@ public:
         size_t contextIndex = 0;
         bool began = false;
         bool finished = false;
+        bool firstItem = true;  // Track if we've emitted first item (for comma)
         String pending;
     };
 
