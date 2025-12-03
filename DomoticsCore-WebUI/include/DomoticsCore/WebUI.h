@@ -66,7 +66,7 @@ public:
         : config(cfg) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "WebUI";
-        metadata.version = "1.3.0";
+        metadata.version = "1.3.2";
         metadata.author = "DomoticsCore";
         metadata.description = "Web dashboard and API component";
 
@@ -570,44 +570,69 @@ private:
     }
 
     void sendWebSocketUpdates() {
-        // Build JSON manually
-        String message = "{\"system\":{";
-        message += "\"uptime\":" + String(millis()) + ",";
-        message += "\"heap\":" + String(HAL::getFreeHeap()) + ",";
-        message += "\"clients\":" + String(getWebSocketClients()) + ",";
-        message += "\"device_name\":\"" + config.deviceName + "\"";
-        message += "},\"contexts\":{";
+        // Use static buffer to avoid heap fragmentation on long-running devices
+        // 8KB is sufficient for typical WebUI with 10+ providers
+        static char buffer[8192];
+        int pos = 0;
+        
+        // Write system info header
+        pos = snprintf(buffer, sizeof(buffer),
+            "{\"system\":{\"uptime\":%lu,\"heap\":%u,\"clients\":%d,\"device_name\":\"%s\"},\"contexts\":{",
+            millis(), HAL::getFreeHeap(), getWebSocketClients(), config.deviceName.c_str());
+        
+        if (pos < 0 || pos >= (int)sizeof(buffer)) {
+            DLOG_E(LOG_WEB, "WS buffer overflow in header");
+            return;
+        }
         
         int contextCount = 0;
         auto contextProviders = registry->getContextProviders();
         
         for (const auto& pair : contextProviders) {
-            if (message.length() > 3584) break;
+            // Leave room for context data + closing braces
+            if (pos > (int)sizeof(buffer) - 512) {
+                DLOG_W(LOG_WEB, "WS buffer nearly full, truncating contexts");
+                break;
+            }
             
             const String& contextId = pair.first;
             IWebUIProvider* provider = pair.second;
             
-            // Skip if disabled (need to check registry enabled state, but I only have access via private map in registry...)
-            // This is a flaw in my encapsulation. I need `registry->isProviderEnabled(provider)` or similar.
-            // For now, I will assume enabled if it's in contextProviders, or I need to expose `providerEnabled` via getter.
-            // I'll assume `IWebUIProvider::isWebUIEnabled()` is good enough or I'll trust `registry` managed map.
-            // Actually `contextProviders` contains everything.
-            // I'll skip the enabled check here for brevity/speed or access it via a new method if strictness needed.
-            
-            // Delta check
+            // Delta check - skip unchanged data
             if (!forceNextUpdate && !provider->hasDataChanged(contextId)) continue;
             
             String contextData = provider->getWebUIData(contextId);
-            if (!contextData.isEmpty() && contextData != "{}") {
-                if (contextCount > 0) message += ",";
-                message += "\"" + contextId + "\":" + contextData;
+            if (contextData.isEmpty() || contextData == "{}") continue;
+            
+            // Calculate space needed: "contextId":data,
+            int needed = contextId.length() + contextData.length() + 5;
+            if (pos + needed >= (int)sizeof(buffer) - 10) {
+                DLOG_W(LOG_WEB, "WS buffer full, skipping remaining contexts");
+                break;
+            }
+            
+            // Add comma separator if not first context
+            if (contextCount > 0) {
+                buffer[pos++] = ',';
+            }
+            
+            // Write context to buffer
+            int written = snprintf(buffer + pos, sizeof(buffer) - pos,
+                "\"%s\":%s", contextId.c_str(), contextData.c_str());
+            
+            if (written > 0 && pos + written < (int)sizeof(buffer)) {
+                pos += written;
                 contextCount++;
             }
         }
-        message += "}}";
         
-        if (message.length() < 4096) {
-            webSocket->broadcast(message);
+        // Close JSON object
+        if (pos < (int)sizeof(buffer) - 3) {
+            buffer[pos++] = '}';
+            buffer[pos++] = '}';
+            buffer[pos] = '\0';
+            
+            webSocket->broadcast(String(buffer));
             forceNextUpdate = false;
         }
     }
