@@ -214,6 +214,12 @@ public:
                     
                     // Handle state change
                     mqtt->setConfig(cfg);
+                    
+                    // Persist the change
+                    if (onConfigSaved) {
+                        onConfigSaved(cfg);
+                    }
+                    
                     if (!wasEnabled && newEnabled) {
                         // Enabling: connect
                         mqtt->connect();
