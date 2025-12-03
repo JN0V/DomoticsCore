@@ -55,6 +55,16 @@ struct StorageConfig {
     bool autoCommit = true;
 };
 
+// Key definition for registration
+struct StorageKeyDef {
+    String key;
+    char type;  // 's'=string, 'b'=bool, 'i'=int, 'f'=float, 'u'=uint64
+    String description;
+    
+    StorageKeyDef(const String& k, char t, const String& desc = "") 
+        : key(k), type(t), description(desc) {}
+};
+
 /**
  * @class DomoticsCore::Components::StorageComponent
  * @brief Key-value storage manager with HAL abstraction for multi-platform support.
@@ -70,6 +80,7 @@ private:
     Utils::NonBlockingDelay statusTimer;
     Utils::NonBlockingDelay maintenanceTimer;
     std::map<String, StorageEntry> cache;
+    std::vector<StorageKeyDef> registeredKeys;  // Keys registered by components
     bool isOpen;
     size_t entryCount;
     
@@ -392,14 +403,15 @@ public:
         return storageConfig.namespace_name;
     }
     
-    String getStorageInfo() const {
+    String getStorageInfo() {
         String info = "Storage: HAL PlatformStorage";
         info += "\nNamespace: " + storageConfig.namespace_name;
         info += "\nOpen: " + String(isOpen ? "Yes" : "No");
         info += "\nRead-only: " + String(storageConfig.readOnly ? "Yes" : "No");
         if (isOpen) {
-            info += "\nEntries: " + String(entryCount) + "/" + String(storageConfig.maxEntries);
-            info += "\nCached: " + String(cache.size());
+            size_t storedCount = getStoredKeyCount();
+            info += "\nRegistered keys: " + String(registeredKeys.size());
+            info += "\nStored values: " + String(storedCount);
         }
         return info;
     }
@@ -408,13 +420,90 @@ public:
         std::vector<String> keys;
         if (!isOpen) return keys;
         
-        // Note: Storage backend may not provide a direct way to list all keys
-        // We return cached keys instead
-        for (const auto& pair : cache) {
-            keys.push_back(pair.first);
+        // Return registered keys that exist in storage
+        for (const auto& kd : registeredKeys) {
+            if (exists(kd.key)) {
+                keys.push_back(kd.key);
+            }
         }
         
         return keys;
+    }
+    
+    /**
+     * @brief Register storage keys for a component
+     * @param componentName Name of the component registering keys
+     * @param keys Vector of key definitions
+     */
+    void registerKeys(const String& componentName, const std::vector<StorageKeyDef>& keys) {
+        for (const auto& key : keys) {
+            registeredKeys.push_back(key);
+        }
+        DLOG_D(LOG_STORAGE, "Registered %d keys for %s", keys.size(), componentName.c_str());
+    }
+    
+    /**
+     * @brief Get number of registered keys that exist in storage
+     */
+    size_t getStoredKeyCount() {
+        size_t count = 0;
+        for (const auto& kd : registeredKeys) {
+            if (exists(kd.key)) count++;
+        }
+        return count;
+    }
+    
+    /**
+     * @brief Dump all registered configuration keys and their values
+     * @return Formatted string with all keys and values
+     */
+    String dumpContents() {
+        if (!isOpen) return "Storage: Not open\n";
+        
+        String result = "Storage Contents (namespace: " + storageConfig.namespace_name + "):\n";
+        result += "──────────────────────────────────────\n";
+        
+        if (registeredKeys.empty()) {
+            result += "  (no keys registered)\n";
+        } else {
+            int found = 0;
+            for (const auto& kd : registeredKeys) {
+                if (exists(kd.key)) {
+                    found++;
+                    result += "  ";
+                    result += kd.key;
+                    result += " = ";
+                    
+                    if (kd.type == 'b') {
+                        result += getBool(kd.key, false) ? "true" : "false";
+                    } else if (kd.type == 'i') {
+                        result += String(getInt(kd.key, 0));
+                    } else if (kd.type == 'f') {
+                        result += String(getFloat(kd.key, 0.0f), 2);
+                    } else if (kd.type == 'u') {
+                        result += String((unsigned long)getULong64(kd.key, 0));
+                    } else {
+                        String val = getString(kd.key, "");
+                        // Mask passwords
+                        if (kd.key.indexOf("pass") >= 0 && val.length() > 0) {
+                            result += "****";
+                        } else {
+                            result += "\"" + val + "\"";
+                        }
+                    }
+                    result += "\n";
+                }
+            }
+            
+            if (found == 0) {
+                result += "  (no stored values found)\n";
+            }
+            
+            result += "──────────────────────────────────────\n";
+            result += "Registered: " + String(registeredKeys.size()) + " keys, Found: " + String(found) + " stored\n";
+        }
+        
+        return result;
     }
 
 private:

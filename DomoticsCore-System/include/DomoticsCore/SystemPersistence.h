@@ -54,6 +54,91 @@ namespace DomoticsCore {
 namespace SystemHelpers {
 
 /**
+ * @brief Register all known storage keys with the Storage component
+ * Each component's keys are registered so Storage can enumerate them
+ */
+inline void registerStorageKeys(Core& core, const SystemConfig& config) {
+#if SYSTEM_HAS_STORAGE
+    if (!config.enableStorage) return;
+    
+    auto* storage = core.getComponent<Components::StorageComponent>("Storage");
+    if (!storage) return;
+    
+    using KeyDef = Components::StorageKeyDef;
+    
+    // Device keys
+    storage->registerKeys("System", {
+        KeyDef("device_name", 's', "Device name")
+    });
+    
+    // WiFi keys
+    storage->registerKeys("WiFi", {
+        KeyDef("wifi_ssid", 's', "WiFi SSID"),
+        KeyDef("wifi_pass", 's', "WiFi password"),
+        KeyDef("wifi_autocon", 'b', "Auto-connect"),
+        KeyDef("wifi_ap_en", 'b', "AP mode enabled"),
+        KeyDef("wifi_ap_ssid", 's', "AP SSID"),
+        KeyDef("wifi_ap_pass", 's', "AP password")
+    });
+    
+    // WebUI keys
+#if __has_include(<DomoticsCore/WebUI.h>)
+    if (config.enableWebUI) {
+        storage->registerKeys("WebUI", {
+            KeyDef("webui_theme", 's', "Theme"),
+            KeyDef("webui_color", 's', "Primary color"),
+            KeyDef("webui_auth", 'b', "Auth enabled"),
+            KeyDef("webui_user", 's', "Username"),
+            KeyDef("webui_pass", 's', "Password")
+        });
+    }
+#endif
+    
+    // NTP keys
+#if __has_include(<DomoticsCore/NTP.h>)
+    if (config.enableNTP) {
+        storage->registerKeys("NTP", {
+            KeyDef("ntp_enabled", 'b', "NTP enabled"),
+            KeyDef("ntp_timezone", 's', "Timezone"),
+            KeyDef("ntp_interval", 'i', "Sync interval"),
+            KeyDef("ntp_servers", 's', "NTP servers")
+        });
+    }
+#endif
+    
+    // MQTT keys
+#if __has_include(<DomoticsCore/MQTT.h>)
+    if (config.enableMQTT) {
+        storage->registerKeys("MQTT", {
+            KeyDef("mqtt_enabled", 'b', "MQTT enabled"),
+            KeyDef("mqtt_broker", 's', "Broker address"),
+            KeyDef("mqtt_port", 'i', "Broker port"),
+            KeyDef("mqtt_user", 's', "Username"),
+            KeyDef("mqtt_pass", 's', "Password"),
+            KeyDef("mqtt_clientid", 's', "Client ID")
+        });
+    }
+#endif
+    
+    // HomeAssistant keys
+#if __has_include(<DomoticsCore/HomeAssistant.h>)
+    if (config.enableHomeAssistant) {
+        storage->registerKeys("HomeAssistant", {
+            KeyDef("ha_nodeid", 's', "Node ID"),
+            KeyDef("ha_device_name", 's', "Device name"),
+            KeyDef("ha_disc_prefix", 's', "Discovery prefix"),
+            KeyDef("ha_mfg", 's', "Manufacturer"),
+            KeyDef("ha_model", 's', "Model"),
+            KeyDef("ha_sw_ver", 's', "Software version")
+        });
+    }
+#endif
+    
+    DLOG_I(LOG_PERSISTENCE, "Storage keys registered");
+#endif
+}
+
+/**
  * @brief Load device name from Storage
  */
 inline void loadDeviceName(Core& core, SystemConfig& config) {
@@ -192,6 +277,7 @@ inline void loadMQTTConfig(Core& core, const SystemConfig& config) {
     
     Components::MQTTConfig mqttConfig = mqtt->getConfig();
     
+    mqttConfig.enabled = storage->getBool("mqtt_enabled", mqttConfig.enabled);
     mqttConfig.broker = storage->getString("mqtt_broker", mqttConfig.broker);
     mqttConfig.port = (uint16_t)storage->getInt("mqtt_port", mqttConfig.port);
     mqttConfig.username = storage->getString("mqtt_user", mqttConfig.username);
@@ -199,8 +285,8 @@ inline void loadMQTTConfig(Core& core, const SystemConfig& config) {
     mqttConfig.clientId = storage->getString("mqtt_clientid", mqttConfig.clientId);
     
     mqtt->setConfig(mqttConfig);
-    DLOG_I(LOG_PERSISTENCE, "Loaded MQTT config: broker=%s:%d", 
-           mqttConfig.broker.c_str(), mqttConfig.port);
+    DLOG_I(LOG_PERSISTENCE, "Loaded MQTT config: enabled=%d, broker=%s:%d", 
+           mqttConfig.enabled, mqttConfig.broker.c_str(), mqttConfig.port);
 #endif
 }
 
@@ -233,6 +319,10 @@ inline void loadHomeAssistantConfig(Core& core, const SystemConfig& config) {
  * @brief Load all configurations from Storage
  */
 inline void loadAllConfigs(Core& core, SystemConfig& config, Components::WifiComponent* wifi) {
+    // First register all storage keys so they can be enumerated
+    registerStorageKeys(core, config);
+    
+    // Then load configurations
     loadDeviceName(core, config);
     loadWifiConfig(core, config, wifi);
     loadWebUIConfig(core, config);

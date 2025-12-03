@@ -246,6 +246,7 @@ private:
         
         console->registerCommand("status", [this](const String&) { return getSystemStatus(); });
         console->registerCommand("wifi", [this](const String&) { return getWiFiStatus(); });
+        console->registerCommand("storage", [this](const String& args) { return getStorageContents(args); });
         
         core.addComponent(std::move(consolePtr));
         DLOG_I(LOG_SYSTEM, "✓ RemoteConsole enabled (port %d)", config.consolePort);
@@ -471,6 +472,16 @@ private:
     
     String getWiFiStatus() {
         return wifi ? wifi->getDetailedStatus() : "WiFi Status: Not initialized\n";
+    }
+    
+    String getStorageContents(const String& args) {
+#if __has_include(<DomoticsCore/Storage.h>)
+        auto* storage = core.getComponent<Components::StorageComponent>("Storage");
+        if (!storage) return "Storage: Not available\n";
+        return storage->dumpContents();
+#else
+        return "Storage: Not compiled in\n";
+#endif
     }
 };
 
