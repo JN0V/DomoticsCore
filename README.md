@@ -1,12 +1,12 @@
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.3.0)
+[![Version](https://img.shields.io/badge/version-1.3.2-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.3.2)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32%20|%20ESP8266-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 1.3.0 Released!** Hardware Abstraction Layer (HAL) for ESP8266 portability + EventBus architecture with `core.on<>()`/`core.emit()` - fully decoupled components, no reboot for MQTT/HA config! See [CHANGELOG.md](CHANGELOG.md) and [Migration Guide](docs/migration/v1.2.1.md).
+> **🎉 Version 1.3.2 Released!** Performance improvements and bug fixes (WebUI + MQTT). See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
 
 ## ✨ What Makes DomoticsCore Different
 
@@ -18,6 +18,22 @@
 - **🔧 IoT Complete**: WiFi, MQTT, Home Assistant, OTA, WebUI, Storage - everything integrated and tested
 
 > **Note:** Components are mostly header-only (`.h` files) for zero overhead and simple integration. This is a standard C++ pattern, not ESP32-specific. See [Architecture Guide](docs/architecture.md#header-only-design) for details.
+
+## 📷 Screenshots
+
+WebUI and Home Assistant integration (from the [WaterMeter showcase](https://github.com/JN0V/WaterMeter)):
+
+All screenshots are anonymized (WiFi SSID, passwords, and internal IP addresses are redacted).
+
+![WebUI Dashboard](screenshots/webui-dashboard.png)
+
+![WebUI Settings](screenshots/webui-settings.png)
+
+![WebUI Components](screenshots/webui-components.png)
+
+![WebUI OTA / SystemInfo / HomeAssistant](screenshots/webui-ota-systeminfo-ha.png)
+
+![Home Assistant Device](screenshots/homeassistant-device.png)
 
 ## 🚀 Quick Start (3 Minutes)
 
@@ -110,7 +126,25 @@ Binary size: **~300KB** (vs 1MB+ for full system)
 
 ## 📦 Installation
 
-### PlatformIO (Recommended)
+### PlatformIO Registry (Recommended)
+
+DomoticsCore is available on the PlatformIO Registry:
+
+- https://registry.platformio.org/libraries/jn0v/DomoticsCore
+
+Add to your `platformio.ini`:
+
+```ini
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+
+lib_deps =
+    jn0v/DomoticsCore@^1.3.2
+```
+
+### PlatformIO (GitHub)
 
 Add to your `platformio.ini`:
 
@@ -121,7 +155,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps = 
-    https://github.com/JN0V/DomoticsCore.git#v1.3.0
+    https://github.com/JN0V/DomoticsCore.git#v1.3.2
 ```
 
 ### Specific Components Only
@@ -223,7 +257,6 @@ The bump script:
 
 - **[Getting Started Guide](docs/getting-started.md)** - Comprehensive tutorial
 - **[Architecture Guide](docs/architecture.md)** - Design decisions and patterns
-- **[Migration Guide v1.2.1](docs/migration/v1.2.1.md)** - Upgrading from v1.1.x
 - **[EventBus Reference](docs/reference/eventbus-architecture.md)** - Complete EventBus documentation
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history
 - **[Complete Documentation Index](docs/README.md)** - All guides and references
