@@ -5,6 +5,12 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2025-12-12
+
+### 🐛 Bug Fixes
+
+- PlatformIO Registry: include WebUI build script (`DomoticsCore-WebUI/embed_webui.py`) and WebUI sources (`DomoticsCore-WebUI/webui_src`) in the exported package
+
 ## [1.3.2] - 2025-12-03
 
 ### ⚡ Performance
@@ -21,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 📝 Notes
 
-- Release history around 1.3.x was rebuilt during stabilization; `v1.3.2` is the authoritative tag for the current `main` lineage.
+- Release history around 1.3.x was rebuilt during stabilization; `v1.3.3` is the authoritative tag for the current `main` lineage.
 
 ## [1.3.0] - 2025-11-30
 
