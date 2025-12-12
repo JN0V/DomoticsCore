@@ -5,6 +5,24 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2025-12-03
+
+### ⚡ Performance
+
+- WebUI: use a static 8KB buffer for WebSocket updates
+
+### ✨ Improvements
+
+- WebUI: add JS/CSS/HTML minification before gzip embedding
+
+### 🐛 Bug Fixes
+
+- MQTT: fix enabled persistence and storage key registration
+
+### 📝 Notes
+
+- Release history around 1.3.x was rebuilt during stabilization; `v1.3.2` is the authoritative tag for the current `main` lineage.
+
 ## [1.3.0] - 2025-11-30
 
 ### 🏗️ Architecture: Hardware Abstraction Layer (HAL)

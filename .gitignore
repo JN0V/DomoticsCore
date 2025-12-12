@@ -52,6 +52,9 @@ pip-delete-this-directory.txt
 *.backup
 *~
 
+# Screenshots (keep only redacted images under screenshots/)
+screenshots/raw/
+
 # Local release/marketing files (not committed)
 docs/RELEASE_GUIDE.md
 docs/ANNOUNCEMENT_TEMPLATES.md
