@@ -90,11 +90,11 @@ public:
      * @param config Storage configuration
      */
     StorageComponent(const StorageConfig& config = StorageConfig()) 
-        : storageConfig(config), statusTimer(30000), maintenanceTimer(300000), // 5 minutes
+        : storageConfig(config), statusTimer(300000), maintenanceTimer(300000), // 5 minutes each
           isOpen(false), entryCount(0) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "Storage";
-        metadata.version = "1.3.1";
+        metadata.version = "1.3.2";
         metadata.author = "DomoticsCore";
         metadata.description = "Key-value storage component for preferences and app data";
         metadata.category = "Storage";

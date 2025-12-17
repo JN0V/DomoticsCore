@@ -5,6 +5,98 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-12-17
+
+### ✨ New Features
+
+#### BootDiagnostics (SystemInfo + System + Storage)
+
+Persistent boot diagnostics for debugging unexpected reboots without serial access.
+
+**Architecture:**
+- **SystemInfo**: Captures volatile data at boot (reset_reason, heap)
+- **System**: Orchestrates persistence via Storage component
+- **Storage**: Persists boot_count and reset info (uses HAL abstraction)
+
+**Data Captured/Persisted:**
+- `boot_count`: Incrementing boot counter (persisted via Storage)
+- `last_reset_reason`: ESP32 reset reason code (captured + persisted)
+- `last_boot_heap`: Free heap at boot time (captured + persisted)
+- `last_boot_min_heap`: Minimum free heap at boot (captured + persisted)
+
+**Reset Reason Mapping:**
+Human-readable strings for all ESP32 reset reasons:
+- Power-on, Software reset, Panic/Exception
+- Interrupt watchdog, Task watchdog, Other watchdog
+- Deep sleep wake, Brownout, External reset, SDIO reset
+
+**API:**
+```cpp
+const BootDiagnostics& diag = systemInfo->getBootDiagnostics();
+Serial.printf("Boot #%u, Reset: %s\n", diag.bootCount, diag.getResetReasonString().c_str());
+if (diag.wasUnexpectedReset()) {
+    Serial.println("Warning: Previous boot ended unexpectedly!");
+}
+```
+
+**RemoteConsole Command:**
+```
+> bootdiag
+Boot Diagnostics:
+  Boot Count: 42
+  Reset Reason: Power-on
+  Boot Heap: 245760 bytes
+  Boot Min Heap: 245760 bytes
+
+Persisted Data:
+  boot_count: 42
+  last_reset: 1
+  last_heap: 245760
+  last_minheap: 245760
+```
+
+**Configuration:**
+```cpp
+SystemInfoConfig config;
+config.enableBootDiagnostics = true;   // Enable capture (default: true)
+// Persistence handled automatically by System via Storage component
+```
+
+### 🐛 Bug Fixes
+
+#### HomeAssistant: `isReady()` Always Returning False (Issue #2)
+
+**Problem:** `isReady()` always returned `false` because `availabilityPublished` was never set to `true` after successfully publishing availability.
+
+**Fix:** Added `availabilityPublished = available;` in `setAvailable()` after successful MQTT publish.
+
+**Impact:** Code relying on `isReady()` now correctly reflects component readiness.
+
+### ⚡ Performance
+
+#### Storage: Reduced Periodic Log Verbosity (Issue #1)
+
+**Problem:** Storage status logs were emitted every 30 seconds, creating noise and potentially masking important warnings.
+
+**Fix:** Increased `statusTimer` interval from 30 seconds to 5 minutes (300s), matching the maintenance timer.
+
+### 🔄 Component Versions
+
+| Component | Previous | New |
+|-----------|----------|-----|
+| **DomoticsCore** | 1.3.3 | 1.4.0 |
+| **DomoticsCore-System** | 1.3.1 | 1.4.0 |
+| **DomoticsCore-SystemInfo** | 1.3.0 | 1.4.0 |
+| **DomoticsCore-HomeAssistant** | 1.2.2 | 1.2.3 |
+| **DomoticsCore-Storage** | 1.3.1 | 1.3.2 |
+
+### 📚 References
+
+- Closes #1 (BootDiagnostics + Storage verbosity)
+- Closes #2 (HomeAssistant isReady() bug)
+
+---
+
 ## [1.3.3] - 2025-12-12
 
 ### 🐛 Bug Fixes

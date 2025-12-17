@@ -68,7 +68,7 @@ public:
         : config(config) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "HomeAssistant";
-        metadata.version = "1.2.2";
+        metadata.version = "1.2.3";
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
         if (this->config.availabilityTopic.isEmpty()) {
@@ -299,6 +299,7 @@ public:
         bool published = mqttPublish(config.availabilityTopic, payload, 0, true);
         if (published) {
             DLOG_I(LOG_HA, "  ✓ Availability published");
+            availabilityPublished = available;  // Fix: track availability state for isReady()
         } else {
             DLOG_E(LOG_HA, "  ✗ Failed to publish availability!");
         }

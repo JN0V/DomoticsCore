@@ -136,7 +136,10 @@ public:
         // 5. Setup event orchestration
         setupEventOrchestration();
         
-        // 6. System Ready
+        // 6. Initialize boot diagnostics persistence
+        initBootDiagnosticsPersistence();
+        
+        // 7. System Ready
         setState(SystemState::READY);
         printReadyBanner();
         
@@ -247,6 +250,7 @@ private:
         console->registerCommand("status", [this](const String&) { return getSystemStatus(); });
         console->registerCommand("wifi", [this](const String&) { return getWiFiStatus(); });
         console->registerCommand("storage", [this](const String& args) { return getStorageContents(args); });
+        console->registerCommand("bootdiag", [this](const String&) { return getBootDiagnostics(); });
         
         core.addComponent(std::move(consolePtr));
         DLOG_I(LOG_SYSTEM, "✓ RemoteConsole enabled (port %d)", config.consolePort);
@@ -339,6 +343,44 @@ private:
         DLOG_I(LOG_SYSTEM, "✓ SystemInfo component added");
 #else
         if (config.enableSystemInfo) DLOG_W(LOG_SYSTEM, "⚠️  SystemInfo requested but library not installed");
+#endif
+    }
+    
+    // ========== Boot Diagnostics Persistence ==========
+    
+    /**
+     * @brief Initialize boot diagnostics persistence via Storage
+     * 
+     * Loads boot_count from Storage, increments it, saves back,
+     * and updates SystemInfo component with the value.
+     */
+    void initBootDiagnosticsPersistence() {
+#if __has_include(<DomoticsCore/Storage.h>) && __has_include(<DomoticsCore/SystemInfo.h>)
+        if (!config.enableStorage || !config.enableSystemInfo) return;
+        
+        auto* storage = core.getComponent<Components::StorageComponent>("Storage");
+        auto* sysInfo = core.getComponent<Components::SystemInfoComponent>("System Info");
+        
+        if (!storage || !sysInfo) {
+            DLOG_W(LOG_SYSTEM, "Boot diagnostics: Storage or SystemInfo not available");
+            return;
+        }
+        
+        // Load and increment boot count
+        uint32_t bootCount = storage->getInt("boot_count", 0) + 1;
+        storage->putInt("boot_count", static_cast<int32_t>(bootCount));
+        
+        // Get boot diagnostics from SystemInfo and update boot count
+        const auto& diag = sysInfo->getBootDiagnostics();
+        sysInfo->setBootCount(bootCount);
+        
+        // Persist last reset info for debugging
+        storage->putInt("last_reset", static_cast<int32_t>(diag.resetReason));
+        storage->putInt("last_heap", static_cast<int32_t>(diag.lastBootHeap));
+        storage->putInt("last_minheap", static_cast<int32_t>(diag.lastBootMinHeap));
+        
+        DLOG_I(LOG_SYSTEM, "Boot #%u persisted (Reset: %s)", 
+               bootCount, diag.getResetReasonString().c_str());
 #endif
     }
     
@@ -481,6 +523,41 @@ private:
         return storage->dumpContents();
 #else
         return "Storage: Not compiled in\n";
+#endif
+    }
+    
+    String getBootDiagnostics() {
+#if __has_include(<DomoticsCore/SystemInfo.h>)
+        auto* sysInfo = core.getComponent<Components::SystemInfoComponent>("System Info");
+        if (!sysInfo) return "Boot Diagnostics: SystemInfo not available\n";
+        
+        const auto& diag = sysInfo->getBootDiagnostics();
+        if (!diag.valid) return "Boot Diagnostics: Not captured\n";
+        
+        String result = "Boot Diagnostics:\n";
+        result += "  Boot Count: " + String(diag.bootCount) + "\n";
+        result += "  Reset Reason: " + diag.getResetReasonString() + "\n";
+        result += "  Boot Heap: " + String(diag.lastBootHeap) + " bytes\n";
+        result += "  Boot Min Heap: " + String(diag.lastBootMinHeap) + " bytes\n";
+        
+        if (diag.wasUnexpectedReset()) {
+            result += "  ⚠ WARNING: Previous boot ended unexpectedly!\n";
+        }
+        
+        // Also show persisted history from Storage
+#if __has_include(<DomoticsCore/Storage.h>)
+        auto* storage = core.getComponent<Components::StorageComponent>("Storage");
+        if (storage) {
+            result += "\nPersisted Data:\n";
+            result += "  boot_count: " + String(storage->getInt("boot_count", 0)) + "\n";
+            result += "  last_reset: " + String(storage->getInt("last_reset", -1)) + "\n";
+            result += "  last_heap: " + String(storage->getInt("last_heap", 0)) + "\n";
+            result += "  last_minheap: " + String(storage->getInt("last_minheap", 0)) + "\n";
+        }
+#endif
+        return result;
+#else
+        return "Boot Diagnostics: SystemInfo not compiled in\n";
 #endif
     }
 };
