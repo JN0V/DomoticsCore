@@ -15,6 +15,34 @@ namespace DomoticsCore {
 namespace Components {
 
 /**
+ * Boot diagnostics data structure
+ * 
+ * Volatile data (reset_reason, heap) captured by SystemInfo at boot.
+ * Persistent data (bootCount) managed by System via Storage component.
+ */
+struct BootDiagnostics {
+    uint32_t bootCount = 0;              // Incrementing boot counter (set by System via Storage)
+    HAL::SystemInfo::ResetReason resetReason = HAL::SystemInfo::ResetReason::Unknown;
+    uint32_t lastBootHeap = 0;           // Free heap at boot (captured at boot)
+    uint32_t lastBootMinHeap = 0;        // Min free heap at boot (captured at boot)
+    bool valid = false;                  // Data captured successfully
+    
+    /**
+     * @brief Get human-readable reset reason string (delegates to HAL)
+     */
+    String getResetReasonString() const {
+        return HAL::SystemInfo::getResetReasonString(resetReason);
+    }
+    
+    /**
+     * @brief Check if last reset was unexpected (delegates to HAL)
+     */
+    bool wasUnexpectedReset() const {
+        return HAL::SystemInfo::wasUnexpectedReset(resetReason);
+    }
+};
+
+/**
  * System Information Component Configuration
  */
 struct SystemInfoConfig {
@@ -27,6 +55,9 @@ struct SystemInfoConfig {
     bool enableDetailedInfo = true;     // Include detailed chip info
     bool enableMemoryInfo = true;       // Include memory statistics
     int updateInterval = 5000;          // Update interval in ms
+    
+    // Boot diagnostics settings
+    bool enableBootDiagnostics = true;  // Enable boot diagnostics capture
 };
 
 /**
@@ -44,6 +75,9 @@ class SystemInfoComponent : public IComponent {
 protected:
     SystemInfoConfig config;
     unsigned long lastUpdate = 0;
+    
+    // Boot diagnostics (volatile data captured at boot, bootCount set by System)
+    BootDiagnostics bootDiag;
     
     // Cached system info to avoid repeated ESP calls
     struct SystemMetrics {
@@ -128,11 +162,15 @@ public:
     SystemInfoComponent(const SystemInfoConfig& cfg = SystemInfoConfig()) 
         : config(cfg) {
         metadata.name = "System Info";
-        metadata.version = "1.3.0";
+        metadata.version = "1.4.0";
     }
 
     // IComponent interface
     ComponentStatus begin() override {
+        // Initialize boot diagnostics before metrics
+        if (config.enableBootDiagnostics) {
+            initBootDiagnostics();
+        }
         updateMetrics();
         return ComponentStatus::Success;
     }
@@ -150,6 +188,17 @@ public:
     // Public accessors for metrics (for WebUI extensions)
     const SystemMetrics& getMetrics() const { return metrics; }
     
+    // Boot diagnostics accessors
+    const BootDiagnostics& getBootDiagnostics() const { return bootDiag; }
+    
+    /**
+     * @brief Set boot count (called by System after loading from Storage)
+     * @param count Boot count value from persistent storage
+     */
+    void setBootCount(uint32_t count) {
+        bootDiag.bootCount = count;
+    }
+    
     // Standard config accessors (matching other components)
     const SystemInfoConfig& getConfig() const { return config; }
     void setConfig(const SystemInfoConfig& cfg) {
@@ -166,6 +215,31 @@ public:
     void forceUpdateMetrics() { updateMetrics(); } // For WebUI extensions
 
 private:
+    /**
+     * @brief Capture volatile boot diagnostics (reset reason, heap)
+     * 
+     * Only captures data available at boot time. Boot count is managed
+     * separately by System component via Storage for persistence.
+     */
+    void initBootDiagnostics() {
+        // Capture volatile data at boot using HAL abstraction
+        bootDiag.resetReason = HAL::SystemInfo::getResetReason();
+        bootDiag.lastBootHeap = HAL::SystemInfo::getFreeHeap();
+        bootDiag.lastBootMinHeap = HAL::SystemInfo::getMinFreeHeap();
+        bootDiag.valid = true;
+        
+        DLOG_I(LOG_SYSTEM, "Boot diagnostics captured: Reset=%s, Heap=%u/%u",
+               bootDiag.getResetReasonString().c_str(),
+               bootDiag.lastBootHeap,
+               bootDiag.lastBootMinHeap);
+        
+        // Warn if unexpected reset
+        if (bootDiag.wasUnexpectedReset()) {
+            DLOG_W(LOG_SYSTEM, "⚠ Previous boot ended unexpectedly: %s",
+                   bootDiag.getResetReasonString().c_str());
+        }
+    }
+    
     void updateMetrics() {
         metrics.freeHeap = HAL::SystemInfo::getFreeHeap();
         metrics.totalHeap = HAL::SystemInfo::getTotalHeap();

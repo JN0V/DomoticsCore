@@ -13,6 +13,10 @@
 
 #include "DomoticsCore/Platform_HAL.h"
 
+#if DOMOTICS_PLATFORM_ESP32
+#include <esp_system.h>
+#endif
+
 namespace DomoticsCore {
 namespace HAL {
 namespace SystemInfo {
@@ -168,6 +172,96 @@ inline uint64_t getChipId() {
 #else
     return 0;
 #endif
+}
+
+// ============================================================================
+// Boot Diagnostics
+// ============================================================================
+
+/**
+ * @brief Reset reason codes (platform-agnostic)
+ */
+enum class ResetReason : uint8_t {
+    Unknown = 0,
+    PowerOn = 1,
+    External = 2,
+    Software = 3,
+    Panic = 4,
+    IntWatchdog = 5,
+    TaskWatchdog = 6,
+    Watchdog = 7,
+    DeepSleep = 8,
+    Brownout = 9,
+    SDIO = 10
+};
+
+/**
+ * @brief Get the reset reason for the last boot
+ */
+inline ResetReason getResetReason() {
+#if DOMOTICS_PLATFORM_ESP32
+    switch (esp_reset_reason()) {
+        case ESP_RST_POWERON:   return ResetReason::PowerOn;
+        case ESP_RST_EXT:       return ResetReason::External;
+        case ESP_RST_SW:        return ResetReason::Software;
+        case ESP_RST_PANIC:     return ResetReason::Panic;
+        case ESP_RST_INT_WDT:   return ResetReason::IntWatchdog;
+        case ESP_RST_TASK_WDT:  return ResetReason::TaskWatchdog;
+        case ESP_RST_WDT:       return ResetReason::Watchdog;
+        case ESP_RST_DEEPSLEEP: return ResetReason::DeepSleep;
+        case ESP_RST_BROWNOUT:  return ResetReason::Brownout;
+        case ESP_RST_SDIO:      return ResetReason::SDIO;
+        default:                return ResetReason::Unknown;
+    }
+#elif DOMOTICS_PLATFORM_ESP8266
+    // ESP8266 has limited reset reason support
+    struct rst_info* resetInfo = ESP.getResetInfoPtr();
+    if (resetInfo) {
+        switch (resetInfo->reason) {
+            case REASON_DEFAULT_RST:      return ResetReason::PowerOn;
+            case REASON_WDT_RST:          return ResetReason::Watchdog;
+            case REASON_EXCEPTION_RST:    return ResetReason::Panic;
+            case REASON_SOFT_WDT_RST:     return ResetReason::TaskWatchdog;
+            case REASON_SOFT_RESTART:     return ResetReason::Software;
+            case REASON_DEEP_SLEEP_AWAKE: return ResetReason::DeepSleep;
+            case REASON_EXT_SYS_RST:      return ResetReason::External;
+            default:                      return ResetReason::Unknown;
+        }
+    }
+    return ResetReason::Unknown;
+#else
+    return ResetReason::Unknown;
+#endif
+}
+
+/**
+ * @brief Get human-readable reset reason string
+ */
+inline String getResetReasonString(ResetReason reason) {
+    switch (reason) {
+        case ResetReason::PowerOn:      return "Power-on";
+        case ResetReason::External:     return "External reset";
+        case ResetReason::Software:     return "Software reset";
+        case ResetReason::Panic:        return "Panic/Exception";
+        case ResetReason::IntWatchdog:  return "Interrupt watchdog";
+        case ResetReason::TaskWatchdog: return "Task watchdog";
+        case ResetReason::Watchdog:     return "Other watchdog";
+        case ResetReason::DeepSleep:    return "Deep sleep wake";
+        case ResetReason::Brownout:     return "Brownout";
+        case ResetReason::SDIO:         return "SDIO reset";
+        default:                        return "Unknown";
+    }
+}
+
+/**
+ * @brief Check if reset reason indicates an unexpected/crash reset
+ */
+inline bool wasUnexpectedReset(ResetReason reason) {
+    return reason == ResetReason::Panic ||
+           reason == ResetReason::IntWatchdog ||
+           reason == ResetReason::TaskWatchdog ||
+           reason == ResetReason::Watchdog ||
+           reason == ResetReason::Brownout;
 }
 
 } // namespace SystemInfo
