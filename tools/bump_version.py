@@ -182,7 +182,7 @@ def update_metadata_versions(component_dir: Path, new_version: str, dry_run: boo
 
     for src in iter_source_files(component_dir):
         text = read_text(src)
-        new_text, count = pattern.subn(rf'\1{new_version}\3', text)
+        new_text, count = pattern.subn(r'\g<1>' + new_version + r'\g<3>', text)
         if count > 0:
             any_changes = True
             if dry_run:
