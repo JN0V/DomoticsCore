@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-Core",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "DomoticsCore core runtime (Core, ComponentRegistry, IComponent, Logger, EventBus)",
   "keywords": ["esp32", "domotics", "core", "eventbus"],
   "repository": {

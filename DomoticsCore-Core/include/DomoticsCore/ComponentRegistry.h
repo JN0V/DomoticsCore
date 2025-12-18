@@ -165,6 +165,8 @@ public:
                     DLOG_W(LOG_CORE, "Component %s shutdown warning: %s", 
                            component->metadata.name.c_str(), statusToString(status));
                 }
+                // Clean up EventBus subscriptions for this component
+                eventBus.unsubscribeOwner(component);
                 component->setActive(false);
             }
         }
@@ -184,6 +186,8 @@ public:
         if (comp->isActive()) {
             DLOG_I(LOG_CORE, "Shutting down component (remove): %s", name.c_str());
             comp->shutdown();
+            // Clean up EventBus subscriptions for this component
+            eventBus.unsubscribeOwner(comp);
             comp->setActive(false);
         }
         // Notify listeners
