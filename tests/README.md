@@ -1,18 +1,22 @@
 # DomoticsCore Tests
 
-Unit tests for DomoticsCore framework features.
+Unit tests and integration tests for DomoticsCore framework features.
 
 ## Structure
 
 ```
 tests/
-├── unit/
+├── unit/                            # Unit tests (run on native platform)
 │   ├── 01-optional-dependencies/    # v1.0.3: Optional dependency support
 │   ├── 02-lifecycle-callback/       # v1.1: afterAllComponentsReady() lifecycle
-│   ├── 03-bug2-early-init/          # Bug reproduction: Early-init scenario
-│   └── 04-system-scenario/          # Bug reproduction: System.begin() scenario
+│   ├── 05-storage-namespace/        # Storage namespace isolation
+│   └── 06-webui-refactor/           # WebUI refactoring tests
+├── integration/                     # Integration tests (run on ESP32 hardware)
+│   └── (hardware-specific tests)
 └── README.md
 ```
+
+**Note**: Tests 03 and 04 (early-init bug reproductions) were deleted in v1.2.x as the early-init anti-pattern was eliminated from the codebase.
 
 ## Running Tests
 
@@ -64,33 +68,6 @@ Tests the `afterAllComponentsReady()` lifecycle hook.
 ✅ All components accessible in afterAllComponentsReady()
 🎉 TEST PASSED!
 ```
-
-### 03-bug2-early-init
-
-Reproduction test for reported Bug #2: Early-init + optional dependencies crash.
-
-**What it tests:**
-- Custom component with optional dependency on Storage
-- Storage early-initialized before `core.begin()`
-- Verifies no crash occurs
-- Validates early-init detection works
-
-**Result:** ✅ Bug NOT reproducible - test passes
-**Conclusion:** Early-init pattern works correctly with optional dependencies
-
-### 04-system-scenario
-
-Exact reproduction of System::begin() scenario with early-init.
-
-**What it tests:**
-- WaterMeter component added before System::begin()
-- WaterMeter declares optional dependency on Storage
-- Storage early-initialized (System pattern)
-- Core.begin() called
-- Verifies no crash and Storage accessible
-
-**Result:** ✅ No crash - System pattern works correctly
-**Conclusion:** Bug reports not reproducible with v1.1.0 code
 
 ## Adding New Tests
 

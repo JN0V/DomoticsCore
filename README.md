@@ -1,12 +1,12 @@
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-1.3.3-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.3.3)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.5.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32%20|%20ESP8266-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 1.3.3 Released!** PlatformIO Registry packaging fix (WebUI build script/assets). See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
+> **🎉 Version 1.5.0 Released!** EventBus cleanup fix, isolated unit tests (37 tests), mock infrastructure, spec-kit integration. See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
 
 ## ✨ What Makes DomoticsCore Different
 
