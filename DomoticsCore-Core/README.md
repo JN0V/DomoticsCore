@@ -42,9 +42,11 @@ void loop() {
 
 Main behaviors:
 - **Component lifecycle**: each component gets `begin()`, `loop()`, `shutdown()` calls from the `Core`.
+- **Dependency resolution**: components declare dependencies via `getDependencies()`, initialized in topological order.
 - **Registry**: components can be resolved by type or name via `ComponentRegistry`.
 - **Configuration**: components declare typed configuration parameters through `ComponentConfig`.
 - **Event bus**: publish/subscribe enables decoupled messaging between components.
+- **Lifecycle events**: `EVENT_COMPONENT_READY`, `EVENT_SYSTEM_READY`, `EVENT_STORAGE_READY`, `EVENT_NETWORK_READY`.
 - **Diagnostics**: `Logger` and `Timer` utilities help with non-blocking work and instrumentation.
 
 ## Public Headers

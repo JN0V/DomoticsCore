@@ -5,6 +5,47 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2025-12-18
+
+### 🔧 Bug Fixes
+
+- **EventBus cleanup**: `ComponentRegistry::shutdownAll()` and `removeComponent()` now properly call `unsubscribeOwner()` to prevent memory leaks
+- **Storage HAL**: Fixed `sprintf` → `snprintf` for bounds safety in hex encoding
+- **bump_version.py**: Fixed regex group reference bug with version numbers containing digits
+
+### 🧪 Testing Infrastructure
+
+- **Isolated unit tests**: 37 tests across 5 components (NTP:7, MQTT:7, HA:7, WebUI:8, OTA:8)
+- **Mock infrastructure**: Created mocks for WiFiHAL, MQTTClient, EventBus, Storage, NTPClient, AsyncWebServer
+- **CI integration**: `local_ci.sh` now runs isolated tests automatically
+- All tests run on native platform without hardware/network dependencies
+
+### 🛠️ Development Tools
+
+- **spec-kit integration**: Added `.windsurf/workflows/` with speckit workflows for specification-driven development
+  - `/speckit.specify` - Create/update feature specifications
+  - `/speckit.plan` - Generate implementation plans
+  - `/speckit.tasks` - Generate actionable task lists
+  - `/speckit.implement` - Execute implementation with progress tracking
+  - `/speckit.analyze` - Cross-artifact consistency analysis
+  - `/speckit.checklist` - Custom checklist generation
+  - `/speckit.clarify` - Specification clarification
+  - `/speckit.constitution` - Project constitution management
+
+### 📋 Known Issues (Documented)
+
+- **EventBus not thread-safe**: No mutex protection on ESP32 dual-core (low risk - callbacks run on same core)
+- **const_cast in MQTT**: PubSubClient::connected() not const (library limitation)
+- **Lambda [this] captures**: Safe when component lifecycle managed by Core
+
+### 📦 Version Bumps
+
+- **DomoticsCore-Core**: 1.3.0 → 1.4.0 (minor - EventBus cleanup feature)
+- **DomoticsCore-Storage**: 1.3.2 → 1.3.3 (patch - sprintf fix)
+- **Root library**: 1.4.0 → 1.5.0 (minor)
+
+---
+
 ## [1.4.0] - 2025-12-17
 
 ### ✨ New Features

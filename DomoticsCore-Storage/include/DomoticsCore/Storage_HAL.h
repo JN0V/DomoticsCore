@@ -308,7 +308,7 @@ public:
         String hex;
         for (size_t i = 0; i < len; i++) {
             char buf[3];
-            sprintf(buf, "%02X", data[i]);
+            snprintf(buf, sizeof(buf), "%02X", data[i]);
             hex += buf;
         }
         doc[key] = hex;

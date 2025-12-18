@@ -3,6 +3,13 @@
 namespace DomoticsCore {
 namespace Events {
 
+// Lifecycle Events (Core)
+static const char* EVENT_COMPONENT_READY = "component/ready";
+static const char* EVENT_STORAGE_READY = "storage/ready";
+static const char* EVENT_NETWORK_READY = "network/ready";
+static const char* EVENT_COMPONENT_ERROR = "component/error";
+static const char* EVENT_SHUTDOWN_START = "shutdown/start";
+
 // MQTT Events
 static const char* EVENT_MQTT_CONNECTED = "mqtt/connected";
 static const char* EVENT_MQTT_DISCONNECTED = "mqtt/disconnected";
