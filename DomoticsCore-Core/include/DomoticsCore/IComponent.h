@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Arduino.h>
+#include "Platform_HAL.h"
 #include <vector>
 #include <functional>
 #include <memory>

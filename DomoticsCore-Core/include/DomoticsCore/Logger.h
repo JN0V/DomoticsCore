@@ -1,10 +1,9 @@
 #ifndef DOMOTICS_CORE_LOGGER_H
 #define DOMOTICS_CORE_LOGGER_H
 
-#include <Arduino.h>
+#include "Platform_HAL.h"
 #include <vector>
 #include <functional>
-#include "DomoticsCore/Platform_HAL.h"
 
 // Log levels enum
 enum LogLevel {

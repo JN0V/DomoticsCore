@@ -1,4 +1,3 @@
-#include <Arduino.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/ComponentRegistry.h>
@@ -26,12 +25,12 @@ public:
     }
 
     ComponentStatus begin() override {
-        lastTick_ = millis();
+        lastTick_ = HAL::getMillis();
         return ComponentStatus::Success;
     }
 
     void loop() override {
-        unsigned long now = millis();
+        unsigned long now = HAL::getMillis();
         if (now - lastTick_ >= intervalMs_) {
             lastTick_ = now;
             counter_ = (counter_ + 128) & 0x3FF; // 0..1023
@@ -89,14 +88,14 @@ public:
     }
 
     ComponentStatus begin() override {
-        pinMode(ledPin_, OUTPUT);
+        HAL::pinMode(ledPin_, OUTPUT);
         // Subscribe via framework-provided EventBus helper (replayLast=true to get last sticky value immediately)
         subId_ = eventBus().subscribe(SENSOR_UPDATE_TOPIC, [this](const void* payload){
             auto* p = static_cast<const int*>(payload);
             if (!p) return;
             bool on = (*p >= threshold_);
             DLOG_I(LOG_APP, "[Consumer] sensor.update value=%d -> LED %s", *p, on ? "ON" : "OFF");
-            digitalWrite(ledPin_, on ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
+            HAL::digitalWrite(ledPin_, on ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
         }, this, true);
         return ComponentStatus::Success;
     }
@@ -105,7 +104,7 @@ public:
 
     ComponentStatus shutdown() override {
         eventBus().unsubscribeOwner(this);
-        digitalWrite(ledPin_, HAL::ledBuiltinOff());
+        HAL::digitalWrite(ledPin_, HAL::ledBuiltinOff());
         return ComponentStatus::Success;
     }
 
@@ -118,9 +117,8 @@ private:
 Core core;
 
 void setup() {
-    // Initialize Serial early for logging before core initialization
-    Serial.begin(115200);
-    delay(100);
+    // Initialize early for logging before core initialization
+    HAL::initializeLogging(115200);
 
     // ============================================================================
     // EXAMPLE 03: EventBus Basics

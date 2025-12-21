@@ -1,5 +1,5 @@
-#include <Arduino.h>
 #include <DomoticsCore/Core.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/ComponentRegistry.h>
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Timer.h>
@@ -14,9 +14,8 @@ using namespace DomoticsCore::Components;
 Core core;
 
 void setup() {
-    // Initialize Serial early for logging before core initialization
-    Serial.begin(115200);
-    delay(100);
+    // Initialize early for logging before core initialization
+    HAL::initializeLogging(115200);
     
     // ============================================================================
     // EXAMPLE 02: Core with Custom Components
