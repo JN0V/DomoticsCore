@@ -1,13 +1,13 @@
 <!--
 Sync Impact Report:
-- Version change: 1.3.0 → 1.4.0 (added semantic versioning discipline)
-- Modified principles: None
-- Added sections: XIV. Semantic Versioning Discipline
+- Version change: 1.4.0 → 1.5.0 (strengthened HAL isolation rule)
+- Modified principles: IX. Hardware Abstraction Layer (HAL) - strengthened #ifdef isolation
+- Added sections: None
 - Removed sections: None
 - Templates updated:
-  - .specify/templates/plan-template.md: ✅ Updated with versioning check
-  - .specify/templates/spec-template.md: ✅ No changes needed
-  - .specify/templates/tasks-template.md: ✅ Updated with versioning compliance
+  - .specify/templates/plan-template.md: ⚠ Check HAL compliance
+  - .specify/templates/spec-template.md: ⚠ Check HAL compliance
+  - .specify/templates/tasks-template.md: ⚠ Check HAL compliance
 - Follow-up TODOs: None
 -->
 
@@ -116,17 +116,29 @@ This is an EXISTING project being brought to best practices:
 
 ## Code Organization Standards
 
-### IX. Hardware Abstraction Layer (HAL)
+### IX. Hardware Abstraction Layer (HAL) — #ifdef Isolation (NON-NEGOTIABLE)
 
-All hardware-specific code MUST be isolated in HAL files:
+All platform-specific code MUST be isolated in HAL files. **`#ifdef` platform directives are FORBIDDEN everywhere except HAL files.**
 
-- **File Naming**: Hardware-specific files MUST be suffixed with `_HAL` (e.g., `WiFi_HAL.h`, `Storage_HAL.h`)
-- **Location**: HAL files reside in `DomoticsCore-Core/include/DomoticsCore/HAL/`
-- **Platform Isolation**: HAL files contain `#ifdef` blocks for platform-specific implementations
-- **Clean Interface**: Non-HAL code MUST NOT contain platform-specific `#ifdef` directives
-- **Portability**: Adding a new platform requires ONLY changes to HAL files
+- **File Naming**: Platform-specific files use `{Component}_HAL.h` (routing header) and `{Component}_ESP32.h`, `{Component}_ESP8266.h`, `{Component}_Stub.h` (implementations)
+- **Location**: HAL files reside in `DomoticsCore-{Component}/include/DomoticsCore/`
+- **#ifdef ONLY in HAL**: The ONLY place `#ifdef DOMOTICS_PLATFORM_*` or `#if defined(ESP32)` may appear is inside HAL routing headers and platform-specific implementation files
+- **FORBIDDEN Locations**: Business logic, components, examples, applications, and utility files MUST NOT contain any `#ifdef` for platform detection
+- **Platform Utilities**: If a platform provides utilities (e.g., ESP32 logging macros), the HAL MUST define equivalent macros/functions for other platforms so consumers see a unified API
+- **Portability Guarantee**: Adding a new platform requires ONLY changes to HAL files — zero changes to business code
 
-**Rationale**: HAL isolation enables ESP32/ESP8266 portability and simplifies platform-specific testing.
+**Example — Logging:**
+```cpp
+// WRONG - #ifdef in Logger.h (business code)
+#if DOMOTICS_PLATFORM_ESP8266
+    #define log_i(...) Serial.printf(...)
+#endif
+
+// CORRECT - Platform_ESP8266.h defines log macros
+// Logger.h uses log_i() without any #ifdef
+```
+
+**Rationale**: HAL isolation guarantees that business code is platform-agnostic, testable in native environments, and maintainable without platform expertise.
 
 ### X. Non-Blocking Timer Pattern
 
@@ -328,4 +340,4 @@ python tools/bump_version.py MQTT minor --dry-run --verbose
 - **PR Review**: Verify SOLID compliance, EventBus usage, performance impact
 - **Release**: Verify binary sizes, memory usage, documentation completeness
 
-**Version**: 1.4.0 | **Ratified**: 2025-12-17 | **Last Amended**: 2025-12-17
+**Version**: 1.5.0 | **Ratified**: 2025-12-17 | **Last Amended**: 2025-12-19
