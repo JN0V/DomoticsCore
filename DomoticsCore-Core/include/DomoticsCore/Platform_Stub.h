@@ -291,6 +291,27 @@ inline void pinMode(uint8_t pin, uint8_t mode) {
 }
 
 /**
+ * @brief Write analog/PWM value to pin (stub implementation)
+ */
+inline void analogWrite(uint8_t pin, int value) {
+    // Stub implementation - no actual PWM on native platform
+    (void)pin;
+    (void)value;
+}
+
+/**
+ * @brief Map a number from one range to another (stub implementation)
+ */
+inline long map(long value, long fromLow, long fromHigh, long toLow, long toHigh) {
+    return (value - fromLow) * (toHigh - toLow) / (fromHigh - fromLow) + toLow;
+}
+
+/**
+ * @brief Mathematical constant PI for stub platform
+ */
+constexpr double PI = 3.141592653589793238462643383279502884197169399375105820974944592307816406286;
+
+/**
  * @brief Built-in LED pin number for stub platform
  */
 #define LED_BUILTIN 0

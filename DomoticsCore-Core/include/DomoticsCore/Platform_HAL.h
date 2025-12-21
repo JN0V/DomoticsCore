@@ -309,9 +309,28 @@ inline void pinMode(uint8_t pin, uint8_t mode) {
 }
 
 /**
+ * @brief Write analog/PWM value to pin (delegates to Platform namespace)
+ */
+inline void analogWrite(uint8_t pin, int value) {
+    Platform::analogWrite(pin, value);
+}
+
+/**
+ * @brief Map a number from one range to another (delegates to Platform namespace)
+ */
+inline long map(long value, long fromLow, long fromHigh, long toLow, long toHigh) {
+    return Platform::map(value, fromLow, fromHigh, toLow, toHigh);
+}
+
+/**
  * @brief SHA256 - use Platform::SHA256 directly or this alias
  */
 using SHA256 = Platform::SHA256;
+
+/**
+ * @brief Mathematical constant PI for platform independence
+ */
+constexpr double PI = Platform::PI;
 
 } // namespace HAL
 } // namespace DomoticsCore

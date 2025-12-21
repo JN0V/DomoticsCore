@@ -233,6 +233,25 @@ inline void pinMode(uint8_t pin, uint8_t mode) {
 }
 
 /**
+ * @brief Write analog/PWM value to pin for ESP8266
+ */
+inline void analogWrite(uint8_t pin, int value) {
+    ::analogWrite(pin, value);
+}
+
+/**
+ * @brief Map a number from one range to another for ESP8266 (calls Arduino's map)
+ */
+inline long map(long value, long fromLow, long fromHigh, long toLow, long toHigh) {
+    return ::map(value, fromLow, fromHigh, toLow, toHigh);
+}
+
+/**
+ * @brief Mathematical constant PI for ESP8266 (uses Arduino's PI)
+ */
+constexpr double PI = ::PI;
+
+/**
  * @brief Built-in LED pin number for ESP8266
  */
 #define LED_BUILTIN 2
