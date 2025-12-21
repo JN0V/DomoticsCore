@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <vector>
 #include <functional>
+#include "DomoticsCore/Platform_HAL.h"
 
 // Log levels enum
 enum LogLevel {

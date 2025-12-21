@@ -4,6 +4,7 @@
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Timer.h>
+#include <DomoticsCore/Platform_HAL.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -52,16 +53,15 @@ public:
           counter(0), 
           simulateWork(cfg.enableWork),
           dependencies(deps) {
-    }
-    
-    ComponentStatus begin() override {
-        DLOG_I(LOG_APP, "TestComponent '%s' initializing...", componentName.c_str());
-        
-        // Initialize component metadata
+        // Initialize component metadata in constructor for dependency resolution
         metadata.name = componentName;
         metadata.version = "1.0.0-test";
         metadata.author = "DomoticsCore Example";
         metadata.description = "Test component for demonstration";
+    }
+    
+    ComponentStatus begin() override {
+        DLOG_I(LOG_APP, "TestComponent '%s' initializing...", componentName.c_str());
         
         // Simulate some initialization work
         delay(50);
@@ -183,7 +183,7 @@ public:
     LEDBlinkerComponent(int pin, unsigned long blinkInterval = 1000) 
         : ledPin(pin), blinkTimer(blinkInterval), ledState(false), blinkEnabled(true) {
         pinMode(ledPin, OUTPUT);
-        digitalWrite(ledPin, LOW);
+        digitalWrite(ledPin, HAL::ledBuiltinOff());  // Turn LED off initially
     }
     
     ComponentStatus begin() override {
@@ -196,7 +196,7 @@ public:
         metadata.description = "LED blinker component for hardware demonstration";
         
         pinMode(ledPin, OUTPUT);
-        digitalWrite(ledPin, LOW);
+        digitalWrite(ledPin, HAL::ledBuiltinOff());  // Turn LED off initially
         ledState = false;
         setStatus(ComponentStatus::Success);
         DLOG_I(LOG_APP, "LEDBlinker initialized successfully");
@@ -206,14 +206,14 @@ public:
     void loop() override {
         if (blinkEnabled && blinkTimer.isReady()) {
             ledState = !ledState;
-            digitalWrite(ledPin, ledState ? HIGH : LOW);
+            digitalWrite(ledPin, ledState ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
             DLOG_D(LOG_APP, "LED %s", ledState ? "ON" : "OFF");
         }
     }
     
     ComponentStatus shutdown() override {
         DLOG_I(LOG_APP, "LEDBlinker shutting down...");
-        digitalWrite(ledPin, LOW);
+        digitalWrite(ledPin, HAL::ledBuiltinOff());
         blinkEnabled = false;
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
@@ -227,7 +227,7 @@ public:
     void setEnabled(bool enabled) {
         blinkEnabled = enabled;
         if (!enabled) {
-            digitalWrite(ledPin, LOW);
+            digitalWrite(ledPin, HAL::ledBuiltinOff());
             ledState = false;
         }
         DLOG_I(LOG_APP, "LED blinking %s", enabled ? "enabled" : "disabled");

@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <vector>
 #include <map>
+#include <climits>
 
 namespace DomoticsCore {
 namespace Components {
@@ -303,8 +304,8 @@ private:
     ValidationResult validateIPAddress(const ConfigParam& param, const String& value) const {
         // Simple IP address validation
         int parts = 0;
-        int start = 0;
-        for (int i = 0; i <= value.length(); i++) {
+        unsigned int start = 0;
+        for (unsigned int i = 0; i <= value.length(); i++) {
             if (i == value.length() || value[i] == '.') {
                 if (i == start) {
                     return ValidationResult(ComponentStatus::ConfigError, 

@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <DomoticsCore/Core.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/EventBus.h>
 #include <DomoticsCore/Logger.h>
@@ -27,7 +28,7 @@ public:
     return ComponentStatus::Success;
   }
   void loop() override {
-    if (!done_ && millis() - start_ > 1500) {
+    if (!done_ && millis() - start_ > 3000) {
       done_ = true;
       bool ready = true;
       eventBus().publishSticky(TOPIC_A_READY, ready);
@@ -52,7 +53,7 @@ public:
     return ComponentStatus::Success;
   }
   void loop() override {
-    if (!done_ && millis() - start_ > 3000) {
+    if (!done_ && millis() - start_ > 6000) {
       done_ = true;
       bool ready = true;
       eventBus().publishSticky(TOPIC_B_READY, ready);
@@ -115,10 +116,11 @@ public:
   }
   ComponentStatus begin() override {
     pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, HAL::ledBuiltinOff());  // Start with LED OFF
     sub_ = eventBus().subscribe(TOPIC_SYSTEM_READY, [this](const void* p){
       auto* v = static_cast<const bool*>(p);
       bool on = (v && *v);
-      digitalWrite(LED_BUILTIN, on ? HIGH : LOW);
+      digitalWrite(LED_BUILTIN, on ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
       DLOG_I(LOG_APP, "[ReadyLED] %s -> LED %s", TOPIC_SYSTEM_READY, on ? "ON" : "OFF");
     }, this, true); // replay in case already ready
     return ComponentStatus::Success;
@@ -126,7 +128,7 @@ public:
   void loop() override {}
   ComponentStatus shutdown() override {
     eventBus().unsubscribeOwner(this);
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(LED_BUILTIN, HAL::ledBuiltinOff());
     return ComponentStatus::Success;
   }
 private:
@@ -136,6 +138,29 @@ private:
 Core core;
 
 void setup() {
+  // Initialize Serial early for logging before core initialization
+  Serial.begin(115200);
+  delay(100);
+
+  // ============================================================================
+  // EXAMPLE 04: EventBus Coordinators Pattern
+  // ============================================================================
+  // This example demonstrates the coordinator pattern using EventBus:
+  // - ServiceA becomes ready after 3.0s and publishes service.a.ready=true
+  // - ServiceB becomes ready after 6.0s and publishes service.b.ready=true  
+  // - Coordinator listens to both services and publishes system.ready=true when both are ready
+  // - ReadyLEDConsumer turns LED ON when system.ready=true
+  // Expected: LED turns ON after 6 seconds (when both services are ready)
+  // ============================================================================
+  
+  DLOG_I(LOG_APP, "=== EventBus Coordinators Example ===");
+  DLOG_I(LOG_APP, "ServiceA will be ready after 3.0s");
+  DLOG_I(LOG_APP, "ServiceB will be ready after 6.0s");
+  DLOG_I(LOG_APP, "Coordinator will publish system.ready when both services are ready");
+  DLOG_I(LOG_APP, "LED will turn ON when system.ready=true");
+  DLOG_I(LOG_APP, "====================================");
+
+    
   CoreConfig cfg;
   cfg.deviceName = "EventBusCoordinators";
   cfg.logLevel = 3;
