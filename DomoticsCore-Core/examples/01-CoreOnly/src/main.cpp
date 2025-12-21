@@ -1,4 +1,3 @@
-#include <Arduino.h>
 #include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Timer.h>
@@ -14,8 +13,7 @@ Utils::NonBlockingDelay statusTimer(30000);    // 30 second status
 
 void setup() {
     // Initialize Serial early for logging before core initialization
-    Serial.begin(115200);
-    delay(100);
+    HAL::initializeLogging(115200);
 
     // ============================================================================
     // EXAMPLE 01: Core Only

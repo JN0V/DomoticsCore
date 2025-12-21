@@ -15,8 +15,6 @@
  * - Arduino ARM (limited support - planned)
  */
 
-#include <Arduino.h>
-
 // ============================================================================
 // Platform Detection
 // ============================================================================
@@ -147,6 +145,76 @@ namespace DomoticsCore {
 namespace HAL {
 
 /**
+ * @brief Initialize platform-specific logging system
+ */
+inline void initializeLogging(long baudrate = 115200) {
+    Platform::initializeLogging(baudrate);
+}
+
+/**
+ * @brief Check if logging system is ready
+ */
+inline bool isLoggerReady() {
+    return Platform::isLoggerReady();
+}
+
+/**
+ * @brief Get current milliseconds
+ */
+inline unsigned long getMillis() {
+    return Platform::getMillis();
+}
+
+/**
+ * @brief Delay execution
+ */
+inline void delay(unsigned long ms) {
+    Platform::delay(ms);
+}
+
+/**
+ * @brief Format chip ID as hexadecimal string
+ */
+inline String formatChipIdHex() {
+    return Platform::formatChipIdHex();
+}
+
+/**
+ * @brief Convert string to uppercase
+ */
+inline String toUpperCase(const String& str) {
+    return Platform::toUpperCase(str);
+}
+
+/**
+ * @brief Get substring of string
+ */
+inline String substring(const String& str, int start, int end = -1) {
+    return Platform::substring(str, start, end);
+}
+
+/**
+ * @brief Find index of character in string
+ */
+inline int indexOf(const String& str, char ch) {
+    return Platform::indexOf(str, ch);
+}
+
+/**
+ * @brief Check if string starts with prefix
+ */
+inline bool startsWith(const String& str, const String& prefix) {
+    return Platform::startsWith(str, prefix);
+}
+
+/**
+ * @brief Check if string ends with suffix
+ */
+inline bool endsWith(const String& str, const String& suffix) {
+    return Platform::endsWith(str, suffix);
+}
+
+/**
  * @brief Get platform name as string
  */
 inline const char* getPlatformName() {
@@ -224,6 +292,20 @@ inline int ledBuiltinOff() {
  */
 inline bool isInternalLEDInverted() {
     return Platform::isInternalLEDInverted();
+}
+
+/**
+ * @brief Write digital value to pin (delegates to Platform namespace)
+ */
+inline void digitalWrite(uint8_t pin, uint8_t value) {
+    Platform::digitalWrite(pin, value);
+}
+
+/**
+ * @brief Set pin mode (delegates to Platform namespace)
+ */
+inline void pinMode(uint8_t pin, uint8_t mode) {
+    Platform::pinMode(pin, mode);
 }
 
 /**

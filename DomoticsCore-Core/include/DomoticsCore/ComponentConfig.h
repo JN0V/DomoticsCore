@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Arduino.h>
 #include <vector>
 #include <map>
 #include <climits>
@@ -311,7 +310,7 @@ private:
                     return ValidationResult(ComponentStatus::ConfigError, 
                                           "Invalid IP address format", param.name);
                 }
-                String part = value.substring(start, i);
+                String part = HAL::substring(value, start, i);
                 int num = part.toInt();
                 if (num < 0 || num > 255) {
                     return ValidationResult(ComponentStatus::ConfigError, 

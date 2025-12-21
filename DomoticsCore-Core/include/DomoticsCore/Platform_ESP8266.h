@@ -11,6 +11,7 @@
 
 #if DOMOTICS_PLATFORM_ESP8266
 
+#include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <user_interface.h>
 #include <bearssl/bearssl_hash.h>
@@ -25,6 +26,80 @@
 namespace DomoticsCore {
 namespace HAL {
 namespace Platform {
+
+/**
+ * @brief Initialize logging system for ESP8266
+ */
+inline void initializeLogging(long baudrate = 115200) {
+    Serial.begin(baudrate);
+    delay(500);
+}
+
+/**
+ * @brief Check if logging system is ready for ESP8266
+ */
+inline bool isLoggerReady() {
+    return Serial;
+}
+
+/**
+ * @brief Get current milliseconds for ESP8266
+ */
+inline unsigned long getMillis() {
+    return millis();
+}
+
+/**
+ * @brief Delay execution for ESP8266
+ */
+inline void delay(unsigned long ms) {
+    delay(ms);
+}
+
+/**
+ * @brief Format chip ID as hexadecimal string for ESP8266
+ */
+inline String formatChipIdHex() {
+    uint32_t chipid = ESP.getChipId();
+    return String(chipid, HEX);
+}
+
+/**
+ * @brief Convert string to uppercase for ESP8266
+ */
+inline String toUpperCase(const String& str) {
+    String result = str;
+    result.toUpperCase();
+    return result;
+}
+
+/**
+ * @brief Get substring of string for ESP8266
+ */
+inline String substring(const String& str, int start, int end = -1) {
+    return str.substring(start, end);
+}
+
+/**
+ * @brief Find index of character in string for ESP8266
+ */
+inline int indexOf(const String& str, char ch) {
+    return str.indexOf(ch);
+}
+
+/**
+ * @brief Check if string starts with prefix for ESP8266
+ */
+inline bool startsWith(const String& str, const String& prefix) {
+    return str.startsWith(prefix);
+}
+
+/**
+ * @brief Check if string ends with suffix for ESP8266
+ */
+inline bool endsWith(const String& str, const String& suffix) {
+    return str.endsWith(suffix);
+}
 
 /**
  * @brief Get chip model/ID for ESP8266
@@ -142,6 +217,25 @@ private:
     bool active = false;
     br_sha256_context ctx;
 };
+
+/**
+ * @brief Write digital value to pin for ESP8266
+ */
+inline void digitalWrite(uint8_t pin, uint8_t value) {
+    ::digitalWrite(pin, value);
+}
+
+/**
+ * @brief Set pin mode for ESP8266
+ */
+inline void pinMode(uint8_t pin, uint8_t mode) {
+    ::pinMode(pin, mode);
+}
+
+/**
+ * @brief Built-in LED pin number for ESP8266
+ */
+#define LED_BUILTIN 2
 
 } // namespace Platform
 } // namespace HAL

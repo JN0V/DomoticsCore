@@ -1,6 +1,5 @@
 #pragma once
-
-#include <Arduino.h>
+#include <DomoticsCore/Platform_HAL.h>
 
 namespace DomoticsCore {
 namespace Utils {
@@ -21,7 +20,7 @@ public:
      * @param intervalMs Delay interval in milliseconds (default: 1000ms)
      */
     NonBlockingDelay(unsigned long intervalMs = 1000) 
-        : previousMillis(0), interval(intervalMs), enabled(true) {}
+        : previousMillis(HAL::getMillis()), interval(intervalMs), enabled(true) {}
     
     /**
      * Check if the delay period has elapsed
@@ -29,7 +28,7 @@ public:
      */
     bool isReady() {
         if (!enabled) return false;
-        unsigned long currentMillis = millis();
+        unsigned long currentMillis = HAL::getMillis();
         if (currentMillis - previousMillis >= interval) {
             previousMillis = currentMillis;
             return true;
@@ -41,7 +40,7 @@ public:
      * Reset the timer to current time
      */
     void reset() { 
-        previousMillis = millis(); 
+        previousMillis = HAL::getMillis(); 
     }
     
     /**
@@ -88,7 +87,7 @@ public:
      */
     unsigned long remaining() const {
         if (!enabled) return 0;
-        unsigned long elapsed = millis() - previousMillis;
+        unsigned long elapsed = HAL::getMillis() - previousMillis;
         return (elapsed >= interval) ? 0 : (interval - elapsed);
     }
     
@@ -97,7 +96,7 @@ public:
      * @return Elapsed milliseconds
      */
     unsigned long elapsed() const {
-        return millis() - previousMillis;
+        return HAL::getMillis() - previousMillis;
     }
 };
 

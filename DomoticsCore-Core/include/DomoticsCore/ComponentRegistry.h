@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Arduino.h>
 #include <vector>
 #include <map>
 #include <memory>
@@ -118,7 +117,7 @@ public:
         }
         
         initialized = true;
-        DLOG_I(LOG_CORE, "All components initialized successfully (%d components)", initializationOrder.size());
+        DLOG_I(LOG_CORE, "All components initialized successfully (%zu components)", initializationOrder.size());
 
         // Post-initialization hooks for components
         for (auto* component : initializationOrder) {

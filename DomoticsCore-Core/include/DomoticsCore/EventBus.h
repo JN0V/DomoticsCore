@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Arduino.h>
 #include <functional>
 #include <vector>
 #include <map>
 #include <queue>
 #include <algorithm>
+#include <DomoticsCore/Platform_HAL.h>
+
 // Minimal core event enum kept here to avoid extra headers.
 namespace DomoticsCore { namespace Utils { enum class EventType : uint8_t { Custom = 1 }; }}
 
@@ -220,21 +221,21 @@ private:
 
     static bool isWildcard(const String& topic) {
         // Support prefix wildcard: e.g., "sensor.*"
-        int idx = topic.indexOf('*');
+        int idx = HAL::indexOf(topic, '*');
         return (idx >= 0);
     }
 
     static bool matchesWildcard(const String& concrete, const String& pattern) {
-        int star = pattern.indexOf('*');
+        int star = HAL::indexOf(pattern, '*');
         if (star < 0) return false; // not a wildcard pattern
         // Allow only prefix+"*" patterns for simplicity
-        String prefix = pattern.substring(0, star);
+        String prefix = HAL::substring(pattern, 0, star);
         if (star != (int)pattern.length() - 1) {
             // If pattern has chars after '*', require full match (very simple contains)
-            String suffix = pattern.substring(star + 1);
-            return concrete.startsWith(prefix) && concrete.endsWith(suffix);
+            String suffix = HAL::substring(pattern, star + 1);
+            return HAL::startsWith(concrete, prefix) && HAL::endsWith(concrete, suffix);
         }
-        return concrete.startsWith(prefix);
+        return HAL::startsWith(concrete, prefix);
     }
 
     std::map<EventType, std::vector<Subscription>> subscriptions;

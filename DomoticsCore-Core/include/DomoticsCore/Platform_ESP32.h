@@ -11,6 +11,7 @@
 
 #if DOMOTICS_PLATFORM_ESP32
 
+#include <Arduino.h>
 #include <esp_system.h>
 #include <esp_chip_info.h>
 #include <mbedtls/sha256.h>
@@ -18,6 +19,81 @@
 namespace DomoticsCore {
 namespace HAL {
 namespace Platform {
+
+/**
+ * @brief Initialize logging system for ESP32
+ */
+inline void initializeLogging(long baudrate = 115200) {
+    Serial.begin(baudrate);
+    delay(100);
+}
+
+/**
+ * @brief Check if logging system is ready for ESP32
+ */
+inline bool isLoggerReady() {
+    return Serial;
+}
+
+/**
+ * @brief Get current milliseconds for ESP32
+ */
+inline unsigned long getMillis() {
+    return millis();
+}
+
+/**
+ * @brief Delay execution for ESP32
+ */
+inline void delay(unsigned long ms) {
+    delay(ms);
+}
+
+/**
+ * @brief Format chip ID as hexadecimal string for ESP32
+ */
+inline String formatChipIdHex() {
+    uint64_t chipid = ESP.getEfuseMac();
+    uint32_t id = (uint32_t)(chipid >> 24) ^ (uint32_t)(chipid);
+    return String(id, HEX);
+}
+
+/**
+ * @brief Convert string to uppercase for ESP32
+ */
+inline String toUpperCase(const String& str) {
+    String result = str;
+    result.toUpperCase();
+    return result;
+}
+
+/**
+ * @brief Get substring of string for ESP32
+ */
+inline String substring(const String& str, int start, int end = -1) {
+    return str.substring(start, end);
+}
+
+/**
+ * @brief Find index of character in string for ESP32
+ */
+inline int indexOf(const String& str, char ch) {
+    return str.indexOf(ch);
+}
+
+/**
+ * @brief Check if string starts with prefix for ESP32
+ */
+inline bool startsWith(const String& str, const String& prefix) {
+    return str.startsWith(prefix);
+}
+
+/**
+ * @brief Check if string ends with suffix for ESP32
+ */
+inline bool endsWith(const String& str, const String& suffix) {
+    return str.endsWith(suffix);
+}
 
 /**
  * @brief Get chip model/ID for ESP32
@@ -139,6 +215,25 @@ private:
     bool active = false;
     mbedtls_sha256_context ctx;
 };
+
+/**
+ * @brief Write digital value to pin for ESP32
+ */
+inline void digitalWrite(uint8_t pin, uint8_t value) {
+    ::digitalWrite(pin, value);
+}
+
+/**
+ * @brief Set pin mode for ESP32
+ */
+inline void pinMode(uint8_t pin, uint8_t mode) {
+    ::pinMode(pin, mode);
+}
+
+/**
+ * @brief Built-in LED pin number for ESP32
+ */
+#define LED_BUILTIN 2
 
 } // namespace Platform
 } // namespace HAL

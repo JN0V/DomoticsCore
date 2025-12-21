@@ -23,15 +23,14 @@ bool Core::begin(const CoreConfig& cfg) {
     config = cfg;
     
     // Initialize Serial if not already done
-    if (!Serial) {
-        Serial.begin(115200);
-        delay(100);
+    if (!HAL::isLoggerReady()) {
+        HAL::initializeLogging(115200);
     }
     
-    // Generate device ID if not provided
+    // Generate unique device ID if not provided
     if (config.deviceId.isEmpty()) {
-        config.deviceId = "DC" + String((uint32_t)HAL::getChipId(), HEX);
-        config.deviceId.toUpperCase();
+        config.deviceId = "DC" + HAL::formatChipIdHex();
+        config.deviceId = HAL::toUpperCase(config.deviceId);
     }
     
     DLOG_I(LOG_CORE, "DomoticsCore initializing...");
@@ -61,10 +60,10 @@ void Core::loop() {
     
     // Core minimal heartbeat
     static unsigned long lastHeartbeat = 0;
-    if (millis() - lastHeartbeat >= 60000) { // Every minute
-        lastHeartbeat = millis();
-        DLOG_D(LOG_CORE, "Core heartbeat - uptime: %lu seconds, components: %d", 
-               millis() / 1000, componentRegistry.getComponentCount());
+    if (HAL::getMillis() - lastHeartbeat >= 60000) { // Every minute
+        lastHeartbeat = HAL::getMillis();
+        DLOG_D(LOG_CORE, "Core heartbeat - uptime: %lu seconds, components: %zu", 
+               HAL::getMillis() / 1000, componentRegistry.getComponentCount());
     }
 }
 

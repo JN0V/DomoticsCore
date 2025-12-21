@@ -1,4 +1,3 @@
-#include <Arduino.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/IComponent.h>
@@ -24,11 +23,11 @@ public:
     metadata.version = "1.0.0";
   }
   ComponentStatus begin() override {
-    start_ = millis();
+    start_ = HAL::getMillis();
     return ComponentStatus::Success;
   }
   void loop() override {
-    if (!done_ && millis() - start_ > 3000) {
+    if (!done_ && HAL::getMillis() - start_ > 3000) {
       done_ = true;
       bool ready = true;
       eventBus().publishSticky(TOPIC_A_READY, ready);
@@ -49,11 +48,11 @@ public:
     metadata.version = "1.0.0";
   }
   ComponentStatus begin() override {
-    start_ = millis();
+    start_ = HAL::getMillis();
     return ComponentStatus::Success;
   }
   void loop() override {
-    if (!done_ && millis() - start_ > 6000) {
+    if (!done_ && HAL::getMillis() - start_ > 6000) {
       done_ = true;
       bool ready = true;
       eventBus().publishSticky(TOPIC_B_READY, ready);
@@ -115,12 +114,12 @@ public:
     metadata.version = "1.0.0";
   }
   ComponentStatus begin() override {
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, HAL::ledBuiltinOff());  // Start with LED OFF
+    HAL::pinMode(LED_BUILTIN, OUTPUT);
+    HAL::digitalWrite(LED_BUILTIN, HAL::ledBuiltinOff());  // Start with LED OFF
     sub_ = eventBus().subscribe(TOPIC_SYSTEM_READY, [this](const void* p){
       auto* v = static_cast<const bool*>(p);
       bool on = (v && *v);
-      digitalWrite(LED_BUILTIN, on ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
+      HAL::digitalWrite(LED_BUILTIN, on ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
       DLOG_I(LOG_APP, "[ReadyLED] %s -> LED %s", TOPIC_SYSTEM_READY, on ? "ON" : "OFF");
     }, this, true); // replay in case already ready
     return ComponentStatus::Success;
@@ -128,7 +127,7 @@ public:
   void loop() override {}
   ComponentStatus shutdown() override {
     eventBus().unsubscribeOwner(this);
-    digitalWrite(LED_BUILTIN, HAL::ledBuiltinOff());
+    HAL::digitalWrite(LED_BUILTIN, HAL::ledBuiltinOff());
     return ComponentStatus::Success;
   }
 private:
@@ -138,9 +137,8 @@ private:
 Core core;
 
 void setup() {
-  // Initialize Serial early for logging before core initialization
-  Serial.begin(115200);
-  delay(100);
+  // Initialize early for logging before core initialization
+  HAL::initializeLogging(115200);
 
   // ============================================================================
   // EXAMPLE 04: EventBus Coordinators Pattern

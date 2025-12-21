@@ -5,7 +5,6 @@
  * @brief Declares the DomoticsCore::Core runtime responsible for component lifecycle and registry.
  */
 
-#include <Arduino.h>
 #include <memory>
 #include "Logger.h"
 #include "Timer.h"
