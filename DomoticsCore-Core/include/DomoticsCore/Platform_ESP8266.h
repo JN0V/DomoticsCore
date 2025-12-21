@@ -93,6 +93,14 @@ inline int ledBuiltinOff() {
 }
 
 /**
+ * @brief Check if internal LED (LED_BUILTIN) has inverted logic on ESP8266
+ * @return true (ESP8266 LED is active-low)
+ */
+inline bool isInternalLEDInverted() {
+    return true;  // ESP8266: active-low LED
+}
+
+/**
  * @brief SHA256 hash computation for ESP8266 using BearSSL.
  */
 class SHA256 {

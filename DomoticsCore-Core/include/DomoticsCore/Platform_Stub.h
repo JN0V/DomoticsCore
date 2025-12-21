@@ -87,6 +87,30 @@ inline float getTemperature() {
 }
 
 /**
+ * @brief Get the correct value to turn LED_BUILTIN ON for stub platform
+ * @return HIGH (default active-high)
+ */
+inline int ledBuiltinOn() {
+    return HIGH;  // Default: active-high
+}
+
+/**
+ * @brief Get the correct value to turn LED_BUILTIN OFF for stub platform
+ * @return LOW (default active-high)
+ */
+inline int ledBuiltinOff() {
+    return LOW;   // Default: active-high
+}
+
+/**
+ * @brief Check if internal LED (LED_BUILTIN) has inverted logic on stub platform
+ * @return false (default active-high)
+ */
+inline bool isInternalLEDInverted() {
+    return false;  // Default: active-high
+}
+
+/**
  * @brief SHA256 hash computation (stub - no-op).
  */
 class SHA256 {

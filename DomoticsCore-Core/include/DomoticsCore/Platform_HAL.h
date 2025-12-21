@@ -219,6 +219,14 @@ inline int ledBuiltinOff() {
 }
 
 /**
+ * @brief Check if internal LED (LED_BUILTIN) has inverted logic
+ * @return true if LED is active-low (ESP8266), false if active-high (ESP32)
+ */
+inline bool isInternalLEDInverted() {
+    return Platform::isInternalLEDInverted();
+}
+
+/**
  * @brief SHA256 - use Platform::SHA256 directly or this alias
  */
 using SHA256 = Platform::SHA256;
