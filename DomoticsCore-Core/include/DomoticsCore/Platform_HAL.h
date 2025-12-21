@@ -128,19 +128,19 @@
 #define DOMOTICS_SUPPORTS_FULL_FRAMEWORK() (DOMOTICS_RAM_SIZE_KB >= 80)
 
 // ============================================================================
-// Platform-specific Includes
+// Platform-specific Implementation Files
 // ============================================================================
 
 #if DOMOTICS_PLATFORM_ESP32
-    #include <esp_system.h>
-    #include <esp_chip_info.h>
+    #include "Platform_ESP32.h"
 #elif DOMOTICS_PLATFORM_ESP8266
-    #include <ESP8266WiFi.h>
-    #include <user_interface.h>
+    #include "Platform_ESP8266.h"
+#else
+    #include "Platform_Stub.h"
 #endif
 
 // ============================================================================
-// Utility Functions
+// Backward-Compatible API (delegates to Platform namespace)
 // ============================================================================
 
 namespace DomoticsCore {
@@ -154,56 +154,31 @@ inline const char* getPlatformName() {
 }
 
 /**
- * @brief Get chip model/ID
+ * @brief Get chip model/ID (delegates to Platform namespace)
  */
 inline String getChipModel() {
-#if DOMOTICS_PLATFORM_ESP32
-    return String(ESP.getChipModel());
-#elif DOMOTICS_PLATFORM_ESP8266
-    return "ESP8266";
-#elif DOMOTICS_PLATFORM_AVR
-    return "ATmega";
-#elif DOMOTICS_PLATFORM_ARM
-    return "ARM Cortex";
-#else
-    return "Unknown";
-#endif
+    return Platform::getChipModel();
 }
 
 /**
- * @brief Get chip revision
+ * @brief Get chip revision (delegates to Platform namespace)
  */
 inline uint8_t getChipRevision() {
-#if DOMOTICS_PLATFORM_ESP32
-    return ESP.getChipRevision();
-#else
-    return 0;
-#endif
+    return Platform::getChipRevision();
 }
 
 /**
- * @brief Get unique chip ID (for device identification)
+ * @brief Get unique chip ID (delegates to Platform namespace)
  */
 inline uint64_t getChipId() {
-#if DOMOTICS_PLATFORM_ESP32
-    return ESP.getEfuseMac();
-#elif DOMOTICS_PLATFORM_ESP8266
-    return ESP.getChipId();
-#else
-    return 0;
-#endif
+    return Platform::getChipId();
 }
 
 /**
- * @brief Get free heap memory
+ * @brief Get free heap memory (delegates to Platform namespace)
  */
 inline uint32_t getFreeHeap() {
-#if DOMOTICS_PLATFORM_ESP32 || DOMOTICS_PLATFORM_ESP8266
-    return ESP.getFreeHeap();
-#else
-    // No reliable way on AVR/ARM without platform-specific code
-    return 0;
-#endif
+    return Platform::getFreeHeap();
 }
 
 /**
@@ -214,119 +189,39 @@ inline uint32_t getTotalRAM_KB() {
 }
 
 /**
- * @brief Get CPU frequency in MHz
+ * @brief Get CPU frequency in MHz (delegates to Platform namespace)
  */
 inline uint32_t getCpuFreqMHz() {
-#if DOMOTICS_PLATFORM_ESP32 || DOMOTICS_PLATFORM_ESP8266
-    return ESP.getCpuFreqMHz();
-#elif DOMOTICS_PLATFORM_AVR
-    return F_CPU / 1000000UL;
-#else
-    return 0;
-#endif
+    return Platform::getCpuFreqMHz();
 }
 
 /**
- * @brief Software reset
+ * @brief Software reset (delegates to Platform namespace)
  */
 inline void restart() {
-#if DOMOTICS_PLATFORM_ESP32 || DOMOTICS_PLATFORM_ESP8266
-    ESP.restart();
-#elif DOMOTICS_PLATFORM_AVR
-    // AVR watchdog reset
-    asm volatile ("jmp 0");
-#else
-    // No reliable reset on unknown platforms
-#endif
+    Platform::restart();
 }
 
-// ============================================================================
-// Cryptographic Utilities
-// ============================================================================
-
-#if DOMOTICS_PLATFORM_ESP32
-    #include <mbedtls/sha256.h>
-#elif DOMOTICS_PLATFORM_ESP8266
-    #include <Hash.h>
-#endif
+/**
+ * @brief Get the correct value to turn LED_BUILTIN ON for the current platform
+ * @return HIGH or LOW depending on platform LED polarity
+ */
+inline int ledBuiltinOn() {
+    return Platform::ledBuiltinOn();
+}
 
 /**
- * @brief SHA256 hash computation with streaming support.
- * 
- * Usage:
- *   SHA256 sha;
- *   sha.begin();
- *   sha.update(data1, len1);
- *   sha.update(data2, len2);
- *   uint8_t digest[32];
- *   sha.finish(digest);
+ * @brief Get the correct value to turn LED_BUILTIN OFF for the current platform
+ * @return HIGH or LOW depending on platform LED polarity
  */
-class SHA256 {
-public:
-    SHA256() { begin(); }
-    
-    void begin() {
-#if DOMOTICS_PLATFORM_ESP32
-        mbedtls_sha256_init(&ctx);
-        mbedtls_sha256_starts_ret(&ctx, 0);
-#elif DOMOTICS_PLATFORM_ESP8266
-        sha256_init(&ctx);
-#endif
-        active = true;
-    }
-    
-    void update(const uint8_t* data, size_t len) {
-        if (!active) return;
-#if DOMOTICS_PLATFORM_ESP32
-        mbedtls_sha256_update_ret(&ctx, data, len);
-#elif DOMOTICS_PLATFORM_ESP8266
-        sha256_update(&ctx, data, len);
-#endif
-    }
-    
-    void finish(uint8_t* digest) {
-        if (!active) return;
-#if DOMOTICS_PLATFORM_ESP32
-        mbedtls_sha256_finish_ret(&ctx, digest);
-        mbedtls_sha256_free(&ctx);
-#elif DOMOTICS_PLATFORM_ESP8266
-        sha256_final(digest, &ctx);
-#else
-        memset(digest, 0, 32);
-#endif
-        active = false;
-    }
-    
-    void abort() {
-        if (!active) return;
-#if DOMOTICS_PLATFORM_ESP32
-        mbedtls_sha256_free(&ctx);
-#endif
-        active = false;
-    }
-    
-    /**
-     * @brief Convert digest to hex string
-     */
-    static String toHex(const uint8_t* digest, size_t len = 32) {
-        static const char* hex = "0123456789abcdef";
-        String out;
-        out.reserve(len * 2);
-        for (size_t i = 0; i < len; ++i) {
-            out += hex[(digest[i] >> 4) & 0x0F];
-            out += hex[digest[i] & 0x0F];
-        }
-        return out;
-    }
-    
-private:
-    bool active = false;
-#if DOMOTICS_PLATFORM_ESP32
-    mbedtls_sha256_context ctx;
-#elif DOMOTICS_PLATFORM_ESP8266
-    sha256_context_t ctx;
-#endif
-};
+inline int ledBuiltinOff() {
+    return Platform::ledBuiltinOff();
+}
+
+/**
+ * @brief SHA256 - use Platform::SHA256 directly or this alias
+ */
+using SHA256 = Platform::SHA256;
 
 } // namespace HAL
 } // namespace DomoticsCore

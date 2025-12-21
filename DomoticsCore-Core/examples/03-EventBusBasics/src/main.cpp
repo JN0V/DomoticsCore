@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <DomoticsCore/Core.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/ComponentRegistry.h>
 #include <DomoticsCore/EventBus.h>
 #include <DomoticsCore/Logger.h>
@@ -95,7 +96,7 @@ public:
             if (!p) return;
             bool on = (*p >= threshold_);
             DLOG_I(LOG_APP, "[Consumer] sensor.update value=%d -> LED %s", *p, on ? "ON" : "OFF");
-            digitalWrite(ledPin_, on ? HIGH : LOW);
+            digitalWrite(ledPin_, on ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
         }, this, true);
         return ComponentStatus::Success;
     }
@@ -104,7 +105,7 @@ public:
 
     ComponentStatus shutdown() override {
         eventBus().unsubscribeOwner(this);
-        digitalWrite(ledPin_, LOW);
+        digitalWrite(ledPin_, HAL::ledBuiltinOff());
         return ComponentStatus::Success;
     }
 
@@ -117,6 +118,26 @@ private:
 Core core;
 
 void setup() {
+    // Initialize Serial early for logging before core initialization
+    Serial.begin(115200);
+    delay(100);
+
+    // ============================================================================
+    // EXAMPLE 03: EventBus Basics
+    // ============================================================================
+    // This example demonstrates basic EventBus communication:
+    // - PublisherComponent generates sawtooth values (0-1000) every 2 seconds
+    // - ConsumerComponent subscribes to sensor.update topic
+    // - Consumer turns LED ON when sensor value >= 500, OFF when < 500
+    // Expected: LED toggles based on sensor threshold, logs show sensor values
+    // ============================================================================
+
+    DLOG_I(LOG_APP, "=== EventBus Basics Example ===");
+    DLOG_I(LOG_APP, "Publisher will generate sensor values (0-1000) every 2s");
+    DLOG_I(LOG_APP, "Consumer will turn LED ON when value >= 500");
+    DLOG_I(LOG_APP, "Watch for sensor.update logs and LED state changes");
+    DLOG_I(LOG_APP, "================================");
+    
     CoreConfig cfg;
     cfg.deviceName = "EventBusBasics";
     cfg.logLevel = 3;
@@ -127,9 +148,11 @@ void setup() {
     // Publisher: emits sensor.update every 2s (sawtooth value)
     std::unique_ptr<IComponent> pub(new PublisherComponent());
     core.addComponent(std::move(pub));
-    // Consumer: listens to sensor.update and toggles LED when value >= threshold
+
+    // Consumer: subscribes to sensor.update and toggles LED based on threshold
     std::unique_ptr<IComponent> cons(new ConsumerComponent());
     core.addComponent(std::move(cons));
+    
     // Wildcard consumer: logs any sensor.* topic
     std::unique_ptr<IComponent> wc(new WildcardConsumer());
     core.addComponent(std::move(wc));

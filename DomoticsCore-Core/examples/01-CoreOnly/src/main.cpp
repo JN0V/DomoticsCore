@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Timer.h>
 
@@ -12,6 +13,25 @@ Utils::NonBlockingDelay heartbeatTimer(10000); // 10 second heartbeat
 Utils::NonBlockingDelay statusTimer(30000);    // 30 second status
 
 void setup() {
+    // Initialize Serial early for logging before core initialization
+    Serial.begin(115200);
+    delay(100);
+
+    // ============================================================================
+    // EXAMPLE 01: Core Only
+    // ============================================================================
+    // This example demonstrates the basic DomoticsCore framework:
+    // - Core initialization with custom device configuration
+    // - Platform HAL integration (chip info, memory, temperature)
+    // - Non-blocking timer patterns (10s heartbeat, 30s status)
+    // Expected: Device info logs, regular heartbeat and status reports
+    // ============================================================================
+    
+    DLOG_I(LOG_APP, "=== Core Only Example ===");
+    DLOG_I(LOG_APP, "Basic DomoticsCore framework demonstration");
+    DLOG_I(LOG_APP, "Heartbeat every 10s, Status every 30s");
+    DLOG_I(LOG_APP, "=========================");
+
     // Create core with custom device name
     CoreConfig config;
     config.deviceName = "MyESP32Device";
@@ -40,8 +60,11 @@ void loop() {
     
     // Non-blocking status report every 30 seconds
     if (statusTimer.isReady()) {
-        DLOG_I(LOG_SYSTEM, "Free heap: %d bytes", ESP.getFreeHeap());
-        DLOG_I(LOG_SYSTEM, "Chip temperature: %.1f°C", temperatureRead());
+        DLOG_I(LOG_SYSTEM, "Free heap: %lu bytes", (unsigned long)HAL::Platform::getFreeHeap());
+        float temp = HAL::Platform::getTemperature();
+        if (!isnan(temp)) {
+            DLOG_I(LOG_SYSTEM, "Chip temperature: %.1f°C", temp);
+        }
     }
     
     // No blocking delay needed - timers handle everything

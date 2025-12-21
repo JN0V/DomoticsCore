@@ -25,8 +25,6 @@ public:
   }
 
   ComponentStatus begin() override {
-    Serial.begin(115200);
-    delay(50);
     DLOG_I(LOG_APP, "[Tests] Starting EventBus tests...");
 
     bool ok = true;
@@ -168,6 +166,31 @@ private:
 Core core;
 
 void setup() {
+  // Initialize Serial early for logging before core initialization
+  Serial.begin(115200);
+  delay(100);
+
+  // ============================================================================
+  // EXAMPLE 05: EventBus Test Suite
+  // ============================================================================
+  // This example runs comprehensive EventBus tests:
+  // - testOrder: Message delivery order verification
+  // - testUnsubscribeOwner: Automatic cleanup on component removal
+  // - testWildcards: Wildcard topic matching (sensor.*)
+  // - testSticky: Sticky message retention for new subscribers
+  // - testBackpressure: High-volume message handling (32 messages)
+  // Expected: PASS/FAIL results for each test, final ALL PASS or SOME FAIL
+  // ============================================================================
+
+  DLOG_I(LOG_APP, "=== EventBus Test Suite ===");
+  DLOG_I(LOG_APP, "Running comprehensive EventBus tests:");
+  DLOG_I(LOG_APP, "- Message order verification");
+  DLOG_I(LOG_APP, "- Unsubscribe cleanup");
+  DLOG_I(LOG_APP, "- Wildcard topic matching");
+  DLOG_I(LOG_APP, "- Sticky message retention");
+  DLOG_I(LOG_APP, "- Backpressure handling (32 msgs)");
+  DLOG_I(LOG_APP, "==========================");
+  
   CoreConfig cfg;
   cfg.deviceName = "EventBusTests";
   cfg.logLevel = 3;

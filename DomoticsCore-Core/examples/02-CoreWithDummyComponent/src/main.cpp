@@ -14,32 +14,62 @@ using namespace DomoticsCore::Components;
 Core core;
 
 void setup() {
-    // Create core with custom device name
-    CoreConfig config;
-    config.deviceName = "ComponentTestDevice";
-    config.logLevel = 3; // INFO level
+    // Initialize Serial early for logging before core initialization
+    Serial.begin(115200);
+    delay(100);
     
-    // Core initialized
+    // ============================================================================
+    // EXAMPLE 02: Core with Custom Components
+    // ============================================================================
+    // This example demonstrates custom component development:
+    // - ComponentA: No dependencies, 3-second heartbeat
+    // - ComponentB: Depends on ComponentA, 4-second heartbeat  
+    // - ComponentC: Depends on ComponentB, 6-second heartbeat
+    // - LEDBlinker: Blinks built-in LED every 500ms
+    // Expected: Components initialize in dependency order, regular heartbeat logs
+    // ============================================================================
     
-    // Add custom components to demonstrate the system
-    DLOG_I(LOG_APP, "Adding custom components...");
+    DLOG_I(LOG_APP, "=== Core with Custom Components Example ===");
+    DLOG_I(LOG_APP, "ComponentA: 3s heartbeat (no dependencies)");
+    DLOG_I(LOG_APP, "ComponentB: 4s heartbeat (depends on A)");
+    DLOG_I(LOG_APP, "ComponentC: 6s heartbeat (depends on B)");
+    DLOG_I(LOG_APP, "LEDBlinker: 500ms LED blink");
+    DLOG_I(LOG_APP, "==========================================");
+
+    DLOG_I(LOG_APP, "Adding test components...");
     
-    // Custom TestComponent instances - no dependencies
-    core.addComponent(createTestComponent("ComponentA", 3000));
+    // Create components with different configurations
+    TestComponentConfig cfgA;
+    cfgA.heartbeatInterval = 3000;  // 3 seconds
+    cfgA.workInterval = 1000;       // 1 second work cycle
+    cfgA.enableWork = true;
     
-    // Component B - depends on A
-    core.addComponent(createTestComponent("ComponentB", 4000, {"ComponentA"}));
+    TestComponentConfig cfgB;
+    cfgB.heartbeatInterval = 4000;  // 4 seconds
+    cfgB.workInterval = 1500;       // 1.5 second work cycle
+    cfgB.enableWork = true;
     
-    // Component C - depends on B (indirect dependency on A)
-    core.addComponent(createTestComponent("ComponentC", 6000, {"ComponentB"}));
+    TestComponentConfig cfgC;
+    cfgC.heartbeatInterval = 6000;  // 6 seconds
+    cfgC.workInterval = 2000;       // 2 second work cycle
+    cfgC.enableWork = true;
+
+    // Add components with dependencies
+    core.addComponent(createTestComponent("ComponentA", cfgA, {}));
+    core.addComponent(createTestComponent("ComponentB", cfgB, {"ComponentA"}));
+    core.addComponent(createTestComponent("ComponentC", cfgC, {"ComponentB"}));
     
-    // Add LED blinker component (hardware interaction example)
-    core.addComponent(createLEDBlinker(LED_BUILTIN, 500)); // Fast blink
+    // Add LED blinker component
+    core.addComponent(createLEDBlinker(LED_BUILTIN, 500));
+
+    DLOG_I(LOG_APP, "Starting core with %d components...", 4);
     
-    DLOG_I(LOG_APP, "Starting core with %d components...", core.getComponentCount());
+    CoreConfig coreCfg;
+    coreCfg.deviceName = "ComponentTestDevice";
+    coreCfg.logLevel = 3;
     
-    if (!core.begin(config)) {
-        DLOG_E(LOG_APP, "Failed to initialize core!");
+    if (!core.begin(coreCfg)) {
+        DLOG_E(LOG_APP, "Core initialization failed!");
         return;
     }
     
