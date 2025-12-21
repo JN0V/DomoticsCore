@@ -123,12 +123,17 @@ public:
             // value is the LED name; map back to index
             auto names = led->getLEDNames();
             for (size_t i = 0; i < names.size(); ++i) {
-                if (names[i] == value) { selected = i; break; }
+                if (names[i] == value) { 
+                    selected = clampIndex(i); 
+                    break; 
+                }
             }
             return "{\"success\":true}";
         }
         if (field == "enabled_toggle") {
             enabled = (value == "true");
+            // Ensure selected index is valid before using
+            selected = clampIndex(selected);
             led->enableLED(selected, enabled);
             if (enabled) {
                 // Apply brightness/color immediately when enabling
@@ -144,8 +149,11 @@ public:
         }
         if (field == "brightness") {
             int b = value.toInt();
-            if (b < 0) b = 0; if (b > 255) b = 255;
+            if (b < 0) b = 0;
+            if (b > 255) b = 255;
             brightness = (uint8_t)b;
+            // Ensure selected index is valid before using
+            selected = clampIndex(selected);
             // Keep current color intent: ON -> white at brightness, OFF -> off
             if (enabled) led->setLED(selected, LEDColor::White(), brightness);
             else         led->setLED(selected, LEDColor::Off(), 0);
@@ -153,6 +161,8 @@ public:
         }
         if (field == "effect") {
             effect = stringToEffect(value);
+            // Ensure selected index is valid before using
+            selected = clampIndex(selected);
             // Apply with default speed
             if (effect == LEDEffect::Solid) {
                 if (enabled) led->setLED(selected, LEDColor::White(), brightness);

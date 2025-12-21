@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <WiFi.h>
+#include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/LED.h>
@@ -14,13 +14,39 @@ using namespace DomoticsCore::Components;
 Core core;
 
 void setup() {
+    Serial.begin(115200);
+    delay(500);
+    
+    // ============================================================================
+    // EXAMPLE: LED with WebUI Demonstration
+    // ============================================================================
+    // This example demonstrates LED control via web interface:
+    // - WiFi AP mode for direct device access (no router needed)
+    // - WebUI dashboard for real-time LED control
+    // - WebSocket updates for live LED status
+    // - Platform-specific LED polarity handling
+    // Expected: Access web dashboard at http://192.168.4.1 to control LED
+    // ============================================================================
+    
+    DLOG_I(LOG_APP, "=== LED with WebUI Demonstration ===");
+    DLOG_I(LOG_APP, "LED control via web interface demonstration:");
+    DLOG_I(LOG_APP, "- WiFi AP mode for direct device access");
+    DLOG_I(LOG_APP, "- WebUI dashboard for real-time LED control");
+    DLOG_I(LOG_APP, "- WebSocket updates for live LED status");
+    DLOG_I(LOG_APP, "- Platform-specific LED polarity handling");
+    DLOG_I(LOG_APP, "Access web dashboard at: http://192.168.4.1");
+    DLOG_I(LOG_APP, "======================================");
+    
     DLOG_I(LOG_APP, "=== DomoticsCore LEDWithWebUI Starting ===");
-
-    // Bring up a simple AP for demo access
-    String apSSID = String("DomoticsCore-LED-") + String((uint32_t)ESP.getEfuseMac(), HEX);
-    if (WiFi.softAP(apSSID.c_str())) {
+    
+    // Setup WiFi in AP mode using HAL for demo access
+    String apSSID = "DomoticsCore-LED-" + String((uint32_t)HAL::Platform::getChipId(), HEX);
+    HAL::WiFiHAL::init();
+    bool success = HAL::WiFiHAL::startAP(apSSID.c_str());
+    
+    if (success) {
         DLOG_I(LOG_APP, "AP started: %s", apSSID.c_str());
-        DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+        DLOG_I(LOG_APP, "AP IP: %s", HAL::WiFiHAL::getAPIP().c_str());
     } else {
         DLOG_E(LOG_APP, "Failed to start AP mode");
         return;
@@ -39,8 +65,8 @@ void setup() {
     core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 
     auto led = std::make_unique<LEDComponent>();
-    // Single on-board LED on GPIO2 by default (change as needed)
-    led->addSingleLED(2, "onboard");
+    // Built-in LED with platform-specific polarity via HAL
+    led->addSingleLED(LED_BUILTIN, "BuiltinLED", 255, HAL::isInternalLEDInverted());
     core.addComponent(std::move(led));
 
     // Hook up LED WebUI provider

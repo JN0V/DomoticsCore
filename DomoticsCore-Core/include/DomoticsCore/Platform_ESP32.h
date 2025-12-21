@@ -86,6 +86,14 @@ inline int ledBuiltinOff() {
 }
 
 /**
+ * @brief Check if internal LED (LED_BUILTIN) has inverted logic on ESP32
+ * @return false (ESP32 LED is active-high)
+ */
+inline bool isInternalLEDInverted() {
+    return false;  // ESP32: active-high LED
+}
+
+/**
  * @brief SHA256 hash computation for ESP32 using mbedtls.
  */
 class SHA256 {

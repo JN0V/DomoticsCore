@@ -37,8 +37,8 @@ public:
         ledManager.reset(new LEDComponent());
         
         // Configure LEDs for testing
-        // Built-in LED (usually pin 2 on ESP32)
-        ledManager->addSingleLED(2, "BuiltinLED", 255, false);
+        // Built-in LED with platform-specific polarity via HAL
+        ledManager->addSingleLED(LED_BUILTIN, "BuiltinLED", 255, HAL::isInternalLEDInverted());
         
         // Additional single LEDs for demonstration
         ledManager->addSingleLED(4, "StatusLED", 255, false);
@@ -256,7 +256,30 @@ private:
 };
 
 void setup() {
-    // Serial initialization handled by Core
+    Serial.begin(115200);
+    delay(500);
+    
+    // ============================================================================
+    // EXAMPLE: Basic LED Demonstration
+    // ============================================================================
+    // This example demonstrates comprehensive LED functionality:
+    // - Single LEDs with different brightness levels and colors
+    // - RGB LEDs (both common cathode and common anode)
+    // - 6 different effects: Solid, Blink, Fade, Pulse, Rainbow, Breathing
+    // - Platform-specific LED polarity handling (ESP8266 vs ESP32)
+    // Expected: LEDs cycle through 6 effects every 5 seconds
+    // ============================================================================
+    
+    DLOG_I(LOG_APP, "=== Basic LED Demonstration ===");
+    DLOG_I(LOG_APP, "Comprehensive LED component testing with 6 effects:");
+    DLOG_I(LOG_APP, "- Solid colors with different brightness levels");
+    DLOG_I(LOG_APP, "- Blinking effects at various speeds");
+    DLOG_I(LOG_APP, "- Smooth fade in/out transitions");
+    DLOG_I(LOG_APP, "- Pulse/heartbeat effects");
+    DLOG_I(LOG_APP, "- Rainbow effects (RGB LEDs only)");
+    DLOG_I(LOG_APP, "- Breathing effects (slow fade)");
+    DLOG_I(LOG_APP, "Demo cycles every 5 seconds");
+    DLOG_I(LOG_APP, "===================================");
     
     // Create core with custom device name
     CoreConfig config;
