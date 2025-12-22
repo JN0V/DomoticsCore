@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Arduino.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/IWebUIProvider.h>
 #include <DomoticsCore/LED.h>
 #include <ArduinoJson.h>
@@ -24,7 +24,7 @@ public:
     explicit LEDWebUI(LEDComponent* comp) : led(comp) {}
 
     String getWebUIName() const override { return led ? led->metadata.name : String("LED"); }
-    String getWebUIVersion() const override { return led ? led->metadata.version : String("1.2.1"); }
+    String getWebUIVersion() const override { return led ? led->metadata.version : String("1.3.0"); }
 
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
