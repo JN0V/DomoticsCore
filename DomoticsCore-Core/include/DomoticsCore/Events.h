@@ -1,46 +1,27 @@
 #pragma once
 
+/**
+ * @file Events.h
+ * @brief Core lifecycle events only.
+ *
+ * Component-specific events are defined in their respective components:
+ * - DomoticsCore-Wifi: WifiEvents.h
+ * - DomoticsCore-MQTT: MQTTEvents.h
+ * - DomoticsCore-NTP: NTPEvents.h
+ * - DomoticsCore-OTA: OTAEvents.h
+ * - DomoticsCore-HomeAssistant: HAEvents.h
+ * - DomoticsCore-Storage: StorageEvents.h
+ */
+
 namespace DomoticsCore {
 namespace Events {
 
-// Lifecycle Events (Core)
-static const char* EVENT_COMPONENT_READY = "component/ready";
-static const char* EVENT_STORAGE_READY = "storage/ready";
-static const char* EVENT_NETWORK_READY = "network/ready";
-static const char* EVENT_COMPONENT_ERROR = "component/error";
-static const char* EVENT_SHUTDOWN_START = "shutdown/start";
-
-// MQTT Events
-static const char* EVENT_MQTT_CONNECTED = "mqtt/connected";
-static const char* EVENT_MQTT_DISCONNECTED = "mqtt/disconnected";
-static const char* EVENT_MQTT_MESSAGE = "mqtt/message";
-static const char* EVENT_MQTT_PUBLISH = "mqtt/publish";
-static const char* EVENT_MQTT_SUBSCRIBE = "mqtt/subscribe";
-
-// WiFi Events
-static const char* EVENT_WIFI_STA_CONNECTED = "wifi/sta/connected";
-static const char* EVENT_WIFI_AP_ENABLED = "wifi/ap/enabled";
-
-// NTP Events
-static const char* EVENT_NTP_SYNCED = "ntp/synced";
-static const char* EVENT_NTP_SYNC_FAILED = "ntp/sync_failed";
-
-// HomeAssistant Events
-static const char* EVENT_HA_DISCOVERY_PUBLISHED = "ha/discovery_published";
-static const char* EVENT_HA_ENTITY_ADDED = "ha/entity_added";
-
-// OTA Events
-static const char* EVENT_OTA_START = "ota/start";
-static const char* EVENT_OTA_PROGRESS = "ota/progress";
-static const char* EVENT_OTA_END = "ota/end";
-static const char* EVENT_OTA_ERROR = "ota/error";
-static const char* EVENT_OTA_INFO = "ota/info";
-static const char* EVENT_OTA_COMPLETE = "ota/complete"; // Intermediate completion
-static const char* EVENT_OTA_COMPLETED = "ota/completed"; // Final completion with reboot status
-
-// System Events
-static const char* EVENT_SYSTEM_READY = "system/ready";
-static const char* EVENT_SYSTEM_REBOOT = "system/reboot";
+// Core Lifecycle Events
+inline constexpr const char* EVENT_COMPONENT_READY = "component/ready";
+inline constexpr const char* EVENT_COMPONENT_ERROR = "component/error";
+inline constexpr const char* EVENT_SYSTEM_READY = "system/ready";
+inline constexpr const char* EVENT_SYSTEM_REBOOT = "system/reboot";
+inline constexpr const char* EVENT_SHUTDOWN_START = "shutdown/start";
 
 } // namespace Events
 } // namespace DomoticsCore
