@@ -12,10 +12,10 @@ namespace DomoticsCore {
 namespace HAEvents {
 
 /// Published when discovery payload is sent to HA
-inline constexpr const char* EVENT_DISCOVERY_PUBLISHED = "ha/discovery_published";
+static constexpr const char* EVENT_DISCOVERY_PUBLISHED = "ha/discovery_published";
 
 /// Published when a new entity is added
-inline constexpr const char* EVENT_ENTITY_ADDED = "ha/entity_added";
+static constexpr const char* EVENT_ENTITY_ADDED = "ha/entity_added";
 
 } // namespace HAEvents
 } // namespace DomoticsCore

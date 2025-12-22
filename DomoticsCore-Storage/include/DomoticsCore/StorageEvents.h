@@ -12,7 +12,7 @@ namespace DomoticsCore {
 namespace StorageEvents {
 
 /// Published when storage backend is initialized and ready
-inline constexpr const char* EVENT_READY = "storage/ready";
+static constexpr const char* EVENT_READY = "storage/ready";
 
 } // namespace StorageEvents
 } // namespace DomoticsCore

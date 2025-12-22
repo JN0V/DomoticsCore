@@ -12,19 +12,19 @@ namespace DomoticsCore {
 namespace MQTTEvents {
 
 /// Published when connected to MQTT broker
-inline constexpr const char* EVENT_CONNECTED = "mqtt/connected";
+static constexpr const char* EVENT_CONNECTED = "mqtt/connected";
 
 /// Published when disconnected from MQTT broker
-inline constexpr const char* EVENT_DISCONNECTED = "mqtt/disconnected";
+static constexpr const char* EVENT_DISCONNECTED = "mqtt/disconnected";
 
 /// Published when a message is received
-inline constexpr const char* EVENT_MESSAGE = "mqtt/message";
+static constexpr const char* EVENT_MESSAGE = "mqtt/message";
 
 /// Published when a message is successfully published
-inline constexpr const char* EVENT_PUBLISH = "mqtt/publish";
+static constexpr const char* EVENT_PUBLISH = "mqtt/publish";
 
 /// Published when a subscription is confirmed
-inline constexpr const char* EVENT_SUBSCRIBE = "mqtt/subscribe";
+static constexpr const char* EVENT_SUBSCRIBE = "mqtt/subscribe";
 
 } // namespace MQTTEvents
 } // namespace DomoticsCore
