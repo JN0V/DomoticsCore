@@ -4,16 +4,16 @@
 /**
  * @file Platform_ESP8266.h
  * @brief ESP8266-specific platform utilities for DomoticsCore.
- * 
+ *
  * This file contains ESP8266-specific implementations of platform utilities.
  * It is included by Platform_HAL.h when compiling for ESP8266.
+ *
+ * Common Arduino utilities are provided by Platform_Arduino.h.
  */
 
 #if DOMOTICS_PLATFORM_ESP8266
 
-#include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <user_interface.h>
+#include "Platform_Arduino.h"
 #include <bearssl/bearssl_hash.h>
 
 // ESP8266 logging macros (ESP32 has these built-in)
@@ -27,34 +27,21 @@ namespace DomoticsCore {
 namespace HAL {
 namespace Platform {
 
+// =============================================================================
+// ESP8266-Specific: Logging Initialization
+// =============================================================================
+
 /**
  * @brief Initialize logging system for ESP8266
  */
 inline void initializeLogging(long baudrate = 115200) {
     Serial.begin(baudrate);
-    delay(500);
+    delayMs(500);
 }
 
-/**
- * @brief Check if logging system is ready for ESP8266
- */
-inline bool isLoggerReady() {
-    return Serial;
-}
-
-/**
- * @brief Get current milliseconds for ESP8266
- */
-inline unsigned long getMillis() {
-    return millis();
-}
-
-/**
- * @brief Delay execution for ESP8266
- */
-inline void delay(unsigned long ms) {
-    delay(ms);
-}
+// =============================================================================
+// ESP8266-Specific: Chip Information
+// =============================================================================
 
 /**
  * @brief Format chip ID as hexadecimal string for ESP8266
@@ -62,43 +49,6 @@ inline void delay(unsigned long ms) {
 inline String formatChipIdHex() {
     uint32_t chipid = ESP.getChipId();
     return String(chipid, HEX);
-}
-
-/**
- * @brief Convert string to uppercase for ESP8266
- */
-inline String toUpperCase(const String& str) {
-    String result = str;
-    result.toUpperCase();
-    return result;
-}
-
-/**
- * @brief Get substring of string for ESP8266
- */
-inline String substring(const String& str, int start, int end = -1) {
-    return str.substring(start, end);
-}
-
-/**
- * @brief Find index of character in string for ESP8266
- */
-inline int indexOf(const String& str, char ch) {
-    return str.indexOf(ch);
-}
-
-/**
- * @brief Check if string starts with prefix for ESP8266
- */
-inline bool startsWith(const String& str, const String& prefix) {
-    return str.startsWith(prefix);
-}
-
-/**
- * @brief Check if string ends with suffix for ESP8266
- */
-inline bool endsWith(const String& str, const String& suffix) {
-    return str.endsWith(suffix);
 }
 
 /**
@@ -151,6 +101,10 @@ inline float getTemperature() {
     return NAN;
 }
 
+// =============================================================================
+// ESP8266-Specific: LED Polarity
+// =============================================================================
+
 /**
  * @brief Get the correct value to turn LED_BUILTIN ON for ESP8266
  * @return LOW (ESP8266: LED_BUILTIN is inverted)
@@ -175,86 +129,49 @@ inline bool isInternalLEDInverted() {
     return true;  // ESP8266: active-low LED
 }
 
+// =============================================================================
+// ESP8266-Specific: SHA256 (BearSSL)
+// =============================================================================
+
 /**
  * @brief SHA256 hash computation for ESP8266 using BearSSL.
  */
 class SHA256 {
 public:
     SHA256() { begin(); }
-    
+
     void begin() {
         br_sha256_init(&ctx);
         active = true;
     }
-    
+
     void update(const uint8_t* data, size_t len) {
         if (!active) return;
         br_sha256_update(&ctx, data, len);
     }
-    
+
     void finish(uint8_t* digest) {
         if (!active) return;
         br_sha256_out(&ctx, digest);
         active = false;
     }
-    
+
     void abort() {
         active = false;
     }
-    
+
     static String toHex(const uint8_t* digest, size_t len = 32) {
-        static const char* hex = "0123456789abcdef";
-        String out;
-        out.reserve(len * 2);
-        for (size_t i = 0; i < len; ++i) {
-            out += hex[(digest[i] >> 4) & 0x0F];
-            out += hex[digest[i] & 0x0F];
-        }
-        return out;
+        return digestToHex(digest, len);
     }
-    
+
 private:
     bool active = false;
     br_sha256_context ctx;
 };
 
-/**
- * @brief Write digital value to pin for ESP8266
- */
-inline void digitalWrite(uint8_t pin, uint8_t value) {
-    ::digitalWrite(pin, value);
-}
-
-/**
- * @brief Set pin mode for ESP8266
- */
-inline void pinMode(uint8_t pin, uint8_t mode) {
-    ::pinMode(pin, mode);
-}
-
-/**
- * @brief Write analog/PWM value to pin for ESP8266
- */
-inline void analogWrite(uint8_t pin, int value) {
-    ::analogWrite(pin, value);
-}
-
-/**
- * @brief Map a number from one range to another for ESP8266 (calls Arduino's map)
- */
-inline long map(long value, long fromLow, long fromHigh, long toLow, long toHigh) {
-    return ::map(value, fromLow, fromHigh, toLow, toHigh);
-}
-
-/**
- * @brief Mathematical constant PI for ESP8266
- * Arduino's PI macro is captured and redefined as constexpr
- */
-#ifdef PI
-    constexpr double PI_VALUE = PI;
-    #undef PI
-    constexpr double PI = PI_VALUE;
-#endif
+// =============================================================================
+// ESP8266-Specific: Built-in LED Pin
+// =============================================================================
 
 /**
  * @brief Built-in LED pin number for ESP8266

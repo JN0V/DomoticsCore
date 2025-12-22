@@ -169,7 +169,7 @@ inline unsigned long getMillis() {
  * @brief Delay execution
  */
 inline void delay(unsigned long ms) {
-    Platform::delay(ms);
+    Platform::delayMs(ms);
 }
 
 /**
