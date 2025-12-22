@@ -8,6 +8,7 @@
 #include "ComponentConfig.h"
 #include "Logger.h"
 #include "EventBus.h"
+#include "Events.h"
 
 namespace DomoticsCore {
     class Core; // Forward declaration
@@ -114,10 +115,16 @@ public:
             
             component->setActive(true);
             DLOG_I(LOG_CORE, "Component initialized: %s", component->metadata.name.c_str());
+
+            // Publish component ready event
+            eventBus.publish(Events::EVENT_COMPONENT_READY, component->metadata.name);
         }
-        
+
         initialized = true;
         DLOG_I(LOG_CORE, "All components initialized successfully (%zu components)", initializationOrder.size());
+
+        // Publish system ready event
+        eventBus.publish(Events::EVENT_SYSTEM_READY, String(""));
 
         // Post-initialization hooks for components
         for (auto* component : initializationOrder) {
@@ -153,7 +160,12 @@ public:
      */
     void shutdownAll() {
         if (!initialized) return;
-        
+
+        // Publish shutdown start event and dispatch immediately
+        // so listeners can react before components are shut down
+        eventBus.publish(Events::EVENT_SHUTDOWN_START, String(""));
+        eventBus.poll();
+
         // Shutdown in reverse order
         for (auto it = initializationOrder.rbegin(); it != initializationOrder.rend(); ++it) {
             auto* component = *it;

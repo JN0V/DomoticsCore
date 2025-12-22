@@ -1,6 +1,7 @@
 #include <unity.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/IComponent.h>
+#include <DomoticsCore/Events.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -120,20 +121,83 @@ void test_after_all_components_ready(void) {
     auto comp = std::make_unique<LifecycleTestComponent>("TestComp");
     LifecycleTestComponent* ptr = comp.get();
     testCore->addComponent(std::move(comp));
-    
+
     TEST_ASSERT_FALSE(ptr->afterReadyCalled);
     testCore->begin();
     TEST_ASSERT_TRUE(ptr->afterReadyCalled);
 }
 
+// Event publication tests
+static std::vector<String> receivedComponentNames;
+static bool systemReadyReceived = false;
+static bool shutdownStartReceived = false;
+
+void test_event_component_ready_published(void) {
+    receivedComponentNames.clear();
+
+    auto comp = std::make_unique<LifecycleTestComponent>("EventTestComp");
+    testCore->addComponent(std::move(comp));
+
+    // Subscribe to component ready event
+    testCore->getEventBus().subscribe(Events::EVENT_COMPONENT_READY, [](const void* payload) {
+        const String* name = static_cast<const String*>(payload);
+        if (name) receivedComponentNames.push_back(*name);
+    });
+
+    testCore->begin();
+    testCore->loop();  // Process events
+
+    TEST_ASSERT_EQUAL(1, receivedComponentNames.size());
+    TEST_ASSERT_EQUAL_STRING("EventTestComp", receivedComponentNames[0].c_str());
+}
+
+void test_event_system_ready_published(void) {
+    systemReadyReceived = false;
+
+    auto comp = std::make_unique<LifecycleTestComponent>("SysReadyTestComp");
+    testCore->addComponent(std::move(comp));
+
+    // Subscribe to system ready event
+    testCore->getEventBus().subscribe(Events::EVENT_SYSTEM_READY, [](const void*) {
+        systemReadyReceived = true;
+    });
+
+    testCore->begin();
+    testCore->loop();  // Process events
+
+    TEST_ASSERT_TRUE(systemReadyReceived);
+}
+
+void test_event_shutdown_start_published(void) {
+    shutdownStartReceived = false;
+
+    auto comp = std::make_unique<LifecycleTestComponent>("ShutdownTestComp");
+    testCore->addComponent(std::move(comp));
+
+    testCore->begin();
+
+    // Subscribe to shutdown start event
+    testCore->getEventBus().subscribe(Events::EVENT_SHUTDOWN_START, [](const void*) {
+        shutdownStartReceived = true;
+    });
+
+    testCore->shutdown();
+    testCore->loop();  // Process events
+
+    TEST_ASSERT_TRUE(shutdownStartReceived);
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
-    
+
     RUN_TEST(test_begin_called_on_init);
     RUN_TEST(test_loop_called);
     RUN_TEST(test_shutdown_called);
     RUN_TEST(test_shutdown_reverse_order);
     RUN_TEST(test_after_all_components_ready);
-    
+    RUN_TEST(test_event_component_ready_published);
+    RUN_TEST(test_event_system_ready_published);
+    RUN_TEST(test_event_shutdown_start_published);
+
     return UNITY_END();
 }
