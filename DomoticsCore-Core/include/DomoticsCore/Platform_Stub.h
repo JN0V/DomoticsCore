@@ -95,7 +95,48 @@ public:
     bool operator==(const String& other) const { return data == other.data; }
     bool operator!=(const String& other) const { return data != other.data; }
     bool operator<(const String& other) const { return data < other.data; }
-    
+
+    // String search methods
+    int indexOf(const char* str, int fromIndex = 0) const {
+        if (fromIndex < 0 || fromIndex >= (int)data.length()) return -1;
+        size_t pos = data.find(str, fromIndex);
+        return (pos == std::string::npos) ? -1 : static_cast<int>(pos);
+    }
+    int indexOf(const String& str, int fromIndex = 0) const {
+        return indexOf(str.c_str(), fromIndex);
+    }
+    int indexOf(char c, int fromIndex = 0) const {
+        if (fromIndex < 0 || fromIndex >= (int)data.length()) return -1;
+        size_t pos = data.find(c, fromIndex);
+        return (pos == std::string::npos) ? -1 : static_cast<int>(pos);
+    }
+
+    bool startsWith(const String& prefix) const {
+        return data.compare(0, prefix.data.length(), prefix.data) == 0;
+    }
+    bool endsWith(const String& suffix) const {
+        if (suffix.data.length() > data.length()) return false;
+        return data.compare(data.length() - suffix.data.length(), suffix.data.length(), suffix.data) == 0;
+    }
+
+    String substring(int from) const {
+        if (from < 0 || from >= (int)data.length()) return String();
+        return String(data.substr(from));
+    }
+    String substring(int from, int to) const {
+        if (from < 0 || from >= (int)data.length()) return String();
+        if (to < from) return String();
+        return String(data.substr(from, to - from));
+    }
+
+    void replace(const String& find, const String& replace) {
+        size_t pos = 0;
+        while ((pos = data.find(find.data, pos)) != std::string::npos) {
+            data.replace(pos, find.data.length(), replace.data);
+            pos += replace.data.length();
+        }
+    }
+
     operator std::string() const { return data; }
 };
 
