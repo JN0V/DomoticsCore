@@ -16,7 +16,7 @@
 
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Timer.h"
-#include "DomoticsCore/Events.h"
+#include "DomoticsCore/StorageEvents.h"
 #include "Storage_HAL.h"  // Hardware Abstraction Layer for Storage
 #include <map>
 #include <vector>
@@ -126,7 +126,7 @@ public:
         }
         
         if (storageConfig.maxEntries < 1 || storageConfig.maxEntries > 500) {
-            DLOG_E(LOG_STORAGE, "Invalid max_entries: %d (must be 1-500)", storageConfig.maxEntries);
+            DLOG_E(LOG_STORAGE, "Invalid max_entries: %zu (must be 1-500)", storageConfig.maxEntries);
             setStatus(ComponentStatus::ConfigError);
             return ComponentStatus::ConfigError;
         }
@@ -137,7 +137,7 @@ public:
 
         // Emit storage ready event if successful
         if (status == ComponentStatus::Success && __dc_eventBus) {
-            emit(Events::EVENT_STORAGE_READY, storageConfig.namespace_name);
+            emit(StorageEvents::EVENT_READY, storageConfig.namespace_name);
         }
 
         return status;
@@ -265,7 +265,7 @@ public:
 
         bool success = storage.putULong64(key.c_str(), value);
         if (success) {
-            DLOG_D(LOG_STORAGE, "Stored uint64 '%s' = %llu", key.c_str(), value);
+            DLOG_D(LOG_STORAGE, "Stored uint64 '%s' = %llu", key.c_str(), (unsigned long long)value);
             return true;
         }
         return false;
@@ -286,7 +286,7 @@ public:
             entry.size = length;
             cache[key] = entry;
             
-            DLOG_D(LOG_STORAGE, "Stored blob '%s' (%d bytes)", key.c_str(), length);
+            DLOG_D(LOG_STORAGE, "Stored blob '%s' (%zu bytes)", key.c_str(), length);
             return true;
         }
         return false;
@@ -343,7 +343,7 @@ public:
         }
         
         uint64_t value = storage.getULong64(key.c_str(), defaultValue);
-        DLOG_D(LOG_STORAGE, "Retrieved uint64 '%s' = %llu", key.c_str(), value);
+        DLOG_D(LOG_STORAGE, "Retrieved uint64 '%s' = %llu", key.c_str(), (unsigned long long)value);
         return value;
     }
     
@@ -360,12 +360,12 @@ public:
         }
         
         if (length > maxLength) {
-            DLOG_W(LOG_STORAGE, "Blob '%s' too large (%d > %d)", key.c_str(), length, maxLength);
+            DLOG_W(LOG_STORAGE, "Blob '%s' too large (%zu > %zu)", key.c_str(), length, maxLength);
             length = maxLength;
         }
         
         size_t read = storage.getBytes(key.c_str(), buffer, length);
-        DLOG_D(LOG_STORAGE, "Retrieved blob '%s' (%d bytes)", key.c_str(), read);
+        DLOG_D(LOG_STORAGE, "Retrieved blob '%s' (%zu bytes)", key.c_str(), read);
         return read;
     }
     
@@ -549,7 +549,7 @@ private:
         // Update entry count from cache
         entryCount = cache.size();
         
-        DLOG_D(LOG_STORAGE, "Info updated: %d entries cached", entryCount);
+        DLOG_D(LOG_STORAGE, "Info updated: %zu entries cached", entryCount);
     }
 
     void reportStorageStatus() {
@@ -577,11 +577,11 @@ private:
         updateStorageInfo();
         
         // Log cache statistics
-        DLOG_D(LOG_STORAGE, "Cache contains %d entries", cache.size());
+        DLOG_D(LOG_STORAGE, "Cache contains %zu entries", cache.size());
         
         // Check for storage health
         if (entryCount >= storageConfig.maxEntries) {
-            DLOG_W(LOG_STORAGE, "At maximum capacity (%d entries)", entryCount);
+            DLOG_W(LOG_STORAGE, "At maximum capacity (%zu entries)", entryCount);
         }
     }
 
