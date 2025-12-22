@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Arduino.h>
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Timer.h>
