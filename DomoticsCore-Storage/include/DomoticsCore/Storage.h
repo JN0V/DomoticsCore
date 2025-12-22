@@ -16,8 +16,8 @@
 
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Timer.h"
+#include "DomoticsCore/Events.h"
 #include "Storage_HAL.h"  // Hardware Abstraction Layer for Storage
-#include <Arduino.h>
 #include <map>
 #include <vector>
 
@@ -134,6 +134,12 @@ public:
         // Initialize preferences storage
         ComponentStatus status = initializeStorage();
         setStatus(status);
+
+        // Emit storage ready event if successful
+        if (status == ComponentStatus::Success && __dc_eventBus) {
+            emit(Events::EVENT_STORAGE_READY, storageConfig.namespace_name);
+        }
+
         return status;
     }
     
