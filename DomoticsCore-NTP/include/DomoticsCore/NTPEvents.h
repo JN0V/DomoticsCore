@@ -12,10 +12,10 @@ namespace DomoticsCore {
 namespace NTPEvents {
 
 /// Published when time is successfully synchronized
-inline constexpr const char* EVENT_SYNCED = "ntp/synced";
+static constexpr const char* EVENT_SYNCED = "ntp/synced";
 
 /// Published when time synchronization fails
-inline constexpr const char* EVENT_SYNC_FAILED = "ntp/sync_failed";
+static constexpr const char* EVENT_SYNC_FAILED = "ntp/sync_failed";
 
 } // namespace NTPEvents
 } // namespace DomoticsCore

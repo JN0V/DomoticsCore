@@ -17,11 +17,11 @@ namespace DomoticsCore {
 namespace Events {
 
 // Core Lifecycle Events
-inline constexpr const char* EVENT_COMPONENT_READY = "component/ready";
-inline constexpr const char* EVENT_COMPONENT_ERROR = "component/error";
-inline constexpr const char* EVENT_SYSTEM_READY = "system/ready";
-inline constexpr const char* EVENT_SYSTEM_REBOOT = "system/reboot";
-inline constexpr const char* EVENT_SHUTDOWN_START = "shutdown/start";
+static constexpr const char* EVENT_COMPONENT_READY = "component/ready";
+static constexpr const char* EVENT_COMPONENT_ERROR = "component/error";
+static constexpr const char* EVENT_SYSTEM_READY = "system/ready";
+static constexpr const char* EVENT_SYSTEM_REBOOT = "system/reboot";
+static constexpr const char* EVENT_SHUTDOWN_START = "shutdown/start";
 
 } // namespace Events
 } // namespace DomoticsCore
