@@ -138,6 +138,20 @@ public:
     }
 
     operator std::string() const { return data; }
+
+    // Explicit comparison with const char* to avoid ambiguity
+    bool operator==(const char* other) const { return data == other; }
+    bool operator!=(const char* other) const { return data != other; }
+
+    // Write methods for ArduinoJson compatibility
+    size_t write(uint8_t c) {
+        data += static_cast<char>(c);
+        return 1;
+    }
+    size_t write(const uint8_t* s, size_t n) {
+        data.append(reinterpret_cast<const char*>(s), n);
+        return n;
+    }
 };
 
 // Basic Arduino types for stub platforms
