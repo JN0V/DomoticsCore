@@ -10,7 +10,7 @@
 
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Timer.h>
-#include <Arduino.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include <vector>
 
 namespace DomoticsCore {
@@ -92,7 +92,7 @@ public:
     LEDComponent() : updateTimer(50) {  // 20Hz update rate
         // Set component metadata
         metadata.name = "LEDComponent";
-        metadata.version = "1.2.1";
+        metadata.version = "1.3.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Multi-LED management with PWM control and effects";
         metadata.category = "Hardware";
@@ -127,7 +127,7 @@ public:
             ledStates[i].enabled = true;
         }
         
-        DLOG_I(LOG_LED, "Initialized %d LEDs successfully", ledConfigs.size());
+        DLOG_I(LOG_LED, "Initialized %zu LEDs successfully", ledConfigs.size());
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
     }
@@ -234,7 +234,7 @@ public:
         state.effect = effect;
         state.effectSpeed = speed;
         state.effectPhase = 0.0;
-        state.lastUpdate = millis();
+        state.lastUpdate = HAL::getMillis();
 
         // Ensure LED is enabled when an effect is applied
         state.enabled = true;
@@ -365,14 +365,14 @@ private:
     void initializePins() {
         for (const auto& config : ledConfigs) {
             if (config.isRGB) {
-                pinMode(config.redPin, OUTPUT);
-                pinMode(config.greenPin, OUTPUT);
-                pinMode(config.bluePin, OUTPUT);
+                HAL::pinMode(config.redPin, OUTPUT);
+                HAL::pinMode(config.greenPin, OUTPUT);
+                HAL::pinMode(config.bluePin, OUTPUT);
                 setPWMOutput(config.redPin, 0, config.invertLogic);
                 setPWMOutput(config.greenPin, 0, config.invertLogic);
                 setPWMOutput(config.bluePin, 0, config.invertLogic);
             } else {
-                pinMode(config.pin, OUTPUT);
+                HAL::pinMode(config.pin, OUTPUT);
                 setPWMOutput(config.pin, 0, config.invertLogic);
             }
         }
@@ -381,19 +381,19 @@ private:
     void setPWMOutput(int pin, uint8_t value, bool invert) {
         if (pin < 0) return;
         uint8_t outputValue = invert ? (255 - value) : value;
-        analogWrite(pin, outputValue);
+        HAL::analogWrite(pin, outputValue);
     }
     
     void setLEDOutput(size_t ledIndex, const LEDColor& color, uint8_t brightness) {
         if (ledIndex >= ledConfigs.size()) return;
         
         const auto& config = ledConfigs[ledIndex];
-        uint8_t scaledBrightness = map(brightness, 0, 255, 0, config.maxBrightness);
+        uint8_t scaledBrightness = HAL::map(brightness, 0, 255, 0, config.maxBrightness);
         
         if (config.isRGB) {
-            uint8_t red = map(color.red, 0, 255, 0, scaledBrightness);
-            uint8_t green = map(color.green, 0, 255, 0, scaledBrightness);
-            uint8_t blue = map(color.blue, 0, 255, 0, scaledBrightness);
+            uint8_t red = HAL::map(color.red, 0, 255, 0, scaledBrightness);
+            uint8_t green = HAL::map(color.green, 0, 255, 0, scaledBrightness);
+            uint8_t blue = HAL::map(color.blue, 0, 255, 0, scaledBrightness);
             
             setPWMOutput(config.redPin, red, config.invertLogic);
             setPWMOutput(config.greenPin, green, config.invertLogic);
@@ -405,7 +405,7 @@ private:
     }
     
     void updateEffects() {
-        unsigned long currentTime = millis();
+        unsigned long currentTime = HAL::getMillis();
         
         for (size_t i = 0; i < ledStates.size(); i++) {
             auto& state = ledStates[i];
@@ -437,14 +437,14 @@ private:
                     break;
                     
                 case LEDEffect::Fade:
-                    outputBrightness = (uint8_t)(state.brightness * (sin(state.effectPhase * 2 * PI) + 1) / 2);
+                    outputBrightness = (uint8_t)(state.brightness * (sin(state.effectPhase * 2 * HAL::PI) + 1) / 2);
                     break;
                     
                 case LEDEffect::Pulse:
                     if (state.effectPhase < 0.3) {
-                        outputBrightness = (uint8_t)(state.brightness * sin(state.effectPhase * PI / 0.3));
+                        outputBrightness = (uint8_t)(state.brightness * sin(state.effectPhase * HAL::PI / 0.3));
                     } else if (state.effectPhase < 0.5) {
-                        outputBrightness = (uint8_t)(state.brightness * sin((state.effectPhase - 0.3) * PI / 0.2));
+                        outputBrightness = (uint8_t)(state.brightness * sin((state.effectPhase - 0.3) * HAL::PI / 0.2));
                     } else {
                         outputBrightness = 0;
                     }
@@ -466,7 +466,7 @@ private:
                     break;
                     
                 case LEDEffect::Breathing:
-                    outputBrightness = (uint8_t)(state.brightness * (1 - cos(state.effectPhase * 2 * PI)) / 2);
+                    outputBrightness = (uint8_t)(state.brightness * (1 - cos(state.effectPhase * 2 * HAL::PI)) / 2);
                     break;
                     
                 default:
