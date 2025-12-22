@@ -1,5 +1,5 @@
-#include <Arduino.h>
-#include <WiFi.h>
+#include <DomoticsCore/Platform_HAL.h>
+#include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/Storage.h>
@@ -16,10 +16,10 @@ Core core;
 void setup() {
     DLOG_I(LOG_APP, "=== DomoticsCore StorageWithWebUI Starting ===");
 
-    // AP mode for quick access
-    String apSSID = String("DomoticsCore-Storage-") + String((uint32_t)ESP.getEfuseMac(), HEX);
-    WiFi.softAP(apSSID.c_str());
-    DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+    // AP mode for quick access - use HAL for chip ID and WiFi
+    String apSSID = String("DomoticsCore-Storage-") + HAL::formatChipIdHex();
+    HAL::WiFiHAL::startAP(apSSID.c_str());
+    DLOG_I(LOG_APP, "AP IP: %s", HAL::WiFiHAL::getAPIP().c_str());
 
     // Core initialized
 
