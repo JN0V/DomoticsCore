@@ -247,9 +247,14 @@ inline long map(long value, long fromLow, long fromHigh, long toLow, long toHigh
 }
 
 /**
- * @brief Mathematical constant PI for ESP8266 (uses Arduino's PI)
+ * @brief Mathematical constant PI for ESP8266
+ * Arduino's PI macro is captured and redefined as constexpr
  */
-constexpr double PI = ::PI;
+#ifdef PI
+    constexpr double PI_VALUE = PI;
+    #undef PI
+    constexpr double PI = PI_VALUE;
+#endif
 
 /**
  * @brief Built-in LED pin number for ESP8266
