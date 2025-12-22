@@ -1,5 +1,3 @@
-#include <Arduino.h>
-#include <WiFi.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/Wifi.h>
@@ -13,7 +11,7 @@ using namespace DomoticsCore::Components;
 
 /*
  * WifiWithWebUI Example
- * 
+ *
  * Demonstrates WiFi component with WebUI interface:
  * - AP mode for initial setup (accessible at http://192.168.4.1:8080)
  * - Live WiFi network scanning and configuration
