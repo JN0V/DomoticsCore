@@ -141,7 +141,7 @@ inline unsigned long getMillis() {
 /**
  * @brief Delay execution for stub platforms (native sleep)
  */
-inline void delay(unsigned long ms) {
+inline void delayMs(unsigned long ms) {
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
 
