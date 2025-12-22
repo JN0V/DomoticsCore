@@ -50,6 +50,7 @@ struct StorageEntry {
 // Storage configuration
 struct StorageConfig {
     String namespace_name = "domotics";
+    String componentName = "";  // Optional: custom component name for multi-instance support
     bool readOnly = false;
     size_t maxEntries = 100;
     bool autoCommit = true;
@@ -89,12 +90,19 @@ public:
      * Constructor
      * @param config Storage configuration
      */
-    StorageComponent(const StorageConfig& config = StorageConfig()) 
+    StorageComponent(const StorageConfig& config = StorageConfig())
         : storageConfig(config), statusTimer(300000), maintenanceTimer(300000), // 5 minutes each
           isOpen(false), entryCount(0) {
         // Initialize component metadata immediately for dependency resolution
-        metadata.name = "Storage";
-        metadata.version = "1.3.3";
+        // Use componentName if provided, otherwise generate unique name for non-default namespaces
+        if (!storageConfig.componentName.isEmpty()) {
+            metadata.name = storageConfig.componentName;
+        } else if (storageConfig.namespace_name != "domotics") {
+            metadata.name = "Storage_" + storageConfig.namespace_name;
+        } else {
+            metadata.name = "Storage";
+        }
+        metadata.version = "1.4.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Key-value storage component for preferences and app data";
         metadata.category = "Storage";
@@ -164,17 +172,17 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
-        
-        size_t written = storage.putString(key.c_str(), value);
-        if (written > 0) {
+
+        bool success = storage.putString(key.c_str(), value);
+        if (success) {
             StorageEntry entry;
             entry.key = key;
             entry.type = StorageValueType::String;
             entry.stringValue = value;
             entry.size = value.length();
             cache[key] = entry;
-            
-            DLOG_D(LOG_STORAGE, "Stored string '%s' = '%s' (%d bytes)", key.c_str(), value.c_str(), written);
+
+            DLOG_D(LOG_STORAGE, "Stored string '%s' = '%s' (%d bytes)", key.c_str(), value.c_str(), value.length());
             return true;
         }
         return false;
@@ -185,16 +193,16 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
-        
-        size_t written = storage.putInt(key.c_str(), value);
-        if (written > 0) {
+
+        bool success = storage.putInt(key.c_str(), value);
+        if (success) {
             StorageEntry entry;
             entry.key = key;
             entry.type = StorageValueType::Integer;
             entry.intValue = value;
             entry.size = sizeof(int32_t);
             cache[key] = entry;
-            
+
             DLOG_D(LOG_STORAGE, "Stored int '%s' = %d", key.c_str(), value);
             return true;
         }
@@ -206,16 +214,16 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
-        
-        size_t written = storage.putFloat(key.c_str(), value);
-        if (written > 0) {
+
+        bool success = storage.putFloat(key.c_str(), value);
+        if (success) {
             StorageEntry entry;
             entry.key = key;
             entry.type = StorageValueType::Float;
             entry.floatValue = value;
             entry.size = sizeof(float);
             cache[key] = entry;
-            
+
             DLOG_D(LOG_STORAGE, "Stored float '%s' = %.2f", key.c_str(), value);
             return true;
         }
@@ -227,16 +235,16 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
-        
-        size_t written = storage.putBool(key.c_str(), value);
-        if (written > 0) {
+
+        bool success = storage.putBool(key.c_str(), value);
+        if (success) {
             StorageEntry entry;
             entry.key = key;
             entry.type = StorageValueType::Boolean;
             entry.boolValue = value;
             entry.size = sizeof(bool);
             cache[key] = entry;
-            
+
             DLOG_D(LOG_STORAGE, "Stored bool '%s' = %s", key.c_str(), value ? "true" : "false");
             return true;
         }
@@ -248,9 +256,9 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
-        
-        size_t written = storage.putULong64(key.c_str(), value);
-        if (written > 0) {
+
+        bool success = storage.putULong64(key.c_str(), value);
+        if (success) {
             DLOG_D(LOG_STORAGE, "Stored uint64 '%s' = %llu", key.c_str(), value);
             return true;
         }
@@ -394,9 +402,10 @@ public:
     
     // Storage information
     bool isOpenStorage() const { return isOpen; }
-    size_t getEntryCount() const { return entryCount; }
-    size_t getFreeEntries() const { 
-        return storageConfig.maxEntries > entryCount ? storageConfig.maxEntries - entryCount : 0; 
+    size_t getEntryCount() const { return cache.size(); }
+    size_t getFreeEntries() const {
+        size_t used = cache.size();
+        return storageConfig.maxEntries > used ? storageConfig.maxEntries - used : 0;
     }
     
     String getNamespace() const {

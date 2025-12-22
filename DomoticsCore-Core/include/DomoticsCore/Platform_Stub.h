@@ -39,6 +39,16 @@ public:
     String(unsigned long value) : data(std::to_string(value)) {}
     String(float value) : data(std::to_string(value)) {}
     String(double value) : data(std::to_string(value)) {}
+    String(float value, int precision) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.*f", precision, value);
+        data = buf;
+    }
+    String(double value, int precision) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.*f", precision, value);
+        data = buf;
+    }
     String(uint32_t value, int format) {
         switch (format) {
             case 16: // HEX
