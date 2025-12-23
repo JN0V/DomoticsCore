@@ -53,7 +53,7 @@ public:
     }
     
     String getWebUIVersion() const override { 
-        return mqtt ? mqtt->metadata.version : String("1.2.1"); 
+        return mqtt ? mqtt->metadata.version : String("1.4.0"); 
     }
     
     std::vector<WebUIContext> getWebUIContexts() override {
@@ -164,11 +164,12 @@ public:
                 subs.add(topic);
             }
         }
-        
+
         String json;
         if (serializeJson(doc, json) == 0) {
             return "{}";
         }
+        doc.shrinkToFit();  // ArduinoJson 7: Release over-allocated memory
         return json;
     }
     

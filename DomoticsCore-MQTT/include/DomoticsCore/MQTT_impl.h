@@ -10,7 +10,7 @@ MQTTComponent* MQTTComponent::instance = nullptr;
 // Constructor
 inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
     : config(cfg)
-    , mqttClient(config.useTLS ? (Client&)wifiClientSecure : (Client&)wifiClient)
+    , mqttClient(new HAL::MQTT::MQTTClientImpl(config.useTLS))
     , state(MQTTState::Disconnected)
     , reconnectTimer(cfg.reconnectDelay)
     , stateChangeTime(0)
@@ -18,20 +18,20 @@ inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
     , publishCountThisSecond(0)
 {
     instance = this;
-    
+
     // Generate client ID if not provided
     if (config.clientId.isEmpty()) {
         config.clientId = generateClientId();
     }
-    
+
     // Set default LWT topic if not provided
     if (config.enableLWT && config.lwtTopic.isEmpty()) {
         config.lwtTopic = config.clientId + "/status";
     }
-    
+
     // Initialize metadata
     metadata.name = "MQTT";
-    metadata.version = "1.3.1";
+    metadata.version = "1.4.0";
     metadata.author = "DomoticsCore";
     metadata.description = "MQTT client with auto-reconnection";
 }
@@ -41,6 +41,8 @@ inline MQTTComponent::~MQTTComponent() {
     if (isConnected()) {
         disconnect();
     }
+    delete mqttClient;
+    mqttClient = nullptr;
     instance = nullptr;
 }
 
@@ -50,19 +52,19 @@ inline ComponentStatus MQTTComponent::begin() {
     
     // CRITICAL: Register EventBus listeners FIRST, even if no config yet
     // This ensures listeners are ready when broker gets configured dynamically
-    on<MQTTPublishEvent>(DomoticsCore::Events::EVENT_MQTT_PUBLISH, [this](const MQTTPublishEvent& ev) {
-        publish(String(ev.topic), String(ev.payload), ev.qos, ev.retain);
+    on<MQTTPublishEvent>(MQTTEvents::EVENT_PUBLISH, [this](const MQTTPublishEvent& ev) {
+        publish(ev.topic, ev.payload, ev.qos, ev.retain);
     });
-    
-    on<MQTTSubscribeEvent>(DomoticsCore::Events::EVENT_MQTT_SUBSCRIBE, [this](const MQTTSubscribeEvent& ev) {
-        subscribe(String(ev.topic), ev.qos);
+
+    on<MQTTSubscribeEvent>(MQTTEvents::EVENT_SUBSCRIBE, [this](const MQTTSubscribeEvent& ev) {
+        subscribe(ev.topic, ev.qos);
     });
     
     DLOG_D(LOG_MQTT, "EventBus listeners registered (mqtt/publish, mqtt/subscribe)");
     
     // CRITICAL: Set PubSubClient callback BEFORE config check
     // This ensures callback is ready when broker gets configured dynamically
-    mqttClient.setCallback(mqttCallback);
+    mqttClient->setCallback(mqttCallback);
     DLOG_D(LOG_MQTT, "PubSubClient callback registered");
     
     // Config is loaded by SystemPersistence via setConfig()
@@ -79,8 +81,8 @@ inline ComponentStatus MQTTComponent::begin() {
         return ComponentStatus::Success;  // Success but inactive
     }
     
-    mqttClient.setServer(config.broker.c_str(), config.port);
-    mqttClient.setKeepAlive(config.keepAlive);
+    mqttClient->setServer(config.broker.c_str(), config.port);
+    mqttClient->setKeepAlive(config.keepAlive);
     // Buffer size is now set at connection
     
     // Auto-connect if enabled (components must work independently)
@@ -98,9 +100,9 @@ inline ComponentStatus MQTTComponent::begin() {
 
 inline void MQTTComponent::loop() {
     if (!config.enabled || config.broker.isEmpty()) return;
-    
+
     if (isConnected()) {
-        mqttClient.loop();
+        mqttClient->loop();
         updateStatistics();
         processMessageQueue();
     } else if (config.autoReconnect) {
@@ -138,13 +140,13 @@ inline bool MQTTComponent::connect() {
     }
     
     state = MQTTState::Connecting;
-    stateChangeTime = millis();
+    stateChangeTime = HAL::Platform::getMillis();
     
     bool success = connectInternal();
     
     if (success) {
         state = MQTTState::Connected;
-        stateChangeTime = millis();
+        stateChangeTime = HAL::Platform::getMillis();
         reconnectTimer.setInterval(config.reconnectDelay);  // Reset to initial delay
         stats.connectCount++;
         stats.reconnectCount = 0;  // Reset failure counter on successful connection
@@ -153,14 +155,14 @@ inline bool MQTTComponent::connect() {
         
         // Resubscribe to all topics
         for (const auto& sub : subscriptions) {
-            mqttClient.subscribe(sub.topic.c_str(), sub.qos);
+            mqttClient->subscribe(sub.topic.c_str(), sub.qos);
         }
         
         // Emit event for decoupled components
-        emit(DomoticsCore::Events::EVENT_MQTT_CONNECTED, true);
+        emit(MQTTEvents::EVENT_CONNECTED, true);
     } else {
         state = MQTTState::Error;
-        stateChangeTime = millis();
+        stateChangeTime = HAL::Platform::getMillis();
         lastError = "Connection failed";
         DLOG_E(LOG_MQTT, "Connection failed");
     }
@@ -170,15 +172,15 @@ inline bool MQTTComponent::connect() {
 
 inline void MQTTComponent::disconnect() {
     if (!isConnected()) return;
-    
-    mqttClient.disconnect();
+
+    mqttClient->disconnect();
     state = MQTTState::Disconnected;
-    stateChangeTime = millis();
-    
+    stateChangeTime = HAL::Platform::getMillis();
+
     DLOG_I(LOG_MQTT, "Disconnected from broker");
-    
+
     // Emit event for decoupled components
-    emit(DomoticsCore::Events::EVENT_MQTT_DISCONNECTED, true);
+    emit(MQTTEvents::EVENT_DISCONNECTED, true);
 }
 
 inline void MQTTComponent::resetReconnect() {
@@ -212,16 +214,16 @@ inline bool MQTTComponent::publish(const String& topic, const String& payload, u
     DLOG_D(LOG_MQTT, "Publishing to topic '%s' (QoS %d, retain %s), size: %d bytes", 
            topic.c_str(), qos, retain ? "true" : "false", payload.length());
     
-    bool success = mqttClient.publish(topic.c_str(), payload.c_str(), retain);
-    
+    bool success = mqttClient->publish(topic.c_str(), (const uint8_t*)payload.c_str(), payload.length(), retain);
+
     if (success) {
         stats.publishCount++;
         publishCountThisSecond++;
         DLOG_D(LOG_MQTT, "  ✓ Published successfully");
     } else {
         stats.publishErrors++;
-        DLOG_E(LOG_MQTT, "  ✗ Publish failed! Client state: %d, buffer size: %d", 
-               mqttClient.state(), mqttClient.getBufferSize());
+        DLOG_E(LOG_MQTT, "  ✗ Publish failed! Client state: %d, buffer size: %d",
+               mqttClient->state(), mqttClient->getBufferSize());
     }
     
     return success;
@@ -235,15 +237,15 @@ inline bool MQTTComponent::publishJSON(const String& topic, const JsonDocument& 
 
 inline bool MQTTComponent::publishBinary(const String& topic, const uint8_t* data, size_t length, uint8_t qos, bool retain) {
     if (!isConnected()) return false;
-    
-    bool success = mqttClient.publish(topic.c_str(), data, length, retain);
-    
+
+    bool success = mqttClient->publish(topic.c_str(), data, length, retain);
+
     if (success) {
         stats.publishCount++;
     } else {
         stats.publishErrors++;
     }
-    
+
     return success;
 }
 
@@ -261,21 +263,21 @@ inline bool MQTTComponent::subscribe(const String& topic, uint8_t qos) {
         stats.subscriptionCount = subscriptions.size();
         return true;
     }
-    
-    bool success = mqttClient.subscribe(topic.c_str(), qos);
-    
+
+    bool success = mqttClient->subscribe(topic.c_str(), qos);
+
     if (success) {
         subscriptions.push_back({topic, qos});
         stats.subscriptionCount = subscriptions.size();
         DLOG_I(LOG_MQTT, "Subscribed to: %s (QoS %d)", topic.c_str(), qos);
     }
-    
+
     return success;
 }
 
 inline bool MQTTComponent::unsubscribe(const String& topic) {
-    bool success = mqttClient.unsubscribe(topic.c_str());
-    
+    bool success = mqttClient->unsubscribe(topic.c_str());
+
     if (success) {
         auto it = subscriptions.begin();
         while (it != subscriptions.end()) {
@@ -289,13 +291,13 @@ inline bool MQTTComponent::unsubscribe(const String& topic) {
         stats.subscriptionCount = subscriptions.size();
         DLOG_I(LOG_MQTT, "Unsubscribed from: %s", topic.c_str());
     }
-    
+
     return success;
 }
 
 inline void MQTTComponent::unsubscribeAll() {
     for (const auto& sub : subscriptions) {
-        mqttClient.unsubscribe(sub.topic.c_str());
+        mqttClient->unsubscribe(sub.topic.c_str());
     }
     subscriptions.clear();
     stats.subscriptionCount = 0;
@@ -318,7 +320,7 @@ inline void MQTTComponent::setConfig(const MQTTConfig& cfg) {
     // PubSubClient retains the const char* pointer passed to setServer without copying,
     // so if our String storage changes, the old pointer becomes invalid.
     if (!config.broker.isEmpty()) {
-        mqttClient.setServer(config.broker.c_str(), config.port);
+        mqttClient->setServer(config.broker.c_str(), config.port);
     }
     // Config persistence handled externally (SystemPersistence)
 }
@@ -326,7 +328,7 @@ inline void MQTTComponent::setConfig(const MQTTConfig& cfg) {
 inline void MQTTComponent::setBroker(const String& broker, uint16_t port) {
     config.broker = broker;
     config.port = port;
-    mqttClient.setServer(broker.c_str(), port);
+    mqttClient->setServer(broker.c_str(), port);
 }
 
 inline void MQTTComponent::setCredentials(const String& username, const String& password) {
@@ -341,31 +343,32 @@ inline bool MQTTComponent::connectInternal() {
     bool success = false;
     // Defensive: refresh server pointer before attempting connection in case config changed recently
     if (!config.broker.isEmpty()) {
-        mqttClient.setServer(config.broker.c_str(), config.port);
+        mqttClient->setServer(config.broker.c_str(), config.port);
     }
-    
+
     // Ensure buffer size is preserved across reconnections
-    mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE);
+    mqttClient->setBufferSize(MQTT_MAX_PACKET_SIZE);
     DLOG_D(LOG_MQTT, "MQTT buffer size set to %d bytes", MQTT_MAX_PACKET_SIZE);
     
     // Yield before blocking connection to prevent watchdog issues
-    yield();
-    
+    HAL::Platform::yield();
+
     if (config.enableLWT) {
         if (!config.username.isEmpty()) {
-            success = mqttClient.connect(
+            success = mqttClient->connect(
                 config.clientId.c_str(),
                 config.username.c_str(),
                 config.password.c_str(),
                 config.lwtTopic.c_str(),
                 config.lwtQoS,
                 config.lwtRetain,
-                config.lwtMessage.c_str(),
-                config.cleanSession
+                config.lwtMessage.c_str()
             );
         } else {
-            success = mqttClient.connect(
+            success = mqttClient->connect(
                 config.clientId.c_str(),
+                nullptr,
+                nullptr,
                 config.lwtTopic.c_str(),
                 config.lwtQoS,
                 config.lwtRetain,
@@ -374,19 +377,19 @@ inline bool MQTTComponent::connectInternal() {
         }
     } else {
         if (!config.username.isEmpty()) {
-            success = mqttClient.connect(
+            success = mqttClient->connect(
                 config.clientId.c_str(),
                 config.username.c_str(),
                 config.password.c_str()
             );
         } else {
-            success = mqttClient.connect(config.clientId.c_str());
+            success = mqttClient->connect(config.clientId.c_str());
         }
     }
-    
+
     // Yield after blocking connection to allow watchdog reset
-    yield();
-    
+    HAL::Platform::yield();
+
     return success;
 }
 
@@ -427,27 +430,28 @@ inline void MQTTComponent::processMessageQueue() {
 }
 
 inline void MQTTComponent::handleIncomingMessage(char* topic, byte* payload, unsigned int length) {
-    String topicStr = String(topic);
-    String payloadStr;
-    payloadStr.reserve(length);
-    for (unsigned int i = 0; i < length; i++) {
-        payloadStr += (char)payload[i];
-    }
-    
     stats.receiveCount++;
-    
+
+    // CRITICAL: Payload from PubSubClient is NOT null-terminated!
+    // We must create a null-terminated copy for safe string handling.
+    // Static buffer avoids heap allocation on every message (ESPxx has limited heap).
+    static char payloadBuffer[MQTT_MAX_PACKET_SIZE];
+    size_t copyLen = (length < MQTT_MAX_PACKET_SIZE - 1) ? length : (MQTT_MAX_PACKET_SIZE - 1);
+    memcpy(payloadBuffer, payload, copyLen);
+    payloadBuffer[copyLen] = '\0';  // Null-terminate
+
     // Emit message event for decoupled components
+    // IMPORTANT: topic and payloadBuffer are valid during synchronous event emission only.
+    // Handlers must NOT store these pointers - copy to String if needed beyond handler scope.
     MQTTMessageEvent ev{};
-    strncpy(ev.topic, topicStr.c_str(), sizeof(ev.topic) - 1);
-    ev.topic[sizeof(ev.topic) - 1] = '\0';
-    strncpy(ev.payload, payloadStr.c_str(), sizeof(ev.payload) - 1);
-    ev.payload[sizeof(ev.payload) - 1] = '\0';
-    emit(DomoticsCore::Events::EVENT_MQTT_MESSAGE, ev);
+    ev.topic = topic;  // PubSubClient guarantees null-terminated topic
+    ev.payload = payloadBuffer;  // Our null-terminated payload copy
+    emit(MQTTEvents::EVENT_MESSAGE, ev);
 }
 
 inline void MQTTComponent::updateStatistics() {
     if (isConnected()) {
-        stats.uptime = (millis() - stateChangeTime) / 1000;
+        stats.uptime = (HAL::Platform::getMillis() - stateChangeTime) / 1000;
     }
 }
 
