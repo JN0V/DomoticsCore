@@ -7,9 +7,9 @@
  * Uses HAL abstraction for multi-platform support (ESP32, ESP8266).
  */
 
-#include <Arduino.h>
 #include "DomoticsCore/IComponent.h"
-#include "SystemInfo_HAL.h"  // Hardware Abstraction Layer for SystemInfo
+#include "DomoticsCore/Platform_HAL.h"  // Hardware Abstraction Layer
+#include <cmath>  // For fabsf
 
 namespace DomoticsCore {
 namespace Components {
@@ -22,23 +22,23 @@ namespace Components {
  */
 struct BootDiagnostics {
     uint32_t bootCount = 0;              // Incrementing boot counter (set by System via Storage)
-    HAL::SystemInfo::ResetReason resetReason = HAL::SystemInfo::ResetReason::Unknown;
+    HAL::Platform::ResetReason resetReason = HAL::Platform::ResetReason::Unknown;
     uint32_t lastBootHeap = 0;           // Free heap at boot (captured at boot)
     uint32_t lastBootMinHeap = 0;        // Min free heap at boot (captured at boot)
     bool valid = false;                  // Data captured successfully
-    
+
     /**
      * @brief Get human-readable reset reason string (delegates to HAL)
      */
     String getResetReasonString() const {
-        return HAL::SystemInfo::getResetReasonString(resetReason);
+        return HAL::Platform::getResetReasonString(resetReason);
     }
-    
+
     /**
      * @brief Check if last reset was unexpected (delegates to HAL)
      */
     bool wasUnexpectedReset() const {
-        return HAL::SystemInfo::wasUnexpectedReset(resetReason);
+        return HAL::Platform::wasUnexpectedReset(resetReason);
     }
 };
 
@@ -50,12 +50,12 @@ struct SystemInfoConfig {
     String deviceName = "DomoticsCore Device";
     String manufacturer = "DomoticsCore";
     String firmwareVersion = "1.0.0";
-    
+
     // Diagnostic settings
     bool enableDetailedInfo = true;     // Include detailed chip info
     bool enableMemoryInfo = true;       // Include memory statistics
     int updateInterval = 5000;          // Update interval in ms
-    
+
     // Boot diagnostics settings
     bool enableBootDiagnostics = true;  // Enable boot diagnostics capture
 };
@@ -132,8 +132,8 @@ protected:
         // Heuristic CPU load estimation based on heap allocation activity.
         // On ESP32 Arduino, direct CPU usage isn't available without special FreeRTOS config.
         // We therefore estimate activity over time and smooth it with an EMA.
-        unsigned long currentTime = millis();
-        uint32_t currentHeap = HAL::SystemInfo::getFreeHeap();
+        unsigned long currentTime = HAL::Platform::getMillis();
+        uint32_t currentHeap = HAL::Platform::getFreeHeap();
 
         if (lastHeapCheck > 0) {
             unsigned long dt = currentTime - lastHeapCheck;
@@ -144,12 +144,12 @@ protected:
 
                 // Map activity to an arbitrary 0-100 range
                 // Tuned scale: 10 KB/s ~ 100% load (cap at 100)
-                float instantLoad = constrain(activityPerSec * 10.0f, 0.0f, 100.0f);
+                float instantLoad = HAL::Platform::constrain(activityPerSec * 10.0f, 0.0f, 100.0f);
 
                 // Exponential moving average for stability
                 const float alpha = 0.3f; // smoothing factor
                 cpuLoadEma = (alpha * instantLoad) + ((1.0f - alpha) * cpuLoadEma);
-                metrics.cpuLoad = constrain(cpuLoadEma, 0.0f, 100.0f);
+                metrics.cpuLoad = HAL::Platform::constrain(cpuLoadEma, 0.0f, 100.0f);
             }
         }
 
@@ -176,9 +176,9 @@ public:
     }
 
     void loop() override {
-        if (millis() - lastUpdate >= config.updateInterval) {
+        if (HAL::Platform::getMillis() - lastUpdate >= (unsigned long)config.updateInterval) {
             updateMetrics();
-            lastUpdate = millis();
+            lastUpdate = HAL::Platform::getMillis();
         }
     }
 
@@ -223,9 +223,9 @@ private:
      */
     void initBootDiagnostics() {
         // Capture volatile data at boot using HAL abstraction
-        bootDiag.resetReason = HAL::SystemInfo::getResetReason();
-        bootDiag.lastBootHeap = HAL::SystemInfo::getFreeHeap();
-        bootDiag.lastBootMinHeap = HAL::SystemInfo::getMinFreeHeap();
+        bootDiag.resetReason = HAL::Platform::getResetReason();
+        bootDiag.lastBootHeap = HAL::Platform::getFreeHeap();
+        bootDiag.lastBootMinHeap = HAL::Platform::getMinFreeHeap();
         bootDiag.valid = true;
         
         DLOG_I(LOG_SYSTEM, "Boot diagnostics captured: Reset=%s, Heap=%u/%u",
@@ -241,17 +241,17 @@ private:
     }
     
     void updateMetrics() {
-        metrics.freeHeap = HAL::SystemInfo::getFreeHeap();
-        metrics.totalHeap = HAL::SystemInfo::getTotalHeap();
-        metrics.minFreeHeap = HAL::SystemInfo::getMinFreeHeap();
-        metrics.maxAllocHeap = HAL::SystemInfo::getMaxAllocHeap();
-        metrics.cpuFreq = HAL::SystemInfo::getCpuFreqMHz();
-        metrics.flashSize = HAL::SystemInfo::getFlashSize();
-        metrics.sketchSize = HAL::SystemInfo::getSketchSize();
-        metrics.freeSketchSpace = HAL::SystemInfo::getFreeSketchSpace();
-        metrics.chipModel = HAL::SystemInfo::getChipModel();
-        metrics.chipRevision = HAL::SystemInfo::getChipRevision();
-        metrics.uptime = millis() / 1000;
+        metrics.freeHeap = HAL::Platform::getFreeHeap();
+        metrics.totalHeap = HAL::Platform::getTotalHeap();
+        metrics.minFreeHeap = HAL::Platform::getMinFreeHeap();
+        metrics.maxAllocHeap = HAL::Platform::getMaxAllocHeap();
+        metrics.cpuFreq = HAL::Platform::getCpuFreqMHz();
+        metrics.flashSize = HAL::Platform::getFlashSize();
+        metrics.sketchSize = HAL::Platform::getSketchSize();
+        metrics.freeSketchSpace = HAL::Platform::getFreeSketchSpace();
+        metrics.chipModel = HAL::Platform::getChipModel();
+        metrics.chipRevision = HAL::Platform::getChipRevision();
+        metrics.uptime = HAL::Platform::getMillis() / 1000;
         
         // Calculate CPU load (simplified estimation)
         calculateCpuLoad();

@@ -1,5 +1,4 @@
-#include <Arduino.h>
-#include <WiFi.h>
+#include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/SystemInfo.h>
@@ -14,13 +13,16 @@ using namespace DomoticsCore::Components;
 Core core;
 
 void setup() {
+    HAL::initializeLogging(115200);
+
     DLOG_I(LOG_APP, "=== DomoticsCore SystemInfoWithWebUI Starting ===");
 
     // Bring up a simple AP for demo access
-    String apSSID = String("DomoticsCore-Sys-") + String((uint32_t)ESP.getEfuseMac(), HEX);
-    if (WiFi.softAP(apSSID.c_str())) {
+    String apSSID = String("DomoticsCore-Sys-") + HAL::formatChipIdHex();
+    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::AccessPoint);
+    if (HAL::WiFiHAL::startAP(apSSID.c_str())) {
         DLOG_I(LOG_APP, "AP started: %s", apSSID.c_str());
-        DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+        DLOG_I(LOG_APP, "AP IP: %s", HAL::WiFiHAL::getAPIP().c_str());
     } else {
         DLOG_E(LOG_APP, "Failed to start AP mode");
         return;
