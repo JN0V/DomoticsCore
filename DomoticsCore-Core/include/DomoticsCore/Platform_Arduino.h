@@ -36,6 +36,13 @@ inline void delayMs(unsigned long ms) {
     ::delay(ms);
 }
 
+/**
+ * @brief Yield execution to allow background tasks (Arduino yield())
+ */
+inline void yield() {
+    ::yield();
+}
+
 // =============================================================================
 // String Utilities
 // =============================================================================
