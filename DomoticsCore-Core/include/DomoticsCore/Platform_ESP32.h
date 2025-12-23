@@ -15,6 +15,7 @@
 
 #include "Platform_Arduino.h"
 #include <mbedtls/sha256.h>
+#include <esp_system.h>
 
 namespace DomoticsCore {
 namespace HAL {
@@ -93,6 +94,122 @@ inline void restart() {
  */
 inline float getTemperature() {
     return temperatureRead();
+}
+
+// =============================================================================
+// ESP32-Specific: System Information (Extended)
+// =============================================================================
+
+/**
+ * @brief Get total heap size for ESP32
+ */
+inline uint32_t getTotalHeap() {
+    return ESP.getHeapSize();
+}
+
+/**
+ * @brief Get minimum free heap ever recorded for ESP32
+ */
+inline uint32_t getMinFreeHeap() {
+    return ESP.getMinFreeHeap();
+}
+
+/**
+ * @brief Get maximum allocatable block size for ESP32
+ */
+inline uint32_t getMaxAllocHeap() {
+    return ESP.getMaxAllocHeap();
+}
+
+/**
+ * @brief Get flash chip size for ESP32
+ */
+inline uint32_t getFlashSize() {
+    return ESP.getFlashChipSize();
+}
+
+/**
+ * @brief Get sketch (program) size for ESP32
+ */
+inline uint32_t getSketchSize() {
+    return ESP.getSketchSize();
+}
+
+/**
+ * @brief Get free sketch space for ESP32
+ */
+inline uint32_t getFreeSketchSpace() {
+    return ESP.getFreeSketchSpace();
+}
+
+// =============================================================================
+// ESP32-Specific: Reset Reason
+// =============================================================================
+
+/**
+ * @brief Reset reason codes (platform-agnostic)
+ */
+enum class ResetReason : uint8_t {
+    Unknown = 0,
+    PowerOn = 1,
+    External = 2,
+    Software = 3,
+    Panic = 4,
+    IntWatchdog = 5,
+    TaskWatchdog = 6,
+    Watchdog = 7,
+    DeepSleep = 8,
+    Brownout = 9,
+    SDIO = 10
+};
+
+/**
+ * @brief Get reset reason for ESP32
+ */
+inline ResetReason getResetReason() {
+    switch (esp_reset_reason()) {
+        case ESP_RST_POWERON:   return ResetReason::PowerOn;
+        case ESP_RST_EXT:       return ResetReason::External;
+        case ESP_RST_SW:        return ResetReason::Software;
+        case ESP_RST_PANIC:     return ResetReason::Panic;
+        case ESP_RST_INT_WDT:   return ResetReason::IntWatchdog;
+        case ESP_RST_TASK_WDT:  return ResetReason::TaskWatchdog;
+        case ESP_RST_WDT:       return ResetReason::Watchdog;
+        case ESP_RST_DEEPSLEEP: return ResetReason::DeepSleep;
+        case ESP_RST_BROWNOUT:  return ResetReason::Brownout;
+        case ESP_RST_SDIO:      return ResetReason::SDIO;
+        default:                return ResetReason::Unknown;
+    }
+}
+
+/**
+ * @brief Get human-readable reset reason string
+ */
+inline String getResetReasonString(ResetReason reason) {
+    switch (reason) {
+        case ResetReason::PowerOn:      return "Power-on";
+        case ResetReason::External:     return "External reset";
+        case ResetReason::Software:     return "Software reset";
+        case ResetReason::Panic:        return "Panic/Exception";
+        case ResetReason::IntWatchdog:  return "Interrupt watchdog";
+        case ResetReason::TaskWatchdog: return "Task watchdog";
+        case ResetReason::Watchdog:     return "Other watchdog";
+        case ResetReason::DeepSleep:    return "Deep sleep wake";
+        case ResetReason::Brownout:     return "Brownout";
+        case ResetReason::SDIO:         return "SDIO reset";
+        default:                        return "Unknown";
+    }
+}
+
+/**
+ * @brief Check if reset reason indicates an unexpected/crash reset
+ */
+inline bool wasUnexpectedReset(ResetReason reason) {
+    return reason == ResetReason::Panic ||
+           reason == ResetReason::IntWatchdog ||
+           reason == ResetReason::TaskWatchdog ||
+           reason == ResetReason::Watchdog ||
+           reason == ResetReason::Brownout;
 }
 
 // =============================================================================

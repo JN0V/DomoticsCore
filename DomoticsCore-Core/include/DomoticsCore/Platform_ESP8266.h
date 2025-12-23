@@ -16,6 +16,10 @@
 #include "Platform_Arduino.h"
 #include <bearssl/bearssl_hash.h>
 
+extern "C" {
+#include <user_interface.h>
+}
+
 // ESP8266 logging macros (ESP32 has these built-in)
 #define log_e(fmt, ...) Serial.printf("[E] " fmt "\n", ##__VA_ARGS__)
 #define log_w(fmt, ...) Serial.printf("[W] " fmt "\n", ##__VA_ARGS__)
@@ -99,6 +103,126 @@ inline void restart() {
  */
 inline float getTemperature() {
     return NAN;
+}
+
+// =============================================================================
+// ESP8266-Specific: System Information (Extended)
+// =============================================================================
+
+/**
+ * @brief Get total heap size for ESP8266
+ * @note ESP8266 doesn't provide a direct API, return typical value
+ */
+inline uint32_t getTotalHeap() {
+    return 81920;  // ~80KB typical for ESP8266
+}
+
+/**
+ * @brief Get minimum free heap ever recorded for ESP8266
+ * @note ESP8266 doesn't track this, return current free heap
+ */
+inline uint32_t getMinFreeHeap() {
+    return ESP.getFreeHeap();
+}
+
+/**
+ * @brief Get maximum allocatable block size for ESP8266
+ */
+inline uint32_t getMaxAllocHeap() {
+    return ESP.getMaxFreeBlockSize();
+}
+
+/**
+ * @brief Get flash chip size for ESP8266
+ */
+inline uint32_t getFlashSize() {
+    return ESP.getFlashChipSize();
+}
+
+/**
+ * @brief Get sketch (program) size for ESP8266
+ */
+inline uint32_t getSketchSize() {
+    return ESP.getSketchSize();
+}
+
+/**
+ * @brief Get free sketch space for ESP8266
+ */
+inline uint32_t getFreeSketchSpace() {
+    return ESP.getFreeSketchSpace();
+}
+
+// =============================================================================
+// ESP8266-Specific: Reset Reason
+// =============================================================================
+
+/**
+ * @brief Reset reason codes (platform-agnostic)
+ */
+enum class ResetReason : uint8_t {
+    Unknown = 0,
+    PowerOn = 1,
+    External = 2,
+    Software = 3,
+    Panic = 4,
+    IntWatchdog = 5,
+    TaskWatchdog = 6,
+    Watchdog = 7,
+    DeepSleep = 8,
+    Brownout = 9,
+    SDIO = 10
+};
+
+/**
+ * @brief Get reset reason for ESP8266
+ */
+inline ResetReason getResetReason() {
+    struct rst_info* resetInfo = ESP.getResetInfoPtr();
+    if (resetInfo) {
+        switch (resetInfo->reason) {
+            case REASON_DEFAULT_RST:      return ResetReason::PowerOn;
+            case REASON_WDT_RST:          return ResetReason::Watchdog;
+            case REASON_EXCEPTION_RST:    return ResetReason::Panic;
+            case REASON_SOFT_WDT_RST:     return ResetReason::TaskWatchdog;
+            case REASON_SOFT_RESTART:     return ResetReason::Software;
+            case REASON_DEEP_SLEEP_AWAKE: return ResetReason::DeepSleep;
+            case REASON_EXT_SYS_RST:      return ResetReason::External;
+            default:                      return ResetReason::Unknown;
+        }
+    }
+    return ResetReason::Unknown;
+}
+
+/**
+ * @brief Get human-readable reset reason string
+ */
+inline String getResetReasonString(ResetReason reason) {
+    // Store strings in flash memory (PROGMEM) to save RAM on ESP8266
+    switch (reason) {
+        case ResetReason::PowerOn:      return F("Power-on");
+        case ResetReason::External:     return F("External reset");
+        case ResetReason::Software:     return F("Software reset");
+        case ResetReason::Panic:        return F("Panic/Exception");
+        case ResetReason::IntWatchdog:  return F("Interrupt watchdog");
+        case ResetReason::TaskWatchdog: return F("Task watchdog");
+        case ResetReason::Watchdog:     return F("Other watchdog");
+        case ResetReason::DeepSleep:    return F("Deep sleep wake");
+        case ResetReason::Brownout:     return F("Brownout");
+        case ResetReason::SDIO:         return F("SDIO reset");
+        default:                        return F("Unknown");
+    }
+}
+
+/**
+ * @brief Check if reset reason indicates an unexpected/crash reset
+ */
+inline bool wasUnexpectedReset(ResetReason reason) {
+    return reason == ResetReason::Panic ||
+           reason == ResetReason::IntWatchdog ||
+           reason == ResetReason::TaskWatchdog ||
+           reason == ResetReason::Watchdog ||
+           reason == ResetReason::Brownout;
 }
 
 // =============================================================================

@@ -321,6 +321,114 @@ inline float getTemperature() {
     return NAN;
 }
 
+// =============================================================================
+// Stub-Specific: System Information (Extended)
+// =============================================================================
+
+/**
+ * @brief Get total heap size (stub - always 0)
+ */
+inline uint32_t getTotalHeap() {
+    return 0;
+}
+
+/**
+ * @brief Get minimum free heap ever recorded (stub - always 0)
+ */
+inline uint32_t getMinFreeHeap() {
+    return 0;
+}
+
+/**
+ * @brief Get maximum allocatable block size (stub - always 0)
+ */
+inline uint32_t getMaxAllocHeap() {
+    return 0;
+}
+
+/**
+ * @brief Get flash chip size (stub - always 0)
+ */
+inline uint32_t getFlashSize() {
+    return 0;
+}
+
+/**
+ * @brief Get sketch (program) size (stub - always 0)
+ */
+inline uint32_t getSketchSize() {
+    return 0;
+}
+
+/**
+ * @brief Get free sketch space (stub - always 0)
+ */
+inline uint32_t getFreeSketchSpace() {
+    return 0;
+}
+
+// =============================================================================
+// Stub-Specific: Reset Reason
+// =============================================================================
+
+/**
+ * @brief Reset reason codes (platform-agnostic)
+ */
+enum class ResetReason : uint8_t {
+    Unknown = 0,
+    PowerOn = 1,
+    External = 2,
+    Software = 3,
+    Panic = 4,
+    IntWatchdog = 5,
+    TaskWatchdog = 6,
+    Watchdog = 7,
+    DeepSleep = 8,
+    Brownout = 9,
+    SDIO = 10
+};
+
+/**
+ * @brief Get reset reason for stub platform
+ */
+inline ResetReason getResetReason() {
+    return ResetReason::Unknown;
+}
+
+/**
+ * @brief Get human-readable reset reason string
+ */
+inline String getResetReasonString(ResetReason reason) {
+    switch (reason) {
+        case ResetReason::PowerOn:      return "Power-on";
+        case ResetReason::External:     return "External reset";
+        case ResetReason::Software:     return "Software reset";
+        case ResetReason::Panic:        return "Panic/Exception";
+        case ResetReason::IntWatchdog:  return "Interrupt watchdog";
+        case ResetReason::TaskWatchdog: return "Task watchdog";
+        case ResetReason::Watchdog:     return "Other watchdog";
+        case ResetReason::DeepSleep:    return "Deep sleep wake";
+        case ResetReason::Brownout:     return "Brownout";
+        case ResetReason::SDIO:         return "SDIO reset";
+        default:                        return "Unknown";
+    }
+}
+
+/**
+ * @brief Check if reset reason indicates an unexpected/crash reset
+ */
+inline bool wasUnexpectedReset(ResetReason reason) {
+    return reason == ResetReason::Panic ||
+           reason == ResetReason::IntWatchdog ||
+           reason == ResetReason::TaskWatchdog ||
+           reason == ResetReason::Watchdog ||
+           reason == ResetReason::Brownout;
+}
+
+// =============================================================================
+// Stub-Specific: LED Polarity
+// =============================================================================
+
 /**
  * @brief Get the correct value to turn LED_BUILTIN ON for stub platform
  * @return HIGH (default active-high)
@@ -369,6 +477,14 @@ inline void analogWrite(uint8_t pin, int value) {
  */
 inline long map(long value, long fromLow, long fromHigh, long toLow, long toHigh) {
     return (value - fromLow) * (toHigh - toLow) / (fromHigh - fromLow) + toLow;
+}
+
+/**
+ * @brief Constrain a value between min and max (template version for any type)
+ */
+template<typename T>
+inline T constrain(T value, T min_val, T max_val) {
+    return (value < min_val) ? min_val : ((value > max_val) ? max_val : value);
 }
 
 /**
