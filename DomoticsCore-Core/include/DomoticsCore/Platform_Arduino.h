@@ -114,6 +114,28 @@ inline long map(long value, long fromLow, long fromHigh, long toLow, long toHigh
 }
 
 /**
+ * @brief Constrain a value between min and max (template version for any type)
+ * Arduino defines constrain as a macro, so we capture it first
+ */
+#ifdef constrain
+    // Capture Arduino's constrain implementation before undefining
+    #define _ARDUINO_CONSTRAIN(amt,low,high) ((amt)<(low)?(low):((amt)>(high)?(high):(amt)))
+    #undef constrain
+
+    // Provide template version that works with any numeric type
+    template<typename T>
+    inline T constrain(T value, T min_val, T max_val) {
+        return (value < min_val) ? min_val : ((value > max_val) ? max_val : value);
+    }
+#else
+    // Native/non-Arduino platforms
+    template<typename T>
+    inline T constrain(T value, T min_val, T max_val) {
+        return (value < min_val) ? min_val : ((value > max_val) ? max_val : value);
+    }
+#endif
+
+/**
  * @brief Mathematical constant PI
  * Arduino's PI macro is captured and redefined as constexpr for type safety
  */
