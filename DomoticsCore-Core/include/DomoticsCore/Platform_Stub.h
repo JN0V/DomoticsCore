@@ -211,6 +211,13 @@ inline void delayMs(unsigned long ms) {
 }
 
 /**
+ * @brief Yield execution to allow background tasks (stub: thread yield)
+ */
+inline void yield() {
+    std::this_thread::yield();
+}
+
+/**
  * @brief Format chip ID as hexadecimal string for stub platforms
  */
 inline String formatChipIdHex() {
