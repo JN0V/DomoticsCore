@@ -10,6 +10,10 @@ class DomoticsApp {
         this.WebUILocation = { Dashboard: 0, ComponentDetail: 1, HeaderStatus: 2, QuickControls: 3, Settings: 4, HeaderInfo: 5 };
         this.WebUIFieldType = { Text: 0, Number: 1, Float: 2, Boolean: 3, Select: 4, Slider: 5, Color: 6, Button: 7, Display: 8, Chart: 9, Status: 10, Progress: 11, Password: 12, File: 13 };
 
+        // Chart history storage (contextId_fieldName -> array of values)
+        this.chartData = new Map();
+        this.maxChartPoints = 60; // 2 minutes at 2s intervals
+
         this.init();
     }
 
@@ -362,6 +366,16 @@ class DomoticsApp {
                     </div>
                 `;
                 break;
+            case this.WebUIFieldType.Chart:
+                // Line chart with canvas
+                fieldHtml = `
+                    <div class="chart-container">
+                        <canvas id="${fieldId}_canvas" width="300" height="120"></canvas>
+                        <div class="chart-value" data-field-name="${field.name}">
+                            <span class="value" id="${fieldId}_value">0${field.unit || ''}</span>
+                        </div>
+                    </div>`;
+                break;
             case this.WebUIFieldType.Display:
             default:
                 // Add a data-attribute to uniquely identify the value span for WS updates
@@ -561,6 +575,16 @@ class DomoticsApp {
                             }
                             if (textEl) {
                                 textEl.textContent = value || '0%';
+                            }
+                            return;
+                        }
+
+                        // Special handling for Chart fields
+                        if (fieldSchema && fieldSchema.type === this.WebUIFieldType.Chart) {
+                            const fieldId = `${contextId}_${fieldName}`;
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue)) {
+                                this.updateChart(fieldId, numValue, fieldSchema.unit || '');
                             }
                             return;
                         }
@@ -1086,6 +1110,80 @@ class DomoticsApp {
         } else {
             console.warn('WebSocket not connected. UI command not sent.');
         }
+    }
+
+    updateChart(fieldId, value, unit) {
+        // Store value in history
+        if (!this.chartData.has(fieldId)) {
+            this.chartData.set(fieldId, []);
+        }
+        const history = this.chartData.get(fieldId);
+        history.push(value);
+        if (history.length > this.maxChartPoints) {
+            history.shift();
+        }
+
+        // Update display value
+        const valueEl = document.getElementById(`${fieldId}_value`);
+        if (valueEl) {
+            valueEl.textContent = `${value.toFixed(1)}${unit}`;
+        }
+
+        // Draw chart
+        this.drawChart(fieldId, history, unit);
+    }
+
+    drawChart(fieldId, data, unit) {
+        const canvas = document.getElementById(`${fieldId}_canvas`);
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, width, height);
+
+        if (!data || data.length === 0) return;
+
+        // Draw grid lines
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+            const y = (height / 4) * i;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+
+        // Determine scale (0-100 for percentages, auto for others)
+        const maxValue = unit === '%' ? 100 : Math.max(...data, 1);
+        const minValue = 0;
+
+        // Draw line
+        ctx.strokeStyle = '#007acc';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        const stepX = width / Math.max(data.length - 1, 1);
+        data.forEach((val, i) => {
+            const x = i * stepX;
+            const y = height - ((val - minValue) / (maxValue - minValue)) * height * 0.9;
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        ctx.stroke();
+
+        // Fill area under curve
+        ctx.fillStyle = 'rgba(0, 122, 204, 0.2)';
+        ctx.lineTo(width, height);
+        ctx.lineTo(0, height);
+        ctx.closePath();
+        ctx.fill();
     }
 
     injectCustomStyles() {
