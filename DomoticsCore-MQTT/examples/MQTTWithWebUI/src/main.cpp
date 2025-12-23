@@ -22,8 +22,8 @@
  * like automatic reconnection, network scanning, and credential management.
  */
 
-#include <Arduino.h>
-#include <WiFi.h>
+#include <DomoticsCore/Platform_HAL.h>
+#include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/MQTT.h>
@@ -56,32 +56,81 @@ Utils::NonBlockingDelay publishTimer(10000);  // Publish every 10 seconds
 // ========== Setup ==========
 
 void setup() {
-    Serial.begin(115200);
-    delay(1000);
-    
-    DLOG_I(LOG_APP, "========================================");
-    DLOG_I(LOG_APP, "DomoticsCore - MQTT with WebUI");
-    DLOG_I(LOG_APP, "========================================");
-    
-    // Connect to WiFi (using ESP32 native WiFi for simplicity)
-    // In production, use DomoticsCore-WiFi component
+    // Initialize logging system before any DLOG calls
+    HAL::Platform::initializeLogging(115200);
+
+    // ============================================================================
+    // EXAMPLE: MQTT with WebUI Configuration
+    // ============================================================================
+    // This example demonstrates MQTT with web-based configuration interface:
+    // - Web interface for MQTT broker configuration
+    // - Real-time connection status monitoring in browser
+    // - Statistics dashboard (messages sent/received, uptime)
+    // - Interactive testing through WebUI
+    // - Periodic telemetry publishing (JSON format)
+    // - EventBus-based event handling
+    // Expected Console Output:
+    //   [APP] === MQTT with WebUI ===
+    //   [APP] MQTT with web-based configuration
+    //   [APP] - Web interface for broker config
+    //   [APP] - Real-time status monitoring
+    //   [APP] - Statistics dashboard
+    //   [APP] - Telemetry publishing (JSON, every 10s)
+    //   [APP] ==============================
+    //   [APP] Connecting to WiFi: YourWifiSSID
+    //   [APP] ✓ WiFi connected! IP: 192.168.1.XXX
+    //   [WebUI] Initializing on port 80
+    //   [MQTT] Initializing
+    //   [MQTT] Connected to mqtt.example.com:1883
+    //   [APP] 📡 MQTT Connected!
+    //   [APP]   ✓ Published online status
+    //   [APP]   ✓ Subscribed to commands
+    //   [APP] ✓ MQTT WebUI provider registered
+    //   [APP] WebUI: http://192.168.1.XXX
+    //   (Every 10 seconds: telemetry JSON published)
+    //   [APP] 📤 Published telemetry
+    //
+    // To test command handling, publish to commands topic:
+    //   mosquitto_pub -h mqtt.example.com -t "esp32-webui-XXXX/command/test" -m "hello"
+    //
+    // Expected output when receiving commands:
+    //   [APP] 📨 Command received: esp32-webui-XXXX/command/test = hello
+    //
+    // Expected WebUI Access:
+    //   - Browse to http://<device-ip>
+    //   - Configure MQTT broker in Settings tab
+    //   - Monitor statistics in Components tab
+    // ============================================================================
+
+    DLOG_I(LOG_APP, "=== MQTT with WebUI ===");
+    DLOG_I(LOG_APP, "MQTT with web-based configuration");
+    DLOG_I(LOG_APP, "- Web interface for broker config");
+    DLOG_I(LOG_APP, "- Real-time status monitoring");
+    DLOG_I(LOG_APP, "- Statistics dashboard");
+    DLOG_I(LOG_APP, "- Telemetry publishing (JSON, every 10s)");
+    DLOG_I(LOG_APP, "==============================");
+
+    // Connect to WiFi using HAL (ESP32/ESP8266 compatible)
+    // In production, use DomoticsCore-WiFi component for advanced features
     DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    
+    HAL::WiFiHAL::init();
+    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
+    HAL::WiFiHAL::connect(WIFI_SSID, WIFI_PASSWORD);
+
     int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
+    while (!HAL::WiFiHAL::isConnected() && attempts < 20) {
+        HAL::Platform::delayMs(500);
         attempts++;
     }
-    
-    if (WiFi.status() != WL_CONNECTED) {
+
+    if (!HAL::WiFiHAL::isConnected()) {
         DLOG_W(LOG_APP, "✗ WiFi connection failed!");
         DLOG_I(LOG_APP, "Starting AP mode for configuration...");
-        WiFi.softAP("ESP32-MQTT-Setup");
-        DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+        HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::AccessPoint);
+        HAL::WiFiHAL::startAP("MQTT-WebUI-Setup", "");
+        DLOG_I(LOG_APP, "AP IP: %s", HAL::WiFiHAL::getAPIP().c_str());
     } else {
-        DLOG_I(LOG_APP, "✓ WiFi connected! IP: %s", WiFi.localIP().toString().c_str());
+        DLOG_I(LOG_APP, "✓ WiFi connected! IP: %s", HAL::WiFiHAL::getLocalIP().c_str());
     }
     
     // Configure WebUI
@@ -96,7 +145,7 @@ void setup() {
     MQTTConfig mqttConfig;
     mqttConfig.broker = MQTT_BROKER;
     mqttConfig.port = MQTT_PORT;
-    mqttConfig.clientId = "esp32-webui-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+    mqttConfig.clientId = "mqtt-webui-" + String((uint32_t)HAL::Platform::getChipId(), HEX);
     mqttConfig.enabled = true;
     mqttConfig.autoReconnect = true;
     mqttConfig.enableLWT = true;
@@ -111,26 +160,27 @@ void setup() {
     
     // Register EventBus listeners (capture clientId before config is moved)
     String clientId = mqttConfig.clientId;
-    
-    core.on<bool>("mqtt/connected", [&core, clientId](const bool&) {
+
+    // Note: core is global, no need to capture it by reference
+    core.on<bool>("mqtt/connected", [clientId](const bool&) {
         DLOG_I(LOG_APP, "📡 MQTT Connected!");
-        
-        // Publish online status via EventBus
+
+        // Publish online status via EventBus (pointer-based event)
+        static String statusTopic = clientId + "/status";
         DomoticsCore::Components::MQTTPublishEvent pubEv{};
-        String statusTopic = clientId + "/status";
-        strncpy(pubEv.topic, statusTopic.c_str(), sizeof(pubEv.topic) - 1);
-        strncpy(pubEv.payload, "online", sizeof(pubEv.payload) - 1);
+        pubEv.topic = statusTopic.c_str();
+        pubEv.payload = "online";
         pubEv.qos = 1;
         pubEv.retain = true;
         core.emit("mqtt/publish", pubEv);
-        
-        // Subscribe to command topics via EventBus
+
+        // Subscribe to command topics via EventBus (pointer-based event)
+        static String commandTopic = clientId + "/command/#";
         DomoticsCore::Components::MQTTSubscribeEvent subEv{};
-        String commandTopic = clientId + "/command/#";
-        strncpy(subEv.topic, commandTopic.c_str(), sizeof(subEv.topic) - 1);
+        subEv.topic = commandTopic.c_str();
         subEv.qos = 1;
         core.emit("mqtt/subscribe", subEv);
-        
+
         DLOG_I(LOG_APP, "  ✓ Published online status");
         DLOG_I(LOG_APP, "  ✓ Subscribed to commands");
     });
@@ -154,14 +204,14 @@ void setup() {
     }
     
     DLOG_I(LOG_APP, "✓ Setup complete!");
-    
-    if (WiFi.status() == WL_CONNECTED) {
+
+    if (HAL::WiFiHAL::isConnected()) {
         DLOG_I(LOG_APP, "========================================");
-        DLOG_I(LOG_APP, "WebUI: http://%s", WiFi.localIP().toString().c_str());
+        DLOG_I(LOG_APP, "WebUI: http://%s", HAL::WiFiHAL::getLocalIP().c_str());
         DLOG_I(LOG_APP, "========================================");
     } else {
         DLOG_I(LOG_APP, "========================================");
-        DLOG_I(LOG_APP, "WebUI: http://%s", WiFi.softAPIP().toString().c_str());
+        DLOG_I(LOG_APP, "WebUI: http://%s", HAL::WiFiHAL::getAPIP().c_str());
         DLOG_I(LOG_APP, "========================================");
     }
 }
@@ -177,9 +227,9 @@ void loop() {
         if (mqtt && mqtt->isConnected()) {
             // Publish JSON telemetry
             JsonDocument doc;
-            doc["uptime"] = millis() / 1000;
-            doc["freeHeap"] = ESP.getFreeHeap();
-            doc["rssi"] = WiFi.RSSI();
+            doc["uptime"] = HAL::Platform::getMillis() / 1000;
+            doc["freeHeap"] = HAL::Platform::getFreeHeap();
+            doc["rssi"] = HAL::WiFiHAL::getRSSI();
             doc["temperature"] = 20.0 + (random(0, 100) / 10.0);
             
             String telemetryTopic = mqtt->getConfig().clientId + "/telemetry";

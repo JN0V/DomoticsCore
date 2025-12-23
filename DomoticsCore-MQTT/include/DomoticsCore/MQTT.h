@@ -3,23 +3,21 @@
 /**
  * @file MQTT.h
  * @brief Declares the DomoticsCore MQTT component.
- * 
+ *
  * @example DomoticsCore-MQTT/examples/BasicMQTT/src/main.cpp
  * @example DomoticsCore-MQTT/examples/MQTTWithWebUI/src/main.cpp
- * 
+ *
  * Uses Wifi_HAL for WiFi connectivity checks (multi-platform support).
  */
 
-// Set PubSubClient buffer size before including the library
-#define MQTT_MAX_PACKET_SIZE 1024
-
 #include <DomoticsCore/IComponent.h>
-#include <DomoticsCore/Platform_HAL.h>  // For chip ID and platform info
+#include <DomoticsCore/Platform_HAL.h>  // For chip ID, platform info, and MQTT_MAX_PACKET_SIZE
 #include <DomoticsCore/Wifi_HAL.h>      // For WiFi connectivity check
+#include <DomoticsCore/MQTT_HAL.h>      // Platform-abstracted MQTT client
+#include <DomoticsCore/MQTTEvents.h>    // MQTT event constants
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Timer.h>
 #include <DomoticsCore/Events.h>
-#include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <functional>
 #include <vector>
@@ -34,28 +32,46 @@ namespace Components {
 
 /**
  * @brief Event for publishing MQTT messages via EventBus
+ *
+ * Uses const char* to avoid large stack allocations - perfect for ESP8266.
+ * Caller must ensure strings remain valid during event emission (synchronous).
+ *
+ * Example usage:
+ *   MQTTPublishEvent ev{};
+ *   ev.topic = "home/sensor";      // Can point to String.c_str() or literal
+ *   ev.payload = jsonStr.c_str();  // String must stay in scope
+ *   ev.qos = 1;
+ *   ev.retain = false;
+ *   core.emit("mqtt/publish", ev);
  */
 struct MQTTPublishEvent {
-    char topic[160];      ///< MQTT topic (max 160 chars)
-    char payload[2048];   ///< Message payload (max 2048 chars)
+    const char* topic;    ///< MQTT topic (pointer must remain valid during emit)
+    const char* payload;  ///< Message payload (pointer must remain valid during emit)
     uint8_t qos;          ///< QoS level (0, 1, 2)
     bool retain;          ///< Retain flag
 };
 
 /**
  * @brief Event for subscribing to MQTT topics via EventBus
+ *
+ * Uses const char* to avoid stack allocations.
  */
 struct MQTTSubscribeEvent {
-    char topic[160];      ///< Topic filter (supports wildcards)
-    uint8_t qos;          ///< QoS level
+    const char* topic;  ///< Topic filter (supports wildcards, pointer must remain valid during emit)
+    uint8_t qos;        ///< QoS level
 };
 
 /**
  * @brief Event for incoming MQTT messages via EventBus
+ *
+ * Strings point to internal buffers that are valid ONLY during the event handler.
+ * If you need to use the data after the handler returns, copy it to a String:
+ *   String myTopic = String(ev.topic);
+ *   String myPayload = String(ev.payload);
  */
 struct MQTTMessageEvent {
-    char topic[160];      ///< Message topic
-    char payload[2048];   ///< Message payload
+    const char* topic;    ///< Message topic (valid during handler only)
+    const char* payload;  ///< Message payload (valid during handler only)
 };
 
 /**
@@ -210,8 +226,7 @@ public:
      * @return true if connected
      */
     bool isConnected() const {
-        // PubSubClient::connected() is not const, so we need const_cast
-        return const_cast<PubSubClient&>(mqttClient).connected() && state == MQTTState::Connected;
+        return mqttClient && mqttClient->connected() && state == MQTTState::Connected;
     }
     
     /**
@@ -361,12 +376,10 @@ public:
 private:
     // Configuration
     MQTTConfig config;
-    
-    // Network clients (using HAL types for platform independence)
-    HAL::NetworkClient wifiClient;
-    HAL::SecureNetworkClient wifiClientSecure;
-    PubSubClient mqttClient;
-    
+
+    // MQTT client (using HAL for platform independence)
+    HAL::MQTT::MQTTClientImpl* mqttClient;
+
     // State management
     MQTTState state;
     String lastError;

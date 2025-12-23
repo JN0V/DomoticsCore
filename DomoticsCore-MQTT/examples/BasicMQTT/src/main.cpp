@@ -20,8 +20,8 @@
  * for simplicity and to show standalone MQTT usage without full component stack.
  */
 
-#include <Arduino.h>
-#include <WiFi.h>
+#include <DomoticsCore/Platform_HAL.h>
+#include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/MQTT.h>
 #include <DomoticsCore/Logger.h>
@@ -46,9 +46,9 @@ const char* MQTT_USERNAME = "";  // Leave empty if no auth required
 const char* MQTT_PASSWORD = "";
 
 // MQTT topics
-const char* TOPIC_STATUS = "home/esp32/status";
-const char* TOPIC_SENSOR = "home/esp32/sensor/temperature";
-const char* TOPIC_COMMAND = "home/esp32/command/#";  // Wildcard: all commands
+const char* TOPIC_STATUS = "home/mydevice/status";
+const char* TOPIC_SENSOR = "home/mydevice/sensor/temperature";
+const char* TOPIC_COMMAND = "home/mydevice/command/#";  // Wildcard: all commands
 
 // ========== Global Variables ==========
 
@@ -58,27 +58,75 @@ Utils::NonBlockingDelay publishTimer(5000);  // Publish every 5 seconds
 // ========== Setup ==========
 
 void setup() {
-    Serial.begin(115200);
-    delay(1000);
-    
-    DLOG_I(LOG_APP, "========================================");
-    DLOG_I(LOG_APP, "DomoticsCore - Basic MQTT Example");
-    DLOG_I(LOG_APP, "========================================");
-    
-    // Connect to WiFi (using ESP32 native WiFi for simplicity)
-    // In production, use DomoticsCore-WiFi component for full features
+    // Initialize logging system before any DLOG calls
+    HAL::Platform::initializeLogging(115200);
+
+    // ============================================================================
+    // EXAMPLE: Basic MQTT Client with EventBus Integration
+    // ============================================================================
+    // This example demonstrates MQTT communication using EventBus:
+    // - Connects to WiFi using HAL abstraction (ESP32/ESP8266 compatible)
+    // - Configures MQTT with Last Will & Testament (LWT)
+    // - Publishes status ("online") when connected
+    // - Subscribes to command topics (home/mydevice/command/#)
+    // - Publishes simulated sensor data every 5 seconds
+    // - Handles incoming commands (LED on/off, restart)
+    // - Uses pointer-based events (no stack overflow on ESP8266)
+    // Expected Console Output:
+    //   [APP] === Basic MQTT Example ===
+    //   [APP] MQTT client with EventBus integration
+    //   [APP] - WiFi connection using HAL (ESP32/ESP8266 compatible)
+    //   [APP] - MQTT with Last Will & Testament (LWT)
+    //   [APP] - Publish/Subscribe via EventBus
+    //   [APP] - Sensor data published every 5 seconds
+    //   [APP] - Command handling (LED on/off, restart)
+    //   [APP] =====================================
+    //   [APP] Connecting to WiFi: YourWiFiSSID
+    //   [APP] ✓ WiFi connected! IP: 192.168.1.XXX
+    //   [MQTT] Initializing
+    //   [MQTT] Connected to mqtt.example.com:1883
+    //   [APP] 📡 MQTT Connected!
+    //   [APP]   ✓ Published: home/mydevice/status = online
+    //   [APP]   ✓ Subscribed to: home/mydevice/command/#
+    //   [APP] 📤 Published: home/mydevice/sensor/temperature = 25.3°C
+    //   [APP]    Stats: 2 sent, 0 received, uptime 5s
+    //   (Every 5 seconds: temperature publication with stats)
+    //
+    // To test command handling, publish to these topics:
+    //   mosquitto_pub -h mqtt.example.com -t "home/mydevice/command/led" -m "on"
+    //   mosquitto_pub -h mqtt.example.com -t "home/mydevice/command/led" -m "off"
+    //   mosquitto_pub -h mqtt.example.com -t "home/mydevice/command/restart" -m "1"
+    //
+    // Expected output when receiving commands:
+    //   [APP] 📨 Received command
+    //   [APP]   Topic: home/mydevice/command/led
+    //   [APP]   Payload: on
+    //   [APP] 💡 LED ON
+    // ============================================================================
+
+    DLOG_I(LOG_APP, "=== Basic MQTT Example ===");
+    DLOG_I(LOG_APP, "MQTT client with EventBus integration");
+    DLOG_I(LOG_APP, "- WiFi connection using HAL (ESP32/ESP8266 compatible)");
+    DLOG_I(LOG_APP, "- MQTT with Last Will & Testament (LWT)");
+    DLOG_I(LOG_APP, "- Publish/Subscribe via EventBus");
+    DLOG_I(LOG_APP, "- Sensor data published every 5 seconds");
+    DLOG_I(LOG_APP, "- Command handling (LED on/off, restart)");
+    DLOG_I(LOG_APP, "=====================================");
+
+    // Connect to WiFi using HAL
     DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    HAL::WiFiHAL::init();
+    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
+    HAL::WiFiHAL::connect(WIFI_SSID, WIFI_PASSWORD);
     
     int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
+    while (!HAL::WiFiHAL::isConnected() && attempts < 20) {
+        HAL::Platform::delayMs(500);
         attempts++;
     }
     
-    if (WiFi.status() == WL_CONNECTED) {
-        DLOG_I(LOG_APP, "✓ WiFi connected! IP: %s", WiFi.localIP().toString().c_str());
+    if (HAL::WiFiHAL::isConnected()) {
+        DLOG_I(LOG_APP, "✓ WiFi connected! IP: %s", HAL::WiFiHAL::getLocalIP().c_str());
     } else {
         DLOG_E(LOG_APP, "✗ WiFi connection failed!");
         return;
@@ -90,7 +138,7 @@ void setup() {
     mqttConfig.port = MQTT_PORT;
     mqttConfig.username = MQTT_USERNAME;
     mqttConfig.password = MQTT_PASSWORD;
-    mqttConfig.clientId = "esp32-basic-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+    mqttConfig.clientId = "domotics-basic-" + String((uint32_t)HAL::Platform::getChipId(), HEX);
     mqttConfig.enabled = true;
     mqttConfig.autoReconnect = true;
     mqttConfig.enableLWT = true;
@@ -109,23 +157,25 @@ void setup() {
     core.addComponent(std::make_unique<MQTTComponent>(mqttConfig));
     
     // Register EventBus listeners BEFORE initializing components
-    core.on<bool>("mqtt/connected", [&core](const bool&) {
+    // Note: Capture core by pointer to avoid non-automatic storage duration warning
+    Core* corePtr = &core;
+    core.on<bool>("mqtt/connected", [corePtr](const bool&) {
         DLOG_I(LOG_APP, "📡 MQTT Connected!");
         
         // Publish online status via EventBus
         DomoticsCore::Components::MQTTPublishEvent pubEv{};
-        strncpy(pubEv.topic, TOPIC_STATUS, sizeof(pubEv.topic) - 1);
-        strncpy(pubEv.payload, "online", sizeof(pubEv.payload) - 1);
+        pubEv.topic = TOPIC_STATUS;
+        pubEv.payload = "online";
         pubEv.qos = 1;
         pubEv.retain = true;
-        core.emit("mqtt/publish", pubEv);
+        corePtr->emit("mqtt/publish", pubEv);
         DLOG_I(LOG_APP, "  ✓ Published: %s = online", TOPIC_STATUS);
-        
+
         // Subscribe to commands via EventBus
         DomoticsCore::Components::MQTTSubscribeEvent subEv{};
-        strncpy(subEv.topic, TOPIC_COMMAND, sizeof(subEv.topic) - 1);
+        subEv.topic = TOPIC_COMMAND;
         subEv.qos = 1;
-        core.emit("mqtt/subscribe", subEv);
+        corePtr->emit("mqtt/subscribe", subEv);
         DLOG_I(LOG_APP, "  ✓ Subscribed to: %s", TOPIC_COMMAND);
     });
     
@@ -134,26 +184,27 @@ void setup() {
     });
     
     core.on<DomoticsCore::Components::MQTTMessageEvent>("mqtt/message", [](const DomoticsCore::Components::MQTTMessageEvent& ev) {
-        String topic = String(ev.topic);
-        String payloadStr = String(ev.payload);
-        
+        // ev.topic and ev.payload are const char* pointers valid during this handler
         DLOG_I(LOG_APP, "📨 Received command");
-        DLOG_I(LOG_APP, "  Topic: %s", topic.c_str());
-        DLOG_I(LOG_APP, "  Payload: %s", payloadStr.c_str());
-        
-        // Parse command
+        DLOG_I(LOG_APP, "  Topic: %s", ev.topic);
+        DLOG_I(LOG_APP, "  Payload: %s", ev.payload);
+
+        // Parse command - use strcmp for C strings
+        String topic = String(ev.topic);  // Convert if needed for String methods
+        String payload = String(ev.payload);
+
         if (topic.endsWith("/led")) {
-            if (payloadStr == "on") {
+            if (payload == "on") {
                 DLOG_I(LOG_APP, "💡 LED ON");
                 // digitalWrite(LED_PIN, HIGH);
-            } else if (payloadStr == "off") {
+            } else if (payload == "off") {
                 DLOG_I(LOG_APP, "💡 LED OFF");
                 // digitalWrite(LED_PIN, LOW);
             }
         } else if (topic.endsWith("/restart")) {
             DLOG_I(LOG_APP, "🔄 Restarting...");
-            delay(1000);
-            ESP.restart();
+            HAL::Platform::delayMs(1000);
+            HAL::Platform::restart();
         }
     });
     
@@ -184,7 +235,7 @@ void loop() {
                 
                 // Show statistics
                 const auto& stats = mqtt->getStatistics();
-                DLOG_I(LOG_APP, "   Stats: %lu sent, %lu received, uptime %lus",
+                DLOG_I(LOG_APP, "   Stats: %u sent, %u received, uptime %us",
                              stats.publishCount, stats.receiveCount, stats.uptime);
             }
         }
