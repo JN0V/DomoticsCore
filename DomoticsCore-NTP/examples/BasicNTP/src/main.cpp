@@ -10,8 +10,7 @@
  * - System uptime
  */
 
-#include <Arduino.h>
-#include <WiFi.h>
+#include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/NTP.h>
 #include <DomoticsCore/Logger.h>
@@ -36,25 +35,25 @@ Utils::NonBlockingDelay displayTimer(10000);  // Display every 10 seconds
 // ========== Setup ==========
 
 void setup() {
-    Serial.begin(115200);  // Required for ESP32 logging output
-    delay(1000);  // Allow serial to initialize
+    HAL::initializeLogging(115200);
     
     DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "DomoticsCore - Basic NTP Example");
     DLOG_I(LOG_APP, "========================================");
     
-    // Connect to WiFi
+    // Connect to WiFi using HAL
     DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    HAL::WiFiHAL::init();
+    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
+    HAL::WiFiHAL::connect(WIFI_SSID, WIFI_PASSWORD);
     
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
+    while (!HAL::WiFiHAL::isConnected()) {
+        HAL::delay(500);
         DLOG_D(LOG_APP, ".");
     }
     
     DLOG_I(LOG_APP, "WiFi connected!");
-    DLOG_I(LOG_APP, "IP address: %s", WiFi.localIP().toString().c_str());
+    DLOG_I(LOG_APP, "IP address: %s", HAL::WiFiHAL::getLocalIP().c_str());
     
     // Configure NTP
     NTPConfig cfg;
@@ -94,7 +93,7 @@ void setup() {
     // Initialize
     if (!core.begin()) {
         DLOG_E(LOG_APP, "Failed to initialize core!");
-        while (1) delay(1000);
+        while (1) HAL::delay(1000);
     }
     
     DLOG_I(LOG_APP, "System initialized. Waiting for time sync...");
@@ -117,7 +116,7 @@ void loop() {
             DLOG_I(LOG_APP, "Time: %s", ntp->getFormattedTime("%H:%M:%S").c_str());
             DLOG_I(LOG_APP, "12h:  %s", ntp->getFormattedTime("%I:%M:%S %p").c_str());
             DLOG_I(LOG_APP, "Long: %s", ntp->getFormattedTime("%A, %B %d, %Y").c_str());
-            DLOG_I(LOG_APP, "Unix: %ld", ntp->getUnixTime());
+            DLOG_I(LOG_APP, "Unix: %lld", (long long)ntp->getUnixTime());
             DLOG_I(LOG_APP, "Uptime: %s", ntp->getFormattedUptime().c_str());
             
             // Next sync

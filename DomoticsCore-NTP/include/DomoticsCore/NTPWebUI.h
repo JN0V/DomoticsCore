@@ -9,11 +9,61 @@ namespace DomoticsCore {
 namespace Components {
 namespace WebUI {
 
+// ========== Constexpr Timezone Lookup (stored in flash, not RAM) ==========
+
+/**
+ * @brief Timezone entry for constexpr lookup table
+ */
+struct TimezoneLookupEntry {
+    const char* posix;       // POSIX timezone string
+    const char* friendly;    // User-friendly name
+};
+
+/**
+ * @brief Constexpr timezone lookup table (stored in flash on ESP8266/ESP32)
+ *
+ * This replaces std::map<String, String> to save ~3-4KB RAM on ESP8266.
+ * Linear search is acceptable for 29 entries (O(29) worst case).
+ */
+static constexpr TimezoneLookupEntry TIMEZONE_LOOKUP[] = {
+    {"UTC0", "UTC"},
+    {"WET0WEST,M3.5.0/1,M10.5.0", "London"},
+    {"CET-1CEST,M3.5.0,M10.5.0/3", "Paris (CET)"},
+    {"EET-2EEST,M3.5.0/3,M10.5.0/4", "Athens (EET)"},
+    {"MSK-3", "Moscow"},
+    {"EST5EDT,M3.2.0,M11.1.0", "New York"},
+    {"CST6CDT,M3.2.0,M11.1.0", "Chicago"},
+    {"MST7MDT,M3.2.0,M11.1.0", "Denver"},
+    {"PST8PDT,M3.2.0,M11.1.0", "Los Angeles"},
+    {"AKST9AKDT,M3.2.0,M11.1.0", "Anchorage"},
+    {"HST10", "Honolulu"},
+    {"<-03>3", "Sao Paulo"},
+    {"CST-8", "Shanghai"},
+    {"JST-9", "Tokyo"},
+    {"KST-9", "Seoul"},
+    {"IST-5:30", "India"},
+    {"PKT-5", "Karachi"},
+    {"<+07>-7", "Bangkok"},
+    {"WIB-7", "Jakarta"},
+    {"GST-4", "Dubai"},
+    {"AEST-10AEDT,M10.1.0,M4.1.0/3", "Sydney"},
+    {"ACST-9:30ACDT,M10.1.0,M4.1.0/3", "Adelaide"},
+    {"AWST-8", "Perth"},
+    {"NZST-12NZDT,M9.5.0,M4.1.0/3", "Auckland"},
+    {"EAT-3", "Nairobi"},
+    {"SAST-2", "Johannesburg"},
+    {"WAT-1", "Lagos"},
+    {"EET-2EEST,M3.5.5/0,M10.5.5/0", "Jerusalem"},
+    {"<+03>-3", "Riyadh"},
+};
+
+static constexpr size_t TIMEZONE_LOOKUP_COUNT = sizeof(TIMEZONE_LOOKUP) / sizeof(TIMEZONE_LOOKUP[0]);
+
 /**
  * @brief WebUI provider for NTP component
- * 
+ *
  * Provides web interface for NTP configuration, time display, and statistics.
- * 
+ *
  * UI Contexts:
  * - ntp_status: Header badge showing sync status
  * - ntp_dashboard: Dashboard card with current time
@@ -29,7 +79,6 @@ public:
     explicit NTPWebUI(NTPComponent* ntp) : ntp(ntp) {
         // State tracking uses LazyState helper - no manual initialization needed
         // States will be initialized on first hasDataChanged() call
-        initializeTimezoneMap();
     }
 
     /**
@@ -41,51 +90,18 @@ public:
 
 private:
     std::function<void(const NTPConfig&)> onConfigSaved; // callback for persistence
-    /**
-     * @brief Get friendly timezone name from POSIX string
-     */
-    String getTimezoneFriendlyName(const String& posixTz) const {
-        auto it = timezoneFriendlyNames.find(posixTz);
-        if (it != timezoneFriendlyNames.end()) {
-            return it->second;
-        }
-        return posixTz;  // Fallback to POSIX string if not found
-    }
 
     /**
-     * @brief Initialize timezone mapping
+     * @brief Get friendly timezone name from POSIX string
+     * Uses constexpr lookup table (O(n) linear search, n=29)
      */
-    void initializeTimezoneMap() {
-        // Short names for dashboard display (matching dropdown entries)
-        timezoneFriendlyNames["UTC0"] = "UTC";
-        timezoneFriendlyNames["WET0WEST,M3.5.0/1,M10.5.0"] = "London";
-        timezoneFriendlyNames["CET-1CEST,M3.5.0,M10.5.0/3"] = "Paris (CET)";
-        timezoneFriendlyNames["EET-2EEST,M3.5.0/3,M10.5.0/4"] = "Athens (EET)";
-        timezoneFriendlyNames["MSK-3"] = "Moscow";
-        timezoneFriendlyNames["EST5EDT,M3.2.0,M11.1.0"] = "New York";
-        timezoneFriendlyNames["CST6CDT,M3.2.0,M11.1.0"] = "Chicago";
-        timezoneFriendlyNames["MST7MDT,M3.2.0,M11.1.0"] = "Denver";
-        timezoneFriendlyNames["PST8PDT,M3.2.0,M11.1.0"] = "Los Angeles";
-        timezoneFriendlyNames["AKST9AKDT,M3.2.0,M11.1.0"] = "Anchorage";
-        timezoneFriendlyNames["HST10"] = "Honolulu";
-        timezoneFriendlyNames["<-03>3"] = "São Paulo";
-        timezoneFriendlyNames["CST-8"] = "Shanghai";
-        timezoneFriendlyNames["JST-9"] = "Tokyo";
-        timezoneFriendlyNames["KST-9"] = "Seoul";
-        timezoneFriendlyNames["IST-5:30"] = "India";
-        timezoneFriendlyNames["PKT-5"] = "Karachi";
-        timezoneFriendlyNames["<+07>-7"] = "Bangkok";
-        timezoneFriendlyNames["WIB-7"] = "Jakarta";
-        timezoneFriendlyNames["GST-4"] = "Dubai";
-        timezoneFriendlyNames["AEST-10AEDT,M10.1.0,M4.1.0/3"] = "Sydney";
-        timezoneFriendlyNames["ACST-9:30ACDT,M10.1.0,M4.1.0/3"] = "Adelaide";
-        timezoneFriendlyNames["AWST-8"] = "Perth";
-        timezoneFriendlyNames["NZST-12NZDT,M9.5.0,M4.1.0/3"] = "Auckland";
-        timezoneFriendlyNames["EAT-3"] = "Nairobi";
-        timezoneFriendlyNames["SAST-2"] = "Johannesburg";
-        timezoneFriendlyNames["WAT-1"] = "Lagos";
-        timezoneFriendlyNames["EET-2EEST,M3.5.5/0,M10.5.5/0"] = "Jerusalem";
-        timezoneFriendlyNames["<+03>-3"] = "Riyadh";
+    String getTimezoneFriendlyName(const String& posixTz) const {
+        for (size_t i = 0; i < TIMEZONE_LOOKUP_COUNT; ++i) {
+            if (posixTz == TIMEZONE_LOOKUP[i].posix) {
+                return String(TIMEZONE_LOOKUP[i].friendly);
+            }
+        }
+        return posixTz;  // Fallback to POSIX string if not found
     }
 
 public:
@@ -106,13 +122,13 @@ public:
 
         const NTPConfig& cfg = ntp->getConfig();
 
-        // Header info - NTP provides time to the header zone
+        // Header info - NTP provides time to the header zone (minimal, always included)
         String timeStr = ntp->isSynced() ? ntp->getFormattedTime("%H:%M:%S") : "--:--:--";
         contexts.push_back(WebUIContext::headerInfo("ntp_time", "Time", "dc-clock")
             .withField(WebUIField("time", "Time", WebUIFieldType::Display, timeStr, "", true))
             .withRealTime(1000)
             .withAPI("/api/ntp/time")
-            .withPriority(100));  // High priority to appear first in header
+            .withPriority(100));
 
         // Dashboard card - Current time display
         WebUIContext dashboard = WebUIContext::dashboard("ntp_dashboard", "Current Time", "dc-clock");
@@ -122,13 +138,12 @@ public:
                  .withField(WebUIField("timezone", "Timezone", WebUIFieldType::Display, friendlyTz, "", true))
                  .withRealTime(1000)
                  .withAPI("/api/ntp/dashboard")
-                 .withPriority(100);  // High priority for dashboard
-
+                 .withPriority(100);
         contexts.push_back(dashboard);
 
         // Settings card
         WebUIContext settings = WebUIContext::settings("ntp_settings", "NTP Configuration");
-        
+
         // Build servers comma-separated string
         String serversStr;
         for (size_t i = 0; i < cfg.servers.size(); i++) {
@@ -187,36 +202,7 @@ public:
                 .withField(WebUIField("sync_interval", "Sync Interval (hours)", WebUIFieldType::Number, String(cfg.syncInterval / 3600)))
                 .withField(timezoneField)
                 .withAPI("/api/ntp/settings");
-
         contexts.push_back(settings);
-
-        // Component detail with statistics
-        WebUIContext detail = WebUIContext("ntp_detail", "NTP Client", "dc-clock",
-                                          WebUILocation::ComponentDetail, WebUIPresentation::Card);
-        const auto& stats = ntp->getStatistics();
-
-        String nextSyncStr;
-        uint32_t nextSync = ntp->getNextSyncIn();
-        if (nextSync > 0) {
-            nextSyncStr = String(nextSync / 60) + "m " + String(nextSync % 60) + "s";
-        } else {
-            nextSyncStr = "N/A";
-        }
-
-        detail.withField(WebUIField("synced", "Synchronized", WebUIFieldType::Status, ntp->isSynced() ? "Yes" : "No"))
-              .withField(WebUIField("current_time", "Current Time", WebUIFieldType::Text, ntp->getFormattedTime()))
-              .withField(WebUIField("timezone_name", "Timezone", WebUIFieldType::Text, cfg.timezone))
-              .withField(WebUIField("gmt_offset", "GMT Offset", WebUIFieldType::Text, String(ntp->getGMTOffset() / 3600) + "h"))
-              .withField(WebUIField("dst", "DST Active", WebUIFieldType::Status, ntp->isDST() ? "Yes" : "No"))
-              .withField(WebUIField("sync_count", "Sync Count", WebUIFieldType::Number, String(stats.syncCount)))
-              .withField(WebUIField("sync_errors", "Sync Errors", WebUIFieldType::Number, String(stats.syncErrors)))
-              .withField(WebUIField("last_sync", "Last Sync", WebUIFieldType::Text, 
-                         stats.lastSyncTime > 0 ? ntp->getFormattedTime("%Y-%m-%d %H:%M:%S") : "Never"))
-              .withField(WebUIField("next_sync", "Next Sync In", WebUIFieldType::Text, nextSyncStr))
-              .withRealTime(2000)
-              .withAPI("/api/ntp/detail");
-
-        contexts.push_back(detail);
 
         return contexts;
     }
@@ -238,7 +224,7 @@ public:
         } else if (contextId == "ntp_settings") {
             const NTPConfig& cfg = ntp->getConfig();
             doc["enabled"] = cfg.enabled;
-            
+
             // Servers as comma-separated
             String serversStr;
             for (size_t i = 0; i < cfg.servers.size(); i++) {
@@ -249,26 +235,6 @@ public:
             doc["sync_interval"] = cfg.syncInterval / 3600;  // Hours
             doc["timezone"] = cfg.timezone;
 
-        } else if (contextId == "ntp_detail") {
-            const NTPConfig& cfg = ntp->getConfig();
-            const auto& stats = ntp->getStatistics();
-
-            doc["synced"] = ntp->isSynced() ? "Yes" : "No";
-            doc["current_time"] = ntp->getFormattedTime();
-            doc["timezone_name"] = cfg.timezone;
-            doc["gmt_offset"] = String(ntp->getGMTOffset() / 3600) + "h";
-            doc["dst"] = ntp->isDST() ? "Yes" : "No";
-            doc["sync_count"] = stats.syncCount;
-            doc["sync_errors"] = stats.syncErrors;
-            doc["last_sync"] = stats.lastSyncTime > 0 ? 
-                               ntp->getFormattedTime("%Y-%m-%d %H:%M:%S") : "Never";
-            
-            uint32_t nextSync = ntp->getNextSyncIn();
-            if (nextSync > 0) {
-                doc["next_sync"] = String(nextSync / 60) + "m " + String(nextSync % 60) + "s";
-            } else {
-                doc["next_sync"] = "N/A";
-            }
         }
 
         String json;
@@ -300,7 +266,7 @@ public:
         if (contextId == "ntp_settings") {
             auto fieldIt = params.find("field");
             auto valueIt = params.find("value");
-            
+
             if (fieldIt != params.end()) {
                 DLOG_D(LOG_NTP, "[WebUI] Field: %s", fieldIt->second.c_str());
             }
@@ -314,7 +280,7 @@ public:
             if (fieldIt != params.end() && valueIt != params.end()) {
                 const String& field = fieldIt->second;
                 const String& value = valueIt->second;
-                
+
                 // Handle configuration field updates
                 if (field == "enabled") {
                     cfg.enabled = (value == "true" || value == "1");
@@ -353,19 +319,19 @@ public:
                 }
 
                 ntp->setConfig(cfg);
-                
+
                 // Invoke persistence callback if set
                 if (onConfigSaved) {
                     DLOG_I(LOG_NTP, "[WebUI] Invoking config save callback");
                     onConfigSaved(cfg);
                 }
-                
+
                 // Trigger immediate sync after configuration change
                 if (cfg.enabled) {
                     DLOG_I(LOG_NTP, "[WebUI] Triggering immediate sync after config save");
                     ntp->syncNow();
                 }
-                
+
                 return "{\"success\":true}";
             }
         }
@@ -375,7 +341,7 @@ public:
 
     bool hasDataChanged(const String& contextId) override {
         if (!ntp) return false;
-        
+
         // Use LazyState helper for timing-independent change tracking
         if (contextId == "ntp_time") {
             return ntpTimeState.hasChanged(ntp->getUnixTime());
@@ -388,50 +354,27 @@ public:
             NTPSettingsState current = {cfg.enabled, cfg.timezone};
             return ntpSettingsState.hasChanged(current);
         }
-        else if (contextId == "ntp_detail") {
-            NTPDetailState current = {
-                ntp->isSynced(),
-                ntp->getStatistics().syncCount
-            };
-            return ntpDetailState.hasChanged(current);
-        }
-        else {
-            // Unknown context, always send
-            return true;
-        }
+        return true;
     }
 
 private:
     NTPComponent* ntp;  // Non-owning pointer
-    std::map<String, String> timezoneFriendlyNames;  // POSIX TZ -> Friendly name mapping
-    
+    // Timezone lookup uses constexpr TIMEZONE_LOOKUP[] table (stored in flash)
+
     // State tracking using LazyState helper for timing-independent initialization
     LazyState<time_t> ntpTimeState;           // ntp_time context
     LazyState<time_t> ntpDashboardState;      // ntp_dashboard context
-    
-    // Composite state for settings
+
     struct NTPSettingsState {
         bool enabled;
         String timezone;
-        
+
         bool operator==(const NTPSettingsState& other) const {
             return enabled == other.enabled && timezone == other.timezone;
         }
         bool operator!=(const NTPSettingsState& other) const { return !(*this == other); }
     };
     LazyState<NTPSettingsState> ntpSettingsState;
-    
-    // Composite state for detail view
-    struct NTPDetailState {
-        bool synced;
-        uint32_t syncCount;
-        
-        bool operator==(const NTPDetailState& other) const {
-            return synced == other.synced && syncCount == other.syncCount;
-        }
-        bool operator!=(const NTPDetailState& other) const { return !(*this == other); }
-    };
-    LazyState<NTPDetailState> ntpDetailState;
 };
 
 } // namespace WebUI

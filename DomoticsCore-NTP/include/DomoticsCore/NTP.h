@@ -14,9 +14,9 @@
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Logger.h"
 #include "DomoticsCore/Timer.h"
-#include "DomoticsCore/Events.h"
+#include "DomoticsCore/NTPEvents.h"
+#include "DomoticsCore/Platform_HAL.h"  // For millis/delay abstractions
 #include "NTP_HAL.h"  // Hardware Abstraction Layer for NTP
-#include <Arduino.h>
 #include <time.h>
 #include <sys/time.h>
 #include <vector>
@@ -108,7 +108,7 @@ public:
      */
     explicit NTPComponent(const NTPConfig& cfg = NTPConfig())
         : config(cfg), synced(false), syncInProgress(false), 
-          bootTime(millis()), syncCallback(nullptr),
+          bootTime(HAL::Platform::getMillis()), syncCallback(nullptr),
           syncTimeoutTimer(cfg.timeoutMs) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "NTP";
@@ -146,7 +146,7 @@ public:
         const char* srv3 = config.servers.size() > 2 ? config.servers[2].c_str() : nullptr;
         
         for (size_t i = 0; i < config.servers.size() && i < 3; i++) {
-            DLOG_I(LOG_NTP, "NTP server %d: %s", i, config.servers[i].c_str());
+            DLOG_I(LOG_NTP, "NTP server %zu: %s", i, config.servers[i].c_str());
         }
         
         // Set sync interval via HAL
@@ -187,13 +187,13 @@ public:
                     stats.lastSyncDuration = syncTimeoutTimer.elapsed();
                     syncTimeoutTimer.disable();
                     syncInProgress = false;
-                    DLOG_I(LOG_NTP, "Initial time sync completed after %lu ms: %s", stats.lastSyncDuration, getFormattedTime().c_str());
+                    DLOG_I(LOG_NTP, "Initial time sync completed after %u ms: %s", stats.lastSyncDuration, getFormattedTime().c_str());
                 } else {
                     DLOG_I(LOG_NTP, "Initial time sync completed: %s", getFormattedTime().c_str());
                 }
                 
                 // Emit event for orchestration
-                emit(DomoticsCore::Events::EVENT_NTP_SYNCED, true);
+                emit(NTPEvents::EVENT_SYNCED, true);
                 
                 if (syncCallback) {
                     syncCallback(true);
@@ -207,10 +207,10 @@ public:
                 syncTimeoutTimer.disable();
                 syncInProgress = false;
                 
-                DLOG_I(LOG_NTP, "Time re-synchronized after %lu ms: %s", stats.lastSyncDuration, getFormattedTime().c_str());
+                DLOG_I(LOG_NTP, "Time re-synchronized after %u ms: %s", stats.lastSyncDuration, getFormattedTime().c_str());
                 
                 // Emit event for orchestration
-                emit(DomoticsCore::Events::EVENT_NTP_SYNCED, true);
+                emit(NTPEvents::EVENT_SYNCED, true);
                 
                 if (syncCallback) {
                     syncCallback(true);
@@ -229,7 +229,7 @@ public:
             DLOG_W(LOG_NTP, "Sync timeout after %lu ms (no response from NTP servers)", syncTimeoutTimer.getInterval());
             
             // Emit event for orchestration
-            emit(DomoticsCore::Events::EVENT_NTP_SYNC_FAILED, true);
+            emit(NTPEvents::EVENT_SYNC_FAILED, true);
             
             if (syncCallback) {
                 syncCallback(false);
@@ -268,7 +268,7 @@ public:
         // Request immediate sync via HAL (non-blocking)
         HAL::NTP::forceSync();
         
-        DLOG_I(LOG_NTP, "SNTP sync requested, timeout: %lu ms", config.timeoutMs);
+        DLOG_I(LOG_NTP, "SNTP sync requested, timeout: %u ms", config.timeoutMs);
         return true;
     }
 
@@ -369,7 +369,7 @@ public:
         int offsetHours = offset / 3600;
         int offsetMinutes = abs(offset % 3600) / 60;
         
-        char tzBuffer[10];
+        char tzBuffer[12];
         snprintf(tzBuffer, sizeof(tzBuffer), "%+03d:%02d", offsetHours, offsetMinutes);
         result += tzBuffer;
         
@@ -383,7 +383,7 @@ public:
      * @return Uptime in milliseconds
      */
     uint64_t getUptimeMs() const {
-        return millis() - bootTime;
+        return HAL::Platform::getMillis() - bootTime;
     }
 
     /**
