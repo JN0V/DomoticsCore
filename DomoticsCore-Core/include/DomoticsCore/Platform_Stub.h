@@ -66,8 +66,9 @@ public:
     const char* c_str() const { return data.c_str(); }
     bool isEmpty() const { return data.empty(); }
     int length() const { return static_cast<int>(data.length()); }
-    
+
     void reserve(int size) { data.reserve(size); }
+    void clear() { data.clear(); }
     
     int toInt() const { return std::stoi(data); }
     float toFloat() const { return std::stof(data); }
@@ -134,6 +135,29 @@ public:
         while ((pos = data.find(find.data, pos)) != std::string::npos) {
             data.replace(pos, find.data.length(), replace.data);
             pos += replace.data.length();
+        }
+    }
+
+    void trim() {
+        // Trim whitespace from both ends
+        size_t start = data.find_first_not_of(" \t\r\n");
+        size_t end = data.find_last_not_of(" \t\r\n");
+        if (start == std::string::npos) {
+            data.clear();
+        } else {
+            data = data.substr(start, end - start + 1);
+        }
+    }
+
+    char charAt(int index) const {
+        if (index < 0 || index >= (int)data.length()) return '\0';
+        return data[index];
+    }
+
+    void remove(int index, int count = -1) {
+        if (index >= 0 && index < (int)data.length()) {
+            if (count < 0) count = data.length() - index; // Remove to end if count < 0
+            data.erase(index, count);
         }
     }
 
