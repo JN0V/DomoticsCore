@@ -9,7 +9,7 @@
  * - Runtime log level control
  */
 
-#include <WiFi.h>
+#include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/RemoteConsole.h>
 #include <DomoticsCore/Timer.h>
@@ -20,39 +20,39 @@ using namespace DomoticsCore::Components;
 #define LOG_APP "APP"
 
 // WiFi credentials
-const char* WIFI_SSID = "";
-const char* WIFI_PASSWORD = "";
+const char* WIFI_SSID = "YourWiFiSSID";
+const char* WIFI_PASSWORD = "YourWiFiPassword";
 
 // Core and components
 Core core;
 Utils::NonBlockingDelay logTimer(5000);  // Log every 5 seconds
 
 void setup() {
-    Serial.begin(115200);
-    delay(1000);
+    HAL::Platform::initializeLogging();
     
     DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "DomoticsCore - RemoteConsole Example");
     DLOG_I(LOG_APP, "========================================");
     
-    // Connect to WiFi
+    // Connect to WiFi using HAL
     DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    HAL::WiFiHAL::init();
+    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
+    HAL::WiFiHAL::connect(WIFI_SSID, WIFI_PASSWORD);
     
     int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-        delay(500);
-        Serial.print(".");
+    while (!HAL::WiFiHAL::isConnected() && attempts < 40) {
+        HAL::Platform::delayMs(500);
+        DLOG_D(LOG_APP, ".");
         attempts++;
     }
-    Serial.println();
     
-    if (WiFi.status() != WL_CONNECTED) {
+    if (!HAL::WiFiHAL::isConnected()) {
         DLOG_E(LOG_APP, "WiFi connection failed!");
-        while (1) delay(1000);
+        while (1) HAL::Platform::delayMs(1000);
     }
     
-    DLOG_I(LOG_APP, "WiFi connected: %s", WiFi.localIP().toString().c_str());
+    DLOG_I(LOG_APP, "WiFi connected: %s", HAL::WiFiHAL::getLocalIP().c_str());
     
     // Configure RemoteConsole
     RemoteConsoleConfig config;
@@ -84,12 +84,12 @@ void setup() {
     // Initialize
     if (!core.begin()) {
         DLOG_E(LOG_APP, "Failed to initialize core!");
-        while (1) delay(1000);
+        while (1) HAL::Platform::delayMs(1000);
     }
     
     DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "System ready!");
-    DLOG_I(LOG_APP, "Telnet: %s:%d", WiFi.localIP().toString().c_str(), config.port);
+    DLOG_I(LOG_APP, "Telnet: %s:%d", HAL::WiFiHAL::getLocalIP().c_str(), config.port);
     DLOG_I(LOG_APP, "========================================");
 }
 
@@ -102,8 +102,8 @@ void loop() {
         counter++;
         
         DLOG_I(LOG_APP, "Periodic log message #%d", counter);
-        DLOG_D(LOG_APP, "Debug info: heap=%d, uptime=%ds", 
-               ESP.getFreeHeap(), millis() / 1000);
+        DLOG_D(LOG_APP, "Debug info: heap=%d, uptime=%lds", 
+            HAL::getFreeHeap(), HAL::getMillis() / 1000);
         
         if (counter % 3 == 0) {
             DLOG_W(LOG_APP, "Warning: This is a test warning message");

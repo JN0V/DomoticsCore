@@ -9,6 +9,7 @@
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Platform_HAL.h>    // For restart()
 #include <DomoticsCore/Wifi_HAL.h>        // For WiFi functions
+#include <DomoticsCore/WiFiServer_HAL.h>  // For WiFiServer and WiFiClient
 // Platform_HAL.h provides: getFreeHeap(), getChipModel(), getChipRevision(), getCpuFreqMHz()
 #include <vector>
 #include <map>
@@ -38,7 +39,7 @@ struct RemoteConsoleConfig {
     String password = "";                  // Auth password
     uint32_t bufferSize = 500;             // Circular buffer size
     bool allowCommands = true;             // Enable command execution
-    std::vector<IPAddress> allowedIPs;     // IP whitelist (empty = all allowed)
+    std::vector<HAL::IPAddress> allowedIPs;     // IP whitelist (empty = all allowed)
     bool colorOutput = true;               // ANSI color codes
     uint32_t maxClients = 3;               // Max concurrent connections
     LogLevel defaultLogLevel = LOG_LEVEL_INFO;  // Initial log level
@@ -63,8 +64,8 @@ typedef std::function<String(const String& args)> CommandHandler;
 class RemoteConsoleComponent : public IComponent {
 private:
     RemoteConsoleConfig config;
-    WiFiServer* telnetServer = nullptr;
-    std::vector<WiFiClient> clients;
+    HAL::WiFiServer* telnetServer = nullptr;
+    std::vector<HAL::WiFiClient> clients;
     std::deque<LogEntry> logBuffer;
     std::map<String, CommandHandler> commands;
     std::map<uint32_t, String> clientBuffers;  // Per-client command buffers (key = client ID)
@@ -78,7 +79,7 @@ public:
         : config(cfg), currentLogLevel(cfg.defaultLogLevel) {
         
         metadata.name = "RemoteConsole";
-        metadata.version = "1.3.0";
+        metadata.version = "1.4.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Telnet-based remote console with log streaming";
         metadata.category = "Debug";
@@ -108,7 +109,7 @@ public:
         });
         
         // Start telnet server (doesn't require WiFi to be connected yet)
-        telnetServer = new WiFiServer(config.port);
+        telnetServer = new HAL::WiFiServer(config.port);
         telnetServer->begin();
         telnetServer->setNoDelay(true);
         
@@ -133,7 +134,7 @@ public:
         
         // Accept new clients
         if (telnetServer->hasClient()) {
-            WiFiClient newClient = telnetServer->available();
+            HAL::WiFiClient newClient = telnetServer->accept();
             
             if (newClient) {
                 // Check max clients
@@ -147,12 +148,11 @@ public:
                     clients.push_back(newClient);
                     
                     // Clear any initial buffer noise (telnet negotiation)
-                    uint32_t clientId = newClient.remoteIP();
+                    uint32_t clientId = (uint32_t)newClient.remoteIP();
                     clientBuffers[clientId] = "";
-                    
-                    DLOG_I(LOG_CONSOLE, "Client connected: %s", 
-                           newClient.remoteIP().toString().c_str());
-                    
+
+                    DLOG_I(LOG_CONSOLE, "Client connected: 0x%08X", clientId);
+
                     sendWelcome(newClient);
                 }
             }
@@ -212,7 +212,7 @@ public:
         }
         
         // Add to circular buffer
-        LogEntry entry(millis(), level, tag, message);
+        LogEntry entry(HAL::Platform::getMillis(), level, tag, message);
         logBuffer.push_back(entry);
         
         // Maintain buffer size
@@ -337,7 +337,7 @@ private:
         // Info command
         registerCommand("info", [this](const String& args) {
             String info = "\nSystem Information:\n";
-            info += "  Uptime: " + String(millis() / 1000) + "s\n";
+            info += "  Uptime: " + String(HAL::Platform::getMillis() / 1000) + "s\n";
             info += "  Free Heap: " + String(HAL::getFreeHeap()) + " bytes\n";
             info += "  Chip: " + HAL::getChipModel() + " Rev" + String(HAL::getChipRevision()) + "\n";
             info += "  CPU Freq: " + String(HAL::getCpuFreqMHz()) + " MHz\n";
@@ -356,7 +356,7 @@ private:
             for (auto& client : clients) {
                 client.println("Rebooting...");
             }
-            delay(100);
+            HAL::delay(100);
             HAL::restart();
             return "";
         });
@@ -367,7 +367,7 @@ private:
         });
     }
     
-    bool isIPAllowed(IPAddress ip) {
+    bool isIPAllowed(HAL::IPAddress ip) {
         if (config.allowedIPs.empty()) return true;
         
         for (const auto& allowed : config.allowedIPs) {
@@ -377,7 +377,7 @@ private:
         return false;
     }
     
-    void sendWelcome(WiFiClient& client) {
+    void sendWelcome(HAL::WiFiClient& client) {
         client.println("\n========================================");
         client.println("  DomoticsCore Remote Console");
         client.println("========================================");
@@ -396,7 +396,7 @@ private:
         client.print("> ");  // Show initial prompt
     }
     
-    void handleClient(WiFiClient& client) {
+    void handleClient(HAL::WiFiClient& client) {
         uint32_t clientId = client.remoteIP();  // Use IP as unique ID
         
         while (client.available()) {
