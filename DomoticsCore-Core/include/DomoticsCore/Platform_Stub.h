@@ -119,6 +119,9 @@ public:
         if (suffix.data.length() > data.length()) return false;
         return data.compare(data.length() - suffix.data.length(), suffix.data.length(), suffix.data) == 0;
     }
+    bool equalsIgnoreCase(const String& other) const {
+        return toLowerCase().data == other.toLowerCase().data;
+    }
 
     String substring(int from) const {
         if (from < 0 || from >= (int)data.length()) return String();
@@ -176,6 +179,31 @@ public:
         data.append(reinterpret_cast<const char*>(s), n);
         return n;
     }
+
+    // Read method for ArduinoJson stream parsing compatibility
+    // Maintains a read position for sequential reading
+    mutable size_t readPos = 0;
+
+    int read() {
+        if (readPos >= data.size()) return -1;
+        return static_cast<unsigned char>(data[readPos++]);
+    }
+
+    int peek() const {
+        if (readPos >= data.size()) return -1;
+        return static_cast<unsigned char>(data[readPos]);
+    }
+
+    int available() const {
+        return static_cast<int>(data.size() - readPos);
+    }
+
+    void resetReadPosition() const {
+        readPos = 0;
+    }
+
+    // Size method for ArduinoJson string adapter
+    size_t size() const { return data.size(); }
 };
 
 // Basic Arduino types for stub platforms
