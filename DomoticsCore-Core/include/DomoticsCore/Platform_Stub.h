@@ -532,6 +532,15 @@ inline void analogWrite(uint8_t pin, int value) {
 }
 
 /**
+ * @brief Read digital value from pin (stub implementation)
+ */
+inline int digitalRead(uint8_t pin) {
+    // Stub implementation - no actual GPIO on native platform
+    (void)pin;
+    return LOW;
+}
+
+/**
  * @brief Map a number from one range to another (stub implementation)
  */
 inline long map(long value, long fromLow, long fromHigh, long toLow, long toHigh) {

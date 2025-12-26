@@ -316,6 +316,13 @@ inline void analogWrite(uint8_t pin, int value) {
 }
 
 /**
+ * @brief Read digital value from pin (delegates to Platform namespace)
+ */
+inline int digitalRead(uint8_t pin) {
+    return Platform::digitalRead(pin);
+}
+
+/**
  * @brief Map a number from one range to another (delegates to Platform namespace)
  */
 inline long map(long value, long fromLow, long fromHigh, long toLow, long toHigh) {
