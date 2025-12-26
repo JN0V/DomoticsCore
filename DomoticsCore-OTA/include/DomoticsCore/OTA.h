@@ -5,7 +5,6 @@
  * @brief Declares the DomoticsCore OTA component providing secure firmware updates.
  */
 
-#include <Arduino.h>
 #include <functional>
 
 #include "DomoticsCore/IComponent.h"
@@ -105,7 +104,6 @@ private:
     struct UploadSession {
         bool active = false;
         bool success = false;
-        bool initialized = false;
         String error;
         size_t received = 0;
         size_t expected = 0;
@@ -143,7 +141,8 @@ private:
     bool performCheck(bool force);
     ManifestInfo fetchManifest();
     bool installFromUrl(const String& url, const String& expectedSha256, bool allowDowngrade);
-    bool installFromStream(Stream& stream, size_t size, const String& expectedSha256);
+    // TODO: installFromStream requires Stream type which is Arduino-specific
+    // bool installFromStream(Stream& stream, size_t size, const String& expectedSha256);
     bool finalizeUpdateOperation(const String& source, bool autoRebootPending);
     bool verifySha256(const uint8_t* digest, const String& expectedHex);
     bool isNewerVersion(const String& candidate) const;

@@ -1,127 +1,132 @@
-#include <Arduino.h>
-#include <WiFi.h>
+/**
+ * @file main.cpp
+ * @brief OTAWithWebUI Example - OTA firmware updates with WebUI interface
+ *
+ * This example demonstrates the OTAComponent integrated with WebUI for
+ * browser-based firmware management. Uses the built-in WebUI upload only
+ * (no HTTP download - that requires platform-specific HTTPClient code).
+ *
+ * Features demonstrated:
+ * - WiFi Access Point using HAL
+ * - OTA component with WebUI integration
+ * - OTAWebUI provider for browser-based firmware upload
+ * - Progress display during updates
+ *
+ * Expected output:
+ * [I] [APP] ========================================
+ * [I] [APP] DomoticsCore - OTAWithWebUI Example
+ * [I] [APP] ========================================
+ * [I] [APP] Free heap: XXXXX bytes
+ * [I] [APP] AP SSID: DomoticsCore-OTA-XXXXXXXX
+ * [I] [APP] AP IP: 192.168.4.1
+ * [I] [WebUI] Server started on port 80
+ * [I] [OTA] Component initialized
+ * [I] [APP] ========================================
+ * [I] [APP] Setup complete!
+ * [I] [APP] WebUI: http://192.168.4.1/
+ * [I] [APP] Free heap: XXXXX bytes
+ * [I] [APP] ========================================
+ *
+ * Usage:
+ * 1. Connect to WiFi AP "DomoticsCore-OTA-XXXXXXXX"
+ * 2. Open http://192.168.4.1/ in browser
+ * 3. Navigate to OTA section
+ * 4. Upload firmware.bin file
+ * 5. Device will reboot automatically after successful update
+ *
+ * Hardware: ESP32 or ESP8266
+ */
 
+#include <DomoticsCore/Platform_HAL.h>
+#include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/OTA.h>
 #include <DomoticsCore/OTAWebUI.h>
 
-#include <HTTPClient.h>
-#include <WiFiClient.h>
-#include <WiFiClientSecure.h>
-
 using namespace DomoticsCore;
-
-// Custom application log tag
-#define LOG_APP "APP"
 using namespace DomoticsCore::Components;
+
+#define LOG_APP "APP"
 
 Core core;
 
 void setup() {
-    DLOG_I(LOG_APP, "=== DomoticsCore OTAWithWebUI Starting ===");
+    // Initialize logging first
+    HAL::Platform::initializeLogging();
 
-    // Start soft AP for easy access
-    String apSSID = String("DomoticsCore-OTA-") + String((uint32_t)ESP.getEfuseMac(), HEX);
-    WiFi.softAP(apSSID.c_str());
-    DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+    // ============================================================================
+    // EXAMPLE: OTA With WebUI
+    // ============================================================================
+    // This example demonstrates OTA firmware updates via WebUI interface.
+    // It creates a WiFi Access Point and serves a web interface for uploading
+    // firmware files directly from your browser.
+    //
+    // Note: This example uses WebUI upload only. For HTTP/HTTPS download-based
+    // OTA, the application layer needs to implement manifest fetcher and
+    // downloader callbacks using platform-specific HTTPClient libraries.
+    //
+    // Expected: AP started, WebUI at http://192.168.4.1/, OTA upload section
+    // Usage: Connect to AP, open WebUI, upload firmware.bin in OTA section
+    // ============================================================================
 
-    // Core initialized
+    DLOG_I(LOG_APP, "========================================");
+    DLOG_I(LOG_APP, "DomoticsCore - OTAWithWebUI Example");
+    DLOG_I(LOG_APP, "Browser-based OTA firmware upload");
+    DLOG_I(LOG_APP, "Expected: AP + WebUI at http://192.168.4.1/");
+    DLOG_I(LOG_APP, "========================================");
+    DLOG_I(LOG_APP, "Free heap: %lu bytes", (unsigned long)HAL::Platform::getFreeHeap());
+
+    // Start soft AP for easy access using HAL
+    char apSSID[32];
+    snprintf(apSSID, sizeof(apSSID), "DomoticsCore-OTA-%08X", (uint32_t)HAL::Platform::getChipId());
+
+    HAL::WiFiHAL::init();
+    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::AccessPoint);
+    HAL::WiFiHAL::startAP(apSSID);
+
+    DLOG_I(LOG_APP, "AP SSID: %s", apSSID);
+    DLOG_I(LOG_APP, "AP IP: %s", HAL::WiFiHAL::getAPIP().c_str());
 
     // Web UI component
-    WebUIConfig webCfg; webCfg.deviceName = "OTA With WebUI"; webCfg.wsUpdateInterval = 2000;
+    WebUIConfig webCfg;
+    webCfg.deviceName = "OTA With WebUI";
+    webCfg.wsUpdateInterval = 2000;
     core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 
-    // OTA component with default config
+    // OTA component - WebUI upload enabled by default
     OTAConfig otaCfg;
+    otaCfg.enableWebUIUpload = true;  // Enable browser-based upload
+    otaCfg.autoReboot = true;         // Reboot automatically after update
     core.addComponent(std::make_unique<OTAComponent>(otaCfg));
 
-    CoreConfig cfg; cfg.deviceName = "OTAWithWebUI"; cfg.logLevel = 3;
+    CoreConfig cfg;
+    cfg.deviceName = "OTAWithWebUI";
+    cfg.logLevel = 3;
     core.begin(cfg);
 
     // Register OTA WebUI provider AFTER core begin (so WebUI server is started)
     auto* webui = core.getComponent<WebUIComponent>("WebUI");
     auto* ota = core.getComponent<OTAComponent>("OTA");
     if (webui && ota) {
-        // Provide transport-agnostic hooks implemented via HTTPClient here in the app layer
-        ota->setManifestFetcher([ota](const String& manifestUrl, String& outJson) -> bool {
-            // Decide client based on URL scheme
-            std::unique_ptr<WiFiClient> client;
-            if (manifestUrl.startsWith("https://")) {
-                auto* secure = new WiFiClientSecure();
-                const auto& cfg = ota->getConfig();
-                if (!cfg.rootCA.isEmpty()) secure->setCACert(cfg.rootCA.c_str()); else secure->setInsecure();
-                client.reset(secure);
-            } else {
-                client.reset(new WiFiClient());
-            }
-            HTTPClient http;
-            if (!http.begin(*client, manifestUrl)) {
-                return false;
-            }
-            const auto& cfg = ota->getConfig();
-            if (!cfg.bearerToken.isEmpty()) http.addHeader("Authorization", String("Bearer ") + cfg.bearerToken);
-            if (!cfg.basicAuthUser.isEmpty()) http.setAuthorization(cfg.basicAuthUser.c_str(), cfg.basicAuthPassword.c_str());
-            int code = http.GET();
-            if (code != HTTP_CODE_OK) { http.end(); return false; }
-            outJson = http.getString();
-            http.end();
-            return true;
-        });
-
-        ota->setDownloader([ota](const String& url, size_t& totalSize, OTAComponent::DownloadCallback onChunk) -> bool {
-            std::unique_ptr<WiFiClient> client;
-            if (url.startsWith("https://")) {
-                auto* secure = new WiFiClientSecure();
-                const auto& cfg = ota->getConfig();
-                if (!cfg.rootCA.isEmpty()) secure->setCACert(cfg.rootCA.c_str()); else secure->setInsecure();
-                client.reset(secure);
-            } else {
-                client.reset(new WiFiClient());
-            }
-            HTTPClient http;
-            if (!http.begin(*client, url)) {
-                return false;
-            }
-            const auto& cfg = ota->getConfig();
-            if (!cfg.bearerToken.isEmpty()) http.addHeader("Authorization", String("Bearer ") + cfg.bearerToken);
-            if (!cfg.basicAuthUser.isEmpty()) http.setAuthorization(cfg.basicAuthUser.c_str(), cfg.basicAuthPassword.c_str());
-            int code = http.GET();
-            if (code != HTTP_CODE_OK) { http.end(); return false; }
-            int len = http.getSize();
-            totalSize = len > 0 ? static_cast<size_t>(len) : 0;
-            WiFiClient* stream = http.getStreamPtr();
-            if (!stream) { http.end(); return false; }
-            uint8_t buf[2048];
-            unsigned long lastData = millis();
-            const unsigned long idleMs = 10000;
-            while (true) {
-                int avail = stream->available();
-                if (avail <= 0) {
-                    if (totalSize == 0 && (millis() - lastData) > idleMs) break; // assume end
-                    delay(1);
-                    continue;
-                }
-                size_t toRead = avail > (int)sizeof(buf) ? sizeof(buf) : (size_t)avail;
-                int r = stream->readBytes(buf, toRead);
-                if (r <= 0) continue;
-                lastData = millis();
-                if (!onChunk(buf, (size_t)r)) { http.end(); return false; }
-                if (totalSize > 0) {
-                    // Let OTA core track progress; we just stream
-                    // No break until server closes or all bytes read
-                }
-            }
-            http.end();
-            return true;
-        });
-
         auto* otaWebUI = new DomoticsCore::Components::WebUI::OTAWebUI(ota);
-        otaWebUI->init(webui); // Initialize routes after WebUI is ready
+        otaWebUI->init(webui);
         webui->registerProviderWithComponent(otaWebUI, ota);
     }
 
-    DLOG_I(LOG_APP, "WebUI available at http://%s/", WiFi.softAPIP().toString().c_str());
+    DLOG_I(LOG_APP, "========================================");
+    DLOG_I(LOG_APP, "Setup complete!");
+    DLOG_I(LOG_APP, "----------------------------------------");
+    DLOG_I(LOG_APP, "1. Connect to WiFi: %s", apSSID);
+    DLOG_I(LOG_APP, "2. Open: http://%s/", HAL::WiFiHAL::getAPIP().c_str());
+    DLOG_I(LOG_APP, "3. Navigate to OTA section");
+    DLOG_I(LOG_APP, "4. Upload firmware.bin file");
+    DLOG_I(LOG_APP, "----------------------------------------");
+    DLOG_I(LOG_APP, "Or use curl:");
+    DLOG_I(LOG_APP, "  curl -F 'firmware=@fw.bin' http://%s/api/ota/upload", HAL::WiFiHAL::getAPIP().c_str());
+    DLOG_I(LOG_APP, "----------------------------------------");
+    DLOG_I(LOG_APP, "Free heap: %lu bytes", (unsigned long)HAL::Platform::getFreeHeap());
+    DLOG_I(LOG_APP, "========================================");
 }
 
 void loop() {

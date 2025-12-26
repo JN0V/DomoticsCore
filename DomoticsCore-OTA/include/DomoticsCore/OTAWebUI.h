@@ -41,7 +41,7 @@ public:
     }
 
     String getWebUIName() const override { return ota ? ota->metadata.name : String("OTA"); }
-    String getWebUIVersion() const override { return ota ? ota->metadata.version : String("1.2.1"); }
+    String getWebUIVersion() const override { return ota ? ota->metadata.version : String("1.4.0"); }
 
     std::vector<WebUIContext> getWebUIContexts() override {
         std::vector<WebUIContext> contexts;
