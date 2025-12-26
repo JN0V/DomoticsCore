@@ -109,6 +109,13 @@ inline void analogWrite(uint8_t pin, int value) {
     ::analogWrite(pin, value);
 }
 
+/**
+ * @brief Read digital value from pin
+ */
+inline int digitalRead(uint8_t pin) {
+    return ::digitalRead(pin);
+}
+
 // =============================================================================
 // Math Utilities
 // =============================================================================
