@@ -253,18 +253,18 @@ public:
 
     void begin() {
         mbedtls_sha256_init(&ctx);
-        mbedtls_sha256_starts_ret(&ctx, 0);
+        mbedtls_sha256_starts(&ctx, 0);
         active = true;
     }
 
     void update(const uint8_t* data, size_t len) {
         if (!active) return;
-        mbedtls_sha256_update_ret(&ctx, data, len);
+        mbedtls_sha256_update(&ctx, data, len);
     }
 
     void finish(uint8_t* digest) {
         if (!active) return;
-        mbedtls_sha256_finish_ret(&ctx, digest);
+        mbedtls_sha256_finish(&ctx, digest);
         mbedtls_sha256_free(&ctx);
         active = false;
     }
