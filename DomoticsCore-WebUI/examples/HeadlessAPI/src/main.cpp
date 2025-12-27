@@ -20,7 +20,8 @@
  * - GET  /api/health          - Health check
  */
 
-#include <WiFi.h>
+#include <DomoticsCore/Platform_HAL.h>
+#include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/Timer.h>
@@ -35,15 +36,14 @@ using namespace DomoticsCore::Components::WebUI;
 
 // ========== Configuration ==========
 
-const char* WIFI_SSID = "";
-const char* WIFI_PASSWORD = "";
+const char* WIFI_SSID = "YourWifiSSID";
+const char* WIFI_PASSWORD = "YourWifiPassword";
 
 // API Configuration
 const uint16_t API_PORT = 80;
 const char* API_KEY = "your-secret-api-key";  // For protected endpoints
 
 // Hardware
-const int LED_PIN = 2;  // Built-in LED
 const int SENSOR_UPDATE_INTERVAL = 5000;  // Update sensors every 5 seconds
 
 // ========== Global Variables ==========
@@ -73,7 +73,7 @@ void updateSensors() {
     sensors[1].value = 40.0 + (random(0, 200) / 10.0);  // 40-60%
     sensors[2].value = 1000.0 + (random(0, 50));        // 1000-1050 hPa
     
-    uint32_t now = millis();
+    uint32_t now = HAL::Platform::getMillis();
     for (auto& s : sensors) {
         s.timestamp = now;
     }
@@ -105,33 +105,33 @@ void sendError(AsyncWebServerRequest* request, int code, const String& message) 
 // ========== Setup ==========
 
 void setup() {
-    Serial.begin(115200);
-    delay(1000);
-    
+    HAL::Platform::initializeLogging(115200);
+
     DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "DomoticsCore - Headless API Example");
     DLOG_I(LOG_APP, "========================================");
-    
-    // Initialize hardware
-    pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LOW);
-    
-    // Connect to WiFi
+
+    // Initialize hardware using HAL
+    HAL::Platform::pinMode(LED_BUILTIN, OUTPUT);
+    HAL::Platform::digitalWrite(LED_BUILTIN, HAL::Platform::ledBuiltinOn());
+
+    // Connect to WiFi using HAL
     DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    
+    HAL::WiFiHAL::init();
+    HAL::WiFiHAL::connect(WIFI_SSID, WIFI_PASSWORD);
+
     int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-        delay(500);
+    while (!HAL::WiFiHAL::isConnected() && attempts < 40) {
+        HAL::Platform::delayMs(500);
         attempts++;
     }
-    
-    if (WiFi.status() != WL_CONNECTED) {
+
+    if (!HAL::WiFiHAL::isConnected()) {
         DLOG_E(LOG_APP, "WiFi connection failed!");
-        while (1) delay(1000);
+        while (1) HAL::Platform::delayMs(1000);
     }
-    
-    DLOG_I(LOG_APP, "WiFi connected: %s", WiFi.localIP().toString().c_str());
+
+    DLOG_I(LOG_APP, "WiFi connected: %s", HAL::WiFiHAL::getLocalIP().c_str());
     
     // Configure WebUI component (API only, no UI assets)
     WebUIConfig config;
@@ -150,7 +150,7 @@ void setup() {
     // Initialize core (this creates the server)
     if (!core.begin()) {
         DLOG_E(LOG_APP, "Failed to initialize core!");
-        while (1) delay(1000);
+        while (1) HAL::Platform::delayMs(1000);
     }
     
     // ========== API Endpoints ==========
@@ -160,8 +160,8 @@ void setup() {
     webuiPtr->registerApiRoute("/api/health", HTTP_GET, [](AsyncWebServerRequest* request) {
         JsonDocument doc;
         doc["status"] = "ok";
-        doc["uptime"] = millis() / 1000;
-        doc["timestamp"] = millis();
+        doc["uptime"] = HAL::Platform::getMillis() / 1000;
+        doc["timestamp"] = HAL::Platform::getMillis();
         
         String json;
         serializeJson(doc, json);
@@ -230,7 +230,7 @@ void setup() {
             return sendError(request, 400, "Brightness must be 0-255");
         }
         
-        analogWrite(LED_PIN, brightness);
+        HAL::Platform::analogWrite(LED_BUILTIN, brightness);
         
         DLOG_I(LOG_APP, "LED brightness set to: %d", brightness);
         
@@ -238,35 +238,34 @@ void setup() {
         doc["success"] = true;
         doc["led_brightness"] = brightness;
         doc["led_state"] = brightness > 0 ? "ON" : "OFF";
-        doc["timestamp"] = millis();
-        
+        doc["timestamp"] = HAL::Platform::getMillis();
+
         String json;
         serializeJson(doc, json);
         sendJson(request, 200, json);
     });
-    
+
     // GET /api/status - System status
     webuiPtr->registerApiRoute("/api/status", HTTP_GET, [](AsyncWebServerRequest* request) {
         JsonDocument doc;
-        
-        // System info
-        doc["uptime"] = millis() / 1000;
-        doc["free_heap"] = ESP.getFreeHeap();
-        doc["chip_model"] = ESP.getChipModel();
-        doc["chip_revision"] = ESP.getChipRevision();
-        doc["cpu_freq"] = ESP.getCpuFreqMHz();
-        
-        // WiFi info
+
+        // System info via HAL
+        doc["uptime"] = HAL::Platform::getMillis() / 1000;
+        doc["free_heap"] = HAL::Platform::getFreeHeap();
+        doc["chip_id"] = String(HAL::Platform::getChipId(), HEX);
+        doc["cpu_freq"] = HAL::Platform::getCpuFreqMHz();
+
+        // WiFi info via HAL
         JsonObject wifi = doc["wifi"].to<JsonObject>();
-        wifi["ssid"] = WiFi.SSID();
-        wifi["ip"] = WiFi.localIP().toString();
-        wifi["rssi"] = WiFi.RSSI();
-        wifi["mac"] = WiFi.macAddress();
-        
+        wifi["ssid"] = HAL::WiFiHAL::getSSID();
+        wifi["ip"] = HAL::WiFiHAL::getLocalIP();
+        wifi["rssi"] = HAL::WiFiHAL::getRSSI();
+        wifi["mac"] = HAL::WiFiHAL::getMacAddress();
+
         // Hardware state
         JsonObject hardware = doc["hardware"].to<JsonObject>();
-        hardware["led_pin"] = LED_PIN;
-        
+        hardware["led_pin"] = LED_BUILTIN;
+
         String json;
         serializeJson(doc, json);
         sendJson(request, 200, json);
@@ -274,7 +273,7 @@ void setup() {
     
     DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "API Server ready!");
-    DLOG_I(LOG_APP, "Base URL: http://%s", WiFi.localIP().toString().c_str());
+    DLOG_I(LOG_APP, "Base URL: http://%s", HAL::WiFiHAL::getLocalIP().c_str());
     DLOG_I(LOG_APP, "API Key: %s", API_KEY);
     DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "");

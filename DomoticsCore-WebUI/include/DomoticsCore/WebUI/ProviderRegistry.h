@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Arduino.h>
 #include <vector>
 #include <map>
 #include <memory>
@@ -265,7 +264,7 @@ public:
 
         while (true) {
             // If we need more contexts from current provider
-             if (state->contextIndex < state->currentContexts.size()) {
+            if (state->contextIndex < state->currentContexts.size()) {
                 outContext = state->currentContexts[state->contextIndex++];
                 return true;
             }
@@ -283,13 +282,21 @@ public:
                 bool enabled = true;
                 auto enIt = providerEnabled.find(provider);
                 if (enIt != providerEnabled.end()) enabled = enIt->second;
-                
+
                 if (provider && provider->isWebUIEnabled() && enabled) {
                     state->currentContexts = provider->getWebUIContexts();
-                    if (!state->currentContexts.empty()) break;
+                    if (!state->currentContexts.empty()) {
+                        state->contextIndex = 0;
+                        break;
+                    }
                 }
             }
-            state->contextIndex = 0;
+
+            // If no more providers with contexts, mark finished
+            if (state->currentContexts.empty() && state->providerIndex >= state->providers.size()) {
+                state->finished = true;
+                return false;
+            }
         }
     }
 

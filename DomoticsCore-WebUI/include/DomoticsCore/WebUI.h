@@ -10,8 +10,7 @@
 #include "DomoticsCore/BaseWebUIComponents.h"
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
-#include <SPIFFS.h>
-#include <LittleFS.h>
+#include "DomoticsCore/Filesystem_HAL.h"
 #include <vector>
 #include <map>
 #include <memory>
@@ -22,6 +21,7 @@
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Logger.h"
 #include "DomoticsCore/Platform_HAL.h"  // For HAL::getFreeHeap()
+#include "DomoticsCore/WebUI_HAL.h"     // For WebUI buffer sizes
 #include "DomoticsCore/Generated/WebUIAssets.h"
 
 // New modular headers
@@ -66,7 +66,7 @@ public:
         : config(cfg) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "WebUI";
-        metadata.version = "1.3.2";
+        metadata.version = "1.4.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Web dashboard and API component";
 
@@ -201,7 +201,7 @@ public:
         std::vector<WebUIContext> contexts;
         
         // Provide default uptime header info item
-        uint32_t seconds = millis() / 1000;
+        uint32_t seconds = HAL::Platform::getMillis() / 1000;
         uint32_t days = seconds / 86400;
         seconds %= 86400;
         uint32_t hours = seconds / 3600;
@@ -231,29 +231,30 @@ public:
         return contexts;
     }
 
-    String getWebUIData(const String& contextId) override { 
+    String getWebUIData(const String& contextId) override {
         if (contextId == "webui_uptime") {
             JsonDocument doc;
-            uint32_t seconds = millis() / 1000;
+            uint32_t seconds = HAL::Platform::getMillis() / 1000;
             uint32_t days = seconds / 86400;
             seconds %= 86400;
             uint32_t hours = seconds / 3600;
             seconds %= 3600;
             uint32_t minutes = seconds / 60;
             seconds %= 60;
-            
+
             String uptimeStr;
             if (days > 0) uptimeStr += String(days) + "d ";
             if (hours > 0 || days > 0) uptimeStr += String(hours) + "h ";
             if (minutes > 0 || hours > 0 || days > 0) uptimeStr += String(minutes) + "m ";
             uptimeStr += String(seconds) + "s";
-            
+
             doc["uptime"] = uptimeStr;
             String json;
             serializeJson(doc, json);
+            doc.shrinkToFit();  // ArduinoJson 7: Release over-allocated memory
             return json;
         }
-        
+
         if (contextId == "webui_settings") {
             JsonDocument doc;
             doc["theme"] = config.theme;
@@ -261,9 +262,12 @@ public:
             doc["enable_auth"] = config.enableAuth ? "true" : "false";
             doc["username"] = config.username;
             doc["password"] = ""; // Never send password back
-            String json; serializeJson(doc, json); return json;
+            String json;
+            serializeJson(doc, json);
+            doc.shrinkToFit();  // ArduinoJson 7: Release over-allocated memory
+            return json;
         }
-        return "{}"; 
+        return "{}";
     }
 
     // Registry listener events
@@ -330,11 +334,11 @@ private:
     }
     
     void setupApiRoutes() {
-        // System info API
+        // System info API - optimized for ESP8266: use snprintf instead of String concatenation
         webServer->registerRoute("/api/system/info", HTTP_GET, [this](AsyncWebServerRequest* request) {
-            String sysInfo = "{\"uptime\":" + String(millis()) + 
-                           ",\"heap\":" + String(HAL::getFreeHeap()) + 
-                           ",\"clients\":" + String(getWebSocketClients()) + "}";
+            char sysInfo[128];
+            snprintf(sysInfo, sizeof(sysInfo), "{\"uptime\":%u,\"heap\":%u,\"clients\":%d}",
+                (unsigned)HAL::Platform::getMillis(), (unsigned)HAL::Platform::getFreeHeap(), getWebSocketClients());
             AsyncWebServerResponse* response = request->beginResponse(200, "application/json", sysInfo);
             addCorsHeaders(response);
             request->send(response);
@@ -391,23 +395,23 @@ private:
             }
         });
 
-        // Schema Chunked Response
+        // Schema endpoint - uses chunked response to minimize memory usage
         webServer->registerChunkedRoute("/api/ui/schema", HTTP_GET, [this](AsyncWebServerRequest* request) {
-             if (config.enableAuth && !authenticate(request)) {
+            if (config.enableAuth && !authenticate(request)) {
                 request->requestAuthentication();
                 return;
             }
-            
+
             auto state = registry->prepareSchemaGeneration();
-            DLOG_I(LOG_WEB, "Schema requested - building from %d providers", state->providers.size());
+            DLOG_I(LOG_WEB, "Schema: %d providers", (int)state->providers.size());
 
             AsyncWebServerResponse *response = request->beginChunkedResponse("application/json",
                 [this, state](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
-                    if (state->finished) return 0;
                     size_t written = 0;
 
-                    auto writeBytes = [&](const char* data, size_t len){
-                        size_t n = std::min(len, maxLen - written);
+                    // Helper to write bytes to buffer
+                    auto writeStr = [&](const char* data, size_t len) -> size_t {
+                        size_t n = (len < maxLen - written) ? len : maxLen - written;
                         if (n > 0) {
                             memcpy(buffer + written, data, n);
                             written += n;
@@ -415,80 +419,69 @@ private:
                         return n;
                     };
 
+                    // Write opening bracket once
                     if (!state->began) {
-                        writeBytes("[", 1);
+                        writeStr("[", 1);
                         state->began = true;
-                        if (written >= maxLen) return written;
                     }
 
-                    while (written < maxLen) {
-                        if (state->pending.length() > 0) {
-                            size_t n = writeBytes(state->pending.c_str(), state->pending.length());
-                            if (n < state->pending.length()) {
-                                state->pending.remove(0, n);
-                                break;
-                            } else {
-                                state->pending = "";
-                                continue;
-                            }
+                    // Continue writing pending data from previous chunk
+                    while (written < maxLen && state->pending.length() > 0) {
+                        size_t n = writeStr(state->pending.c_str(), state->pending.length());
+                        if (n < state->pending.length()) {
+                            state->pending = state->pending.substring(n);
+                            return written;
                         }
-                        
-                        WebUIContext context;
-                        bool hasContext = registry->getNextContext(state, context);
-                        
-                        if (!hasContext) {
-                            if (state->finished) {
-                                writeBytes("]", 1);
+                        state->pending = "";
+                    }
+
+                    // Generate contexts one at a time
+                    while (written < maxLen && !state->finished) {
+                        // Move to next context
+                        while (state->contextIndex >= state->currentContexts.size()) {
+                            if (state->providerIndex >= state->providers.size()) {
+                                state->finished = true;
+                                writeStr("]", 1);
+                                return written;
                             }
-                            break;
+                            IWebUIProvider* provider = state->providers[state->providerIndex++];
+                            if (provider && provider->isWebUIEnabled()) {
+                                state->currentContexts = provider->getWebUIContexts();
+                                state->contextIndex = 0;
+                            }
                         }
 
-                        // Serialize context
+                        // Serialize current context
+                        const auto& context = state->currentContexts[state->contextIndex++];
+                        if (context.contextId.isEmpty()) continue;
+
                         JsonDocument one;
                         JsonObject obj = one.to<JsonObject>();
                         serializeContext(obj, context);
+
                         String ctx;
                         serializeJson(one, ctx);
-                        
-                        // Note: state->firstContext logic needs to be in state struct or registry helper to be stateful across chunks
-                        // Assuming getNextContext doesn't reset this part of logic, but simple logic:
-                        // If this is not the very first context EVER emitted in this response stream, add comma.
-                        // Since state is shared, we can add a field "bool commaNeeded" to SchemaChunkState.
-                        // I'll hack it here: we need to track if we outputted any context before.
-                        // Let's assume pending handles the comma if set.
-                        
-                        // Correct approach:
-                        // In getNextContext, we are just iterating.
-                        // Here in the chunker, we need to manage the array formatting.
-                        
-                         // Simple fix: use state->pending to prepend comma if needed
-                        if (state->contextIndex > 1 || state->providerIndex > 0 || (state->contextIndex == 1 && state->providerIndex == 0 && !state->providers.empty())) {
-                             // Logic is complex to track "is this the absolute first context?" inside the lambda loop
-                             // Let's assume SchemaChunkState has a 'totalContexts' counter
-                        }
-                        
-                        // Let's simplify: always buffer the comma *before* the item if it's not the first item
-                        // But we don't know if it's the first item until we get one.
-                        // I'll trust the previous implementation logic but adapted.
-                        // The previous impl used `state->firstContext`.
-                        // Let's make sure `state->firstContext` is available in `SchemaChunkState`.
-                        // I missed adding `firstContext` to the new struct in ProviderRegistry.h
-                        // I will add it implicitly or rely on `pending`.
-                        
-                        // Re-reading ProviderRegistry.h... I didn't add `firstContext` to `SchemaChunkState`.
-                        // I'll rely on `state->pending` being empty initially.
-                        
-                        // Add comma before item if not first
-                        if (state->firstItem) {
+
+                        // Prepend comma if not first
+                        if (!state->firstItem) {
+                            state->pending = "," + ctx;
+                        } else {
                             state->pending = ctx;
                             state->firstItem = false;
-                        } else {
-                            state->pending = "," + ctx;
                         }
+
+                        // Write as much as we can
+                        size_t n = writeStr(state->pending.c_str(), state->pending.length());
+                        if (n < state->pending.length()) {
+                            state->pending = state->pending.substring(n);
+                            return written;
+                        }
+                        state->pending = "";
                     }
+
                     return written;
                 });
-                
+
             addCorsHeaders(response);
             request->send(response);
         });
@@ -533,27 +526,40 @@ private:
     }
 
     // Restored: send update to specific client on connect
+    // Optimized for ESP8266: use static buffer instead of String concatenation
     void sendWebSocketUpdate(AsyncWebSocketClient* client) {
         if (!client || client->status() != WS_CONNECTED) return;
-        
-        String msg = "{\"system\":{";
-        msg += "\"uptime\":" + String(millis()) + ",";
-        msg += "\"heap\":" + String(ESP.getFreeHeap()) + ",";
-        msg += "\"clients\":" + String(getWebSocketClients()) + ",";
-        msg += "\"device_name\":\"" + config.deviceName + "\"";
-        msg += "},\"contexts\":{";
-        
+
+        // Reuse the same buffer as sendWebSocketUpdates to avoid extra heap allocation
+        static char buffer[WEBUI_WS_BUFFER_SIZE];
+        int pos = snprintf(buffer, sizeof(buffer),
+            "{\"system\":{\"uptime\":%u,\"heap\":%u,\"clients\":%d,\"device_name\":\"%s\"},\"contexts\":{",
+            (unsigned)HAL::Platform::getMillis(), (unsigned)HAL::Platform::getFreeHeap(), getWebSocketClients(), config.deviceName.c_str());
+
+        if (pos < 0 || pos >= (int)sizeof(buffer)) return;
+
         int count = 0;
         for (const auto& p : registry->getContextProviders()) {
-            if (msg.length() > 3584) break;
+            if (pos > (int)sizeof(buffer) - 512) break;
+
             String data = p.second->getWebUIData(p.first);
-            if (!data.isEmpty() && data != "{}") {
-                if (count++ > 0) msg += ",";
-                msg += "\"" + p.first + "\":" + data;
-            }
+            if (data.isEmpty() || data == "{}") continue;
+
+            int needed = p.first.length() + data.length() + 5;
+            if (pos + needed >= (int)sizeof(buffer) - 10) break;
+
+            if (count++ > 0) buffer[pos++] = ',';
+            int written = snprintf(buffer + pos, sizeof(buffer) - pos,
+                "\"%s\":%s", p.first.c_str(), data.c_str());
+            if (written > 0) pos += written;
         }
-        msg += "}}";
-        if (msg.length() < 4096 && client->canSend()) client->text(msg);
+
+        if (pos < (int)sizeof(buffer) - 3) {
+            buffer[pos++] = '}';
+            buffer[pos++] = '}';
+            buffer[pos] = '\0';
+            if (client->canSend()) client->text(buffer);
+        }
     }
     
     // Restored: handle UI action from WebSocket
@@ -571,14 +577,14 @@ private:
 
     void sendWebSocketUpdates() {
         // Use static buffer to avoid heap fragmentation on long-running devices
-        // 8KB is sufficient for typical WebUI with 10+ providers
-        static char buffer[8192];
+        // Size is platform-specific: ESP32=8KB, ESP8266=2KB, Native=4KB
+        static char buffer[WEBUI_WS_BUFFER_SIZE];
         int pos = 0;
         
         // Write system info header
         pos = snprintf(buffer, sizeof(buffer),
-            "{\"system\":{\"uptime\":%lu,\"heap\":%u,\"clients\":%d,\"device_name\":\"%s\"},\"contexts\":{",
-            millis(), HAL::getFreeHeap(), getWebSocketClients(), config.deviceName.c_str());
+            "{\"system\":{\"uptime\":%u,\"heap\":%u,\"clients\":%d,\"device_name\":\"%s\"},\"contexts\":{",
+            (unsigned)HAL::Platform::getMillis(), (unsigned)HAL::Platform::getFreeHeap(), getWebSocketClients(), config.deviceName.c_str());
         
         if (pos < 0 || pos >= (int)sizeof(buffer)) {
             DLOG_E(LOG_WEB, "WS buffer overflow in header");

@@ -1,17 +1,24 @@
 {
   "name": "DomoticsCore-WebUI",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "description": "DomoticsCore WebUI component with AsyncWebServer and WebSocket UI",
-  "keywords": ["esp32", "domotics", "webui", "websocket"],
+  "keywords": ["esp32", "esp8266", "domotics", "webui", "websocket"],
   "repository": {"type": "git", "url": "https://github.com/JN0V/DomoticsCore.git"},
   "authors": [{"name": "JN0V", "maintainer": true}],
   "license": "MIT",
   "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
+  "platforms": ["espressif32", "espressif8266"],
   "build": {"includeDir": "include", "srcDir": "src", "lib_archive": false},
-  "dependencies": [
-    { "owner": "ESP32Async", "name": "ESPAsyncWebServer", "version": ">=3.8.0" },
-    { "owner": "ESP32Async", "name": "AsyncTCP", "version": ">=3.4.8" },
-    { "name": "ArduinoJson", "version": ">=7.0.0" }
-  ]
+  "dependencies": {
+    "bblanchon/ArduinoJson": ">=7.0.0",
+    "ESP32Async/ESPAsyncWebServer": ">=3.8.0"
+  },
+  "platformDependencies": {
+    "espressif32": {
+      "ESP32Async/AsyncTCP": ">=3.4.8"
+    },
+    "espressif8266": {
+      "ESP32Async/ESPAsyncTCP": ">=2.0.0"
+    }
+  }
 }

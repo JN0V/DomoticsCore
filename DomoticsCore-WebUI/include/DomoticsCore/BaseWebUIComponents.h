@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Arduino.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include "DomoticsCore/IWebUIProvider.h"
 
 namespace DomoticsCore {
