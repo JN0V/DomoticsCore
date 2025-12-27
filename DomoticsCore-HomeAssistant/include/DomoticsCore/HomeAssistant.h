@@ -10,8 +10,9 @@
 
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
-#include <DomoticsCore/MQTT.h>  // Only for event structures
-#include <DomoticsCore/Events.h>
+#include <DomoticsCore/MQTT.h>  // For event structures (MQTTPublishEvent, MQTTSubscribeEvent, MQTTMessageEvent)
+#include <DomoticsCore/MQTTEvents.h>  // For MQTT event names
+#include "HAEvents.h"  // For HA event names
 #include "HAEntity.h"
 #include "HASensor.h"
 #include "HABinarySensor.h"
@@ -38,10 +39,10 @@ struct HAEntityAddedEvent {
  */
 struct HAConfig {
     // Device identity (populated by System.h from SystemConfig)
-    String nodeId = "esp32";                        // Unique device ID (derived from deviceName)
-    String deviceName = "ESP32 Device";             // Device display name (from SystemConfig.deviceName)
+    String nodeId = "myDeviceId";                        // Unique device ID (derived from deviceName)
+    String deviceName = "My Device";             // Device display name (from SystemConfig.deviceName)
     String manufacturer = "DomoticsCore";           // Manufacturer name (from SystemConfig.manufacturer)
-    String model = "ESP32";                         // Hardware model (from SystemConfig.model, auto-detected via ESP.getChipModel())
+    String model = "MyDeviceModel";                         // Hardware model (from SystemConfig.model, auto-detected via ESP.getChipModel())
     String swVersion = "1.0.0";                     // Firmware version (from SystemConfig.firmwareVersion)
     
     // Home Assistant specific settings
@@ -68,7 +69,7 @@ public:
         : config(config) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "HomeAssistant";
-        metadata.version = "1.2.3";
+        metadata.version = "1.4.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
         if (this->config.availabilityTopic.isEmpty()) {
@@ -86,7 +87,7 @@ public:
         DLOG_I(LOG_HA, "Discovery prefix: %s", config.discoveryPrefix.c_str());
         
         // Subscribe to MQTT events via EventBus
-        on<bool>(DomoticsCore::Events::EVENT_MQTT_CONNECTED, [this](const bool&) {
+        on<bool>(DomoticsCore::MQTTEvents::EVENT_CONNECTED, [this](const bool&) {
             DLOG_I(LOG_HA, "MQTT connected (via EventBus), publishing availability");
             mqttConnected = true;
             setAvailable(true);
@@ -100,13 +101,13 @@ public:
             }
         });
         
-        on<bool>(DomoticsCore::Events::EVENT_MQTT_DISCONNECTED, [this](const bool&) {
+        on<bool>(DomoticsCore::MQTTEvents::EVENT_DISCONNECTED, [this](const bool&) {
             DLOG_W(LOG_HA, "MQTT disconnected (via EventBus)");
             mqttConnected = false;
         });
         
         // Subscribe to incoming MQTT messages
-        on<DomoticsCore::Components::MQTTMessageEvent>(DomoticsCore::Events::EVENT_MQTT_MESSAGE, [this](const DomoticsCore::Components::MQTTMessageEvent& ev) {
+        on<DomoticsCore::Components::MQTTMessageEvent>(DomoticsCore::MQTTEvents::EVENT_MESSAGE, [this](const DomoticsCore::Components::MQTTMessageEvent& ev) {
             handleCommand(String(ev.topic), String(ev.payload));
         });
         
@@ -148,7 +149,7 @@ public:
         entities.push_back(std::move(sensor));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added sensor: %s", id.c_str());
-        emit(DomoticsCore::Events::EVENT_HA_ENTITY_ADDED, id);
+        emit(DomoticsCore::HAEvents::EVENT_ENTITY_ADDED, id);
         if (mqttConnected) {
             republishEntity(id);
         }
@@ -311,7 +312,7 @@ public:
      * @brief Publish discovery messages for all entities
      */
     void publishDiscovery() {
-        DLOG_I(LOG_HA, "Publishing discovery for %d entities", entities.size());
+        DLOG_I(LOG_HA, "Publishing discovery for %zu entities", entities.size());
         
         // Build device info once
         JsonDocument deviceDoc;
@@ -325,7 +326,7 @@ public:
         stats.discoveryCount++;
         
         // Emit event for monitoring
-        emit(DomoticsCore::Events::EVENT_HA_DISCOVERY_PUBLISHED, (int)entities.size());
+        emit(DomoticsCore::HAEvents::EVENT_DISCOVERY_PUBLISHED, (int)entities.size());
     }
     
     /**
@@ -403,6 +404,7 @@ private:
     volatile bool publishing = false;  // Re-entrancy guard (volatile to prevent optimization)
     bool availabilityPublished = false;  // Track if initial availability sent
     bool mqttConnected = false;  // Track MQTT connection state via EventBus
+    String commandTopicFilter;  // Stored to keep pointer valid for EventBus
     
     /**
      * @brief Find entity by ID
@@ -420,15 +422,19 @@ private:
      * @brief Publish MQTT message via EventBus
      */
     bool mqttPublish(const String& topic, const String& payload, uint8_t qos = 0, bool retain = false) {
-        DomoticsCore::Components::MQTTPublishEvent ev{};
-        strncpy(ev.topic, topic.c_str(), sizeof(ev.topic) - 1);
-        ev.topic[sizeof(ev.topic) - 1] = '\0';
-        strncpy(ev.payload, payload.c_str(), sizeof(ev.payload) - 1);
-        ev.payload[sizeof(ev.payload) - 1] = '\0';
+        using namespace DomoticsCore::Components;
+        MQTTPublishEvent ev{};
+
+        // Copy strings into fixed-size buffers
+        strncpy(ev.topic, topic.c_str(), MQTT_EVENT_TOPIC_SIZE - 1);
+        ev.topic[MQTT_EVENT_TOPIC_SIZE - 1] = '\0';
+        strncpy(ev.payload, payload.c_str(), MQTT_EVENT_PAYLOAD_SIZE - 1);
+        ev.payload[MQTT_EVENT_PAYLOAD_SIZE - 1] = '\0';
         ev.qos = qos;
         ev.retain = retain;
-        emit(DomoticsCore::Events::EVENT_MQTT_PUBLISH, ev);
-        return true;  // EventBus emit is fire-and-forget
+
+        emit(DomoticsCore::MQTTEvents::EVENT_PUBLISH, ev);
+        return true;
     }
     
     /**
@@ -482,15 +488,17 @@ private:
      */
     void subscribeToCommands() {
         // Subscribe to wildcard command topics for all entity types via EventBus
-        String commandTopic = config.discoveryPrefix + "/+/" + config.nodeId + "/+/set";
-        
-        DomoticsCore::Components::MQTTSubscribeEvent ev{};
-        strncpy(ev.topic, commandTopic.c_str(), sizeof(ev.topic) - 1);
-        ev.topic[sizeof(ev.topic) - 1] = '\0';
+        commandTopicFilter = config.discoveryPrefix + "/+/" + config.nodeId + "/+/set";
+
+        using namespace DomoticsCore::Components;
+        MQTTSubscribeEvent ev{};
+        strncpy(ev.topic, commandTopicFilter.c_str(), MQTT_EVENT_TOPIC_SIZE - 1);
+        ev.topic[MQTT_EVENT_TOPIC_SIZE - 1] = '\0';
         ev.qos = 0;
-        emit(DomoticsCore::Events::EVENT_MQTT_SUBSCRIBE, ev);
-        
-        DLOG_D(LOG_HA, "Subscribed to commands via EventBus: %s", commandTopic.c_str());
+
+        emit(DomoticsCore::MQTTEvents::EVENT_SUBSCRIBE, ev);
+
+        DLOG_D(LOG_HA, "Subscribed to commands via EventBus: %s", commandTopicFilter.c_str());
         // Message handling is done via "mqtt/message" event listener in begin()
     }
     

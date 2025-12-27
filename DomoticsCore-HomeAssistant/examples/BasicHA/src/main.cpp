@@ -15,7 +15,8 @@
  * - Home Assistant with MQTT integration enabled
  */
 
-#include <WiFi.h>  // Using ESP32 WiFi library for simple connection (DomoticsCore-Wifi not needed for basic examples)
+#include <DomoticsCore/Platform_HAL.h>
+#include <DomoticsCore/Wifi_HAL.h> // Using WiFi HAL for simple connection (Full DomoticsCore-Wifi not needed for basic examples)
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/MQTT.h>
 #include <DomoticsCore/HomeAssistant.h>
@@ -33,13 +34,12 @@ const char* WIFI_SSID = "YourWiFiSSID";
 const char* WIFI_PASSWORD = "YourWiFiPassword";
 
 // MQTT broker
-const char* MQTT_BROKER = "YourMQTTBroker";
+const char* MQTT_BROKER = "mqtt.example.com";
 const uint16_t MQTT_PORT = 1883;
 const char* MQTT_USER = "";          // Leave empty if no auth
 const char* MQTT_PASSWORD = "";
 
 // Hardware pins
-const int RELAY_PIN = 2;             // Built-in LED as relay example
 const int SENSOR_UPDATE_INTERVAL = 30000;  // Update sensors every 30 seconds
 
 // ========== Global Variables ==========
@@ -64,32 +64,33 @@ float getHumidity() {
 
 
 void setup() {
-    Serial.begin(115200);
-    delay(1000);
+    HAL::Platform::initializeLogging(115200);
     
     DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "DomoticsCore - Home Assistant Integration - Basic example");
     DLOG_I(LOG_APP, "========================================");
     
     // Initialize GPIO
-    pinMode(RELAY_PIN, OUTPUT);
-    digitalWrite(RELAY_PIN, LOW);
+    HAL::Platform::pinMode(LED_BUILTIN, OUTPUT);
+    HAL::Platform::digitalWrite(LED_BUILTIN, HAL::ledBuiltinOff());
     
-    // Connect to WiFi
+    // Connect to WiFi using HAL
     DLOG_I(LOG_APP, "Connecting to WiFi: %s", WIFI_SSID);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    HAL::WiFiHAL::init();
+    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
+    HAL::WiFiHAL::connect(WIFI_SSID, WIFI_PASSWORD);
     
     int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-        delay(500);
+    while (!HAL::WiFiHAL::isConnected() && attempts < 40) {
+        HAL::Platform::delayMs(500);
         attempts++;
     }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        DLOG_I(LOG_APP, "WiFi connected! IP: %s", WiFi.localIP().toString().c_str());
+
+    if (HAL::WiFiHAL::isConnected()) {
+        DLOG_I(LOG_APP, "WiFi connected! IP: %s", HAL::WiFiHAL::getLocalIP().c_str());
     } else {
         DLOG_E(LOG_APP, "WiFi connection failed!");
-        while (1) delay(1000);
+        while (1) HAL::Platform::delayMs(1000);
     }
     // Configure MQTT
     MQTTConfig mqttCfg;
@@ -97,7 +98,7 @@ void setup() {
     mqttCfg.port = MQTT_PORT;
     mqttCfg.username = MQTT_USER;
     mqttCfg.password = MQTT_PASSWORD;
-    mqttCfg.clientId = "esp32-ha-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+    mqttCfg.clientId = "domotics-ha-" + String((uint32_t)HAL::Platform::getChipId(), HEX);
     mqttCfg.enableLWT = true;
     mqttCfg.lwtTopic = "homeassistant/esp32-demo/availability";
     mqttCfg.lwtMessage = "offline";
@@ -108,13 +109,13 @@ void setup() {
     
     // Configure Home Assistant (communicates with MQTT via EventBus)
     HAConfig haCfg;
-    haCfg.nodeId = "esp32-demo";
-    haCfg.deviceName = "ESP32 Demo Device";
-    haCfg.manufacturer = "DomoticsCore";
-    haCfg.model = "ESP32-DevKit";
+    haCfg.nodeId = "MyDeviceId";
+    haCfg.deviceName = "MyDeviceName";
+    haCfg.manufacturer = "MyManufacturer";
+    haCfg.model = "MyModel";
     haCfg.swVersion = "1.0.0";
     haCfg.discoveryPrefix = "homeassistant";
-    haCfg.configUrl = "http://" + WiFi.localIP().toString();
+    haCfg.configUrl = "http://" + HAL::WiFiHAL::getLocalIP();
     haCfg.suggestedArea = "Office";
     
     auto ha = std::make_unique<HomeAssistantComponent>(haCfg);
@@ -139,7 +140,7 @@ void setup() {
     
     // Relay switch (controllable from HA)
     haPtr->addSwitch("relay", "Relay", [](bool state) {
-        digitalWrite(RELAY_PIN, state ? HIGH : LOW);
+        HAL::Platform::digitalWrite(LED_BUILTIN, state ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
         DLOG_I(LOG_APP, "Relay set to: %s", state ? "ON" : "OFF");
         // NOTE: State is published separately in loop() to avoid recursion
     }, "mdi:electric-switch");
@@ -147,8 +148,8 @@ void setup() {
     // Restart button
     haPtr->addButton("restart", "Restart", []() {
         DLOG_I(LOG_APP, "Restart button pressed from Home Assistant");
-        delay(1000);
-        ESP.restart();
+        HAL::Platform::delayMs(1000);
+        HAL::Platform::restart();
     }, "mdi:restart");
     
     core.addComponent(std::move(ha));
@@ -156,7 +157,7 @@ void setup() {
     // Initialize core
     if (!core.begin()) {
         DLOG_E(LOG_APP, "Failed to initialize core!");
-        while (1) delay(1000);
+        while (1) HAL::Platform::delayMs(1000);
     }
     
     DLOG_I(LOG_APP, "========================================");
@@ -178,10 +179,10 @@ void loop() {
         // Read and publish sensor values
         float temp = getTemperature();
         float humidity = getHumidity();
-        uint32_t uptime = millis() / 1000;
-        uint32_t freeHeap = ESP.getFreeHeap();
-        
-        int rssi = WiFi.RSSI();
+        uint32_t uptime = HAL::Platform::getMillis() / 1000;
+        uint32_t freeHeap = HAL::Platform::getFreeHeap();
+
+        int32_t rssi = HAL::WiFiHAL::getRSSI();
         
         haPtr->publishState("temperature", temp);
         haPtr->publishState("humidity", humidity);
@@ -195,7 +196,7 @@ void loop() {
     
     // Publish initial state once HA is ready
     if (!initialStatePublished && haPtr && haPtr->isReady()) {
-        bool currentRelayState = digitalRead(RELAY_PIN) == HIGH;
+        bool currentRelayState = HAL::Platform::digitalRead(LED_BUILTIN) == HAL::ledBuiltinOn();
         haPtr->publishState("relay", currentRelayState);
         lastRelayState = currentRelayState;
         initialStatePublished = true;
@@ -204,7 +205,7 @@ void loop() {
     
     // Publish relay state only when it changes (not on timer!)
     if (haPtr && haPtr->isMQTTConnected()) {
-        bool currentRelayState = digitalRead(RELAY_PIN) == HIGH;
+        bool currentRelayState = HAL::Platform::digitalRead(LED_BUILTIN) == HAL::ledBuiltinOn();
         
         // Publish only on state change
         if (currentRelayState != lastRelayState) {
@@ -216,7 +217,7 @@ void loop() {
     
     // Heartbeat log every 5 seconds
     if (aliveTimer.isReady()) {
-        DLOG_I(LOG_APP, "System alive, uptime: %ds, MQTT: %s", 
-               millis()/1000, haPtr && haPtr->isMQTTConnected() ? "connected" : "disconnected");
+        DLOG_I(LOG_APP, "System alive, uptime: %lus, MQTT: %s",
+               HAL::Platform::getMillis()/1000, haPtr && haPtr->isMQTTConnected() ? "connected" : "disconnected");
     }
 }
