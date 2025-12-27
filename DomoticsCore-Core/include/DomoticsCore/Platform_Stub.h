@@ -112,6 +112,28 @@ public:
         return (pos == std::string::npos) ? -1 : static_cast<int>(pos);
     }
 
+    // Reverse search methods
+    int lastIndexOf(char c) const {
+        size_t pos = data.rfind(c);
+        return (pos == std::string::npos) ? -1 : static_cast<int>(pos);
+    }
+    int lastIndexOf(char c, int fromIndex) const {
+        if (fromIndex < 0) return -1;
+        size_t searchFrom = (fromIndex >= (int)data.length()) ? std::string::npos : static_cast<size_t>(fromIndex);
+        size_t pos = data.rfind(c, searchFrom);
+        return (pos == std::string::npos) ? -1 : static_cast<int>(pos);
+    }
+    int lastIndexOf(const String& str) const {
+        size_t pos = data.rfind(str.data);
+        return (pos == std::string::npos) ? -1 : static_cast<int>(pos);
+    }
+    int lastIndexOf(const String& str, int fromIndex) const {
+        if (fromIndex < 0) return -1;
+        size_t searchFrom = (fromIndex >= (int)data.length()) ? std::string::npos : static_cast<size_t>(fromIndex);
+        size_t pos = data.rfind(str.data, searchFrom);
+        return (pos == std::string::npos) ? -1 : static_cast<int>(pos);
+    }
+
     bool startsWith(const String& prefix) const {
         return data.compare(0, prefix.data.length(), prefix.data) == 0;
     }
@@ -164,7 +186,10 @@ public:
         }
     }
 
-    operator std::string() const { return data; }
+    // Direct access to internal std::string
+    // Note: Removed implicit operator std::string() to avoid ArduinoJson 7 conflicts
+    const std::string& toStdString() const { return data; }
+    std::string& toStdString() { return data; }
 
     // Explicit comparison with const char* to avoid ambiguity
     bool operator==(const char* other) const { return data == other; }
@@ -184,7 +209,7 @@ public:
     // Maintains a read position for sequential reading
     mutable size_t readPos = 0;
 
-    int read() {
+    int read() const {
         if (readPos >= data.size()) return -1;
         return static_cast<unsigned char>(data[readPos++]);
     }
