@@ -7,8 +7,9 @@
 
 // ESP8266-specific MQTT buffer size
 // ESP8266 has only ~80KB RAM, must use smaller buffers
+// 768 bytes allows HA discovery payloads (~600 bytes) with headroom
 #ifndef MQTT_MAX_PACKET_SIZE
-#define MQTT_MAX_PACKET_SIZE 512
+#define MQTT_MAX_PACKET_SIZE 768
 #endif
 
 #include <PubSubClient.h>
