@@ -1,5 +1,5 @@
-#include <Arduino.h>
-#include <WiFi.h>
+#include <DomoticsCore/Platform_HAL.h>
+#include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/SystemInfo.h>
@@ -34,8 +34,8 @@ public:
     const char* getTypeKey() const override { return "demo_led"; }
     
     ComponentStatus begin() override {
-        pinMode(demoLedPin, OUTPUT);
-        digitalWrite(demoLedPin, LOW);
+        HAL::Platform::pinMode(demoLedPin, OUTPUT);
+        HAL::Platform::digitalWrite(demoLedPin, LOW);
         // Publish initial sticky state so late subscribers receive current value
         emit<bool>("led/state", demoLedState, /*sticky=*/true);
         // Subscribe to EventBus command to allow cross-component control
@@ -49,14 +49,14 @@ public:
     }
     
     ComponentStatus shutdown() override {
-        digitalWrite(demoLedPin, LOW);
+        HAL::Platform::digitalWrite(demoLedPin, LOW);
         return ComponentStatus::Success;
     }
     // Simple API for UI wrapper
     void setState(bool on) {
         manualControl = true;
         demoLedState = on;
-        digitalWrite(demoLedPin, demoLedState ? HIGH : LOW);
+        HAL::Platform::digitalWrite(demoLedPin, demoLedState ? HIGH : LOW);
         DLOG_I(LOG_APP, "[LED Demo] Manual state change to: %s", demoLedState ? "ON" : "OFF");
         // Publish sticky state so newcomers can immediately get the latest value
         emit<bool>("led/state", demoLedState, /*sticky=*/true);
@@ -271,15 +271,18 @@ public:
 Core core;
 
 void setup() {
+    HAL::Platform::initializeLogging(115200);
+
     DLOG_I(LOG_APP, "=== DomoticsCore WebUI Demo Starting ===");
     
-    // Setup WiFi in AP mode
-    String apSSID = "DomoticsCore-" + String((uint32_t)ESP.getEfuseMac(), HEX);
-    bool success = WiFi.softAP(apSSID.c_str());
+    // Setup WiFi in AP mode using HAL
+    String apSSID = "DomoticsCore-" + String((uint32_t)HAL::Platform::getChipId(), HEX);
+    HAL::WiFiHAL::init();
+    bool success = HAL::WiFiHAL::startAP(apSSID.c_str());
     
     if (success) {
         DLOG_I(LOG_APP, "AP started: %s", apSSID.c_str());
-        DLOG_I(LOG_APP, "AP IP: %s", WiFi.softAPIP().toString().c_str());
+        DLOG_I(LOG_APP, "AP IP: %s", HAL::WiFiHAL::getAPIP().c_str());
     } else {
         DLOG_E(LOG_APP, "Failed to start AP mode");
         return;
@@ -330,9 +333,9 @@ void loop() {
     static DomoticsCore::Utils::NonBlockingDelay statusTimer(30000);
     if (statusTimer.isReady()) {
         DLOG_I(LOG_APP, "=== System Status ===");
-        DLOG_I(LOG_APP, "Uptime: %lu seconds", millis() / 1000);
-        DLOG_I(LOG_APP, "Free heap: %d bytes", ESP.getFreeHeap());
+        DLOG_I(LOG_APP, "Uptime: %lu seconds", HAL::Platform::getMillis() / 1000);
+        DLOG_I(LOG_APP, "Free heap: %u bytes", HAL::Platform::getFreeHeap());
         // WebSocket client count can be retrieved from WebUI provider if needed
-        DLOG_I(LOG_APP, "AP clients: %d", WiFi.softAPgetStationNum());
+        DLOG_I(LOG_APP, "AP clients: %d", HAL::WiFiHAL::getAPStationCount());
     }
 }

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Arduino.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include <ESPAsyncWebServer.h>
-#include <SPIFFS.h>
-#include <LittleFS.h>
+#include "DomoticsCore/Filesystem_HAL.h"
 #include "WebUIConfig.h"
 #include "DomoticsCore/Generated/WebUIAssets.h"
 #include "DomoticsCore/Logger.h"
+#include "WebResponse_HAL.h"
 
 namespace DomoticsCore {
 namespace Components {
@@ -81,11 +81,7 @@ public:
             if (config.useFileSystem) {
                 serveFromFileSystem(request, "/webui/index.html", "text/html");
             } else {
-                auto* resp = request->beginResponse(200, "text/html",
-                    WEBUI_HTML_GZ, WEBUI_HTML_GZ_LEN);
-                resp->addHeader("Content-Encoding", "gzip");
-                resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-                request->send(resp);
+                HAL::WebResponse::sendGzipResponse(request, "text/html", WEBUI_HTML_GZ, WEBUI_HTML_GZ_LEN);
             }
         });
         
@@ -94,11 +90,7 @@ public:
             if (config.useFileSystem) {
                 serveFromFileSystem(request, "/webui/style.css", "text/css");
             } else {
-                auto* resp = request->beginResponse(200, "text/css",
-                    WEBUI_CSS_GZ, WEBUI_CSS_GZ_LEN);
-                resp->addHeader("Content-Encoding", "gzip");
-                resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-                request->send(resp);
+                HAL::WebResponse::sendGzipResponse(request, "text/css", WEBUI_CSS_GZ, WEBUI_CSS_GZ_LEN);
             }
         });
         
@@ -107,22 +99,15 @@ public:
             if (config.useFileSystem) {
                 serveFromFileSystem(request, "/webui/app.js", "application/javascript");
             } else {
-                auto* resp = request->beginResponse(200, "application/javascript",
-                    WEBUI_JS_GZ, WEBUI_JS_GZ_LEN);
-                resp->addHeader("Content-Encoding", "gzip");
-                // Disable caching so updated UI logic is always loaded after firmware updates
-                resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-                request->send(resp);
+                HAL::WebResponse::sendGzipResponse(request, "application/javascript", WEBUI_JS_GZ, WEBUI_JS_GZ_LEN);
             }
         });
     }
 
 private:
     void serveFromFileSystem(AsyncWebServerRequest* request, const String& path, const String& contentType) {
-        if (LittleFS.exists(path)) {
-            request->send(LittleFS, path, contentType);
-        } else if (SPIFFS.exists(path)) {
-            request->send(SPIFFS, path, contentType);
+        if (HAL::Filesystem::exists(path)) {
+            request->send(HAL::Filesystem::getFS(), path, contentType);
         } else {
             request->send(404, "text/plain", "File not found");
         }

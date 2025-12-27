@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Arduino.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include <ESPAsyncWebServer.h>
 #include <vector>
 #include <functional>
@@ -68,11 +68,11 @@ public:
 
     void loop() {
         // Periodic connection cleanup
-        if (webSocket && millis() - lastConnectionCleanup >= CONNECTION_CLEANUP_INTERVAL) {
+        if (webSocket && HAL::Platform::getMillis() - lastConnectionCleanup >= CONNECTION_CLEANUP_INTERVAL) {
             cleanupStaleConnections();
-            lastConnectionCleanup = millis();
+            lastConnectionCleanup = HAL::Platform::getMillis();
         }
-        
+
         if (webSocket) {
             webSocket->cleanupClients();
         }
@@ -107,9 +107,9 @@ public:
 
     // Check if it's time to send periodic updates
     bool shouldSendUpdates() {
-        if (config.enableWebSocket && webSocket && 
-            millis() - lastWebSocketUpdate >= (unsigned long)config.wsUpdateInterval) {
-            lastWebSocketUpdate = millis();
+        if (config.enableWebSocket && webSocket &&
+            HAL::Platform::getMillis() - lastWebSocketUpdate >= (unsigned long)config.wsUpdateInterval) {
+            lastWebSocketUpdate = HAL::Platform::getMillis();
             return true;
         }
         return false;
@@ -139,7 +139,11 @@ private:
             if (!arg || !data || len == 0 || len > 512) return;
             AwsFrameInfo* info = (AwsFrameInfo*)arg;
             if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT && len < 256) {
-                handleWebSocketMessage(String((char*)data, len));
+                // ESP8266 String doesn't have (char*, size_t) constructor - null-terminate manually
+                char buf[257];
+                memcpy(buf, data, len);
+                buf[len] = '\0';
+                handleWebSocketMessage(String(buf));
             }
         } else if (type == WS_EVT_ERROR) {
             DLOG_E(LOG_WEB, "WS Error client #%u", client->id());

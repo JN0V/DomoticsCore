@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Arduino.h>
+#include <DomoticsCore/Platform_HAL.h>
 
 namespace DomoticsCore {
 namespace Components {

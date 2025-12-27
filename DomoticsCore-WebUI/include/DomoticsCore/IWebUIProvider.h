@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Arduino.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include <vector>
 #include <map>
 #include <functional>
@@ -122,7 +122,7 @@ enum class WebUIFieldType {
     Color,             // Color picker
     Button,            // Action button
     Display,           // Read-only display
-    Chart,             // Chart data
+    Chart,             // Chart data (auto-rendered by frontend with history)
     Status,            // Status indicator
     Progress,          // Progress value
     Password,          // Password input
@@ -146,14 +146,54 @@ struct WebUIField {
     std::vector<String> options;    // For select fields (option values)
     std::map<String, String> optionLabels;  // Option value -> label mapping
     String endpoint;                // API endpoint for updates
-    
+
     // Context-specific configuration
-    JsonDocument config;            // Custom field configuration
-    
-    WebUIField(const String& n, const String& l, WebUIFieldType t, 
+    // Use pointer to avoid large JsonDocument allocation on stack/heap for every field
+    // Only allocated when configure() is called - most fields don't need custom config
+    std::unique_ptr<JsonDocument> config;  // Custom field configuration (optional)
+
+    WebUIField(const String& n, const String& l, WebUIFieldType t,
                const String& v = "", const String& u = "", bool ro = false)
         : name(n), label(l), type(t), value(v), unit(u), readOnly(ro) {}
-    
+
+    // Copy constructor - deep copy of config if present
+    WebUIField(const WebUIField& other)
+        : name(other.name), label(other.label), type(other.type), value(other.value),
+          unit(other.unit), readOnly(other.readOnly), minValue(other.minValue),
+          maxValue(other.maxValue), options(other.options), optionLabels(other.optionLabels),
+          endpoint(other.endpoint) {
+        if (other.config) {
+            config = std::make_unique<JsonDocument>(*other.config);
+        }
+    }
+
+    // Copy assignment
+    WebUIField& operator=(const WebUIField& other) {
+        if (this != &other) {
+            name = other.name;
+            label = other.label;
+            type = other.type;
+            value = other.value;
+            unit = other.unit;
+            readOnly = other.readOnly;
+            minValue = other.minValue;
+            maxValue = other.maxValue;
+            options = other.options;
+            optionLabels = other.optionLabels;
+            endpoint = other.endpoint;
+            if (other.config) {
+                config = std::make_unique<JsonDocument>(*other.config);
+            } else {
+                config.reset();
+            }
+        }
+        return *this;
+    }
+
+    // Move constructor and assignment are defaulted (unique_ptr handles move correctly)
+    WebUIField(WebUIField&&) = default;
+    WebUIField& operator=(WebUIField&&) = default;
+
     // Fluent interface
     WebUIField& range(float min, float max) { minValue = min; maxValue = max; return *this; }
     WebUIField& choices(const std::vector<String>& opts) { options = opts; return *this; }
@@ -163,9 +203,12 @@ struct WebUIField {
         return *this;
     }
     WebUIField& api(const String& ep) { endpoint = ep; return *this; }
-    WebUIField& configure(const String& key, const JsonVariant& value) { 
-        config[key] = value; 
-        return *this; 
+    WebUIField& configure(const String& key, const JsonVariant& value) {
+        if (!config) {
+            config = std::make_unique<JsonDocument>();
+        }
+        (*config)[key] = value;
+        return *this;
     }
 };
 
@@ -190,16 +233,60 @@ struct WebUIContext {
     bool realTime = false;          // Enable real-time updates
     int updateInterval = 5000;      // Update interval in ms
     bool alwaysInteractive = false; // If true, controls are always enabled (bypassing Settings lock)
-    
+
     // Context-specific configuration
-    JsonDocument contextConfig;     // Custom presentation config
-    
+    // Use pointer to avoid large JsonDocument allocation on stack/heap for every context
+    // Only allocated when configure() is called - most contexts don't need custom config
+    std::unique_ptr<JsonDocument> contextConfig;  // Custom presentation config (optional)
+
     // Constructors
     WebUIContext() = default;
-    
-    WebUIContext(const String& id, const String& t, const String& ic, 
+
+    WebUIContext(const String& id, const String& t, const String& ic,
                  WebUILocation loc, WebUIPresentation pres = WebUIPresentation::Card)
         : contextId(id), title(t), icon(ic), location(loc), presentation(pres) {}
+
+    // Copy constructor - deep copy of contextConfig if present
+    WebUIContext(const WebUIContext& other)
+        : contextId(other.contextId), title(other.title), icon(other.icon),
+          location(other.location), presentation(other.presentation), priority(other.priority),
+          customHtml(other.customHtml), customCss(other.customCss), customJs(other.customJs),
+          fields(other.fields), apiEndpoint(other.apiEndpoint), realTime(other.realTime),
+          updateInterval(other.updateInterval), alwaysInteractive(other.alwaysInteractive) {
+        if (other.contextConfig) {
+            contextConfig = std::make_unique<JsonDocument>(*other.contextConfig);
+        }
+    }
+
+    // Copy assignment
+    WebUIContext& operator=(const WebUIContext& other) {
+        if (this != &other) {
+            contextId = other.contextId;
+            title = other.title;
+            icon = other.icon;
+            location = other.location;
+            presentation = other.presentation;
+            priority = other.priority;
+            customHtml = other.customHtml;
+            customCss = other.customCss;
+            customJs = other.customJs;
+            fields = other.fields;
+            apiEndpoint = other.apiEndpoint;
+            realTime = other.realTime;
+            updateInterval = other.updateInterval;
+            alwaysInteractive = other.alwaysInteractive;
+            if (other.contextConfig) {
+                contextConfig = std::make_unique<JsonDocument>(*other.contextConfig);
+            } else {
+                contextConfig.reset();
+            }
+        }
+        return *this;
+    }
+
+    // Move constructor and assignment are defaulted (unique_ptr handles move correctly)
+    WebUIContext(WebUIContext&&) = default;
+    WebUIContext& operator=(WebUIContext&&) = default;
     
     // Fluent interface
     WebUIContext& withField(const WebUIField& field) { 
@@ -223,14 +310,17 @@ struct WebUIContext {
         return *this;
     }
     
-    WebUIContext& withPriority(int p) { 
-        priority = p; 
-        return *this; 
+    WebUIContext& withPriority(int p) {
+        priority = p;
+        return *this;
     }
-    
-    WebUIContext& configure(const String& key, const JsonVariant& value) { 
-        contextConfig[key] = value; 
-        return *this; 
+
+    WebUIContext& configure(const String& key, const JsonVariant& value) {
+        if (!contextConfig) {
+            contextConfig = std::make_unique<JsonDocument>();
+        }
+        (*contextConfig)[key] = value;
+        return *this;
     }
     
     WebUIContext& withCustomHtml(const String& html) {
