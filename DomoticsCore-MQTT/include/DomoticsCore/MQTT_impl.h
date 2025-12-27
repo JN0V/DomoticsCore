@@ -432,20 +432,18 @@ inline void MQTTComponent::processMessageQueue() {
 inline void MQTTComponent::handleIncomingMessage(char* topic, byte* payload, unsigned int length) {
     stats.receiveCount++;
 
-    // CRITICAL: Payload from PubSubClient is NOT null-terminated!
-    // We must create a null-terminated copy for safe string handling.
-    // Static buffer avoids heap allocation on every message (ESPxx has limited heap).
-    static char payloadBuffer[MQTT_MAX_PACKET_SIZE];
-    size_t copyLen = (length < MQTT_MAX_PACKET_SIZE - 1) ? length : (MQTT_MAX_PACKET_SIZE - 1);
-    memcpy(payloadBuffer, payload, copyLen);
-    payloadBuffer[copyLen] = '\0';  // Null-terminate
-
-    // Emit message event for decoupled components
-    // IMPORTANT: topic and payloadBuffer are valid during synchronous event emission only.
-    // Handlers must NOT store these pointers - copy to String if needed beyond handler scope.
+    // Copy data into fixed-size event buffers for safe EventBus transmission
     MQTTMessageEvent ev{};
-    ev.topic = topic;  // PubSubClient guarantees null-terminated topic
-    ev.payload = payloadBuffer;  // Our null-terminated payload copy
+
+    // Copy topic (ensure null-termination)
+    strncpy(ev.topic, topic, MQTT_EVENT_TOPIC_SIZE - 1);
+    ev.topic[MQTT_EVENT_TOPIC_SIZE - 1] = '\0';
+
+    // Copy payload (ensure null-termination)
+    size_t copyLen = (length < MQTT_EVENT_PAYLOAD_SIZE - 1) ? length : (MQTT_EVENT_PAYLOAD_SIZE - 1);
+    memcpy(ev.payload, payload, copyLen);
+    ev.payload[copyLen] = '\0';
+
     emit(MQTTEvents::EVENT_MESSAGE, ev);
 }
 

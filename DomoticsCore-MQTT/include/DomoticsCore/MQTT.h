@@ -19,6 +19,7 @@
 #include <DomoticsCore/Timer.h>
 #include <DomoticsCore/Events.h>
 #include <ArduinoJson.h>
+#include <DomoticsCore/ArduinoJsonString.h>  // String converters for native tests
 #include <functional>
 #include <vector>
 #include <map>
@@ -30,48 +31,51 @@ namespace Components {
 // EventBus Event Structures for MQTT Communication
 // ============================================================================
 
+// Buffer sizes for MQTT events - fixed-size for safe memcpy in EventBus
+// These are copied by value, so must be reasonable for ESP8266 stack/heap
+constexpr size_t MQTT_EVENT_TOPIC_SIZE = 128;    ///< Max topic length
+constexpr size_t MQTT_EVENT_PAYLOAD_SIZE = 700;  ///< Max payload (fits HA discovery ~600 bytes with headroom)
+
 /**
  * @brief Event for publishing MQTT messages via EventBus
  *
- * Uses const char* to avoid large stack allocations - perfect for ESP8266.
- * Caller must ensure strings remain valid during event emission (synchronous).
+ * Uses fixed-size char buffers for safe copy via EventBus memcpy.
+ * Caller must copy strings into the buffers before emitting.
  *
  * Example usage:
  *   MQTTPublishEvent ev{};
- *   ev.topic = "home/sensor";      // Can point to String.c_str() or literal
- *   ev.payload = jsonStr.c_str();  // String must stay in scope
+ *   strncpy(ev.topic, myTopic.c_str(), sizeof(ev.topic) - 1);
+ *   strncpy(ev.payload, jsonPayload.c_str(), sizeof(ev.payload) - 1);
  *   ev.qos = 1;
  *   ev.retain = false;
- *   core.emit("mqtt/publish", ev);
+ *   emit("mqtt/publish", ev);
  */
 struct MQTTPublishEvent {
-    const char* topic;    ///< MQTT topic (pointer must remain valid during emit)
-    const char* payload;  ///< Message payload (pointer must remain valid during emit)
-    uint8_t qos;          ///< QoS level (0, 1, 2)
-    bool retain;          ///< Retain flag
+    char topic[MQTT_EVENT_TOPIC_SIZE];      ///< MQTT topic (null-terminated)
+    char payload[MQTT_EVENT_PAYLOAD_SIZE];  ///< Message payload (null-terminated)
+    uint8_t qos = 0;                        ///< QoS level (0, 1, 2)
+    bool retain = false;                    ///< Retain flag
 };
 
 /**
  * @brief Event for subscribing to MQTT topics via EventBus
  *
- * Uses const char* to avoid stack allocations.
+ * Uses fixed-size char buffer for safe copy via EventBus memcpy.
  */
 struct MQTTSubscribeEvent {
-    const char* topic;  ///< Topic filter (supports wildcards, pointer must remain valid during emit)
-    uint8_t qos;        ///< QoS level
+    char topic[MQTT_EVENT_TOPIC_SIZE];  ///< Topic filter (supports wildcards)
+    uint8_t qos = 0;                    ///< QoS level
 };
 
 /**
  * @brief Event for incoming MQTT messages via EventBus
  *
- * Strings point to internal buffers that are valid ONLY during the event handler.
- * If you need to use the data after the handler returns, copy it to a String:
- *   String myTopic = String(ev.topic);
- *   String myPayload = String(ev.payload);
+ * Uses fixed-size char buffers. Data is copied into these buffers
+ * and remains valid during the entire event dispatch cycle.
  */
 struct MQTTMessageEvent {
-    const char* topic;    ///< Message topic (valid during handler only)
-    const char* payload;  ///< Message payload (valid during handler only)
+    char topic[MQTT_EVENT_TOPIC_SIZE];      ///< Message topic
+    char payload[MQTT_EVENT_PAYLOAD_SIZE];  ///< Message payload
 };
 
 /**
