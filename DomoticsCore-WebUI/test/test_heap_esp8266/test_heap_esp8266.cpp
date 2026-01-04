@@ -90,13 +90,12 @@ void test_esp8266_webui_provider_repeated_calls() {
     HeapTracker tracker;
     OptimizedWebUIProvider provider;
     
-    // Warm up - force cache build and stabilize allocator
+    // Warm up - force cache build and stabilize allocator (ZERO-COPY)
     for (int w = 0; w < 10; w++) {
         size_t count = provider.getContextCount();
         for (size_t j = 0; j < count; j++) {
-            WebUIContext ctx;
-            provider.getContextAt(j, ctx);
-            (void)ctx;
+            const WebUIContext* ctxPtr = provider.getContextAtRef(j);
+            (void)ctxPtr;
         }
         yield();
     }
@@ -104,19 +103,18 @@ void test_esp8266_webui_provider_repeated_calls() {
     tracker.checkpoint("baseline");
     uint32_t heapBefore = ESP.getFreeHeap();
     
-    // Use SAFE owned copy (like WebUI.h does) - one copy per context serialization
+    // Use ZERO-COPY getContextAtRef (like WebUI.h does)
     const int ITERATIONS = 50;
     for (int i = 0; i < ITERATIONS; i++) {
         size_t count = provider.getContextCount();
         for (size_t j = 0; j < count; j++) {
-            WebUIContext ctx;
-            if (provider.getContextAt(j, ctx)) {
-                // Access data via owned copy - SAFE against dangling pointers
-                const String& id = ctx.contextId;
-                const String& html = ctx.customHtml;
+            const WebUIContext* ctxPtr = provider.getContextAtRef(j);
+            if (ctxPtr) {
+                // Access data via pointer - ZERO COPY
+                const String& id = ctxPtr->contextId;
+                const String& html = ctxPtr->customHtml;
                 (void)id; (void)html;
             }
-            // ctx released here
         }
         yield();
     }
