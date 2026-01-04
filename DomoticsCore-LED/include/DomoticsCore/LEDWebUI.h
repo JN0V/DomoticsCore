@@ -10,7 +10,7 @@ namespace DomoticsCore {
 namespace Components {
 
 // Simple WebUI provider wrapper for LEDComponent
-class LEDWebUI : public IWebUIProvider {
+class LEDWebUI : public CachingWebUIProvider {
 private:
     LEDComponent* led; // non-owning
     // Simple mirrored state for UI
@@ -20,18 +20,12 @@ private:
     LEDEffect effect = LEDEffect::Solid;
     bool initialApplied = false;
 
-public:
-    explicit LEDWebUI(LEDComponent* comp) : led(comp) {}
+    // Cached LED names for context building
+    mutable std::vector<String> cachedNames_;
+    mutable bool namesCached_ = false;
 
-    String getWebUIName() const override { return led ? led->metadata.name : String("LED"); }
-    String getWebUIVersion() const override { return led ? led->metadata.version : String("1.3.0"); }
-
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> contexts;
-        if (!led) return contexts;
-
-        // Apply initial mirrored state once to ensure UI and hardware match
-        if (!initialApplied && led->getLEDCount() > 0) {
+    void ensureInitialized() {
+        if (!initialApplied && led && led->getLEDCount() > 0) {
             selected = 0;
             if (enabled) {
                 led->enableLED(selected, true);
@@ -45,10 +39,38 @@ public:
             }
             initialApplied = true;
         }
+    }
 
-        // Status badge showing ON/OFF quickly at the top
+    const std::vector<String>& getCachedNames() const {
+        if (!namesCached_ && led) {
+            cachedNames_ = led->getLEDNames();
+            if (cachedNames_.empty()) {
+                size_t count = led->getLEDCount();
+                for (size_t i = 0; i < count; ++i) {
+                    cachedNames_.push_back(String("LED_") + String(i));
+                }
+            }
+            namesCached_ = true;
+        }
+        return cachedNames_;
+    }
+
+public:
+    explicit LEDWebUI(LEDComponent* comp) : led(comp) {}
+
+    String getWebUIName() const override { return led ? led->metadata.name : String("LED"); }
+    String getWebUIVersion() const override { return led ? led->metadata.version : String("1.3.0"); }
+
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        if (!led) return;
+
+        // Ensure initial state is applied
+        ensureInitialized();
+
+        // Status badge showing ON/OFF quickly at the top - placeholder values
         contexts.push_back(WebUIContext::statusBadge("led_status", "LED", "bulb-twotone")
-            .withField(WebUIField("state", "State", WebUIFieldType::Status, enabled ? "ON" : "OFF"))
+            .withField(WebUIField("state", "State", WebUIFieldType::Status, "OFF"))
             .withRealTime(1000)
             .withCustomCss(R"(
                 .status-indicator[data-context-id='led_status'] .status-icon { color: var(--text-secondary); }
@@ -56,36 +78,17 @@ public:
             )"));
 
         // Dashboard: selection + primary controls
-        // Build LED names list for select options
-        String namesCsv;
-        String currentName = "";
-        std::vector<String> nameOptions;
-        {
-            auto names = led->getLEDNames();
-            // Fallback: generate default names if not provided
-            if (names.empty()) {
-                size_t count = led->getLEDCount();
-                for (size_t i = 0; i < count; ++i) names.push_back(String("LED_") + String(i));
-            }
-            for (size_t i = 0; i < names.size(); ++i) {
-                namesCsv += names[i];
-                if (i + 1 < names.size()) namesCsv += ",";
-                nameOptions.push_back(names[i]);
-            }
-            if (!names.empty()) {
-                selected = selected < names.size() ? selected : 0;
-                currentName = names[selected];
-            }
-        }
+        // Build LED names list for select options (cached)
+        const auto& names = getCachedNames();
         contexts.push_back(WebUIContext::dashboard("led_dashboard", "LED Control")
-            .withField(WebUIField("led_select", "LED", WebUIFieldType::Select, currentName).choices(nameOptions))
-            .withField(WebUIField("enabled_toggle", "Enabled", WebUIFieldType::Boolean, enabled ? "true" : "false"))
-            .withField(WebUIField("brightness", "Brightness", WebUIFieldType::Slider, String((int)brightness)).range(0, 255))
-            .withField(WebUIField("effect", "Effect", WebUIFieldType::Select, effectToString(effect)).choices({"Solid","Blink","Fade","Pulse","Rainbow","Breathing"}))
+            .withField(WebUIField("led_select", "LED", WebUIFieldType::Select, names.empty() ? "" : names[0]).choices(names))
+            .withField(WebUIField("enabled_toggle", "Enabled", WebUIFieldType::Boolean, "false"))
+            .withField(WebUIField("brightness", "Brightness", WebUIFieldType::Slider, "128").range(0, 255))
+            .withField(WebUIField("effect", "Effect", WebUIFieldType::Select, "Solid").choices({"Solid","Blink","Fade","Pulse","Rainbow","Breathing"}))
             .withRealTime(1000));
-
-        return contexts;
     }
+
+public:
 
     String getWebUIData(const String& contextId) override {
         JsonDocument doc;

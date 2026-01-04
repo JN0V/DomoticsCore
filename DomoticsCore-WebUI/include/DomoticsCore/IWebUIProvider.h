@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DomoticsCore/Platform_HAL.h>
+#include <DomoticsCore/WebUI_HAL.h>  // For WEBUI_* constants
 #include <vector>
 #include <map>
 #include <functional>
@@ -348,25 +349,13 @@ struct WebUIContext {
         return WebUIContext(id, title, icon, WebUILocation::Dashboard, WebUIPresentation::Gauge);
     }
     
+    /**
+     * Factory for status badge in header
+     * Icon is rendered by frontend JS using the icon field
+     * CSS is in style.css (.status-indicator, .icon classes)
+     */
     static WebUIContext statusBadge(const String& id, const String& title, const String& icon = "dc-info") {
-        WebUIContext ctx(id, title, icon, WebUILocation::HeaderStatus, WebUIPresentation::StatusBadge);
-        
-        // Add SVG rendering by default for custom icons (dc-mqtt, dc-wifi, etc.)
-        ctx.withCustomHtml(String(R"(<svg class="icon status-icon" viewBox="0 0 1024 1024"><use href="#)") + icon + R"("/></svg>)");
-        ctx.withCustomCss(R"(
-            .status-icon {
-                width: 1.2rem;
-                height: 1.2rem;
-                fill: currentColor;
-            }
-            .status-badge {
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-            }
-        )");
-        
-        return ctx;
+        return WebUIContext(id, title, icon, WebUILocation::HeaderStatus, WebUIPresentation::StatusBadge);
     }
     
     /**
@@ -398,13 +387,56 @@ struct WebUIContext {
 class IWebUIProvider {
 public:
     virtual ~IWebUIProvider() = default;
-    
+
     /**
      * Get all WebUI contexts for this component
      * @return Vector of contexts defining how component appears in different UI locations
+     *
+     * @note This method creates copies. For memory-constrained devices, consider
+     *       overriding forEachContext() instead.
      */
     virtual std::vector<WebUIContext> getWebUIContexts() = 0;
-    
+
+    /**
+     * Iterate over contexts without copying (memory optimization)
+     * @param callback Called for each context; return false to stop iteration
+     *
+     * Default implementation calls getWebUIContexts() for backward compatibility.
+     * Override this for better memory efficiency on ESP8266.
+     */
+    virtual void forEachContext(std::function<bool(const WebUIContext&)> callback) {
+        auto contexts = getWebUIContexts();
+        for (const auto& ctx : contexts) {
+            if (!callback(ctx)) break;
+        }
+    }
+
+    /**
+     * Get context count (for indexed access during streaming)
+     * Default implementation calls getWebUIContexts() - override for better efficiency
+     */
+    virtual size_t getContextCount() {
+        return getWebUIContexts().size();
+    }
+
+    /**
+     * Get context by index for streaming serialization
+     * @param index Context index (0-based)
+     * @param outContext Output - will be filled with context data
+     * @return true if context exists at index, false otherwise
+     *
+     * This method allows streaming without holding all contexts in memory.
+     * Override for better efficiency - default calls getWebUIContexts().
+     */
+    virtual bool getContextAt(size_t index, WebUIContext& outContext) {
+        auto contexts = getWebUIContexts();
+        if (index < contexts.size()) {
+            outContext = std::move(contexts[index]);
+            return true;
+        }
+        return false;
+    }
+
     /**
      * Handle WebUI API requests for specific context
      * @param contextId The context identifier
@@ -456,63 +488,27 @@ public:
      * @return true if component should appear in WebUI
      */
     virtual bool isWebUIEnabled() { return true; }
-    
-    /**
-     * Iterate over contexts without creating temporary vector
-     * @param callback Function called for each context, return false to stop
-     */
-    virtual void forEachContext(std::function<bool(const WebUIContext&)> callback) {
-        auto contexts = getWebUIContexts();
-        for (const auto& ctx : contexts) {
-            if (!callback(ctx)) break;
-        }
-    }
-    
-    /**
-     * Get number of contexts
-     */
-    virtual size_t getContextCount() {
-        return getWebUIContexts().size();
-    }
-    
-    /**
-     * Get context at specific index
-     * @param index Context index
-     * @param outContext Output context
-     * @return true if found
-     */
-    virtual bool getContextAt(size_t index, WebUIContext& outContext) {
-        auto contexts = getWebUIContexts();
-        if (index < contexts.size()) {
-            outContext = contexts[index];
-            return true;
-        }
-        return false;
-    }
+
 };
 
 /**
- * @brief Base class for WebUI providers that caches contexts
- * 
- * This class prevents memory leaks by caching WebUIContext objects after
- * their initial creation. Subclasses implement buildContexts() instead of
- * getWebUIContexts().
- * 
- * IMPORTANT: On ESP8266 with ~30KB free heap, repeated context creation
- * causes heap fragmentation. This class ensures contexts are built once
- * and reused.
- * 
+ * Base class for WebUI providers that caches contexts to prevent memory leaks.
+ *
+ * On ESP8266, each call to getWebUIContexts() that creates new WebUIContext
+ * objects with String members causes heap fragmentation. This base class
+ * caches contexts on first access and returns from cache subsequently.
+ *
  * Usage:
  * @code
  * class MyWebUI : public CachingWebUIProvider {
  * protected:
  *     void buildContexts(std::vector<WebUIContext>& contexts) override {
- *         contexts.push_back(WebUIContext::dashboard("my_ctx", "My Context"));
+ *         contexts.push_back(WebUIContext::dashboard("my_dash", "Dashboard")
+ *             .withField(...));
  *     }
  * public:
  *     String getWebUIName() const override { return "MyComponent"; }
- *     String getWebUIVersion() const override { return "1.0.0"; }
- *     String handleWebUIRequest(...) override { return "{}"; }
+ *     // ... other required methods
  * };
  * @endcode
  */
@@ -533,6 +529,7 @@ protected:
      */
     void ensureContextsCached() const {
         if (!contextsCached_) {
+            // Cast away const for lazy initialization
             auto* self = const_cast<CachingWebUIProvider*>(this);
             self->buildContexts(self->cachedContexts_);
             self->contextsCached_ = true;
@@ -552,7 +549,7 @@ public:
 
     std::vector<WebUIContext> getWebUIContexts() override {
         ensureContextsCached();
-        return cachedContexts_;
+        return cachedContexts_;  // Returns copy from cache
     }
 
     void forEachContext(std::function<bool(const WebUIContext&)> callback) override {
