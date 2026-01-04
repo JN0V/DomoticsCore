@@ -269,8 +269,6 @@ public:
 // WiFi credentials - set these for STA mode, leave empty for AP-only mode
 const char* WIFI_SSID = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
-// const char* WIFI_SSID = "YOUR_WIFI_SSID";
-// const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
 // Global Core
 Core core;
