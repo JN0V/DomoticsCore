@@ -1149,22 +1149,21 @@ void test_zero_leak_multiple_providers() {
     
     tracker.checkpoint("start");
     
-    // 500 iterations - using SAFE owned copy (one copy per context serialization)
+    // 500 iterations - using ZERO-COPY getContextAtRef
     for (int i = 0; i < 500; i++) {
         for (auto* provider : providers) {
             size_t count = provider->getContextCount();
             for (size_t j = 0; j < count; j++) {
-                WebUIContext ctx;
-                if (!provider->getContextAt(j, ctx)) continue;
+                const WebUIContext* ctxPtr = provider->getContextAtRef(j);
+                if (!ctxPtr) continue;
                 
                 StreamingContextSerializer serializer;
-                serializer.begin(ctx);
+                serializer.begin(*ctxPtr);
                 
                 uint8_t buffer[256];
                 while (!serializer.isComplete()) {
                     serializer.write(buffer, sizeof(buffer));
                 }
-                // ctx released here - ONE copy per context
             }
         }
     }
@@ -1197,15 +1196,15 @@ void test_zero_leak_streaming_only() {
     
     tracker.checkpoint("start");
     
-    // Test StreamingContextSerializer with SAFE owned copy
+    // Test StreamingContextSerializer with ZERO-COPY
     for (int i = 0; i < 100; i++) {
         size_t count = provider.getContextCount();
         for (size_t j = 0; j < count; j++) {
-            WebUIContext ctx;
-            if (!provider.getContextAt(j, ctx)) continue;
+            const WebUIContext* ctxPtr = provider.getContextAtRef(j);
+            if (!ctxPtr) continue;
             
             StreamingContextSerializer serializer;
-            serializer.begin(ctx);
+            serializer.begin(*ctxPtr);
             
             uint8_t buffer[256];
             while (!serializer.isComplete()) {
@@ -1242,11 +1241,10 @@ void test_zero_leak_getContextAt_only() {
     
     tracker.checkpoint("start");
     
-    // Test getContextAt with owned copy
+    // Test getContextAtRef - ZERO COPY
     for (int i = 0; i < 100; i++) {
-        WebUIContext ctx;
-        provider.getContextAt(0, ctx);
-        (void)ctx;  // ctx released at end of scope
+        const WebUIContext* ctxPtr = provider.getContextAtRef(0);
+        (void)ctxPtr;  // No copy, just pointer access
     }
     
     tracker.checkpoint("end");
@@ -1411,23 +1409,22 @@ void test_aggressive_schema_generation_500_requests() {
     const int TOTAL_REQUESTS = 500;
     
     for (int request = 0; request < TOTAL_REQUESTS; request++) {
-        // Simulate WebUI.h behavior using getContextAt() + StreamingContextSerializer
-        // ONE copy per context serialization (safe against dangling pointers)
+        // Simulate WebUI.h behavior using getContextAtRef() + StreamingContextSerializer
+        // ZERO COPY - pointer to cached context
         for (int p = 0; p < 3; p++) {
             IWebUIProvider* provider = providers[p];
             size_t contextCount = provider->getContextCount();
             for (size_t i = 0; i < contextCount; i++) {
-                WebUIContext ctx;
-                if (!provider->getContextAt(i, ctx)) continue;
+                const WebUIContext* ctxPtr = provider->getContextAtRef(i);
+                if (!ctxPtr) continue;
                 
                 StreamingContextSerializer serializer;
-                serializer.begin(ctx);
+                serializer.begin(*ctxPtr);
                 
                 uint8_t buffer[512];
                 while (!serializer.isComplete()) {
                     serializer.write(buffer, sizeof(buffer));
                 }
-                // ctx released here
             }
         }
     }

@@ -260,11 +260,10 @@ public:
         bool finished = false;
         bool needComma = false;
 
-        // Current context being serialized - OWNED COPY (safe against cache invalidation)
-        // We make ONE copy when starting to serialize a context, then release it when done.
-        // This is safer than pointers which could become dangling if cache is invalidated.
-        WebUIContext currentContext;
-        bool hasCurrentContext = false;
+        // Current context being serialized - POINTER to cached context (zero-copy)
+        // WARNING: Do NOT call invalidateContextCache() during active HTTP request!
+        // The pointer references the provider's cache which must remain valid.
+        const WebUIContext* currentContextPtr = nullptr;
         StreamingContextSerializer serializer;
         bool serializingContext = false;
     };
