@@ -692,15 +692,20 @@ void test_detect_memory_behavior_repeated_context_creation() {
     // Calculate delta
     int32_t delta = tracker.getDelta("after_warmup", "after_50_calls");
     
-    // Report the actual memory behavior (this test documents, doesn't necessarily fail)
+    // Report the actual memory behavior
     printf("\n[MEMORY DETECTION] IWebUIProvider::getWebUIContexts() x50:\n");
     printf("  Heap delta: %d bytes\n", delta);
     printf("  Per call: ~%d bytes\n", delta / 50);
     
-    // On native with simulated heap, delta should be ~0 (no real allocator tracking)
-    // On ESP8266, this would show actual fragmentation/leak
-    // For now, just assert the test runs - the value is informational
-    TEST_ASSERT_TRUE(true);
+    // FAIL if significant memory leak detected
+    // Native uses real mallinfo tracking, so we can detect real leaks
+    const int32_t LEAK_THRESHOLD = 1024;  // 1KB tolerance for native (allocator overhead)
+    
+    if (delta > LEAK_THRESHOLD) {
+        printf("  *** MEMORY LEAK DETECTED: %d bytes > threshold %d ***\n", delta, LEAK_THRESHOLD);
+    }
+    
+    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD, "Memory leak detected in getWebUIContexts()");
 }
 
 /**
@@ -745,7 +750,14 @@ void test_detect_memory_large_custom_content() {
     printf("  Heap delta: %d bytes\n", delta);
     printf("  Content size: ~%zu bytes\n", largeHtml.length());
     
-    TEST_ASSERT_TRUE(true);
+    // FAIL if significant memory leak detected
+    const int32_t LEAK_THRESHOLD = 512;
+    
+    if (delta > LEAK_THRESHOLD) {
+        printf("  *** MEMORY LEAK DETECTED: %d bytes > threshold %d ***\n", delta, LEAK_THRESHOLD);
+    }
+    
+    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD, "Memory leak in large custom content");
 }
 
 // ============================================================================
