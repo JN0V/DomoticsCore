@@ -4,6 +4,7 @@
 #include <vector>
 #include <map>
 #include <functional>
+#include <memory>
 #include <ArduinoJson.h>
 
 namespace DomoticsCore {

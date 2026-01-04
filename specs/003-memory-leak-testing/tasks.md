@@ -58,12 +58,15 @@ DomoticsCore multi-component library structure:
 - [x] T012 Create test_heap_tracker native test in DomoticsCore-Core/test/test_heap_tracker/ (uses component platformio.ini)
 - [x] T013 [P] Write HeapTracker checkpoint tests in DomoticsCore-Core/test/test_heap_tracker/test_heap_tracker.cpp
 - [x] T014 [P] Write HeapTracker leak detection tests in DomoticsCore-Core/test/test_heap_tracker/test_heap_tracker.cpp
-- [x] T015 Run HeapTracker native tests (pio test -e native) - 22 tests PASSED
+- [x] T015 Run HeapTracker native tests (pio test -e native) - 24 tests PASSED
+- [x] T015b Create ESP8266 hardware tests in DomoticsCore-WebUI/test/test_heap_esp8266/
+- [x] T015c Run ESP8266 hardware tests - 5 tests PASSED, memory leak detected (5 bytes/call)
 
 **Phase Gate:**
-- [ ] All HeapTracker tests pass
-- [ ] HeapTracker works on native platform
-- [ ] HAL files < 800 lines each
+- [x] All HeapTracker tests pass (24 native tests)
+- [x] HeapTracker works on native platform (mallinfo real tracking)
+- [x] HAL files < 800 lines each
+- [x] HeapTracker works on ESP8266 hardware (5 tests passed)
 
 **Checkpoint**: HeapTracker infrastructure ready - user story tests can now be implemented
 
