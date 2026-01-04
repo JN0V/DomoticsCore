@@ -429,42 +429,35 @@ void test_lazy_state_with_string() {
 }
 
 // ============================================================================
-// Mock Provider for ProviderRegistry Tests
+// Mock Provider using CachingWebUIProvider (NEW - memory optimized)
 // ============================================================================
 
-class MockWebUIProvider : public IWebUIProvider {
+class MockWebUIProvider : public CachingWebUIProvider {
 private:
-    String name;
-    String version;
-    std::vector<WebUIContext> contexts;
-    bool enabled = true;
+    String name_;
+    String version_;
+    std::vector<WebUIContext> pendingContexts_;  // Contexts to add before first access
+    bool enabled_ = true;
+
+protected:
+    // CachingWebUIProvider: build contexts once, they're cached
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        for (const auto& ctx : pendingContexts_) {
+            contexts.push_back(ctx);
+        }
+    }
 
 public:
-    MockWebUIProvider(const String& n, const String& v) : name(n), version(v) {}
+    MockWebUIProvider(const String& n, const String& v) : name_(n), version_(v) {}
 
     void addContext(const WebUIContext& ctx) {
-        contexts.push_back(ctx);
+        pendingContexts_.push_back(ctx);
+        // Invalidate cache if already built
+        invalidateContextCache();
     }
 
-    String getWebUIName() const override { return name; }
-    String getWebUIVersion() const override { return version; }
-
-    std::vector<WebUIContext> getWebUIContexts() override {
-        return contexts;
-    }
-
-    // Memory-efficient indexed access - returns reference without creating vector copy
-    size_t getContextCount() override {
-        return contexts.size();
-    }
-
-    bool getContextAt(size_t index, WebUIContext& outContext) override {
-        if (index < contexts.size()) {
-            outContext = contexts[index];  // Copy from stored context
-            return true;
-        }
-        return false;
-    }
+    String getWebUIName() const override { return name_; }
+    String getWebUIVersion() const override { return version_; }
 
     String handleWebUIRequest(const String& contextId, const String& endpoint,
                               const String& method, const std::map<String, String>& params) override {
@@ -475,8 +468,8 @@ public:
         return "{}";
     }
 
-    bool isWebUIEnabled() override { return enabled; }
-    void setEnabled(bool e) { enabled = e; }
+    bool isWebUIEnabled() override { return enabled_; }
+    void setEnabled(bool e) { enabled_ = e; }
 };
 
 // ============================================================================
@@ -1088,20 +1081,21 @@ void test_detect_memory_behavior_repeated_context_creation() {
         .withField(WebUIField("name", "Device Name", WebUIFieldType::Text, "DomoticsCore"))
         .withField(WebUIField("enabled", "Enabled", WebUIFieldType::Boolean, "true")));
     
-    // Warm up - first call
-    auto warmup = provider.getWebUIContexts();
-    (void)warmup;
+    // Warm up - first call using new API
+    provider.forEachContext([](const WebUIContext& ctx) {
+        (void)ctx.contextId;
+        return true;
+    });
     
     // Checkpoint after warmup
     tracker.checkpoint("after_warmup");
     
-    // Call getWebUIContexts() 50 times - this is what happens during WebSocket broadcasts
+    // Use NEW memory-efficient API: forEachContext (no vector copies)
     for (int i = 0; i < 50; i++) {
-        auto contexts = provider.getWebUIContexts();
-        // Simulate what WebUI does: iterate over contexts
-        for (const auto& ctx : contexts) {
+        provider.forEachContext([](const WebUIContext& ctx) {
             (void)ctx.contextId;
-        }
+            return true;
+        });
     }
     
     tracker.checkpoint("after_50_calls");
@@ -1110,7 +1104,7 @@ void test_detect_memory_behavior_repeated_context_creation() {
     int32_t delta = tracker.getDelta("after_warmup", "after_50_calls");
     
     // Report the actual memory behavior
-    printf("\n[MEMORY DETECTION] IWebUIProvider::getWebUIContexts() x50:\n");
+    printf("\n[MEMORY DETECTION] forEachContext() x50 (NEW optimized API):\n");
     printf("  Heap delta: %d bytes\n", delta);
     printf("  Per call: ~%d bytes\n", delta / 50);
     
@@ -1281,46 +1275,26 @@ void test_aggressive_schema_generation_500_requests() {
     const int SAMPLE_INTERVAL = 50;
     
     for (int request = 0; request < TOTAL_REQUESTS; request++) {
-        // Simulate EXACTLY what WebUI.h does for /api/ui/schema
+        // Simulate NEW WebUI.h behavior using getContextAt() + StreamingContextSerializer
         std::vector<IWebUIProvider*> providers = {&provider1, &provider2, &provider3};
         
         for (IWebUIProvider* provider : providers) {
-            // This is line 449 in WebUI.h - copies contexts
-            auto contexts = provider->getWebUIContexts();
-            
-            for (const auto& ctx : contexts) {
-                // Lines 458-479 in WebUI.h - serialize each context
-                JsonDocument doc;
-                JsonObject obj = doc.to<JsonObject>();
-                obj["contextId"] = ctx.contextId;
-                obj["title"] = ctx.title;
-                obj["icon"] = ctx.icon;
-                obj["location"] = (int)ctx.location;
-                obj["presentation"] = (int)ctx.presentation;
-                obj["priority"] = ctx.priority;
-                obj["customHtml"] = ctx.customHtml;
-                obj["customCss"] = ctx.customCss;
-                obj["apiEndpoint"] = ctx.apiEndpoint;
-                obj["realTime"] = ctx.realTime;
+            // Use getContextAt() - memory efficient, no vector copy
+            size_t contextCount = provider->getContextCount();
+            for (size_t i = 0; i < contextCount; i++) {
+                WebUIContext ctx;
+                if (!provider->getContextAt(i, ctx)) continue;
                 
-                // Add fields
-                JsonArray fieldsArr = obj["fields"].to<JsonArray>();
-                for (const auto& field : ctx.fields) {
-                    JsonObject f = fieldsArr.add<JsonObject>();
-                    f["name"] = field.name;
-                    f["label"] = field.label;
-                    f["type"] = (int)field.type;
-                    f["value"] = field.value;
-                    f["unit"] = field.unit;
+                // Use StreamingContextSerializer like WebUI.h does
+                StreamingContextSerializer serializer;
+                serializer.begin(ctx);
+                
+                uint8_t buffer[512];
+                while (!serializer.isComplete()) {
+                    size_t written = serializer.write(buffer, sizeof(buffer));
+                    (void)written;
                 }
-                
-                // Serialize to String (allocation)
-                String json;
-                serializeJson(doc, json);
-                
-                // String concatenation like in chunked response
-                String pending = "," + json;
-                (void)pending;
+                // Context goes out of scope here, memory released
             }
         }
         
@@ -1545,24 +1519,24 @@ void test_detect_memory_large_custom_content() {
     
     tracker.checkpoint("before");
     
-    // Call multiple times
+    // Use NEW memory-efficient API: forEachContext
     for (int i = 0; i < 20; i++) {
-        auto contexts = provider.getWebUIContexts();
-        for (const auto& ctx : contexts) {
-            // Access custom content (triggers String copy)
-            String html = ctx.customHtml;
-            String css = ctx.customCss;
-            String js = ctx.customJs;
+        provider.forEachContext([](const WebUIContext& ctx) {
+            // Access custom content via const reference (no copy)
+            const String& html = ctx.customHtml;
+            const String& css = ctx.customCss;
+            const String& js = ctx.customJs;
             (void)html; (void)css; (void)js;
-        }
+            return true;
+        });
     }
     
     tracker.checkpoint("after");
     
     int32_t delta = tracker.getDelta("before", "after");
-    printf("\n[MEMORY DETECTION] Large customHtml/Css/Js x20:\n");
+    printf("\n[MEMORY DETECTION] Large customHtml/Css/Js x20 (forEachContext):\n");
     printf("  Heap delta: %d bytes\n", delta);
-    printf("  Content size: ~%zu bytes\n", largeHtml.length());
+    printf("  Content size: ~%d bytes\n", (int)largeHtml.length());
     
     // FAIL if significant memory leak detected
     const int32_t LEAK_THRESHOLD = 512;
