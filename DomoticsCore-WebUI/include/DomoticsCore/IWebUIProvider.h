@@ -436,6 +436,16 @@ public:
         }
         return false;
     }
+    
+    /**
+     * Get const reference to context at index - NO COPY (for memory efficiency)
+     * Returns nullptr if index out of range.
+     * IMPORTANT: Caller must ensure provider outlives usage of returned pointer.
+     */
+    virtual const WebUIContext* getContextAtRef(size_t index) {
+        // Default implementation: not supported without caching
+        return nullptr;
+    }
 
     /**
      * Handle WebUI API requests for specific context
@@ -571,6 +581,17 @@ public:
             return true;
         }
         return false;
+    }
+    
+    /**
+     * Get const reference to cached context - NO COPY
+     */
+    const WebUIContext* getContextAtRef(size_t index) override {
+        ensureContextsCached();
+        if (index < cachedContexts_.size()) {
+            return &cachedContexts_[index];
+        }
+        return nullptr;
     }
 
     WebUIContext getWebUIContext(const String& contextId) override {

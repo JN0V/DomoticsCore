@@ -500,8 +500,8 @@ private:
             staticState.finished = false;
             staticState.needComma = false;
             staticState.serializingContext = false;
-            // Clear currentContext by assigning empty context
-            staticState.currentContext = WebUIContext();
+            // Clear currentContextPtr
+            staticState.currentContextPtr = nullptr;
 
             // Build provider list (just pointers, low memory)
             for (const auto& kv : registry->getContextProviders()) {
@@ -534,8 +534,8 @@ private:
                             if (state->serializer.isComplete()) {
                                 state->serializingContext = false;
                                 state->needComma = true;
-                                // Clear context to release memory immediately
-                                state->currentContext = WebUIContext();
+                                // Clear context pointer
+                                state->currentContextPtr = nullptr;
                             } else if (n == 0) {
                                 break;
                             }
@@ -552,10 +552,11 @@ private:
                                 continue;
                             }
 
-                            // Use getContextAt for memory-efficient access
-                            WebUIContext ctx;
-                            if (provider->getContextAt(state->contextIndexInProvider, ctx)) {
-                                state->currentContext = std::move(ctx);
+                            // Use getContextAtRef for ZERO-COPY access
+                            const WebUIContext* ctxPtr = provider->getContextAtRef(state->contextIndexInProvider);
+                            if (ctxPtr) {
+                                // Store pointer instead of copy
+                                state->currentContextPtr = ctxPtr;
                                 state->contextIndexInProvider++;
                                 hasNext = true;
                                 break;
@@ -574,12 +575,12 @@ private:
                             // Clear state to release memory
                             state->providers.clear();
                             state->providers.shrink_to_fit();
-                            state->currentContext = WebUIContext();
+                            state->currentContextPtr = nullptr;
                             DLOG_I(LOG_WEB, "Schema done, heap: %u", HAL::Platform::getFreeHeap());
                             return written;
                         }
 
-                        if (state->currentContext.contextId.isEmpty()) continue;
+                        if (!state->currentContextPtr || state->currentContextPtr->contextId.isEmpty()) continue;
 
                         if (state->needComma) {
                             if (written < maxLen) {
@@ -590,7 +591,7 @@ private:
                             }
                         }
 
-                        state->serializer.begin(state->currentContext);
+                        state->serializer.begin(*state->currentContextPtr);
                         state->serializingContext = true;
 
                         size_t n = state->serializer.write(buffer + written, maxLen - written);
@@ -599,7 +600,7 @@ private:
                         if (state->serializer.isComplete()) {
                             state->serializingContext = false;
                             state->needComma = true;
-                            state->currentContext = WebUIContext();
+                            state->currentContextPtr = nullptr;
                         } else if (n == 0) {
                             break;
                         }

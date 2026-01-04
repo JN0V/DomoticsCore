@@ -260,8 +260,8 @@ public:
         bool finished = false;
         bool needComma = false;
 
-        // Current context being serialized
-        WebUIContext currentContext;
+        // Current context being serialized - POINTER to avoid copy
+        const WebUIContext* currentContextPtr = nullptr;
         StreamingContextSerializer serializer;
         bool serializingContext = false;
     };
