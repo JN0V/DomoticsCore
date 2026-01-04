@@ -161,7 +161,7 @@ public:
         DLOG_I(LOG_APP, "  - Work enabled: %s", simulateWork ? "yes" : "no");
         DLOG_I(LOG_APP, "  - Heartbeat interval: %lu ms", heartbeatTimer.getInterval());
         DLOG_I(LOG_APP, "  - Work interval: %lu ms", workTimer.getInterval());
-        DLOG_I(LOG_APP, "  - Dependencies: %d", dependencies.size());
+        DLOG_I(LOG_APP, "  - Dependencies: %zu", dependencies.size());
         for (const auto& dep : dependencies) {
             DLOG_I(LOG_APP, "    - %s", dep.c_str());
         }

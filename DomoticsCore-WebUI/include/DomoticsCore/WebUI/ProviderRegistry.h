@@ -11,6 +11,8 @@
 #include "DomoticsCore/IWebUIProvider.h"
 #include "DomoticsCore/ComponentRegistry.h"
 #include "DomoticsCore/Logger.h"
+#include "DomoticsCore/Platform_HAL.h"
+#include "DomoticsCore/WebUI/StreamingContextSerializer.h"
 
 namespace DomoticsCore {
 namespace Components {
@@ -19,6 +21,9 @@ namespace WebUI {
 /**
  * @class ProviderRegistry
  * @brief Manages WebUI providers, contexts, and schema generation.
+ *
+ * Simplified version - no lazy loading overhead.
+ * All providers are registered directly.
  */
 class ProviderRegistry {
 private:
@@ -33,20 +38,24 @@ public:
 
     /**
      * @brief Register an IWebUIProvider and index all of its contexts.
+     * Uses forEachContext() to avoid copying contexts on memory-constrained devices.
      */
     void registerProvider(IWebUIProvider* provider) {
         if (!provider) return;
 
-        auto contexts = provider->getWebUIContexts();
-        if (contexts.empty()) {
+        int contextCount = 0;
+        provider->forEachContext([this, provider, &contextCount](const WebUIContext& context) {
+            contextProviders[context.contextId] = provider;
+            DLOG_I(LOG_WEB, "Registered provider for context: %s", context.contextId.c_str());
+            contextCount++;
+            return true; // continue iteration
+        });
+
+        if (contextCount == 0) {
             DLOG_W(LOG_WEB, "Provider has no contexts to register.");
             return;
         }
 
-        for (const auto& context : contexts) {
-            contextProviders[context.contextId] = provider;
-            DLOG_I(LOG_WEB, "Registered provider for context: %s", context.contextId.c_str());
-        }
         // Default to enabled if not already tracked
         if (providerEnabled.find(provider) == providerEnabled.end()) {
             providerEnabled[provider] = true;
@@ -75,7 +84,6 @@ public:
                 ++it;
             }
         }
-        // Keep providerEnabled and providerComponent entries so we can re-enable later
     }
 
     /**
@@ -125,6 +133,9 @@ public:
     void getComponentsList(JsonDocument& doc) {
         JsonArray comps = doc["components"].to<JsonArray>();
 
+        // Track names we've already added to avoid duplicates
+        std::vector<String> addedNames;
+
         // Build a unique list from providerEnabled to include disabled providers as well
         std::vector<IWebUIProvider*> providers;
         providers.reserve(providerEnabled.size());
@@ -141,14 +152,17 @@ public:
             }
         }
 
+        // Add providers
         for (IWebUIProvider* provider : providers) {
             JsonObject compObj = comps.add<JsonObject>();
-            compObj["name"] = provider->getWebUIName();
+            String name = provider->getWebUIName();
+            compObj["name"] = name;
             compObj["version"] = provider->getWebUIVersion();
             bool enabled = (providerEnabled.find(provider) != providerEnabled.end()) ? providerEnabled[provider] : true;
             compObj["status"] = enabled ? "Enabled" : "Disabled";
             compObj["enabled"] = enabled;
-            compObj["canDisable"] = (provider->getWebUIName() != "WebUI");
+            compObj["canDisable"] = (name != "WebUI");
+            addedNames.push_back(name);
         }
     }
 
@@ -224,24 +238,39 @@ public:
     // Accessors
     IWebUIProvider* getProviderForContext(const String& contextId) {
         auto it = contextProviders.find(contextId);
-        return (it != contextProviders.end()) ? it->second : nullptr;
+        if (it != contextProviders.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+
+    /**
+     * @brief Check if a context ID is registered
+     */
+    bool hasContext(const String& contextId) const {
+        return contextProviders.find(contextId) != contextProviders.end();
     }
 
     // Helper for schema generation state
     struct SchemaChunkState {
         std::vector<IWebUIProvider*> providers;
         size_t providerIndex = 0;
-        std::vector<WebUIContext> currentContexts;
-        size_t contextIndex = 0;
+        size_t contextIndexInProvider = 0;  // Index within current provider's contexts
         bool began = false;
         bool finished = false;
-        bool firstItem = true;  // Track if we've emitted first item (for comma)
-        String pending;
+        bool needComma = false;
+
+        // Current context being serialized - POINTER to cached context (zero-copy)
+        // WARNING: Do NOT call invalidateContextCache() during active HTTP request!
+        // The pointer references the provider's cache which must remain valid.
+        const WebUIContext* currentContextPtr = nullptr;
+        StreamingContextSerializer serializer;
+        bool serializingContext = false;
     };
 
     std::shared_ptr<SchemaChunkState> prepareSchemaGeneration() {
         auto state = std::make_shared<SchemaChunkState>();
-        
+
         // Build unique provider list
         std::vector<IWebUIProvider*> providers;
         for (const auto& kv : providerEnabled) {
@@ -255,49 +284,11 @@ public:
             }
         }
         state->providers = providers;
+
+        DLOG_I(LOG_WEB, "Schema: %u providers, heap: %u",
+               (unsigned)providers.size(), HAL::getFreeHeap());
+
         return state;
-    }
-    
-    // Helper to get next context during chunked generation
-    bool getNextContext(std::shared_ptr<SchemaChunkState> state, WebUIContext& outContext) {
-        if (state->finished) return false;
-
-        while (true) {
-            // If we need more contexts from current provider
-            if (state->contextIndex < state->currentContexts.size()) {
-                outContext = state->currentContexts[state->contextIndex++];
-                return true;
-            }
-
-            // Move to next provider
-            if (state->providerIndex >= state->providers.size()) {
-                state->finished = true;
-                return false;
-            }
-
-            // Load contexts for next provider
-            state->currentContexts.clear();
-            while (state->providerIndex < state->providers.size()) {
-                IWebUIProvider* provider = state->providers[state->providerIndex++];
-                bool enabled = true;
-                auto enIt = providerEnabled.find(provider);
-                if (enIt != providerEnabled.end()) enabled = enIt->second;
-
-                if (provider && provider->isWebUIEnabled() && enabled) {
-                    state->currentContexts = provider->getWebUIContexts();
-                    if (!state->currentContexts.empty()) {
-                        state->contextIndex = 0;
-                        break;
-                    }
-                }
-            }
-
-            // If no more providers with contexts, mark finished
-            if (state->currentContexts.empty() && state->providerIndex >= state->providers.size()) {
-                state->finished = true;
-                return false;
-            }
-        }
     }
 
     void handleComponentRemoved(IComponent* comp) {

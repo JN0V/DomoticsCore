@@ -1,10 +1,13 @@
 // Unit tests for Storage API (IStorage interface)
 // Uses RAMOnlyStorage stub for native testing
+// Includes HeapTracker integration for memory leak detection
 
 #include <DomoticsCore/Storage_HAL.h>
+#include <DomoticsCore/Testing/HeapTracker.h>
 #include <unity.h>
 
 using namespace DomoticsCore::HAL;
+using namespace DomoticsCore::Testing;
 
 // Global storage instance for tests
 PlatformStorage storage;
@@ -181,6 +184,76 @@ void test_namespace_switch(void) {
 }
 
 // ============================================================================
+// Memory Leak Detection Tests (HeapTracker Integration)
+// ============================================================================
+
+void test_storage_memory_stability_basic_ops(void) {
+    HeapTracker tracker;
+    
+    // Checkpoint before operations
+    tracker.checkpoint("before_ops");
+    
+    // Perform multiple storage operations
+    for (int i = 0; i < 10; i++) {
+        String key = "key" + String(i);
+        String value = "value" + String(i);
+        storage.putString(key.c_str(), value);
+        storage.getString(key.c_str());
+        storage.remove(key.c_str());
+    }
+    
+    // Checkpoint after operations
+    tracker.checkpoint("after_ops");
+    
+    // Assert heap is stable (within 512 bytes tolerance for native simulation)
+    MemoryTestResult result = tracker.assertStable("before_ops", "after_ops", 512);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+void test_storage_memory_stability_namespace_lifecycle(void) {
+    HeapTracker tracker;
+    
+    tracker.checkpoint("before");
+    
+    // Create and destroy multiple storage instances
+    for (int i = 0; i < 5; i++) {
+        PlatformStorage temp;
+        String ns = "temp_ns_" + String(i);
+        String data = "test_data_" + String(i);
+        temp.begin(ns.c_str());
+        temp.putString("data", data);
+        temp.clear();
+        temp.end();
+    }
+    
+    tracker.checkpoint("after");
+    
+    MemoryTestResult result = tracker.assertStable("before", "after", 512);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+void test_storage_memory_no_growth_repeated_reads(void) {
+    HeapTracker tracker;
+    
+    // Setup: store some data
+    storage.putString("persistent", "some_value");
+    storage.putInt("number", 42);
+    
+    tracker.checkpoint("baseline");
+    
+    // Perform many read operations
+    for (int i = 0; i < 100; i++) {
+        String val = storage.getString("persistent");
+        int num = storage.getInt("number");
+        (void)val; (void)num; // Suppress unused warnings
+    }
+    
+    // Verify no heap growth
+    MemoryTestResult result = tracker.assertNoGrowth("baseline", 256);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -219,6 +292,11 @@ int main(int argc, char **argv) {
     // Namespace isolation tests
     RUN_TEST(test_namespace_isolation);
     RUN_TEST(test_namespace_switch);
+
+    // Memory leak detection tests (HeapTracker)
+    RUN_TEST(test_storage_memory_stability_basic_ops);
+    RUN_TEST(test_storage_memory_stability_namespace_lifecycle);
+    RUN_TEST(test_storage_memory_no_growth_repeated_reads);
 
     return UNITY_END();
 }

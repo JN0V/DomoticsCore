@@ -321,6 +321,32 @@ private:
         if (!config.enableAuth) return true;
         return request->authenticate(config.username.c_str(), config.password.c_str());
     }
+
+    /**
+     * @brief Print a string with JSON escaping to a response stream
+     */
+    void printJsonEscaped(AsyncResponseStream* response, const String& str) {
+        for (size_t i = 0; i < str.length(); i++) {
+            char c = str[i];
+            switch (c) {
+                case '"': response->print("\\\""); break;
+                case '\\': response->print("\\\\"); break;
+                case '\n': response->print("\\n"); break;
+                case '\r': response->print("\\r"); break;
+                case '\t': response->print("\\t"); break;
+                default:
+                    if (c < 0x20) {
+                        // Control character
+                        char buf[7];
+                        snprintf(buf, sizeof(buf), "\\u00%02x", (unsigned char)c);
+                        response->print(buf);
+                    } else {
+                        response->write(c);
+                    }
+                    break;
+            }
+        }
+    }
     
     /**
      * @brief Add CORS headers to response if enabled in config
@@ -395,88 +421,188 @@ private:
             }
         });
 
-        // Schema endpoint - uses chunked response to minimize memory usage
+        // Context schema endpoint - loads full schema for a specific context
+        webServer->registerRoute("/api/ui/context", HTTP_GET, [this](AsyncWebServerRequest* request) {
+            if (config.enableAuth && !authenticate(request)) {
+                return request->requestAuthentication();
+            }
+
+            if (!request->hasParam("id")) {
+                AsyncWebServerResponse* response = request->beginResponse(400, "application/json",
+                    "{\"error\":\"Missing 'id' parameter\"}");
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+
+            String contextId = request->getParam("id")->value();
+            DLOG_I(LOG_WEB, "Loading context schema for: %s (heap: %u)", contextId.c_str(), HAL::Platform::getFreeHeap());
+
+            IWebUIProvider* provider = registry->getProviderForContext(contextId);
+            if (!provider) {
+                AsyncWebServerResponse* response = request->beginResponse(404, "application/json",
+                    "{\"error\":\"Context not found\"}");
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+
+            // Find the context from the provider
+            WebUIContext foundContext;
+            bool found = false;
+            provider->forEachContext([&](const WebUIContext& ctx) {
+                if (ctx.contextId == contextId) {
+                    foundContext = ctx;
+                    found = true;
+                    return false; // Stop iteration
+                }
+                return true; // Continue
+            });
+
+            if (!found) {
+                AsyncWebServerResponse* response = request->beginResponse(404, "application/json",
+                    "{\"error\":\"Context not found in provider\"}");
+                addCorsHeaders(response);
+                request->send(response);
+                return;
+            }
+
+            // Serialize the context
+            JsonDocument doc;
+            JsonObject obj = doc.to<JsonObject>();
+            serializeContext(obj, foundContext);
+
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            addCorsHeaders(response);
+            serializeJson(doc, *response);
+            request->send(response);
+
+            DLOG_I(LOG_WEB, "Context schema sent for: %s (heap: %u)", contextId.c_str(), HAL::Platform::getFreeHeap());
+        });
+
+        // Schema endpoint - uses streaming serializer with static state
+        // Memory-optimized: loads one context at a time using getContextAt()
         webServer->registerChunkedRoute("/api/ui/schema", HTTP_GET, [this](AsyncWebServerRequest* request) {
             if (config.enableAuth && !authenticate(request)) {
                 request->requestAuthentication();
                 return;
             }
 
-            auto state = registry->prepareSchemaGeneration();
-            DLOG_I(LOG_WEB, "Schema: %d providers", (int)state->providers.size());
+            // Use static serializer state to minimize heap allocations
+            static WebUI::ProviderRegistry::SchemaChunkState staticState;
+
+            // Reset state - clear strings explicitly to release memory
+            staticState.providers.clear();
+            staticState.providers.shrink_to_fit();
+            staticState.providerIndex = 0;
+            staticState.contextIndexInProvider = 0;
+            staticState.began = false;
+            staticState.finished = false;
+            staticState.needComma = false;
+            staticState.serializingContext = false;
+            // Clear context pointer
+            staticState.currentContextPtr = nullptr;
+
+            // Build provider list (just pointers, low memory)
+            for (const auto& kv : registry->getContextProviders()) {
+                if (kv.second && std::find(staticState.providers.begin(), staticState.providers.end(), kv.second) == staticState.providers.end()) {
+                    staticState.providers.push_back(kv.second);
+                }
+            }
+
+            DLOG_I(LOG_WEB, "Schema: %d providers, heap: %u", (int)staticState.providers.size(), HAL::Platform::getFreeHeap());
+
+            auto* state = &staticState;
 
             AsyncWebServerResponse *response = request->beginChunkedResponse("application/json",
                 [this, state](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
                     size_t written = 0;
 
-                    // Helper to write bytes to buffer
-                    auto writeStr = [&](const char* data, size_t len) -> size_t {
-                        size_t n = (len < maxLen - written) ? len : maxLen - written;
-                        if (n > 0) {
-                            memcpy(buffer + written, data, n);
-                            written += n;
-                        }
-                        return n;
-                    };
+                    if (state->finished) return 0;
 
-                    // Write opening bracket once
                     if (!state->began) {
-                        writeStr("[", 1);
+                        if (maxLen < 1) return 0;
+                        buffer[written++] = '[';
                         state->began = true;
                     }
 
-                    // Continue writing pending data from previous chunk
-                    while (written < maxLen && state->pending.length() > 0) {
-                        size_t n = writeStr(state->pending.c_str(), state->pending.length());
-                        if (n < state->pending.length()) {
-                            state->pending = state->pending.substring(n);
+                    while (written < maxLen && !state->finished) {
+                        if (state->serializingContext) {
+                            size_t n = state->serializer.write(buffer + written, maxLen - written);
+                            written += n;
+
+                            if (state->serializer.isComplete()) {
+                                state->serializingContext = false;
+                                state->needComma = true;
+                                // Clear context pointer
+                                state->currentContextPtr = nullptr;
+                            } else if (n == 0) {
+                                break;
+                            }
+                            continue;
+                        }
+
+                        // Get next context from providers using indexed access
+                        bool hasNext = false;
+                        while (state->providerIndex < state->providers.size()) {
+                            IWebUIProvider* provider = state->providers[state->providerIndex];
+                            if (!provider || !provider->isWebUIEnabled()) {
+                                state->providerIndex++;
+                                state->contextIndexInProvider = 0;
+                                continue;
+                            }
+
+                            // Get context pointer - ZERO COPY from cache
+                            const WebUIContext* ctxPtr = provider->getContextAtRef(state->contextIndexInProvider);
+                            if (ctxPtr) {
+                                state->currentContextPtr = ctxPtr;
+                                state->contextIndexInProvider++;
+                                hasNext = true;
+                                break;
+                            }
+
+                            // No more contexts in this provider
+                            state->providerIndex++;
+                            state->contextIndexInProvider = 0;
+                        }
+
+                        if (!hasNext) {
+                            if (written < maxLen) {
+                                buffer[written++] = ']';
+                            }
+                            state->finished = true;
+                            // Clear state to release memory
+                            state->providers.clear();
+                            state->providers.shrink_to_fit();
+                            state->currentContextPtr = nullptr;
+                            DLOG_I(LOG_WEB, "Schema done, heap: %u", HAL::Platform::getFreeHeap());
                             return written;
                         }
-                        state->pending = "";
-                    }
 
-                    // Generate contexts one at a time
-                    while (written < maxLen && !state->finished) {
-                        // Move to next context
-                        while (state->contextIndex >= state->currentContexts.size()) {
-                            if (state->providerIndex >= state->providers.size()) {
-                                state->finished = true;
-                                writeStr("]", 1);
+                        if (!state->currentContextPtr || state->currentContextPtr->contextId.isEmpty()) continue;
+
+                        if (state->needComma) {
+                            if (written < maxLen) {
+                                buffer[written++] = ',';
+                            } else {
+                                state->contextIndexInProvider--;
                                 return written;
                             }
-                            IWebUIProvider* provider = state->providers[state->providerIndex++];
-                            if (provider && provider->isWebUIEnabled()) {
-                                state->currentContexts = provider->getWebUIContexts();
-                                state->contextIndex = 0;
-                            }
                         }
 
-                        // Serialize current context
-                        const auto& context = state->currentContexts[state->contextIndex++];
-                        if (context.contextId.isEmpty()) continue;
+                        state->serializer.begin(*state->currentContextPtr);
+                        state->serializingContext = true;
 
-                        JsonDocument one;
-                        JsonObject obj = one.to<JsonObject>();
-                        serializeContext(obj, context);
+                        size_t n = state->serializer.write(buffer + written, maxLen - written);
+                        written += n;
 
-                        String ctx;
-                        serializeJson(one, ctx);
-
-                        // Prepend comma if not first
-                        if (!state->firstItem) {
-                            state->pending = "," + ctx;
-                        } else {
-                            state->pending = ctx;
-                            state->firstItem = false;
+                        if (state->serializer.isComplete()) {
+                            state->serializingContext = false;
+                            state->needComma = true;
+                            state->currentContextPtr = nullptr;
+                        } else if (n == 0) {
+                            break;
                         }
-
-                        // Write as much as we can
-                        size_t n = writeStr(state->pending.c_str(), state->pending.length());
-                        if (n < state->pending.length()) {
-                            state->pending = state->pending.substring(n);
-                            return written;
-                        }
-                        state->pending = "";
                     }
 
                     return written;
@@ -562,15 +688,14 @@ private:
         }
     }
     
-    // Restored: handle UI action from WebSocket
+    // Handle UI action from WebSocket
     void handleUIAction(const String& contextId, const String& field, const String& value) {
-        auto providers = registry->getContextProviders();
-        auto it = providers.find(contextId);
-        if (it != providers.end()) {
+        IWebUIProvider* provider = registry->getProviderForContext(contextId);
+        if (provider) {
             std::map<String, String> params;
             params["field"] = field;
             params["value"] = value;
-            it->second->handleWebUIRequest(contextId, "/", "POST", params);
+            provider->handleWebUIRequest(contextId, "/", "POST", params);
             forceNextUpdate = true;
         }
     }

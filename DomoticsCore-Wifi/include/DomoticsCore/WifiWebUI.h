@@ -11,7 +11,7 @@ namespace DomoticsCore {
 namespace Components {
 namespace WebUI {
 
-class WifiWebUI : public IWebUIProvider {
+class WifiWebUI : public CachingWebUIProvider {
     WifiComponent* wifi; // non-owning
     Components::WebUIComponent* webui = nullptr; // non-owning, for network change notifications
     std::function<void(const Components::WifiConfig&)> onConfigChanged; // unified callback for config persistence
@@ -91,52 +91,46 @@ public:
     String getWebUIName() const override { return wifi ? wifi->metadata.name : String("Wifi"); }
     String getWebUIVersion() const override { return wifi ? wifi->metadata.version : String("1.4.0"); }
 
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> ctxs;
-        if (!wifi) return ctxs;
+protected:
+    // CachingWebUIProvider: build contexts once, they're cached
+    void buildContexts(std::vector<WebUIContext>& ctxs) override {
+        if (!wifi) return;
 
         // Header badge for quick status
         ctxs.push_back(WebUIContext::statusBadge("wifi_status", "WiFi", "dc-wifi").withRealTime(2000));
         // AP status badge with custom icon
         ctxs.push_back(WebUIContext::statusBadge("ap_status", "AP", "dc-ap").withRealTime(2000));
 
-        // Components tab card
+        // Components tab card - placeholder values, real values from getWebUIData()
         ctxs.push_back(WebUIContext{
             "wifi_component", "WiFi", "dc-wifi", WebUILocation::ComponentDetail, WebUIPresentation::Card
         }
-        .withField(WebUIField("connected", "Connected", WebUIFieldType::Display, wifi->isSTAConnected() ? "Yes" : "No", "", true))
-        .withField(WebUIField("ssid_now", "SSID", WebUIFieldType::Display, wifi->getSSID(), "", true))
-        .withField(WebUIField("ip", "IP", WebUIFieldType::Display, wifi->getLocalIP(), "", true))
+        .withField(WebUIField("connected", "Connected", WebUIFieldType::Display, "No", "", true))
+        .withField(WebUIField("ssid_now", "SSID", WebUIFieldType::Display, "", "", true))
+        .withField(WebUIField("ip", "IP", WebUIFieldType::Display, "0.0.0.0", "", true))
         .withRealTime(2000));
 
-        // Settings controls - STA section
+        // Settings controls - STA section (placeholder values)
         ctxs.push_back(WebUIContext::settings("wifi_sta_settings", "WiFi Network")
-            .withField(WebUIField("ssid", "Network SSID", WebUIFieldType::Text, wifi->getConfiguredSSID()))
+            .withField(WebUIField("ssid", "Network SSID", WebUIFieldType::Text, ""))
             .withField(WebUIField("sta_password", "Password", WebUIFieldType::Password, ""))
             .withField(WebUIField("scan_networks", "Scan Networks", WebUIFieldType::Button, ""))
             .withField(WebUIField("networks", "Available Networks", WebUIFieldType::Display, ""))
-            .withField(WebUIField("wifi_enabled", "Enable WiFi", WebUIFieldType::Boolean,
-                                   (wifi->getConfiguredSSID().length() ? (wifi->isWifiEnabled() ? String("true") : String("false")) : String("false"))))
+            .withField(WebUIField("wifi_enabled", "Enable WiFi", WebUIFieldType::Boolean, "false"))
             .withAPI("/api/wifi")
             .withRealTime(2000)
         );
 
-        // Settings controls - AP section
+        // Settings controls - AP section (placeholder values)
         ctxs.push_back(WebUIContext::settings("wifi_ap_settings", "Access Point (AP)")
-            .withField(WebUIField(
-                "ap_ssid",
-                "AP SSID",
-                WebUIFieldType::Text,
-                (wifi->getAPSSID().length() ? wifi->getAPSSID() : (pendingApSsid.length() ? pendingApSsid : String("DomoticsCore-AP")))
-            ))
-            .withField(WebUIField("ap_enabled", "Enable AP", WebUIFieldType::Boolean,
-                                   (wifi->getConfiguredSSID().length() ? (wifi->isAPEnabled() ? String("true") : String("false")) : String("true"))))
+            .withField(WebUIField("ap_ssid", "AP SSID", WebUIFieldType::Text, "DomoticsCore-AP"))
+            .withField(WebUIField("ap_enabled", "Enable AP", WebUIFieldType::Boolean, "true"))
             .withAPI("/api/wifi")
             .withRealTime(2000)
         );
-
-        return ctxs;
     }
+
+public:
 
     String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params) override {
         if (!wifi) return "{\"success\":false}";

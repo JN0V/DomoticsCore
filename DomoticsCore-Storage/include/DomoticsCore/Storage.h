@@ -454,7 +454,7 @@ public:
         for (const auto& key : keys) {
             registeredKeys.push_back(key);
         }
-        DLOG_D(LOG_STORAGE, "Registered %d keys for %s", keys.size(), componentName.c_str());
+        DLOG_D(LOG_STORAGE, "Registered %zu keys for %s", keys.size(), componentName.c_str());
     }
     
     /**
