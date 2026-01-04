@@ -16,9 +16,11 @@
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/NTP.h>
 #include <DomoticsCore/NTPEvents.h>
+#include <DomoticsCore/Testing/HeapTracker.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
+using namespace DomoticsCore::Testing;
 
 // ============================================================================
 // Event Tests
@@ -455,6 +457,46 @@ void test_ntp_component_no_dependencies() {
 }
 
 // ============================================================================
+// Memory Leak Detection Tests (HeapTracker)
+// ============================================================================
+
+void test_ntp_memory_stability_lifecycle() {
+    HeapTracker tracker;
+    
+    tracker.checkpoint("before");
+    
+    for (int i = 0; i < 5; i++) {
+        NTPComponent ntp;
+        NTPConfig config;
+        config.servers = {"pool.ntp.org"};
+        config.timezone = "UTC0";
+        ntp.setConfig(config);
+    }
+    
+    tracker.checkpoint("after");
+    
+    MemoryTestResult result = tracker.assertStable("before", "after", 512);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+void test_ntp_memory_stability_config_changes() {
+    HeapTracker tracker;
+    NTPComponent ntp;
+    
+    tracker.checkpoint("baseline");
+    
+    for (int i = 0; i < 10; i++) {
+        NTPConfig config;
+        config.servers = {"server" + String(i) + ".ntp.org"};
+        config.timezone = "CET-1";
+        ntp.setConfig(config);
+    }
+    
+    MemoryTestResult result = tracker.assertNoGrowth("baseline", 256);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -523,6 +565,10 @@ int main() {
     RUN_TEST(test_ntp_empty_servers);
     RUN_TEST(test_ntp_multiple_timezone_changes);
     RUN_TEST(test_ntp_component_no_dependencies);
+
+    // Memory leak detection tests
+    RUN_TEST(test_ntp_memory_stability_lifecycle);
+    RUN_TEST(test_ntp_memory_stability_config_changes);
 
     return UNITY_END();
 }

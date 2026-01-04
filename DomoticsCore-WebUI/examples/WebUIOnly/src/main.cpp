@@ -70,8 +70,8 @@ public:
     int getPin() const { return demoLedPin; }
 };
 
-// LED WebUI (composition)
-class LEDWebUI : public IWebUIProvider {
+// LED WebUI (composition) - uses CachingWebUIProvider to prevent memory leaks
+class LEDWebUI : public CachingWebUIProvider {
 private:
     DemoLEDComponent* led; // non-owning
 public:
@@ -80,13 +80,13 @@ public:
     String getWebUIName() const override { return "LED"; }
     String getWebUIVersion() const override { return "1.0.0"; }
 
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> contexts;
-        if (!led) return contexts;
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        if (!led) return;
 
-        // Dashboard card with custom bulb visualization
+        // Dashboard card with custom bulb visualization - placeholder values
         contexts.push_back(WebUIContext::dashboard("led_dashboard", "LED Control")
-            .withField(WebUIField("state_toggle_dashboard", "LED", WebUIFieldType::Boolean, led->isOn() ? "true" : "false"))
+            .withField(WebUIField("state_toggle_dashboard", "LED", WebUIFieldType::Boolean, "false"))
             .withRealTime(1000)
             .withCustomHtml(R"(
                 <div class="card-header">
@@ -145,19 +145,19 @@ public:
                 setTimeout(updateLEDBulb, 100);
             )"));
 
-        // Header status badge using WebUIContext
+        // Header status badge using WebUIContext - placeholder values
         contexts.push_back(WebUIContext::statusBadge("led_status", "LED", "bulb-twotone")
-            .withField(WebUIField("state", "State", WebUIFieldType::Status, led->isOn() ? "ON" : "OFF"))
+            .withField(WebUIField("state", "State", WebUIFieldType::Status, "OFF"))
             .withRealTime(1000)
             .withCustomCss(R"(
                 .status-indicator[data-context-id='led_status'] .status-icon { color: var(--text-secondary); }
                 .status-indicator[data-context-id='led_status'].active .status-icon { color: #ffc107; filter: drop-shadow(0 0 6px rgba(255,193,7,0.6)); }
             )"));
 
-        // Settings context with detailed controls
+        // Settings context with detailed controls - placeholder values
         contexts.push_back(WebUIContext::settings("led_settings", "LED Controller")
-            .withField(WebUIField("state_toggle_settings", "LED", WebUIFieldType::Boolean, led->isOn() ? "true" : "false"))
-            .withField(WebUIField("pin_display", "GPIO Pin", WebUIFieldType::Display, String(led->getPin()), "", true))
+            .withField(WebUIField("state_toggle_settings", "LED", WebUIFieldType::Boolean, "false"))
+            .withField(WebUIField("pin_display", "GPIO Pin", WebUIFieldType::Display, "2", "", true))
             .withCustomHtml(R"(
                 <div class="card-header">
                     <h3 class="card-title">LED Controller</h3>
@@ -178,7 +178,7 @@ public:
                     </div>
                     <div class="field-row">
                         <span class="field-label">GPIO Pin:</span>
-                        <span class="field-value" data-field-name="pin_display">)" + String(0) + R"(</span>
+                        <span class="field-value" data-field-name="pin_display">2</span>
                     </div>
                 </div>
             )")
@@ -236,10 +236,9 @@ public:
                 });
                 setTimeout(updateLEDSettings, 100);
             )"));
-
-        return contexts;
     }
 
+public:
     String getWebUIData(const String& contextId) override {
         if (!led) return "{}";
         if (contextId == "led_dashboard" || contextId == "led_settings") {
@@ -267,6 +266,10 @@ public:
 };
 
 
+// WiFi credentials - set these for STA mode, leave empty for AP-only mode
+const char* WIFI_SSID = "YOUR_WIFI_SSID";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+
 // Global Core
 Core core;
 
@@ -274,18 +277,47 @@ void setup() {
     HAL::Platform::initializeLogging(115200);
 
     DLOG_I(LOG_APP, "=== DomoticsCore WebUI Demo Starting ===");
-    
-    // Setup WiFi in AP mode using HAL
-    String apSSID = "DomoticsCore-" + String((uint32_t)HAL::Platform::getChipId(), HEX);
+
+    // Initialize WiFi HAL
     HAL::WiFiHAL::init();
-    bool success = HAL::WiFiHAL::startAP(apSSID.c_str());
-    
-    if (success) {
-        DLOG_I(LOG_APP, "AP started: %s", apSSID.c_str());
-        DLOG_I(LOG_APP, "AP IP: %s", HAL::WiFiHAL::getAPIP().c_str());
-    } else {
-        DLOG_E(LOG_APP, "Failed to start AP mode");
-        return;
+
+    // Check if STA credentials were provided
+    const char* staSSID = WIFI_SSID;
+    const char* staPass = WIFI_PASSWORD;
+    bool staConnected = false;
+
+    if (strlen(staSSID) > 0) {
+        // Try to connect to the specified WiFi network
+        DLOG_I(LOG_APP, "Connecting to WiFi: %s", staSSID);
+        HAL::WiFiHAL::connect(staSSID, staPass);
+
+        // Wait for connection (up to 15 seconds)
+        unsigned long startTime = HAL::Platform::getMillis();
+        while (!HAL::WiFiHAL::isConnected() && (HAL::Platform::getMillis() - startTime) < 15000) {
+            HAL::Platform::delayMs(100);
+        }
+        staConnected = HAL::WiFiHAL::isConnected();
+
+        if (staConnected) {
+            DLOG_I(LOG_APP, "Connected to WiFi!");
+            DLOG_I(LOG_APP, "IP: %s", HAL::WiFiHAL::getLocalIP().c_str());
+        } else {
+            DLOG_W(LOG_APP, "Failed to connect to WiFi, falling back to AP mode");
+        }
+    }
+
+    // Start AP mode if STA failed or wasn't configured
+    if (!staConnected) {
+        String apSSID = "DomoticsCore-" + String((uint32_t)HAL::Platform::getChipId(), HEX);
+        bool apSuccess = HAL::WiFiHAL::startAP(apSSID.c_str());
+
+        if (apSuccess) {
+            DLOG_I(LOG_APP, "AP started: %s", apSSID.c_str());
+            DLOG_I(LOG_APP, "AP IP: %s", HAL::WiFiHAL::getAPIP().c_str());
+        } else {
+            DLOG_E(LOG_APP, "Failed to start AP mode");
+            return;
+        }
     }
     
     // Create Core

@@ -11,6 +11,7 @@
 
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Logger.h>
+#include <DomoticsCore/Platform_HAL.h>
 #include "SystemConfig.h"
 
 // Storage component (optional)
@@ -110,6 +111,9 @@
 
 #define LOG_WEBUI_SETUP "WEBUI_SETUP"
 
+// WebUI provider registration for all components
+// Providers are created at startup and registered with WebUI.
+
 namespace DomoticsCore {
 namespace SystemHelpers {
 
@@ -185,7 +189,7 @@ inline void setupWebUIProviders(
         return;
     }
     
-    DLOG_I(LOG_WEBUI_SETUP, "Registering WebUI providers...");
+    DLOG_I(LOG_WEBUI_SETUP, "Registering WebUI providers... (heap: %u)", HAL::getFreeHeap());
     
 #if WEBUI_SETUP_HAS_STORAGE
     auto* storage = core.getComponent<Components::StorageComponent>("Storage");
@@ -211,7 +215,7 @@ inline void setupWebUIProviders(
         }
 #endif
         webuiComponent->registerProviderWithComponent(providers.wifi, wifi);
-        DLOG_I(LOG_WEBUI_SETUP, "✓ WiFi WebUI provider registered");
+        DLOG_I(LOG_WEBUI_SETUP, "✓ WiFi WebUI provider registered (heap: %u)", HAL::getFreeHeap());
     }
 #endif
     
@@ -219,8 +223,24 @@ inline void setupWebUIProviders(
 #if WEBUI_SETUP_HAS_NTP_WEBUI
     auto* ntpComponent = core.getComponent<Components::NTPComponent>("NTP");
     if (ntpComponent) {
+        // Register timezone options endpoint - streams options from flash
+        webuiComponent->registerApiRoute("/api/ntp/timezones", HTTP_GET, [](AsyncWebServerRequest* request) {
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            response->print("[");
+            for (size_t i = 0; i < Components::WebUI::TIMEZONE_LOOKUP_COUNT; ++i) {
+                if (i > 0) response->print(",");
+                response->print("{\"value\":\"");
+                response->print(Components::WebUI::TIMEZONE_LOOKUP[i].posix);
+                response->print("\",\"label\":\"");
+                response->print(Components::WebUI::TIMEZONE_LOOKUP[i].friendly);
+                response->print("\"}");
+            }
+            response->print("]");
+            request->send(response);
+        });
+
         providers.ntp = new Components::WebUI::NTPWebUI(ntpComponent);
-        
+
 #if WEBUI_SETUP_HAS_STORAGE
         if (storage) {
             providers.ntp->setConfigSaveCallback([storage](const Components::NTPConfig& cfg) {
@@ -238,7 +258,7 @@ inline void setupWebUIProviders(
         }
 #endif
         webuiComponent->registerProviderWithComponent(providers.ntp, ntpComponent);
-        DLOG_I(LOG_WEBUI_SETUP, "✓ NTP WebUI provider registered");
+        DLOG_I(LOG_WEBUI_SETUP, "✓ NTP WebUI provider registered (heap: %u)", HAL::getFreeHeap());
     }
 #endif
     
@@ -305,7 +325,7 @@ inline void setupWebUIProviders(
     if (console) {
         providers.console = new Components::WebUI::RemoteConsoleWebUI(console);
         webuiComponent->registerProviderWithComponent(providers.console, console);
-        DLOG_I(LOG_WEBUI_SETUP, "✓ RemoteConsole WebUI provider registered");
+        DLOG_I(LOG_WEBUI_SETUP, "✓ RemoteConsole WebUI provider registered (heap: %u)", HAL::getFreeHeap());
     }
 #endif
     

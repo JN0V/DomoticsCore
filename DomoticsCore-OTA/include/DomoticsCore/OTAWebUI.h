@@ -24,7 +24,7 @@ namespace WebUI {
 /**
  * @brief WebUI provider that bridges `OTAComponent` with `WebUIComponent` routes and contexts.
  */
-class OTAWebUI : public IWebUIProvider {
+class OTAWebUI : public CachingWebUIProvider {
 public:
     explicit OTAWebUI(OTAComponent* component)
         : ota(component) {}
@@ -43,47 +43,47 @@ public:
     String getWebUIName() const override { return ota ? ota->metadata.name : String("OTA"); }
     String getWebUIVersion() const override { return ota ? ota->metadata.version : String("1.4.0"); }
 
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> contexts;
-        if (!ota) return contexts;
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        if (!ota) return;
 
         const OTAConfig& cfg = ota->getConfig();
 
-        // Unified OTA card using standard components
+        // Unified OTA card using standard components - placeholder values
         WebUIContext otaCard = WebUIContext::settings("ota_unified", "Firmware Update")
             .withAlwaysInteractive();
-            
+
         if (cfg.enableWebUIUpload) {
             otaCard
-                .withField(WebUIField("status", "Status", WebUIFieldType::Display, ota->getLastResult(), "", true))
-                .withField(WebUIField("progress", "Progress", WebUIFieldType::Progress, formatProgress(), "", true))
+                .withField(WebUIField("status", "Status", WebUIFieldType::Display, "Idle", "", true))
+                .withField(WebUIField("progress", "Progress", WebUIFieldType::Progress, "0%", "", true))
                 // Remote Update Section
-                .withField(WebUIField("update_url", "Update URL", WebUIFieldType::Text, cfg.updateUrl))
+                .withField(WebUIField("update_url", "Update URL", WebUIFieldType::Text, ""))
                 .withField(WebUIField("check_now", "Check for Updates", WebUIFieldType::Button, ""))
                 .withField(WebUIField("start_update", "Download & Install", WebUIFieldType::Button, ""))
                 // Local Upload Section
                 .withField(WebUIField("firmware", "Upload Firmware", WebUIFieldType::File, "", ".bin,.bin.gz").api("/api/ota/upload"))
                 // Settings
-                .withField(WebUIField("auto_reboot", "Auto Reboot", WebUIFieldType::Boolean, cfg.autoReboot ? "true" : "false"));
-            
+                .withField(WebUIField("auto_reboot", "Auto Reboot", WebUIFieldType::Boolean, "true"));
+
             otaCard.withRealTime(2000).withAPI("/api/ota/unified");
         } else {
             // Remote-only mode (no upload)
             otaCard
-                .withField(WebUIField("status", "Status", WebUIFieldType::Display, ota->getLastResult(), "", true))
-                .withField(WebUIField("progress", "Progress", WebUIFieldType::Display, formatProgress(), "", true))
-                .withField(WebUIField("downloaded", "Downloaded", WebUIFieldType::Display, String(ota->getDownloadedBytes()), " bytes", true))
-                .withField(WebUIField("update_url", "Firmware URL", WebUIFieldType::Text, cfg.updateUrl))
+                .withField(WebUIField("status", "Status", WebUIFieldType::Display, "Idle", "", true))
+                .withField(WebUIField("progress", "Progress", WebUIFieldType::Display, "0%", "", true))
+                .withField(WebUIField("downloaded", "Downloaded", WebUIFieldType::Display, "0", " bytes", true))
+                .withField(WebUIField("update_url", "Firmware URL", WebUIFieldType::Text, ""))
                 .withField(WebUIField("check_now", "Check For Updates", WebUIFieldType::Button, ""))
                 .withField(WebUIField("start_update", "Download & Install", WebUIFieldType::Button, ""))
-                .withField(WebUIField("auto_reboot", "Auto Reboot", WebUIFieldType::Boolean, cfg.autoReboot ? "true" : "false"))
+                .withField(WebUIField("auto_reboot", "Auto Reboot", WebUIFieldType::Boolean, "true"))
                 .withRealTime(2000)
                 .withAPI("/api/ota/update");
         }
         contexts.push_back(otaCard);
-
-        return contexts;
     }
+
+public:
 
     String getWebUIData(const String& contextId) override {
         if (!ota) return "{}";

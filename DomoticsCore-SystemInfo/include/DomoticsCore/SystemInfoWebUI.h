@@ -11,7 +11,7 @@ namespace Components {
 namespace WebUI {
 
 // Composition-based WebUI provider for SystemInfoComponent
-class SystemInfoWebUI : public IWebUIProvider {
+class SystemInfoWebUI : public CachingWebUIProvider {
 private:
     SystemInfoComponent* sys; // non-owning
     std::function<void(const String&)> onDeviceNameChanged; // callback for device name persistence
@@ -30,6 +30,31 @@ private:
     };
     LazyState<SystemInfoState> systemInfoState;
 
+protected:
+    // CachingWebUIProvider: build contexts once, they're cached
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        if (!sys) return;
+
+        // Dashboard: Static hardware info - placeholder values, real values from getWebUIData()
+        contexts.push_back(WebUIContext::dashboard("system_info", "Device Information")
+            .withField(WebUIField("manufacturer", "Manufacturer", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("firmware", "Firmware", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("chip", "Chip", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("revision", "Revision", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("cpu_freq", "CPU Freq", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("total_heap", "Total Heap", WebUIFieldType::Display, "", "", true)));
+
+        // Dashboard: Real-time metrics with charts
+        contexts.push_back(WebUIContext::dashboard("system_metrics", "System Metrics")
+            .withField(WebUIField("cpu_load", "CPU Load", WebUIFieldType::Chart, "", "%"))
+            .withField(WebUIField("heap_usage", "Memory Usage", WebUIFieldType::Chart, "", "%"))
+            .withRealTime(2000));
+
+        // Settings: Device Name only
+        contexts.push_back(WebUIContext::settings("system_settings", "Device Settings")
+            .withField(WebUIField("device_name", "Device Name", WebUIFieldType::Text, "")));
+    }
+
 public:
     explicit SystemInfoWebUI(SystemInfoComponent* component)
         : sys(component) {}
@@ -42,35 +67,6 @@ public:
     // IWebUIProvider
     String getWebUIName() const override { return sys ? sys->metadata.name : String("System Info"); }
     String getWebUIVersion() const override { return sys ? sys->metadata.version : String("1.2.1"); }
-
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> contexts;
-        if (!sys) return contexts;
-
-        const auto& metrics = sys->getMetrics();
-        const auto& cfg = sys->getConfig();
-
-        // Dashboard: Static hardware info (no refresh)
-        contexts.push_back(WebUIContext::dashboard("system_info", "Device Information")
-            .withField(WebUIField("manufacturer", "Manufacturer", WebUIFieldType::Display, cfg.manufacturer, "", true))
-            .withField(WebUIField("firmware", "Firmware", WebUIFieldType::Display, cfg.firmwareVersion, "", true))
-            .withField(WebUIField("chip", "Chip", WebUIFieldType::Display, metrics.chipModel, "", true))
-            .withField(WebUIField("revision", "Revision", WebUIFieldType::Display, String(metrics.chipRevision), "", true))
-            .withField(WebUIField("cpu_freq", "CPU Freq", WebUIFieldType::Display, String(metrics.cpuFreq) + " MHz", "", true))
-            .withField(WebUIField("total_heap", "Total Heap", WebUIFieldType::Display, sys->formatBytesPublic(metrics.totalHeap), "", true)));
-
-        // Dashboard: Real-time metrics with charts (frontend-rendered)
-        contexts.push_back(WebUIContext::dashboard("system_metrics", "System Metrics")
-            .withField(WebUIField("cpu_load", "CPU Load", WebUIFieldType::Chart, "", "%"))
-            .withField(WebUIField("heap_usage", "Memory Usage", WebUIFieldType::Chart, "", "%"))
-            .withRealTime(2000));
-
-        // Settings: Device Name only (editable)
-        contexts.push_back(WebUIContext::settings("system_settings", "Device Settings")
-            .withField(WebUIField("device_name", "Device Name", WebUIFieldType::Text, cfg.deviceName)));
-
-        return contexts;
-    }
 
     String getWebUIData(const String& contextId) override {
         if (!sys) return "{}";
