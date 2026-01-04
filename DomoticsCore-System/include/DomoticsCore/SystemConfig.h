@@ -10,7 +10,6 @@
  * @example DomoticsCore-System/examples/FullStack/src/main.cpp
  */
 
-#include <Arduino.h>
 #include <DomoticsCore/Logger.h>
 
 namespace DomoticsCore {

@@ -35,6 +35,7 @@
 
 #if __has_include(<DomoticsCore/NTP.h>)
 #include <DomoticsCore/NTP.h>
+#include <DomoticsCore/NTPEvents.h>
 #endif
 
 #if __has_include(<DomoticsCore/Storage.h>)
@@ -55,6 +56,7 @@
 
 #if __has_include(<DomoticsCore/HomeAssistant.h>)
 #include <DomoticsCore/HomeAssistant.h>
+#include <DomoticsCore/HAEvents.h>
 #endif
 
 #include <vector>
@@ -393,14 +395,14 @@ private:
 #if __has_include(<DomoticsCore/MQTT.h>)
         auto* mqttComp = core.getComponent<Components::MQTTComponent>("MQTT");
         if (mqttComp && wifi) {
-            core.getEventBus().subscribe(Events::EVENT_WIFI_STA_CONNECTED, [mqttComp](const void* payload) {
+            core.getEventBus().subscribe(WifiEvents::EVENT_STA_CONNECTED, [mqttComp](const void* payload) {
                 if (payload && *static_cast<const bool*>(payload)) {
                     DLOG_I(LOG_SYSTEM, "📶 WiFi connected → triggering MQTT connection");
                     mqttComp->connect();
                 }
             });
             DLOG_I(LOG_SYSTEM, "✓ WiFi → MQTT orchestration configured");
-            
+
             if (wifi->isSTAConnected()) {
                 DLOG_I(LOG_SYSTEM, "📶 WiFi already connected → triggering MQTT");
                 mqttComp->connect();
@@ -412,10 +414,10 @@ private:
 #if __has_include(<DomoticsCore/NTP.h>)
         auto* ntpComp = core.getComponent<Components::NTPComponent>("NTP");
         if (ntpComp && wifi) {
-            core.getEventBus().subscribe(Events::EVENT_NTP_SYNCED, [](const void*) {
-                DLOG_I(LOG_SYSTEM, "⏰ NTP time synchronized");
+            core.getEventBus().subscribe(NTPEvents::EVENT_SYNCED, [](const void*) {
+                DLOG_I(LOG_SYSTEM, "NTP time synchronized");
             });
-            DLOG_I(LOG_SYSTEM, "✓ NTP event monitoring configured");
+            DLOG_I(LOG_SYSTEM, "NTP event monitoring configured");
         }
 #endif
         
@@ -423,11 +425,11 @@ private:
 #if __has_include(<DomoticsCore/MQTT.h>) && __has_include(<DomoticsCore/HomeAssistant.h>)
         auto* haComp = core.getComponent<Components::HomeAssistant::HomeAssistantComponent>("HomeAssistant");
         if (haComp) {
-            core.getEventBus().subscribe(Events::EVENT_HA_DISCOVERY_PUBLISHED, [](const void* payload) {
+            core.getEventBus().subscribe(HAEvents::EVENT_DISCOVERY_PUBLISHED, [](const void* payload) {
                 int count = payload ? *static_cast<const int*>(payload) : 0;
-                DLOG_I(LOG_SYSTEM, "🏠 Home Assistant discovery published (%d entities)", count);
+                DLOG_I(LOG_SYSTEM, "Home Assistant discovery published (%d entities)", count);
             });
-            DLOG_I(LOG_SYSTEM, "✓ MQTT → HomeAssistant orchestration configured");
+            DLOG_I(LOG_SYSTEM, "MQTT -> HomeAssistant orchestration configured");
         }
 #endif
     }

@@ -83,8 +83,8 @@ void setRelay(bool state) {
 System* domotics = nullptr;
 
 void setup() {
-    Serial.begin(115200);
-    delay(1000);
+    HAL::Platform::initializeLogging(115200);
+    HAL::Platform::delayMs(1000);
     
     // ========================================================================
     // FULL STACK Configuration - Everything enabled!
@@ -193,8 +193,8 @@ void setup() {
         
         haPtr->addButton("restart", "Restart Device", []() {
             DLOG_I(LOG_APP, "Restart button pressed from Home Assistant");
-            delay(1000);
-            ESP.restart();
+            HAL::Platform::delayMs(1000);
+            HAL::Platform::restart();
         }, "mdi:restart");
         
         DLOG_I(LOG_APP, "✓ Home Assistant entities created (%d entities)", 
@@ -273,8 +273,8 @@ void loop() {
     if (mqttPublishTimer.isReady() && haPtr && haPtr->isMQTTConnected()) {
         // Read current values
         float temp = readTemperature();
-        uint32_t uptime = millis() / 1000;
-        uint32_t freeHeap = ESP.getFreeHeap();
+        uint32_t uptime = HAL::Platform::getMillis() / 1000;
+        uint32_t freeHeap = HAL::Platform::getFreeHeap();
         
         // Publish sensor states
         haPtr->publishState("temperature", temp);
@@ -301,8 +301,8 @@ void loop() {
     // SYSTEM HEARTBEAT (periodic status)
     // ========================================================================
     if (heartbeatTimer.isReady()) {
-        DLOG_I(LOG_APP, "💚 System alive - Uptime: %ds, MQTT: %s, HA entities: %d",
-               millis() / 1000,
+        DLOG_I(LOG_APP, "💚 System alive - Uptime: %lus, MQTT: %s, HA entities: %d",
+               (unsigned long)(HAL::Platform::getMillis() / 1000),
                (mqttPtr && mqttPtr->isConnected()) ? "connected" : "disconnected",
                haPtr ? haPtr->getStatistics().entityCount : 0);
     }
