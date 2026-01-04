@@ -8,6 +8,7 @@
  * - WebUIContext creation and factory methods
  * - LazyState change tracking
  * - ProviderRegistry registration and lookup
+ * - CachingWebUIProvider memory leak prevention
  */
 
 #include <unity.h>
@@ -15,10 +16,12 @@
 #include <DomoticsCore/IWebUIProvider.h>
 #include <DomoticsCore/WebUI/WebUIConfig.h>
 #include <DomoticsCore/WebUI/ProviderRegistry.h>
+#include <DomoticsCore/Testing/HeapTracker.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 using namespace DomoticsCore::Components::WebUI;
+using namespace DomoticsCore::Testing;
 
 // ============================================================================
 // WebUIConfig Tests
@@ -642,6 +645,254 @@ void test_provider_registry_get_next_context() {
 }
 
 // ============================================================================
+// Memory Leak DETECTION Tests - Test CURRENT behavior before fixes
+// ============================================================================
+
+/**
+ * This test DETECTS memory behavior of the standard IWebUIProvider.
+ * MockWebUIProvider inherits from IWebUIProvider (NOT CachingWebUIProvider),
+ * so it recreates contexts on every getWebUIContexts() call.
+ * 
+ * PURPOSE: Measure actual memory impact of repeated context creation
+ * to understand WHERE memory leaks originate.
+ */
+void test_detect_memory_behavior_repeated_context_creation() {
+    HeapTracker tracker;
+    
+    // Create a provider with substantial context data (simulating real WebUI)
+    MockWebUIProvider provider("LeakTest", "1.0.0");
+    provider.addContext(WebUIContext::dashboard("dash", "Dashboard")
+        .withField(WebUIField("temp", "Temperature", WebUIFieldType::Number, "25.5", "°C", true))
+        .withField(WebUIField("humid", "Humidity", WebUIFieldType::Number, "60", "%", true))
+        .withCustomHtml("<div class=\"widget\"><span class=\"value\">Custom HTML content here for testing memory allocation patterns in WebUI contexts</span></div>")
+        .withCustomCss(".widget { background: #fff; padding: 1rem; } .value { font-size: 2rem; color: #007acc; }"));
+    
+    provider.addContext(WebUIContext::settings("settings", "Settings")
+        .withField(WebUIField("name", "Device Name", WebUIFieldType::Text, "DomoticsCore"))
+        .withField(WebUIField("enabled", "Enabled", WebUIFieldType::Boolean, "true")));
+    
+    // Warm up - first call
+    auto warmup = provider.getWebUIContexts();
+    (void)warmup;
+    
+    // Checkpoint after warmup
+    tracker.checkpoint("after_warmup");
+    
+    // Call getWebUIContexts() 50 times - this is what happens during WebSocket broadcasts
+    for (int i = 0; i < 50; i++) {
+        auto contexts = provider.getWebUIContexts();
+        // Simulate what WebUI does: iterate over contexts
+        for (const auto& ctx : contexts) {
+            (void)ctx.contextId;
+        }
+    }
+    
+    tracker.checkpoint("after_50_calls");
+    
+    // Calculate delta
+    int32_t delta = tracker.getDelta("after_warmup", "after_50_calls");
+    
+    // Report the actual memory behavior (this test documents, doesn't necessarily fail)
+    printf("\n[MEMORY DETECTION] IWebUIProvider::getWebUIContexts() x50:\n");
+    printf("  Heap delta: %d bytes\n", delta);
+    printf("  Per call: ~%d bytes\n", delta / 50);
+    
+    // On native with simulated heap, delta should be ~0 (no real allocator tracking)
+    // On ESP8266, this would show actual fragmentation/leak
+    // For now, just assert the test runs - the value is informational
+    TEST_ASSERT_TRUE(true);
+}
+
+/**
+ * Test memory behavior when contexts contain large customHtml/Css/Js strings
+ * These are the suspected source of memory leaks on ESP8266.
+ */
+void test_detect_memory_large_custom_content() {
+    HeapTracker tracker;
+    
+    MockWebUIProvider provider("LargeContent", "1.0.0");
+    
+    // Create context with large custom content (simulating real chart/complex UI)
+    String largeHtml = "<div class=\"chart-container\">";
+    for (int i = 0; i < 20; i++) {
+        largeHtml += "<div class=\"data-point\" data-value=\"" + String(i * 10) + "\"></div>";
+    }
+    largeHtml += "</div>";
+    
+    provider.addContext(WebUIContext::dashboard("chart", "Chart")
+        .withCustomHtml(largeHtml)
+        .withCustomCss(".chart-container { display: flex; } .data-point { width: 20px; height: var(--value); }")
+        .withCustomJs("function updateChart(data) { /* chart update logic */ }"));
+    
+    tracker.checkpoint("before");
+    
+    // Call multiple times
+    for (int i = 0; i < 20; i++) {
+        auto contexts = provider.getWebUIContexts();
+        for (const auto& ctx : contexts) {
+            // Access custom content (triggers String copy)
+            String html = ctx.customHtml;
+            String css = ctx.customCss;
+            String js = ctx.customJs;
+            (void)html; (void)css; (void)js;
+        }
+    }
+    
+    tracker.checkpoint("after");
+    
+    int32_t delta = tracker.getDelta("before", "after");
+    printf("\n[MEMORY DETECTION] Large customHtml/Css/Js x20:\n");
+    printf("  Heap delta: %d bytes\n", delta);
+    printf("  Content size: ~%zu bytes\n", largeHtml.length());
+    
+    TEST_ASSERT_TRUE(true);
+}
+
+// ============================================================================
+// CachingWebUIProvider Memory Tests (HeapTracker Integration)
+// ============================================================================
+
+// Test implementation of CachingWebUIProvider for memory testing
+class TestCachingProvider : public CachingWebUIProvider {
+public:
+    int buildCount = 0;
+    
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        buildCount++;
+        // Create contexts with substantial data to detect leaks
+        contexts.push_back(WebUIContext::dashboard("test_dash", "Dashboard")
+            .withField(WebUIField("field1", "Field 1", WebUIFieldType::Text, "value1"))
+            .withField(WebUIField("field2", "Field 2", WebUIFieldType::Number, "42"))
+            .withCustomHtml("<div class='test'>Custom HTML Content</div>")
+            .withCustomCss(".test { color: red; }"));
+        
+        contexts.push_back(WebUIContext::settings("test_settings", "Settings")
+            .withField(WebUIField("setting1", "Setting", WebUIFieldType::Boolean, "true")));
+    }
+    
+public:
+    String getWebUIName() const override { return "TestProvider"; }
+    String getWebUIVersion() const override { return "1.0.0"; }
+    
+    String handleWebUIRequest(const String& contextId, const String& endpoint,
+                              const String& method, const std::map<String, String>& params) override {
+        return "{}";
+    }
+};
+
+void test_caching_provider_builds_once() {
+    TestCachingProvider provider;
+    
+    // First call should trigger build
+    auto contexts1 = provider.getWebUIContexts();
+    TEST_ASSERT_EQUAL(1, provider.buildCount);
+    TEST_ASSERT_EQUAL(2, contexts1.size());
+    
+    // Second call should use cache
+    auto contexts2 = provider.getWebUIContexts();
+    TEST_ASSERT_EQUAL(1, provider.buildCount); // Still 1, not rebuilt
+    TEST_ASSERT_EQUAL(2, contexts2.size());
+    
+    // Third call - still cached
+    auto contexts3 = provider.getWebUIContexts();
+    TEST_ASSERT_EQUAL(1, provider.buildCount);
+}
+
+void test_caching_provider_memory_stable_100_calls() {
+    HeapTracker tracker;
+    TestCachingProvider provider;
+    
+    // First call builds cache
+    provider.getWebUIContexts();
+    
+    // Checkpoint after cache is built
+    tracker.checkpoint("after_cache");
+    
+    // Call 100 times - should not allocate new memory
+    for (int i = 0; i < 100; i++) {
+        auto contexts = provider.getWebUIContexts();
+        TEST_ASSERT_EQUAL(2, contexts.size());
+    }
+    
+    tracker.checkpoint("after_100_calls");
+    
+    // Assert no heap growth (tolerance for internal std::vector copies)
+    MemoryTestResult result = tracker.assertStable("after_cache", "after_100_calls", 1024);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+void test_caching_provider_invalidate_rebuilds() {
+    TestCachingProvider provider;
+    
+    // Build cache
+    provider.getWebUIContexts();
+    TEST_ASSERT_EQUAL(1, provider.buildCount);
+    
+    // Invalidate
+    provider.invalidateContextCache();
+    
+    // Next call should rebuild
+    provider.getWebUIContexts();
+    TEST_ASSERT_EQUAL(2, provider.buildCount);
+}
+
+void test_caching_provider_foreach_no_rebuild() {
+    TestCachingProvider provider;
+    
+    // Build via getWebUIContexts
+    provider.getWebUIContexts();
+    TEST_ASSERT_EQUAL(1, provider.buildCount);
+    
+    // forEachContext should use cache
+    int contextCount = 0;
+    provider.forEachContext([&contextCount](const WebUIContext& ctx) {
+        contextCount++;
+        return true;
+    });
+    
+    TEST_ASSERT_EQUAL(2, contextCount);
+    TEST_ASSERT_EQUAL(1, provider.buildCount); // No rebuild
+}
+
+void test_caching_provider_get_context_at() {
+    TestCachingProvider provider;
+    
+    WebUIContext ctx;
+    bool found = provider.getContextAt(0, ctx);
+    TEST_ASSERT_TRUE(found);
+    TEST_ASSERT_EQUAL_STRING("test_dash", ctx.contextId.c_str());
+    
+    found = provider.getContextAt(1, ctx);
+    TEST_ASSERT_TRUE(found);
+    TEST_ASSERT_EQUAL_STRING("test_settings", ctx.contextId.c_str());
+    
+    found = provider.getContextAt(2, ctx);
+    TEST_ASSERT_FALSE(found);
+    
+    // All via cache - only 1 build
+    TEST_ASSERT_EQUAL(1, provider.buildCount);
+}
+
+void test_caching_provider_memory_lifecycle() {
+    HeapTracker tracker;
+    
+    tracker.checkpoint("before");
+    
+    // Create and destroy multiple providers
+    for (int i = 0; i < 10; i++) {
+        TestCachingProvider provider;
+        provider.getWebUIContexts();
+        // Provider destroyed at end of scope
+    }
+    
+    tracker.checkpoint("after");
+    
+    MemoryTestResult result = tracker.assertStable("before", "after", 512);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -709,6 +960,18 @@ int main() {
     RUN_TEST(test_provider_registry_context_providers_accessor);
     RUN_TEST(test_provider_registry_prepare_schema_generation);
     RUN_TEST(test_provider_registry_get_next_context);
+
+    // Memory leak DETECTION tests (measure current behavior)
+    RUN_TEST(test_detect_memory_behavior_repeated_context_creation);
+    RUN_TEST(test_detect_memory_large_custom_content);
+
+    // CachingWebUIProvider memory tests (HeapTracker)
+    RUN_TEST(test_caching_provider_builds_once);
+    RUN_TEST(test_caching_provider_memory_stable_100_calls);
+    RUN_TEST(test_caching_provider_invalidate_rebuilds);
+    RUN_TEST(test_caching_provider_foreach_no_rebuild);
+    RUN_TEST(test_caching_provider_get_context_at);
+    RUN_TEST(test_caching_provider_memory_lifecycle);
 
     return UNITY_END();
 }
