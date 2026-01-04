@@ -1120,6 +1120,139 @@ void test_detect_memory_behavior_repeated_context_creation() {
 }
 
 /**
+ * ZERO LEAK TEST: Test with MULTIPLE providers (like real WebUI)
+ * This should identify if leak comes from multi-provider scenario
+ */
+void test_zero_leak_multiple_providers() {
+    HeapTracker tracker;
+    
+    // 3 providers like real WebUI
+    MockWebUIProvider p1("WiFi", "1.0.0");
+    p1.addContext(WebUIContext::dashboard("wifi", "WiFi")
+        .withField(WebUIField("ssid", "SSID", WebUIFieldType::Text, "MyNet"))
+        .withCustomHtml("<div>wifi</div>"));
+    
+    MockWebUIProvider p2("NTP", "1.0.0");
+    p2.addContext(WebUIContext::settings("ntp", "NTP")
+        .withField(WebUIField("server", "Server", WebUIFieldType::Text, "pool.ntp.org")));
+    
+    MockWebUIProvider p3("System", "1.0.0");
+    p3.addContext(WebUIContext::dashboard("sys", "System")
+        .withField(WebUIField("heap", "Heap", WebUIFieldType::Number, "50000")));
+    
+    std::vector<IWebUIProvider*> providers = {&p1, &p2, &p3};
+    
+    // Force cache build
+    for (auto* p : providers) {
+        p->forEachContext([](const WebUIContext&) { return true; });
+    }
+    
+    tracker.checkpoint("start");
+    
+    // 500 iterations like aggressive test - using ZERO-COPY getContextAtRef
+    for (int i = 0; i < 500; i++) {
+        for (auto* provider : providers) {
+            size_t count = provider->getContextCount();
+            for (size_t j = 0; j < count; j++) {
+                const WebUIContext* ctxPtr = provider->getContextAtRef(j);
+                if (!ctxPtr) continue;
+                
+                StreamingContextSerializer serializer;
+                serializer.begin(*ctxPtr);
+                
+                uint8_t buffer[256];
+                while (!serializer.isComplete()) {
+                    serializer.write(buffer, sizeof(buffer));
+                }
+            }
+        }
+    }
+    
+    tracker.checkpoint("end");
+    int32_t delta = tracker.getDelta("start", "end");
+    
+    printf("\n[ZERO LEAK - MULTI PROVIDER] 3 providers x500:\n");
+    printf("  Heap delta: %d bytes (%.2f/iter)\n", delta, delta/500.0f);
+    
+    // Must be 0
+    TEST_ASSERT_EQUAL_INT32_MESSAGE(0, delta, "Multi-provider MUST have ZERO leak");
+}
+
+/**
+ * ZERO LEAK TEST: Find EXACT source of 3 bytes/req leak
+ * Must be 0 bytes - no tolerance for any leak
+ */
+void test_zero_leak_streaming_only() {
+    HeapTracker tracker;
+    
+    MockWebUIProvider provider("Test", "1.0.0");
+    provider.addContext(WebUIContext::dashboard("dash", "Dashboard")
+        .withField(WebUIField("temp", "Temp", WebUIFieldType::Number, "25"))
+        .withCustomHtml("<div>test content</div>"));
+    
+    // Force cache build
+    provider.forEachContext([](const WebUIContext&) { return true; });
+    
+    tracker.checkpoint("start");
+    
+    // Test ONLY StreamingContextSerializer with ZERO-COPY getContextAtRef
+    for (int i = 0; i < 100; i++) {
+        size_t count = provider.getContextCount();
+        for (size_t j = 0; j < count; j++) {
+            const WebUIContext* ctxPtr = provider.getContextAtRef(j);
+            if (!ctxPtr) continue;
+            
+            StreamingContextSerializer serializer;
+            serializer.begin(*ctxPtr);
+            
+            uint8_t buffer[256];
+            while (!serializer.isComplete()) {
+                serializer.write(buffer, sizeof(buffer));
+            }
+        }
+    }
+    
+    tracker.checkpoint("end");
+    int32_t delta = tracker.getDelta("start", "end");
+    
+    printf("\n[ZERO LEAK TEST] StreamingContextSerializer x100:\n");
+    printf("  Heap delta: %d bytes\n", delta);
+    printf("  Per iteration: %.2f bytes\n", delta / 100.0f);
+    
+    // MUST be exactly 0 - no tolerance
+    TEST_ASSERT_EQUAL_INT32_MESSAGE(0, delta, "MUST have ZERO leak");
+}
+
+/**
+ * ZERO LEAK TEST: Test getContextAt alone
+ */
+void test_zero_leak_getContextAt_only() {
+    HeapTracker tracker;
+    
+    MockWebUIProvider provider("Test", "1.0.0");
+    provider.addContext(WebUIContext::dashboard("dash", "Dashboard")
+        .withField(WebUIField("temp", "Temp", WebUIFieldType::Number, "25"))
+        .withCustomHtml("<div>test</div>"));
+    
+    // Force cache build
+    provider.forEachContext([](const WebUIContext&) { return true; });
+    
+    tracker.checkpoint("start");
+    
+    // Test ONLY getContextAtRef (ZERO-COPY)
+    for (int i = 0; i < 100; i++) {
+        const WebUIContext* ctxPtr = provider.getContextAtRef(0);
+        (void)ctxPtr;  // Just access, no copy
+    }
+    
+    tracker.checkpoint("end");
+    int32_t delta = tracker.getDelta("start", "end");
+    
+    printf("[ZERO LEAK TEST] getContextAt x100: %d bytes (%.2f/iter)\n", delta, delta/100.0f);
+    TEST_ASSERT_EQUAL_INT32_MESSAGE(0, delta, "getContextAt MUST have ZERO leak");
+}
+
+/**
  * ISOLATION: Test ONLY JsonDocument allocation (no contexts)
  */
 void test_isolate_jsondocument_only() {
@@ -1264,85 +1397,41 @@ void test_aggressive_schema_generation_500_requests() {
         (void)c1; (void)c2; (void)c3;
     }
     
-    tracker.checkpoint("start");
-    uint32_t startHeap = tracker.getFreeHeap();
+    // Pre-build provider list ONCE (like WebUI.h does with static state)
+    IWebUIProvider* providers[3] = {&provider1, &provider2, &provider3};
     
-    // Track heap at intervals
-    std::vector<int32_t> heapSamples;
-    heapSamples.push_back(startHeap);
+    tracker.checkpoint("start");
     
     const int TOTAL_REQUESTS = 500;
-    const int SAMPLE_INTERVAL = 50;
     
     for (int request = 0; request < TOTAL_REQUESTS; request++) {
-        // Simulate NEW WebUI.h behavior using getContextAt() + StreamingContextSerializer
-        std::vector<IWebUIProvider*> providers = {&provider1, &provider2, &provider3};
-        
-        for (IWebUIProvider* provider : providers) {
-            // Use getContextAt() - memory efficient, no vector copy
+        // Simulate NEW WebUI.h behavior using getContextAtRef() + StreamingContextSerializer
+        for (int p = 0; p < 3; p++) {
+            IWebUIProvider* provider = providers[p];
             size_t contextCount = provider->getContextCount();
             for (size_t i = 0; i < contextCount; i++) {
-                WebUIContext ctx;
-                if (!provider->getContextAt(i, ctx)) continue;
+                const WebUIContext* ctxPtr = provider->getContextAtRef(i);
+                if (!ctxPtr) continue;
                 
-                // Use StreamingContextSerializer like WebUI.h does
                 StreamingContextSerializer serializer;
-                serializer.begin(ctx);
+                serializer.begin(*ctxPtr);
                 
                 uint8_t buffer[512];
                 while (!serializer.isComplete()) {
-                    size_t written = serializer.write(buffer, sizeof(buffer));
-                    (void)written;
+                    serializer.write(buffer, sizeof(buffer));
                 }
-                // Context goes out of scope here, memory released
             }
-        }
-        
-        // Sample heap at intervals
-        if ((request + 1) % SAMPLE_INTERVAL == 0) {
-            tracker.checkpoint("sample_" + String(request + 1));
-            heapSamples.push_back(tracker.getFreeHeap());
         }
     }
     
     tracker.checkpoint("end");
-    uint32_t endHeap = tracker.getFreeHeap();
+    int32_t delta = tracker.getDelta("start", "end");
     
-    // Analyze heap trend
     printf("\n[AGGRESSIVE TEST - 500 curl requests simulation]\n");
-    printf("  Start heap: %u bytes\n", startHeap);
-    printf("  End heap:   %u bytes\n", endHeap);
-    printf("  Total delta: %d bytes\n", (int)startHeap - (int)endHeap);
+    printf("  Heap delta: %d bytes (%.2f/req)\n", delta, delta / 500.0f);
     
-    printf("\n  Heap samples every %d requests:\n", SAMPLE_INTERVAL);
-    for (size_t i = 0; i < heapSamples.size(); i++) {
-        int request = (i == 0) ? 0 : i * SAMPLE_INTERVAL;
-        int diff = (i > 0) ? (int)heapSamples[i-1] - (int)heapSamples[i] : 0;
-        printf("    Request %3d: %d bytes (delta: %d)\n", request, heapSamples[i], diff);
-    }
-    
-    // Calculate trend
-    int totalLeak = (int)startHeap - (int)endHeap;
-    int leakPerRequest = totalLeak / TOTAL_REQUESTS;
-    
-    printf("\n  Leak per request: %d bytes\n", leakPerRequest);
-    
-    // Check if heap is monotonically decreasing (real leak pattern)
-    bool isDecreasing = true;
-    for (size_t i = 1; i < heapSamples.size(); i++) {
-        if (heapSamples[i] > heapSamples[i-1] + 100) { // Allow small fluctuation
-            isDecreasing = false;
-            break;
-        }
-    }
-    
-    if (isDecreasing && totalLeak > 1000) {
-        printf("  *** HEAP MONOTONICALLY DECREASING - THIS IS THE OOM PATTERN! ***\n");
-    }
-    
-    // FAIL if significant cumulative leak
-    const int32_t MAX_LEAK = 2048;  // 2KB max for 500 requests
-    TEST_ASSERT_TRUE_MESSAGE(totalLeak <= MAX_LEAK, "Cumulative memory leak detected");
+    // MUST be 0 - no tolerance
+    TEST_ASSERT_EQUAL_INT32_MESSAGE(0, delta, "AGGRESSIVE test MUST have ZERO leak");
 }
 
 /**
@@ -1777,6 +1866,11 @@ int main() {
     // Schema validation tests
     RUN_TEST(test_full_schema_array_valid_json);
 
+    // ZERO LEAK tests (must be exactly 0 bytes)
+    RUN_TEST(test_zero_leak_multiple_providers);
+    RUN_TEST(test_zero_leak_streaming_only);
+    RUN_TEST(test_zero_leak_getContextAt_only);
+    
     // Memory leak ISOLATION tests (find exact source)
     RUN_TEST(test_isolate_jsondocument_only);
     RUN_TEST(test_isolate_string_concat_only);
