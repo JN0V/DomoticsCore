@@ -11,49 +11,49 @@ namespace WebUI {
 
 /**
  * @brief Minimal WebUI provider for RemoteConsole component
- * 
+ *
  * Shows RemoteConsole in the component list. No configuration needed.
  */
-class RemoteConsoleWebUI : public IWebUIProvider {
+class RemoteConsoleWebUI : public CachingWebUIProvider {
 private:
     RemoteConsoleComponent* console;
-    
+
 public:
     explicit RemoteConsoleWebUI(RemoteConsoleComponent* c) : console(c) {}
-    
-    String getWebUIName() const override { 
-        return console ? console->metadata.name : String("RemoteConsole"); 
+
+    String getWebUIName() const override {
+        return console ? console->metadata.name : String("RemoteConsole");
     }
-    
-    String getWebUIVersion() const override { 
-        return console ? console->metadata.version : String("1.4.0"); 
+
+    String getWebUIVersion() const override {
+        return console ? console->metadata.version : String("1.4.0");
     }
-    
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> ctxs;
-        if (!console) return ctxs;
-        
-        // Component card
+
+protected:
+    void buildContexts(std::vector<WebUIContext>& ctxs) override {
+        if (!console) return;
+
+        // Component card - static values (no real-time updates needed)
         ctxs.push_back(WebUIContext{
-            "console_component", 
-            "Remote Console", 
+            "console_component",
+            "Remote Console",
             "dc-plug",
-            WebUILocation::ComponentDetail, 
+            WebUILocation::ComponentDetail,
             WebUIPresentation::Card
         }
         .withField(WebUIField("status", "Status", WebUIFieldType::Display, "Active", "", true))
         .withField(WebUIField("port", "Port", WebUIFieldType::Display, "23 (Telnet)", "", true)));
-        
+
         // Settings context
         ctxs.push_back(WebUIContext::settings("console_settings", "Remote Console")
             .withField(WebUIField("port", "Telnet Port", WebUIFieldType::Display, "23"))
             .withField(WebUIField("protocol", "Protocol", WebUIFieldType::Display, "Telnet"))
-            .withField(WebUIField("info", "Info", WebUIFieldType::Display, 
+            .withField(WebUIField("info", "Info", WebUIFieldType::Display,
                       "Connect via: telnet <device-ip> 23"))
         );
-        
-        return ctxs;
     }
+
+public:
     
     String getWebUIData(const String& contextId) override {
         if (!console) return "{}";

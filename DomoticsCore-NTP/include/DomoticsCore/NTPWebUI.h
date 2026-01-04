@@ -70,7 +70,7 @@ static constexpr size_t TIMEZONE_LOOKUP_COUNT = sizeof(TIMEZONE_LOOKUP) / sizeof
  * - ntp_settings: Settings card for configuration
  * - ntp_detail: Component detail with statistics
  */
-class NTPWebUI : public IWebUIProvider {
+class NTPWebUI : public CachingWebUIProvider {
 public:
     /**
      * @brief Construct WebUI provider
@@ -86,6 +86,34 @@ public:
      */
     void setConfigSaveCallback(std::function<void(const NTPConfig&)> callback) {
         onConfigSaved = callback;
+    }
+
+    /**
+     * @brief Initialize WebUI routes (call after WebUI component is ready)
+     * Registers the /api/ntp/timezones endpoint for on-demand timezone loading
+     */
+    void init(WebUIComponent* webui) {
+        if (!webui) return;
+
+        // Register timezone options endpoint - streams from flash to save RAM
+        webui->registerApiRoute("/api/ntp/timezones", HTTP_GET, [](AsyncWebServerRequest* request) {
+            // Stream timezone options from flash-stored constexpr table
+            // This avoids allocating 29 String pairs in RAM
+            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            response->print("[");
+
+            for (size_t i = 0; i < TIMEZONE_LOOKUP_COUNT; ++i) {
+                if (i > 0) response->print(",");
+                response->print("{\"value\":\"");
+                response->print(TIMEZONE_LOOKUP[i].posix);
+                response->print("\",\"label\":\"");
+                response->print(TIMEZONE_LOOKUP[i].friendly);
+                response->print("\"}");
+            }
+
+            response->print("]");
+            request->send(response);
+        });
     }
 
 private:
@@ -116,96 +144,42 @@ public:
         return ntp ? ntp->metadata.version : String("1.0.2");
     }
 
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> contexts;
-        if (!ntp) return contexts;
+protected:
+    // CachingWebUIProvider: build contexts once, they're cached for subsequent requests
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        if (!ntp) return;
 
-        const NTPConfig& cfg = ntp->getConfig();
-
-        // Header info - NTP provides time to the header zone (minimal, always included)
-        String timeStr = ntp->isSynced() ? ntp->getFormattedTime("%H:%M:%S") : "--:--:--";
+        // Header info - NTP provides time to the header zone
+        // Use placeholder value; real value comes from getWebUIData()
         contexts.push_back(WebUIContext::headerInfo("ntp_time", "Time", "dc-clock")
-            .withField(WebUIField("time", "Time", WebUIFieldType::Display, timeStr, "", true))
+            .withField(WebUIField("time", "Time", WebUIFieldType::Display, "--:--:--", "", true))
             .withRealTime(1000)
             .withAPI("/api/ntp/time")
             .withPriority(100));
 
         // Dashboard card - Current time display
-        WebUIContext dashboard = WebUIContext::dashboard("ntp_dashboard", "Current Time", "dc-clock");
-        String friendlyTz = getTimezoneFriendlyName(cfg.timezone);
-        dashboard.withField(WebUIField("time", "Time", WebUIFieldType::Display, ntp->getFormattedTime("%H:%M:%S"), "", true))
-                 .withField(WebUIField("date", "Date", WebUIFieldType::Display, ntp->getFormattedTime("%Y-%m-%d"), "", true))
-                 .withField(WebUIField("timezone", "Timezone", WebUIFieldType::Display, friendlyTz, "", true))
-                 .withRealTime(1000)
-                 .withAPI("/api/ntp/dashboard")
-                 .withPriority(100);
-        contexts.push_back(dashboard);
+        // Use placeholder values; real values come from getWebUIData()
+        contexts.push_back(WebUIContext::dashboard("ntp_dashboard", "Current Time", "dc-clock")
+            .withField(WebUIField("time", "Time", WebUIFieldType::Display, "--:--:--", "", true))
+            .withField(WebUIField("date", "Date", WebUIFieldType::Display, "----/--/--", "", true))
+            .withField(WebUIField("timezone", "Timezone", WebUIFieldType::Display, "UTC", "", true))
+            .withRealTime(1000)
+            .withAPI("/api/ntp/dashboard")
+            .withPriority(100));
 
-        // Settings card
-        WebUIContext settings = WebUIContext::settings("ntp_settings", "NTP Configuration");
+        // Settings card - Use placeholder values; real values come from getWebUIData()
+        WebUIField timezoneField("timezone", "Timezone", WebUIFieldType::Select, "UTC0");
+        timezoneField.endpoint = "/api/ntp/timezones";  // Options loaded on-demand
 
-        // Build servers comma-separated string
-        String serversStr;
-        for (size_t i = 0; i < cfg.servers.size(); i++) {
-            if (i > 0) serversStr += ", ";
-            serversStr += cfg.servers[i];
-        }
-
-        // Build timezone dropdown with city names
-        WebUIField timezoneField("timezone", "Timezone", WebUIFieldType::Select, cfg.timezone);
-        
-        // Major cities by region (one entry per unique POSIX timezone)
-        timezoneField.addOption("UTC0", "UTC (Coordinated Universal Time)");
-        
-        // Europe
-        timezoneField.addOption("WET0WEST,M3.5.0/1,M10.5.0", "Europe/London (UK, Ireland, Portugal)");
-        timezoneField.addOption("CET-1CEST,M3.5.0,M10.5.0/3", "Europe/Paris (FR, DE, IT, ES, BE, NL)");
-        timezoneField.addOption("EET-2EEST,M3.5.0/3,M10.5.0/4", "Europe/Athens (Greece, Romania)");
-        timezoneField.addOption("MSK-3", "Europe/Moscow (Russia)");
-        
-        // Americas
-        timezoneField.addOption("EST5EDT,M3.2.0,M11.1.0", "America/New_York (US Eastern)");
-        timezoneField.addOption("CST6CDT,M3.2.0,M11.1.0", "America/Chicago (US Central)");
-        timezoneField.addOption("MST7MDT,M3.2.0,M11.1.0", "America/Denver (US Mountain)");
-        timezoneField.addOption("PST8PDT,M3.2.0,M11.1.0", "America/Los_Angeles (US Pacific)");
-        timezoneField.addOption("AKST9AKDT,M3.2.0,M11.1.0", "America/Anchorage (Alaska)");
-        timezoneField.addOption("HST10", "Pacific/Honolulu (Hawaii)");
-        timezoneField.addOption("<-03>3", "America/Sao_Paulo (Brazil, Argentina)");
-        
-        // Asia
-        timezoneField.addOption("CST-8", "Asia/Shanghai (China)");
-        timezoneField.addOption("JST-9", "Asia/Tokyo (Japan)");
-        timezoneField.addOption("KST-9", "Asia/Seoul (South Korea)");
-        timezoneField.addOption("IST-5:30", "Asia/Kolkata (India)");
-        timezoneField.addOption("PKT-5", "Asia/Karachi (Pakistan)");
-        timezoneField.addOption("<+07>-7", "Asia/Bangkok (Thailand, Vietnam)");
-        timezoneField.addOption("WIB-7", "Asia/Jakarta (Indonesia)");
-        timezoneField.addOption("GST-4", "Asia/Dubai (UAE)");
-        
-        // Australia & Pacific
-        timezoneField.addOption("AEST-10AEDT,M10.1.0,M4.1.0/3", "Australia/Sydney (AEST)");
-        timezoneField.addOption("ACST-9:30ACDT,M10.1.0,M4.1.0/3", "Australia/Adelaide (ACST)");
-        timezoneField.addOption("AWST-8", "Australia/Perth (AWST)");
-        timezoneField.addOption("NZST-12NZDT,M9.5.0,M4.1.0/3", "Pacific/Auckland (New Zealand)");
-        
-        // Africa
-        timezoneField.addOption("EAT-3", "Africa/Nairobi (Kenya, Tanzania)");
-        timezoneField.addOption("SAST-2", "Africa/Johannesburg (South Africa)");
-        timezoneField.addOption("WAT-1", "Africa/Lagos (Nigeria)");
-        
-        // Middle East
-        timezoneField.addOption("EET-2EEST,M3.5.5/0,M10.5.5/0", "Asia/Jerusalem (Israel)");
-        timezoneField.addOption("<+03>-3", "Asia/Riyadh (Saudi Arabia)");
-
-        settings.withField(WebUIField("enabled", "Enable NTP Sync", WebUIFieldType::Boolean, cfg.enabled ? "true" : "false"))
-                .withField(WebUIField("servers", "NTP Servers", WebUIFieldType::Text, serversStr))
-                .withField(WebUIField("sync_interval", "Sync Interval (hours)", WebUIFieldType::Number, String(cfg.syncInterval / 3600)))
-                .withField(timezoneField)
-                .withAPI("/api/ntp/settings");
-        contexts.push_back(settings);
-
-        return contexts;
+        contexts.push_back(WebUIContext::settings("ntp_settings", "NTP Configuration")
+            .withField(WebUIField("enabled", "Enable NTP Sync", WebUIFieldType::Boolean, "true"))
+            .withField(WebUIField("servers", "NTP Servers", WebUIFieldType::Text, "pool.ntp.org"))
+            .withField(WebUIField("sync_interval", "Sync Interval (hours)", WebUIFieldType::Number, "1"))
+            .withField(timezoneField)
+            .withAPI("/api/ntp/settings"));
     }
+
+public:
 
     String getWebUIData(const String& contextId) override {
         if (!ntp) return "{}";

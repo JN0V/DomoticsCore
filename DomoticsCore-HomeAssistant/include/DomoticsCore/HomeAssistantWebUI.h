@@ -20,7 +20,7 @@ namespace WebUI {
  * - ha_settings: Settings card for configuration
  * - ha_detail: Component detail with statistics
  */
-class HomeAssistantWebUI : public IWebUIProvider {
+class HomeAssistantWebUI : public CachingWebUIProvider {
 public:
     /**
      * @brief Construct WebUI provider
@@ -45,61 +45,57 @@ public:
         return ha ? ha->getMetadata().version : String("1.4.0");
     }
 
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> contexts;
-        if (!ha) return contexts;
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        if (!ha) return;
 
-        const auto& cfg = ha->getConfig();
-        const auto& stats = ha->getStatistics();
-
-        // Status badge - HA connection and entity count
-        String statusText = String(stats.entityCount) + " entities";
+        // Status badge - placeholder values, real values from getWebUIData()
         contexts.push_back(WebUIContext::statusBadge("ha_status", "Home Assistant", "dc-home-assistant")
-            .withField(WebUIField("status", "Status", WebUIFieldType::Display, statusText, "", true))
+            .withField(WebUIField("status", "Status", WebUIFieldType::Display, "0 entities", "", true))
             .withRealTime(5000)
             .withAPI("/api/ha/status")
             .withPriority(80));
 
-        // Dashboard card - Entity overview
+        // Dashboard card - Entity overview - placeholder values
         WebUIContext dashboard = WebUIContext::dashboard("ha_dashboard", "Home Assistant", "dc-home-assistant");
-        dashboard.withField(WebUIField("node_id", "Node ID", WebUIFieldType::Display, cfg.nodeId, "", true))
-                 .withField(WebUIField("device_name", "Device", WebUIFieldType::Display, cfg.deviceName, "", true))
-                 .withField(WebUIField("entity_count", "Entities", WebUIFieldType::Display, String(stats.entityCount), "", true))
-                 .withField(WebUIField("discovery_count", "Discoveries", WebUIFieldType::Display, String(stats.discoveryCount), "", true))
-                 .withField(WebUIField("state_updates", "State Updates", WebUIFieldType::Display, String(stats.stateUpdates), "", true))
-                 .withField(WebUIField("commands", "Commands", WebUIFieldType::Display, String(stats.commandsReceived), "", true))
+        dashboard.withField(WebUIField("node_id", "Node ID", WebUIFieldType::Display, "", "", true))
+                 .withField(WebUIField("device_name", "Device", WebUIFieldType::Display, "", "", true))
+                 .withField(WebUIField("entity_count", "Entities", WebUIFieldType::Display, "0", "", true))
+                 .withField(WebUIField("discovery_count", "Discoveries", WebUIFieldType::Display, "0", "", true))
+                 .withField(WebUIField("state_updates", "State Updates", WebUIFieldType::Display, "0", "", true))
+                 .withField(WebUIField("commands", "Commands", WebUIFieldType::Display, "0", "", true))
                  .withRealTime(5000)
                  .withAPI("/api/ha/dashboard")
                  .withPriority(75);
 
         contexts.push_back(dashboard);
 
-        // Settings card
+        // Settings card - placeholder values
         WebUIContext settings = WebUIContext::settings("ha_settings", "Home Assistant Configuration");
-        settings.withField(WebUIField("node_id", "Node ID", WebUIFieldType::Text, cfg.nodeId))
-                .withField(WebUIField("device_name", "Device Name", WebUIFieldType::Text, cfg.deviceName))
-                .withField(WebUIField("manufacturer", "Manufacturer", WebUIFieldType::Text, cfg.manufacturer))
-                .withField(WebUIField("model", "Model", WebUIFieldType::Text, cfg.model))
-                .withField(WebUIField("discovery_prefix", "Discovery Prefix", WebUIFieldType::Text, cfg.discoveryPrefix))
-                .withField(WebUIField("suggested_area", "Suggested Area", WebUIFieldType::Text, cfg.suggestedArea))
+        settings.withField(WebUIField("node_id", "Node ID", WebUIFieldType::Text, ""))
+                .withField(WebUIField("device_name", "Device Name", WebUIFieldType::Text, ""))
+                .withField(WebUIField("manufacturer", "Manufacturer", WebUIFieldType::Text, ""))
+                .withField(WebUIField("model", "Model", WebUIFieldType::Text, ""))
+                .withField(WebUIField("discovery_prefix", "Discovery Prefix", WebUIFieldType::Text, "homeassistant"))
+                .withField(WebUIField("suggested_area", "Suggested Area", WebUIFieldType::Text, ""))
                 .withAPI("/api/ha/settings");
 
         contexts.push_back(settings);
 
-        // Component detail - Full statistics (use dashboard for ComponentDetail location)
-        contexts.push_back(WebUIContext("ha_detail", "Home Assistant Details", "dc-home-assistant", 
+        // Component detail - Full statistics - placeholder values
+        contexts.push_back(WebUIContext("ha_detail", "Home Assistant Details", "dc-home-assistant",
                                        WebUILocation::ComponentDetail, WebUIPresentation::Card)
-            .withField(WebUIField("entity_count", "Total Entities", WebUIFieldType::Display, String(stats.entityCount), "", true))
-            .withField(WebUIField("discovery_count", "Discovery Publishes", WebUIFieldType::Display, String(stats.discoveryCount), "", true))
-            .withField(WebUIField("state_updates", "State Updates Sent", WebUIFieldType::Display, String(stats.stateUpdates), "", true))
-            .withField(WebUIField("commands_received", "Commands Received", WebUIFieldType::Display, String(stats.commandsReceived), "", true))
-            .withField(WebUIField("availability_topic", "Availability Topic", WebUIFieldType::Display, cfg.availabilityTopic, "", true))
-            .withField(WebUIField("config_url", "Config URL", WebUIFieldType::Display, cfg.configUrl.isEmpty() ? "N/A" : cfg.configUrl, "", true))
+            .withField(WebUIField("entity_count", "Total Entities", WebUIFieldType::Display, "0", "", true))
+            .withField(WebUIField("discovery_count", "Discovery Publishes", WebUIFieldType::Display, "0", "", true))
+            .withField(WebUIField("state_updates", "State Updates Sent", WebUIFieldType::Display, "0", "", true))
+            .withField(WebUIField("commands_received", "Commands Received", WebUIFieldType::Display, "0", "", true))
+            .withField(WebUIField("availability_topic", "Availability Topic", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("config_url", "Config URL", WebUIFieldType::Display, "N/A", "", true))
             .withRealTime(5000)
             .withAPI("/api/ha/detail"));
-
-        return contexts;
     }
+
+public:
 
     String getWebUIData(const String& contextId) override {
         if (!ha) return "{}";

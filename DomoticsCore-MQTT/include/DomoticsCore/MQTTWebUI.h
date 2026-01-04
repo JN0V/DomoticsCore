@@ -30,85 +30,80 @@ namespace WebUI {
  * }
  * ```
  */
-class MQTTWebUI : public IWebUIProvider {
+class MQTTWebUI : public CachingWebUIProvider {
 public:
     /**
      * @brief Construct WebUI provider
      * @param component Non-owning pointer to MQTT component
      */
-    explicit MQTTWebUI(MQTTComponent* component) 
+    explicit MQTTWebUI(MQTTComponent* component)
         : mqtt(component) {}
-    
+
     /**
      * @brief Set callback for MQTT configuration persistence (optional)
      */
     void setConfigSaveCallback(std::function<void(const MQTTConfig&)> callback) {
         onConfigSaved = callback;
     }
-    
+
     // ========== IWebUIProvider Interface ==========
-    
-    String getWebUIName() const override { 
-        return mqtt ? mqtt->metadata.name : String("MQTT"); 
+
+    String getWebUIName() const override {
+        return mqtt ? mqtt->metadata.name : String("MQTT");
     }
-    
-    String getWebUIVersion() const override { 
-        return mqtt ? mqtt->metadata.version : String("1.4.0"); 
+
+    String getWebUIVersion() const override {
+        return mqtt ? mqtt->metadata.version : String("1.4.0");
     }
-    
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> contexts;
-        if (!mqtt) return contexts;
-        
-        const MQTTConfig& cfg = mqtt->getConfig();
-        
-        // Header status badge
-        // Frontend toggles color when first field is truthy; use boolean-like value for 'state'
-        String initState = mqtt->isConnected() ? String("ON") : String("OFF");
+
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        if (!mqtt) return;
+
+        // Header status badge - placeholder values, real values from getWebUIData()
         contexts.push_back(WebUIContext::statusBadge("mqtt_status", "MQTT", "dc-mqtt")
-            .withField(WebUIField("state", "State", WebUIFieldType::Status, initState))
+            .withField(WebUIField("state", "State", WebUIFieldType::Status, "OFF"))
             .withRealTime(2000)
             .withAPI("/api/mqtt/status"));
-        
-        // Settings card
+
+        // Settings card - placeholder values
         WebUIContext settings = WebUIContext::settings("mqtt_settings", "MQTT Configuration");
-        settings.withField(WebUIField("enabled", "MQTT Enabled", WebUIFieldType::Boolean, cfg.enabled ? "true" : "false"))
-                .withField(WebUIField("broker", "Broker Address", WebUIFieldType::Text, cfg.broker))
-                .withField(WebUIField("port", "Port", WebUIFieldType::Number, String(cfg.port)))
-                .withField(WebUIField("username", "Username", WebUIFieldType::Text, cfg.username))
+        settings.withField(WebUIField("enabled", "MQTT Enabled", WebUIFieldType::Boolean, "false"))
+                .withField(WebUIField("broker", "Broker Address", WebUIFieldType::Text, ""))
+                .withField(WebUIField("port", "Port", WebUIFieldType::Number, "1883"))
+                .withField(WebUIField("username", "Username", WebUIFieldType::Text, ""))
                 .withField(WebUIField("password", "Password", WebUIFieldType::Text, ""))
-                .withField(WebUIField("client_id", "Client ID", WebUIFieldType::Text, cfg.clientId))
-                .withField(WebUIField("use_tls", "Use TLS/SSL", WebUIFieldType::Boolean, cfg.useTLS ? "true" : "false"))
-                .withField(WebUIField("clean_session", "Clean Session", WebUIFieldType::Boolean, cfg.cleanSession ? "true" : "false"))
-                .withField(WebUIField("lwt_enabled", "Last Will Enabled", WebUIFieldType::Boolean, cfg.enableLWT ? "true" : "false"))
-                .withField(WebUIField("lwt_topic", "LWT Topic", WebUIFieldType::Text, cfg.lwtTopic))
-                .withField(WebUIField("lwt_message", "LWT Message", WebUIFieldType::Text, cfg.lwtMessage))
+                .withField(WebUIField("client_id", "Client ID", WebUIFieldType::Text, ""))
+                .withField(WebUIField("use_tls", "Use TLS/SSL", WebUIFieldType::Boolean, "false"))
+                .withField(WebUIField("clean_session", "Clean Session", WebUIFieldType::Boolean, "true"))
+                .withField(WebUIField("lwt_enabled", "Last Will Enabled", WebUIFieldType::Boolean, "false"))
+                .withField(WebUIField("lwt_topic", "LWT Topic", WebUIFieldType::Text, ""))
+                .withField(WebUIField("lwt_message", "LWT Message", WebUIFieldType::Text, ""))
                 .withAPI("/api/mqtt/settings");
-        
+
         contexts.push_back(settings);
-        
-        // Component detail with statistics
-        WebUIContext detail = WebUIContext("mqtt_detail", "MQTT Client", "dc-mqtt", 
+
+        // Component detail with statistics - placeholder values
+        WebUIContext detail = WebUIContext("mqtt_detail", "MQTT Client", "dc-mqtt",
                                           WebUILocation::ComponentDetail, WebUIPresentation::Card);
-        const auto& stats = mqtt->getStatistics();
-        
-        detail.withField(WebUIField("broker_addr", "Broker", WebUIFieldType::Text, cfg.broker + ":" + String(cfg.port)))
-              .withField(WebUIField("state", "Connection State", WebUIFieldType::Status, mqtt->getStateString()))
-              .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Text, String(stats.uptime) + "s"))
-              .withField(WebUIField("detail_client_id", "Client ID", WebUIFieldType::Text, cfg.clientId))
-              .withField(WebUIField("publish_count", "Messages Published", WebUIFieldType::Number, String(stats.publishCount)))
-              .withField(WebUIField("receive_count", "Messages Received", WebUIFieldType::Number, String(stats.receiveCount)))
-              .withField(WebUIField("subscription_count", "Active Subscriptions", WebUIFieldType::Number, String(stats.subscriptionCount)))
-              .withField(WebUIField("queue_size", "Queued Messages", WebUIFieldType::Number, String(mqtt->getQueuedMessageCount())))
-              .withField(WebUIField("reconnect_count", "Reconnections", WebUIFieldType::Number, String(stats.reconnectCount)))
-              .withField(WebUIField("error_count", "Publish Errors", WebUIFieldType::Number, String(stats.publishErrors)))
+
+        detail.withField(WebUIField("broker_addr", "Broker", WebUIFieldType::Text, ""))
+              .withField(WebUIField("state", "Connection State", WebUIFieldType::Status, "Disconnected"))
+              .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Text, "0s"))
+              .withField(WebUIField("detail_client_id", "Client ID", WebUIFieldType::Text, ""))
+              .withField(WebUIField("publish_count", "Messages Published", WebUIFieldType::Number, "0"))
+              .withField(WebUIField("receive_count", "Messages Received", WebUIFieldType::Number, "0"))
+              .withField(WebUIField("subscription_count", "Active Subscriptions", WebUIFieldType::Number, "0"))
+              .withField(WebUIField("queue_size", "Queued Messages", WebUIFieldType::Number, "0"))
+              .withField(WebUIField("reconnect_count", "Reconnections", WebUIFieldType::Number, "0"))
+              .withField(WebUIField("error_count", "Publish Errors", WebUIFieldType::Number, "0"))
               .withRealTime(1000)
               .withAPI("/api/mqtt/detail");
-        
+
         contexts.push_back(detail);
-        
-        return contexts;
     }
+
+public:
     
     String getWebUIData(const String& contextId) override {
         if (!mqtt) return "{}";
