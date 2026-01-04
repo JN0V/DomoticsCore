@@ -60,3 +60,6 @@ docs/RELEASE_GUIDE.md
 docs/ANNOUNCEMENT_TEMPLATES.md
 RELEASE_NOTES_DRAFT.md
 Roadmap.md
+
+# Claude
+.claude/commands/*
