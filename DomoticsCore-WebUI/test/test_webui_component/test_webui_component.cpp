@@ -709,6 +709,403 @@ void test_detect_memory_behavior_repeated_context_creation() {
 }
 
 /**
+ * ISOLATION: Test ONLY JsonDocument allocation (no contexts)
+ */
+void test_isolate_jsondocument_only() {
+    HeapTracker tracker;
+    tracker.checkpoint("start");
+    
+    for (int i = 0; i < 500; i++) {
+        JsonDocument doc;
+        JsonObject obj = doc.to<JsonObject>();
+        obj["test"] = "value";
+        obj["number"] = i;
+        String json;
+        serializeJson(doc, json);
+        (void)json;
+    }
+    
+    tracker.checkpoint("end");
+    int32_t delta = tracker.getDelta("start", "end");
+    printf("\n[ISOLATE JsonDocument x500]: %d bytes (%.1f/req)\n", delta, delta/500.0f);
+    TEST_ASSERT_TRUE_MESSAGE(delta <= 512, "JsonDocument leak");
+}
+
+/**
+ * ISOLATION: Test ONLY String concatenation
+ */
+void test_isolate_string_concat_only() {
+    HeapTracker tracker;
+    tracker.checkpoint("start");
+    
+    for (int i = 0; i < 500; i++) {
+        String base = "{\"test\":\"value\"}";
+        String result = "," + base;
+        (void)result;
+    }
+    
+    tracker.checkpoint("end");
+    int32_t delta = tracker.getDelta("start", "end");
+    printf("[ISOLATE String concat x500]: %d bytes (%.1f/req)\n", delta, delta/500.0f);
+    TEST_ASSERT_TRUE_MESSAGE(delta <= 512, "String concat leak");
+}
+
+/**
+ * ISOLATION: Test ONLY getWebUIContexts copies
+ */
+void test_isolate_context_copies_only() {
+    HeapTracker tracker;
+    
+    MockWebUIProvider provider("Test", "1.0.0");
+    provider.addContext(WebUIContext::dashboard("dash", "Dashboard")
+        .withField(WebUIField("temp", "Temp", WebUIFieldType::Number, "25"))
+        .withCustomHtml("<div>test</div>"));
+    
+    // Warmup
+    auto w = provider.getWebUIContexts();
+    (void)w;
+    
+    tracker.checkpoint("start");
+    
+    for (int i = 0; i < 500; i++) {
+        auto contexts = provider.getWebUIContexts();
+        (void)contexts;
+    }
+    
+    tracker.checkpoint("end");
+    int32_t delta = tracker.getDelta("start", "end");
+    printf("[ISOLATE context copies x500]: %d bytes (%.1f/req)\n", delta, delta/500.0f);
+    TEST_ASSERT_TRUE_MESSAGE(delta <= 1024, "Context copy leak");
+}
+
+/**
+ * ISOLATION: Combine context + JSON (like real code)
+ */
+void test_isolate_context_plus_json() {
+    HeapTracker tracker;
+    
+    MockWebUIProvider provider("Test", "1.0.0");
+    provider.addContext(WebUIContext::dashboard("dash", "Dashboard")
+        .withField(WebUIField("temp", "Temp", WebUIFieldType::Number, "25"))
+        .withCustomHtml("<div>test</div>"));
+    
+    auto w = provider.getWebUIContexts();
+    (void)w;
+    
+    tracker.checkpoint("start");
+    
+    for (int i = 0; i < 500; i++) {
+        auto contexts = provider.getWebUIContexts();
+        for (const auto& ctx : contexts) {
+            JsonDocument doc;
+            doc["id"] = ctx.contextId;
+            doc["html"] = ctx.customHtml;
+            String json;
+            serializeJson(doc, json);
+            String pending = "," + json;
+            (void)pending;
+        }
+    }
+    
+    tracker.checkpoint("end");
+    int32_t delta = tracker.getDelta("start", "end");
+    printf("[ISOLATE context+JSON x500]: %d bytes (%.1f/req)\n", delta, delta/500.0f);
+    TEST_ASSERT_TRUE_MESSAGE(delta <= 2048, "Context+JSON leak");
+}
+
+/**
+ * AGGRESSIVE TEST: Simulate 500 curl requests to reproduce ESP8266 OOM
+ * This test monitors heap trend over many iterations to detect gradual leak.
+ */
+void test_aggressive_schema_generation_500_requests() {
+    HeapTracker tracker;
+    
+    // Setup realistic providers with substantial data
+    MockWebUIProvider provider1("WiFi", "1.4.0");
+    provider1.addContext(WebUIContext::statusBadge("wifi_status", "WiFi", "dc-wifi").withRealTime(2000));
+    provider1.addContext(WebUIContext::dashboard("wifi_component", "WiFi")
+        .withField(WebUIField("ssid", "SSID", WebUIFieldType::Text, "MyNetwork"))
+        .withField(WebUIField("ip", "IP", WebUIFieldType::Display, "192.168.1.100"))
+        .withField(WebUIField("signal", "Signal", WebUIFieldType::Number, "-65", "dBm", true))
+        .withCustomHtml("<div class='wifi-signal'><span class='bars'></span></div>")
+        .withCustomCss(".wifi-signal { display: flex; } .bars { width: 20px; }"));
+    
+    MockWebUIProvider provider2("NTP", "1.3.0");
+    provider2.addContext(WebUIContext::headerInfo("ntp_time", "Time", "dc-clock")
+        .withField(WebUIField("time", "Time", WebUIFieldType::Display, "14:30:00"))
+        .withRealTime(1000));
+    provider2.addContext(WebUIContext::settings("ntp_settings", "NTP Settings")
+        .withField(WebUIField("server", "Server", WebUIFieldType::Text, "pool.ntp.org"))
+        .withField(WebUIField("timezone", "Timezone", WebUIFieldType::Select, "UTC")));
+    
+    MockWebUIProvider provider3("SystemInfo", "1.4.0");
+    provider3.addContext(WebUIContext::dashboard("sysinfo_dash", "System")
+        .withField(WebUIField("heap", "Free Heap", WebUIFieldType::Number, "45000", "bytes", true))
+        .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Display, "1d 5h 30m"))
+        .withCustomHtml("<div class='gauge'><svg viewBox='0 0 100 100'></svg></div>")
+        .withCustomCss(".gauge svg { width: 100%; height: auto; }"));
+    
+    // Warm up
+    for (int w = 0; w < 5; w++) {
+        auto c1 = provider1.getWebUIContexts();
+        auto c2 = provider2.getWebUIContexts();
+        auto c3 = provider3.getWebUIContexts();
+        (void)c1; (void)c2; (void)c3;
+    }
+    
+    tracker.checkpoint("start");
+    uint32_t startHeap = tracker.getFreeHeap();
+    
+    // Track heap at intervals
+    std::vector<int32_t> heapSamples;
+    heapSamples.push_back(startHeap);
+    
+    const int TOTAL_REQUESTS = 500;
+    const int SAMPLE_INTERVAL = 50;
+    
+    for (int request = 0; request < TOTAL_REQUESTS; request++) {
+        // Simulate EXACTLY what WebUI.h does for /api/ui/schema
+        std::vector<IWebUIProvider*> providers = {&provider1, &provider2, &provider3};
+        
+        for (IWebUIProvider* provider : providers) {
+            // This is line 449 in WebUI.h - copies contexts
+            auto contexts = provider->getWebUIContexts();
+            
+            for (const auto& ctx : contexts) {
+                // Lines 458-479 in WebUI.h - serialize each context
+                JsonDocument doc;
+                JsonObject obj = doc.to<JsonObject>();
+                obj["contextId"] = ctx.contextId;
+                obj["title"] = ctx.title;
+                obj["icon"] = ctx.icon;
+                obj["location"] = (int)ctx.location;
+                obj["presentation"] = (int)ctx.presentation;
+                obj["priority"] = ctx.priority;
+                obj["customHtml"] = ctx.customHtml;
+                obj["customCss"] = ctx.customCss;
+                obj["apiEndpoint"] = ctx.apiEndpoint;
+                obj["realTime"] = ctx.realTime;
+                
+                // Add fields
+                JsonArray fieldsArr = obj["fields"].to<JsonArray>();
+                for (const auto& field : ctx.fields) {
+                    JsonObject f = fieldsArr.add<JsonObject>();
+                    f["name"] = field.name;
+                    f["label"] = field.label;
+                    f["type"] = (int)field.type;
+                    f["value"] = field.value;
+                    f["unit"] = field.unit;
+                }
+                
+                // Serialize to String (allocation)
+                String json;
+                serializeJson(doc, json);
+                
+                // String concatenation like in chunked response
+                String pending = "," + json;
+                (void)pending;
+            }
+        }
+        
+        // Sample heap at intervals
+        if ((request + 1) % SAMPLE_INTERVAL == 0) {
+            tracker.checkpoint("sample_" + String(request + 1));
+            heapSamples.push_back(tracker.getFreeHeap());
+        }
+    }
+    
+    tracker.checkpoint("end");
+    uint32_t endHeap = tracker.getFreeHeap();
+    
+    // Analyze heap trend
+    printf("\n[AGGRESSIVE TEST - 500 curl requests simulation]\n");
+    printf("  Start heap: %u bytes\n", startHeap);
+    printf("  End heap:   %u bytes\n", endHeap);
+    printf("  Total delta: %d bytes\n", (int)startHeap - (int)endHeap);
+    
+    printf("\n  Heap samples every %d requests:\n", SAMPLE_INTERVAL);
+    for (size_t i = 0; i < heapSamples.size(); i++) {
+        int request = (i == 0) ? 0 : i * SAMPLE_INTERVAL;
+        int diff = (i > 0) ? (int)heapSamples[i-1] - (int)heapSamples[i] : 0;
+        printf("    Request %3d: %d bytes (delta: %d)\n", request, heapSamples[i], diff);
+    }
+    
+    // Calculate trend
+    int totalLeak = (int)startHeap - (int)endHeap;
+    int leakPerRequest = totalLeak / TOTAL_REQUESTS;
+    
+    printf("\n  Leak per request: %d bytes\n", leakPerRequest);
+    
+    // Check if heap is monotonically decreasing (real leak pattern)
+    bool isDecreasing = true;
+    for (size_t i = 1; i < heapSamples.size(); i++) {
+        if (heapSamples[i] > heapSamples[i-1] + 100) { // Allow small fluctuation
+            isDecreasing = false;
+            break;
+        }
+    }
+    
+    if (isDecreasing && totalLeak > 1000) {
+        printf("  *** HEAP MONOTONICALLY DECREASING - THIS IS THE OOM PATTERN! ***\n");
+    }
+    
+    // FAIL if significant cumulative leak
+    const int32_t MAX_LEAK = 2048;  // 2KB max for 500 requests
+    TEST_ASSERT_TRUE_MESSAGE(totalLeak <= MAX_LEAK, "Cumulative memory leak detected");
+}
+
+/**
+ * CRITICAL TEST: Simulate repeated schema JSON generation (like curl requests)
+ * This reproduces the OOM issue observed on ESP8266 with repeated curl.
+ */
+void test_simulate_repeated_schema_generation() {
+    HeapTracker tracker;
+    
+    // Setup providers like real WebUI
+    MockWebUIProvider provider1("TestComp1", "1.0.0");
+    provider1.addContext(WebUIContext::dashboard("dash1", "Dashboard 1")
+        .withField(WebUIField("temp", "Temperature", WebUIFieldType::Number, "25.5", "°C", true))
+        .withCustomHtml("<div class='widget'>Custom content</div>"));
+    
+    MockWebUIProvider provider2("TestComp2", "1.0.0");
+    provider2.addContext(WebUIContext::settings("settings2", "Settings")
+        .withField(WebUIField("name", "Name", WebUIFieldType::Text, "Device")));
+    
+    // Warm up
+    for (int w = 0; w < 2; w++) {
+        auto c1 = provider1.getWebUIContexts();
+        auto c2 = provider2.getWebUIContexts();
+        (void)c1; (void)c2;
+    }
+    
+    tracker.checkpoint("before_schema_gen");
+    
+    // Simulate 50 curl requests on /api/ui/schema
+    const int CURL_REQUESTS = 50;
+    for (int request = 0; request < CURL_REQUESTS; request++) {
+        // Simulate what WebUI.h does for each request:
+        
+        // 1. Get contexts from each provider (even with caching, this returns copies)
+        auto contexts1 = provider1.getWebUIContexts();
+        auto contexts2 = provider2.getWebUIContexts();
+        
+        // 2. For each context, serialize to JSON (this is the leak source!)
+        for (const auto& ctx : contexts1) {
+            JsonDocument doc;
+            JsonObject obj = doc.to<JsonObject>();
+            obj["contextId"] = ctx.contextId;
+            obj["title"] = ctx.title;
+            obj["customHtml"] = ctx.customHtml;
+            
+            // Serialize to String (allocation!)
+            String json;
+            serializeJson(doc, json);
+            
+            // Simulate chunk handling with string concatenation
+            String pending = "," + json;
+            (void)pending;
+        }
+        
+        for (const auto& ctx : contexts2) {
+            JsonDocument doc;
+            JsonObject obj = doc.to<JsonObject>();
+            obj["contextId"] = ctx.contextId;
+            obj["title"] = ctx.title;
+            
+            String json;
+            serializeJson(doc, json);
+            String pending = "," + json;
+            (void)pending;
+        }
+    }
+    
+    tracker.checkpoint("after_schema_gen");
+    
+    int32_t delta = tracker.getDelta("before_schema_gen", "after_schema_gen");
+    int32_t perRequest = delta / CURL_REQUESTS;
+    
+    printf("\n[SCHEMA GENERATION LEAK TEST - Simulates curl requests]\n");
+    printf("  Simulated curl requests: %d\n", CURL_REQUESTS);
+    printf("  Total heap delta: %d bytes\n", delta);
+    printf("  Per request: %d bytes\n", perRequest);
+    
+    // This should FAIL - demonstrating the real leak source
+    const int32_t LEAK_THRESHOLD = 512;
+    
+    if (delta > LEAK_THRESHOLD) {
+        printf("  *** SCHEMA GENERATION LEAK DETECTED: %d bytes > %d ***\n", delta, LEAK_THRESHOLD);
+        printf("  This is the source of OOM on repeated curl requests!\n");
+    }
+    
+    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD, "Schema generation leak detected");
+}
+
+/**
+ * ISOLATION TEST: Test if leak comes from String copies vs vector operations
+ */
+void test_isolate_string_copy_leak() {
+    HeapTracker tracker;
+    
+    // Test 1: Pure String operations (no WebUIContext)
+    tracker.checkpoint("before_strings");
+    
+    for (int i = 0; i < 50; i++) {
+        String s1 = "Test string with some content";
+        String s2 = s1;  // Copy
+        String s3 = s2 + " more content";
+        (void)s3;
+    }
+    
+    tracker.checkpoint("after_strings");
+    int32_t stringDelta = tracker.getDelta("before_strings", "after_strings");
+    
+    // Test 2: WebUIContext without customHtml (minimal)
+    MockWebUIProvider minimalProvider("Minimal", "1.0.0");
+    minimalProvider.addContext(WebUIContext::dashboard("min", "Min"));
+    
+    auto warmup = minimalProvider.getWebUIContexts();
+    (void)warmup;
+    
+    tracker.checkpoint("before_minimal");
+    
+    for (int i = 0; i < 50; i++) {
+        auto contexts = minimalProvider.getWebUIContexts();
+        (void)contexts;
+    }
+    
+    tracker.checkpoint("after_minimal");
+    int32_t minimalDelta = tracker.getDelta("before_minimal", "after_minimal");
+    
+    // Test 3: WebUIContext WITH customHtml (large strings)
+    MockWebUIProvider largeProvider("Large", "1.0.0");
+    largeProvider.addContext(WebUIContext::dashboard("large", "Large")
+        .withCustomHtml("<div>Large HTML content that takes memory</div>")
+        .withCustomCss(".large { color: red; }"));
+    
+    auto warmup2 = largeProvider.getWebUIContexts();
+    (void)warmup2;
+    
+    tracker.checkpoint("before_large");
+    
+    for (int i = 0; i < 50; i++) {
+        auto contexts = largeProvider.getWebUIContexts();
+        (void)contexts;
+    }
+    
+    tracker.checkpoint("after_large");
+    int32_t largeDelta = tracker.getDelta("before_large", "after_large");
+    
+    printf("\n[LEAK ISOLATION TEST]\n");
+    printf("  Pure String ops x50:       %d bytes\n", stringDelta);
+    printf("  Minimal context x50:       %d bytes\n", minimalDelta);
+    printf("  Large customHtml x50:      %d bytes\n", largeDelta);
+    printf("  Difference (large-minimal): %d bytes\n", largeDelta - minimalDelta);
+    
+    // The difference shows how much customHtml contributes
+    TEST_ASSERT_TRUE(true);  // Informational test
+}
+
+/**
  * Test memory behavior when contexts contain large customHtml/Css/Js strings
  * These are the suspected source of memory leaks on ESP8266.
  */
@@ -973,8 +1370,17 @@ int main() {
     RUN_TEST(test_provider_registry_prepare_schema_generation);
     RUN_TEST(test_provider_registry_get_next_context);
 
-    // Memory leak DETECTION tests (measure current behavior)
+    // Memory leak ISOLATION tests (find exact source)
+    RUN_TEST(test_isolate_jsondocument_only);
+    RUN_TEST(test_isolate_string_concat_only);
+    RUN_TEST(test_isolate_context_copies_only);
+    RUN_TEST(test_isolate_context_plus_json);
+    
+    // Memory leak DETECTION tests
     RUN_TEST(test_detect_memory_behavior_repeated_context_creation);
+    RUN_TEST(test_aggressive_schema_generation_500_requests);  // Reproduces OOM
+    RUN_TEST(test_simulate_repeated_schema_generation);
+    RUN_TEST(test_isolate_string_copy_leak);
     RUN_TEST(test_detect_memory_large_custom_content);
 
     // CachingWebUIProvider memory tests (HeapTracker)
