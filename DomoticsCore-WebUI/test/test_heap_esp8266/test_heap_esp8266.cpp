@@ -124,12 +124,15 @@ void test_esp8266_webui_provider_repeated_calls() {
     Serial.printf("  Per call: %d bytes\n", perCall);
     Serial.printf("  Free heap now: %u bytes\n", ESP.getFreeHeap());
     
-    // This test DOCUMENTS the leak - positive delta = memory consumed
-    if (delta > 100) {
-        Serial.printf("  *** MEMORY LEAK DETECTED ***\n");
+    // FAIL if significant memory leak detected
+    // Allow small tolerance (64 bytes) for allocator overhead
+    const int32_t LEAK_THRESHOLD = 64;
+    
+    if (delta > LEAK_THRESHOLD) {
+        Serial.printf("  *** MEMORY LEAK DETECTED: %d bytes > threshold %d ***\n", delta, LEAK_THRESHOLD);
     }
     
-    TEST_ASSERT_TRUE(true);  // Always pass - we're measuring, not enforcing yet
+    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD, "Memory leak detected in WebUI provider");
 }
 
 void test_esp8266_fragmentation_detection() {
