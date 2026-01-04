@@ -295,7 +295,7 @@ private:
         
         // Get all stored keys
         auto keys = storageManager->getKeys();
-        DLOG_I(LOG_APP, "Stored keys (%d total):", keys.size());
+        DLOG_I(LOG_APP, "Stored keys (%zu total):", keys.size());
         
         for (const auto& key : keys) {
             if (storageManager->exists(key)) {

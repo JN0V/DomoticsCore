@@ -1,13 +1,16 @@
 // Unit tests for WifiComponent
 // Tests: events, config, modes, lifecycle, INetworkProvider interface, edge cases
+// Includes HeapTracker integration for memory leak detection
 
 #include <unity.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Wifi.h>
 #include <DomoticsCore/WifiEvents.h>
+#include <DomoticsCore/Testing/HeapTracker.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
+using namespace DomoticsCore::Testing;
 
 // Test state
 static Core* testCore = nullptr;
@@ -522,6 +525,49 @@ void test_wifi_network_info_contains_all_fields(void) {
 }
 
 // ============================================================================
+// Memory Leak Detection Tests (HeapTracker)
+// ============================================================================
+
+void test_wifi_memory_stability_lifecycle() {
+    HeapTracker tracker;
+    
+    tracker.checkpoint("before");
+    
+    // Create and destroy WiFi components multiple times
+    for (int i = 0; i < 5; i++) {
+        WifiComponent wifi;
+        WifiConfig config;
+        config.ssid = "TestNetwork";
+        config.password = "TestPassword";
+        wifi.setConfig(config);
+        // Component destroyed at end of scope
+    }
+    
+    tracker.checkpoint("after");
+    
+    MemoryTestResult result = tracker.assertStable("before", "after", 512);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+void test_wifi_memory_stability_config_changes() {
+    HeapTracker tracker;
+    WifiComponent wifi;
+    
+    tracker.checkpoint("baseline");
+    
+    // Perform many config changes
+    for (int i = 0; i < 20; i++) {
+        WifiConfig config;
+        config.ssid = "Network" + String(i);
+        config.password = "Pass" + String(i);
+        wifi.setConfig(config);
+    }
+    
+    MemoryTestResult result = tracker.assertNoGrowth("baseline", 256);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -585,6 +631,10 @@ int main(int argc, char **argv) {
     RUN_TEST(test_wifi_credentials_with_reconnect);
     RUN_TEST(test_wifi_scan_networks_sync);
     RUN_TEST(test_wifi_network_info_contains_all_fields);
+
+    // Memory leak detection tests (HeapTracker)
+    RUN_TEST(test_wifi_memory_stability_lifecycle);
+    RUN_TEST(test_wifi_memory_stability_config_changes);
 
     return UNITY_END();
 }
