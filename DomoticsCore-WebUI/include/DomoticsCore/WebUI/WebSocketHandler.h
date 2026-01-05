@@ -4,6 +4,7 @@
 #include <ESPAsyncWebServer.h>
 #include <vector>
 #include <functional>
+#include <algorithm>
 #include <ArduinoJson.h>
 #include "DomoticsCore/Logger.h"
 #include "WebUIConfig.h"
@@ -136,13 +137,19 @@ private:
                 activeClientIds.erase(it);
             }
         } else if (type == WS_EVT_DATA) {
-            if (!arg || !data || len == 0 || len > 512) return;
+            DLOG_D(LOG_WEB, "WS data received: len=%u", (unsigned)len);
+            if (!arg || !data || len == 0 || len > 512) {
+                DLOG_W(LOG_WEB, "WS data rejected: arg=%p data=%p len=%u", arg, data, (unsigned)len);
+                return;
+            }
             AwsFrameInfo* info = (AwsFrameInfo*)arg;
-            if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT && len < 256) {
+            DLOG_D(LOG_WEB, "WS frame: final=%d index=%u len=%u opcode=%d", info->final, (unsigned)info->index, (unsigned)info->len, info->opcode);
+            if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
                 // ESP8266 String doesn't have (char*, size_t) constructor - null-terminate manually
-                char buf[257];
-                memcpy(buf, data, len);
-                buf[len] = '\0';
+                char buf[513];
+                size_t copyLen = len < 512 ? len : 512;
+                memcpy(buf, data, copyLen);
+                buf[copyLen] = '\0';
                 handleWebSocketMessage(String(buf));
             }
         } else if (type == WS_EVT_ERROR) {
@@ -152,18 +159,36 @@ private:
 
     void cleanupStaleConnections() {
         if (!webSocket) return;
+        
+        // Remove IDs of clients that are no longer connected
+        activeClientIds.erase(
+            std::remove_if(activeClientIds.begin(), activeClientIds.end(),
+                [this](uint32_t id) {
+                    AsyncWebSocketClient* client = webSocket->client(id);
+                    return client == nullptr || client->status() != WS_CONNECTED;
+                }),
+            activeClientIds.end()
+        );
+        
+        DLOG_D(LOG_WEB, "WS cleanup: %d active clients", (int)activeClientIds.size());
     }
     
     void handleWebSocketMessage(const String& message) {
+        DLOG_D(LOG_WEB, "WS message: %s", message.c_str());
         JsonDocument doc;
-        if (deserializeJson(doc, message)) return;
+        if (deserializeJson(doc, message)) {
+            DLOG_W(LOG_WEB, "WS JSON parse failed");
+            return;
+        }
         
         const char* type = doc["type"];
+        DLOG_D(LOG_WEB, "WS type: %s, onUIAction: %s", type ? type : "null", onUIAction ? "set" : "null");
         if (type && strcmp(type, "ui_action") == 0 && onUIAction) {
             String contextId = doc["contextId"].as<String>();
             String field = doc["field"].as<String>();
             JsonVariant v = doc["value"];
             String value = v.is<bool>() ? (v.as<bool>() ? "true" : "false") : v.as<String>();
+            DLOG_D(LOG_WEB, "WS ui_action: ctx=%s, field=%s, value=%s", contextId.c_str(), field.c_str(), value.c_str());
             onUIAction(contextId, field, value);
         }
     }
