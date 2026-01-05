@@ -100,9 +100,25 @@ private:
 
     // Temporary number buffer for integer conversions
     char numBuf[16];
+    
+    // Memory metrics (T034)
+    size_t totalBytesWritten_ = 0;
+    size_t chunkCount_ = 0;
 
 public:
     StreamingContextSerializer() = default;
+    
+    /**
+     * @brief Get total bytes written during serialization
+     * @return Total bytes written across all write() calls
+     */
+    size_t getTotalBytesWritten() const { return totalBytesWritten_; }
+    
+    /**
+     * @brief Get number of chunks written
+     * @return Number of write() calls that produced output
+     */
+    size_t getChunkCount() const { return chunkCount_; }
 
     /**
      * @brief Start serializing a context
@@ -118,6 +134,8 @@ public:
         fieldIndex = 0;
         fieldState = FieldState::OpenBrace;
         optionIndex = 0;
+        totalBytesWritten_ = 0;
+        chunkCount_ = 0;
     }
 
     /**
@@ -392,6 +410,11 @@ public:
             }
         }
 
+        // Track metrics
+        if (written > 0) {
+            totalBytesWritten_ += written;
+            chunkCount_++;
+        }
         return written;
     }
 

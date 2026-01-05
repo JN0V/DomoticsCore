@@ -490,6 +490,26 @@ private:
 
             // Use static serializer state to minimize heap allocations
             static WebUI::ProviderRegistry::SchemaChunkState staticState;
+            static bool schemaInProgress = false;
+            static unsigned long lastSchemaRequest = 0;
+            
+            unsigned long now = HAL::Platform::getMillis();
+            
+            // Rate limiting: minimum 200ms between schema requests
+            if (now - lastSchemaRequest < 200) {
+                request->send(429, "application/json", "{\"error\":\"Too many requests\"}");
+                return;
+            }
+            
+            // If previous schema is still in progress, reset it (client likely disconnected)
+            if (schemaInProgress) {
+                DLOG_W(LOG_WEB, "Schema: previous request incomplete, resetting");
+                staticState.finished = true;
+                staticState.providers.clear();
+            }
+            
+            schemaInProgress = true;
+            lastSchemaRequest = now;
 
             // Reset state - clear strings explicitly to release memory
             staticState.providers.clear();
@@ -575,6 +595,8 @@ private:
                             state->providers.clear();
                             state->providers.shrink_to_fit();
                             state->currentContextPtr = nullptr;
+                            // Release schema lock for next request
+                            schemaInProgress = false;
                             DLOG_I(LOG_WEB, "Schema done, heap: %u", HAL::Platform::getFreeHeap());
                             return written;
                         }

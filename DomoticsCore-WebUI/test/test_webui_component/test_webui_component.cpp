@@ -1786,6 +1786,131 @@ void test_caching_provider_memory_lifecycle() {
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
 }
 
+/**
+ * Test: forEachContext with copy assignment (simulates /api/ui/context issue)
+ * This test demonstrates the memory cost of copying a context inside forEachContext
+ */
+void test_foreach_context_with_copy_assignment() {
+    HeapTracker tracker;
+    
+    // Create provider with contexts (TestCachingProvider has built-in contexts)
+    TestCachingProvider provider;
+    
+    // Warmup - trigger cache build and do initial copies
+    WebUIContext warmupCopy;
+    provider.forEachContext([&](const WebUIContext& ctx) {
+        warmupCopy = ctx;
+        return true;
+    });
+    
+    tracker.checkpoint("start");
+    
+    // Simulate /api/ui/context behavior: find context and COPY it
+    for (int i = 0; i < 100; i++) {
+        WebUIContext foundContext;  // Stack allocation
+        bool found = false;
+        
+        provider.forEachContext([&](const WebUIContext& ctx) {
+            if (ctx.contextId == "test_dash") {  // Use existing context ID
+                foundContext = ctx;  // COPY - this is the potential leak source
+                found = true;
+                return false;
+            }
+            return true;
+        });
+        
+        TEST_ASSERT_TRUE(found);
+        // foundContext goes out of scope here - should be deallocated
+    }
+    
+    tracker.checkpoint("end");
+    
+    int32_t delta = tracker.getDelta("start", "end");
+    printf("\n[forEachContext with copy x100]: %d bytes (%.1f/req)\n", delta, delta/100.0f);
+    
+    // Should be stable - copies are stack-allocated and freed each iteration
+    TEST_ASSERT_TRUE_MESSAGE(delta <= 256, "forEachContext copy leak detected");
+}
+
+/**
+ * Test: Rapid refresh schema generation (simulates browser F5 spam)
+ * 
+ * This test reproduces the real-world scenario where:
+ * 1. User rapidly refreshes the page (F5 spam)
+ * 2. Each refresh triggers: schema request + WebSocket connect
+ * 3. Previous requests may be interrupted (client disconnects)
+ * 4. Memory should remain stable despite incomplete operations
+ * 
+ * Real behavior observed on ESP8266:
+ * - Heap drops from 11216 to 3240 bytes during rapid refresh
+ * - OOM crash when heap goes below ~2000 bytes
+ */
+void test_rapid_refresh_schema_generation() {
+    HeapTracker tracker;
+    
+    // Create provider with realistic content (like LEDWebUI + SystemInfoWebUI)
+    TestCachingProvider provider;
+    
+    // Warmup - let caches build
+    provider.forEachContext([](const WebUIContext& ctx) { return true; });
+    
+    tracker.checkpoint("start");
+    
+    // Simulate 50 rapid page refreshes
+    // Each refresh does: 1) start schema gen, 2) possibly interrupt, 3) start new one
+    for (int refresh = 0; refresh < 50; refresh++) {
+        // Simulate partial schema generation (like interrupted by disconnect)
+        // This is what happens when user refreshes before schema completes
+        
+        // 1. Get schema contexts (simulates /api/ui/schema start)
+        std::vector<const WebUIContext*> contextPtrs;
+        size_t idx = 0;
+        while (const WebUIContext* ctx = provider.getContextAtRef(idx++)) {
+            contextPtrs.push_back(ctx);
+        }
+        
+        // 2. Serialize only SOME contexts (simulates interrupted transfer)
+        // About 30% of refreshes complete, 70% are interrupted
+        size_t contextsToSerialize = (refresh % 3 == 0) ? contextPtrs.size() : contextPtrs.size() / 2;
+        
+        for (size_t i = 0; i < contextsToSerialize && i < contextPtrs.size(); i++) {
+            StreamingContextSerializer serializer;
+            serializer.begin(*contextPtrs[i]);
+            
+            // Serialize to local buffer (simulates chunked response)
+            uint8_t buffer[256];
+            while (!serializer.isComplete()) {
+                size_t written = serializer.write(buffer, sizeof(buffer));
+                if (written == 0) break;
+                // In real code, this would be sent to client
+                // If client disconnects, we just stop here
+            }
+        }
+        
+        // 3. Simulate WebSocket data send (getWebUIData allocates Strings)
+        for (size_t i = 0; i < contextPtrs.size(); i++) {
+            // This simulates getWebUIData() which creates JSON strings
+            JsonDocument doc;
+            doc["test_field"] = "test_value";
+            doc["iteration"] = refresh;
+            String json;
+            serializeJson(doc, json);
+            // json goes out of scope - should be freed
+        }
+    }
+    
+    tracker.checkpoint("end");
+    
+    int32_t delta = tracker.getDelta("start", "end");
+    printf("\n[Rapid refresh x50]: %d bytes delta (%.1f/refresh)\n", delta, delta/50.0f);
+    
+    // Allow small tolerance for allocator overhead
+    // If this fails, there's a memory leak during rapid refresh
+    TEST_ASSERT_TRUE_MESSAGE(delta <= 512, 
+        "Memory leak detected during rapid refresh simulation - "
+        "heap should be stable after 50 page refreshes");
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -1896,6 +2021,12 @@ int main() {
     RUN_TEST(test_caching_provider_foreach_no_rebuild);
     RUN_TEST(test_caching_provider_get_context_at);
     RUN_TEST(test_caching_provider_memory_lifecycle);
+    
+    // Context copy issue test (forEachContext with copy assignment)
+    RUN_TEST(test_foreach_context_with_copy_assignment);
+    
+    // Rapid refresh simulation test (reproduces page reload scenario)
+    RUN_TEST(test_rapid_refresh_schema_generation);
 
     return UNITY_END();
 }

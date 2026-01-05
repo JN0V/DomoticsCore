@@ -20,22 +20,22 @@ using namespace DomoticsCore::Components::WebUI;
  */
 class DemoLEDComponent : public IComponent {
 private:
-    int demoLedPin;
     bool demoLedState;
     bool manualControl = false;
     DomoticsCore::Utils::NonBlockingDelay demoBlinkTimer;
     
 public:
-    DemoLEDComponent(int pin = 2) : demoLedPin(pin), demoLedState(false), demoBlinkTimer(1000) {
+    DemoLEDComponent(int pin = LED_BUILTIN) : demoLedState(false), demoBlinkTimer(1000) {
+        (void)pin; // Ignored - always use LED_BUILTIN via HAL
         metadata.name = "Demo LED Controller";
         metadata.version = "1.0.0";
     }
     
-    const char* getTypeKey() const override { return "demo_led"; }
+    const char* getTypeKey() const override { return "Demo LED Controller"; }
     
     ComponentStatus begin() override {
-        HAL::Platform::pinMode(demoLedPin, OUTPUT);
-        HAL::Platform::digitalWrite(demoLedPin, LOW);
+        HAL::Platform::pinMode(LED_BUILTIN, OUTPUT);
+        HAL::Platform::digitalWrite(LED_BUILTIN, HAL::Platform::ledBuiltinOff()); // Start OFF
         // Publish initial sticky state so late subscribers receive current value
         emit<bool>("led/state", demoLedState, /*sticky=*/true);
         // Subscribe to EventBus command to allow cross-component control
@@ -49,25 +49,27 @@ public:
     }
     
     ComponentStatus shutdown() override {
-        HAL::Platform::digitalWrite(demoLedPin, LOW);
+        HAL::Platform::digitalWrite(LED_BUILTIN, HAL::Platform::ledBuiltinOff());
         return ComponentStatus::Success;
     }
     // Simple API for UI wrapper
     void setState(bool on) {
         manualControl = true;
         demoLedState = on;
-        HAL::Platform::digitalWrite(demoLedPin, demoLedState ? HIGH : LOW);
+        // Use HAL functions for correct polarity on all platforms
+        HAL::Platform::digitalWrite(LED_BUILTIN, demoLedState ? HAL::Platform::ledBuiltinOn() : HAL::Platform::ledBuiltinOff());
         DLOG_I(LOG_APP, "[LED Demo] Manual state change to: %s", demoLedState ? "ON" : "OFF");
         // Publish sticky state so newcomers can immediately get the latest value
         emit<bool>("led/state", demoLedState, /*sticky=*/true);
     }
     // Event-driven API: publish command to the bus (used by WebUI to decouple)
     void requestSet(bool on) {
+        DLOG_I(LOG_APP, "[LED Demo] requestSet called with: %s", on ? "true" : "false");
         // Do not change state directly here; let the EventBus subscription handle it
         emit<bool>("led/set", on, /*sticky=*/false);
     }
     bool isOn() const { return demoLedState; }
-    int getPin() const { return demoLedPin; }
+    int getPin() const { return LED_BUILTIN; }
 };
 
 // LED WebUI (composition) - uses CachingWebUIProvider to prevent memory leaks
@@ -84,66 +86,10 @@ protected:
     void buildContexts(std::vector<WebUIContext>& contexts) override {
         if (!led) return;
 
-        // Dashboard card with custom bulb visualization - placeholder values
+        // Dashboard card - simple version without customHtml for testing
         contexts.push_back(WebUIContext::dashboard("led_dashboard", "LED Control")
             .withField(WebUIField("state_toggle_dashboard", "LED", WebUIFieldType::Boolean, "false"))
-            .withRealTime(1000)
-            .withCustomHtml(R"(
-                <div class="card-header">
-                    <h3 class="card-title">LED Control</h3>
-                </div>
-                <div class="card-content led-dashboard">
-                    <div class="led-bulb-container">
-                        <svg class="led-bulb" viewBox="0 0 1024 1024">
-                            <use href="#bulb-twotone"/>
-                        </svg>
-                    </div>
-                    <div class="field-row">
-                        <span class="field-label">LED:</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="state_toggle_dashboard">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                </div>
-            )")
-            .withCustomCss(R"(
-                .led-dashboard .led-bulb-container {
-                    display: flex;
-                    justify-content: center;
-                    margin-bottom: 1rem;
-                }
-                .led-dashboard .led-bulb {
-                    width: 64px;
-                    height: 64px;
-                    transition: all 0.3s ease;
-                    filter: drop-shadow(0 0 8px rgba(255, 193, 7, 0.3));
-                }
-                .led-dashboard .led-bulb.on {
-                    color: #ffc107;
-                    filter: drop-shadow(0 0 16px rgba(255, 193, 7, 0.8));
-                }
-                .led-dashboard .led-bulb.off {
-                    color: #6c757d;
-                    filter: none;
-                }
-            )")
-            .withCustomJs(R"(
-                function updateLEDBulb() {
-                    const bulb = document.querySelector('.led-dashboard .led-bulb');
-                    const toggle = document.querySelector('#state_toggle_dashboard');
-                    if (bulb && toggle) {
-                        bulb.classList.toggle('on', toggle.checked);
-                        bulb.classList.toggle('off', !toggle.checked);
-                    }
-                }
-                document.addEventListener('change', function(e) {
-                    if (e.target.id === 'state_toggle_dashboard') {
-                        updateLEDBulb();
-                    }
-                });
-                setTimeout(updateLEDBulb, 100);
-            )"));
+            .withRealTime(1000));
 
         // Header status badge using WebUIContext - placeholder values
         contexts.push_back(WebUIContext::statusBadge("led_status", "LED", "bulb-twotone")
@@ -154,88 +100,10 @@ protected:
                 .status-indicator[data-context-id='led_status'].active .status-icon { color: #ffc107; filter: drop-shadow(0 0 6px rgba(255,193,7,0.6)); }
             )"));
 
-        // Settings context with detailed controls - placeholder values
+        // Settings context - simple version
         contexts.push_back(WebUIContext::settings("led_settings", "LED Controller")
             .withField(WebUIField("state_toggle_settings", "LED", WebUIFieldType::Boolean, "false"))
-            .withField(WebUIField("pin_display", "GPIO Pin", WebUIFieldType::Display, "2", "", true))
-            .withCustomHtml(R"(
-                <div class="card-header">
-                    <h3 class="card-title">LED Controller</h3>
-                </div>
-                <div class="card-content led-settings">
-                    <div class="led-status-display">
-                        <svg class="led-bulb-small" viewBox="0 0 1024 1024">
-                            <use href="#bulb-twotone"/>
-                        </svg>
-                        <span class="led-status-text">OFF</span>
-                    </div>
-                    <div class="field-row">
-                        <span class="field-label">LED:</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="state_toggle_settings">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <div class="field-row">
-                        <span class="field-label">GPIO Pin:</span>
-                        <span class="field-value" data-field-name="pin_display">2</span>
-                    </div>
-                </div>
-            )")
-            .withCustomCss(R"(
-                .led-settings .led-status-display {
-                    display: flex;
-                    align-items: center;
-                    gap: 0.5rem;
-                    margin-bottom: 1rem;
-                    padding: 0.5rem;
-                    background: rgba(255, 255, 255, 0.05);
-                    border-radius: 0.5rem;
-                }
-                .led-settings .led-bulb-small {
-                    width: 24px;
-                    height: 24px;
-                    transition: all 0.3s ease;
-                }
-                .led-settings .led-bulb-small.on {
-                    color: #ffc107;
-                    filter: drop-shadow(0 0 4px rgba(255, 193, 7, 0.6));
-                }
-                .led-settings .led-bulb-small.off {
-                    color: #6c757d;
-                }
-                .led-settings .led-status-text {
-                    font-weight: 600;
-                    font-size: 0.9rem;
-                }
-                .led-settings .led-status-text.on {
-                    color: #ffc107;
-                }
-                .led-settings .led-status-text.off {
-                    color: #6c757d;
-                }
-            )")
-            .withCustomJs(R"(
-                function updateLEDSettings() {
-                    const bulb = document.querySelector('.led-settings .led-bulb-small');
-                    const statusText = document.querySelector('.led-settings .led-status-text');
-                    const toggle = document.querySelector('#state_toggle_settings');
-                    if (bulb && statusText && toggle) {
-                        const isOn = toggle.checked;
-                        bulb.classList.toggle('on', isOn);
-                        bulb.classList.toggle('off', !isOn);
-                        statusText.classList.toggle('on', isOn);
-                        statusText.classList.toggle('off', !isOn);
-                        statusText.textContent = isOn ? 'ON' : 'OFF';
-                    }
-                }
-                document.addEventListener('change', function(e) {
-                    if (e.target.id === 'state_toggle_settings') {
-                        updateLEDSettings();
-                    }
-                });
-                setTimeout(updateLEDSettings, 100);
-            )"));
+            .withField(WebUIField("pin_display", "GPIO Pin", WebUIFieldType::Display, String(LED_BUILTIN).c_str(), "", true)));
     }
 
 public:
@@ -250,10 +118,12 @@ public:
     }
 
     String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params) override {
+        DLOG_I(LOG_APP, "[LEDWebUI] handleRequest: ctx=%s, method=%s", contextId.c_str(), method.c_str());
         if (!led) return "{\"success\":false}";
         if ((contextId == "led_settings" || contextId == "led_dashboard") && method == "POST") {
             auto fieldIt = params.find("field"); auto valueIt = params.find("value");
             if (fieldIt != params.end() && valueIt != params.end()) {
+                DLOG_I(LOG_APP, "[LEDWebUI] field=%s, value=%s", fieldIt->second.c_str(), valueIt->second.c_str());
                 if (fieldIt->second == "state_toggle_dashboard" || fieldIt->second == "state_toggle_settings") {
                     // Decoupled: publish command on EventBus; LED component will handle via subscription
                     led->requestSet(valueIt->second == "true");
@@ -267,8 +137,8 @@ public:
 
 
 // WiFi credentials - set these for STA mode, leave empty for AP-only mode
-const char* WIFI_SSID = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* WIFI_SSID = "";
+const char* WIFI_PASSWORD = "";
 
 // Global Core
 Core core;
@@ -334,13 +204,15 @@ void setup() {
     
     // Register components in Core (WebUI + demo components)
     core.addComponent(std::make_unique<DomoticsCore::Components::WebUIComponent>(webUIConfig));
-    core.addComponent(std::make_unique<DemoLEDComponent>(2));
+    core.addComponent(std::make_unique<DemoLEDComponent>(LED_BUILTIN));
     core.addComponent(std::make_unique<SystemInfoComponent>());
 
     // Register LED UI wrapper factory before core.begin (composition)
     auto* webui = core.getComponent<DomoticsCore::Components::WebUIComponent>("WebUI");
     if (webui) {
-        webui->registerProviderFactory("demo_led", [](IComponent* c) -> IWebUIProvider* {
+        DLOG_I(LOG_APP, "[APP] Registering Demo LED Controller provider factory");
+        webui->registerProviderFactory("Demo LED Controller", [](IComponent* c) -> IWebUIProvider* {
+            DLOG_I(LOG_APP, "[APP] Creating LEDWebUI for component: %s", c ? c->metadata.name.c_str() : "null");
             return new LEDWebUI(static_cast<DemoLEDComponent*>(c));
         });
         webui->registerProviderFactory("system_info", [](IComponent* c) -> IWebUIProvider* {
