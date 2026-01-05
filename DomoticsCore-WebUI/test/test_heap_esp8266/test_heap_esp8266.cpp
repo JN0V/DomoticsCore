@@ -15,9 +15,11 @@
 #include <Arduino.h>
 #include <DomoticsCore/Testing/HeapTracker.h>
 #include <DomoticsCore/IWebUIProvider.h>
+#include <DomoticsCore/WebUI/StreamingContextSerializer.h>
 
 using namespace DomoticsCore::Testing;
 using namespace DomoticsCore::Components;
+using namespace DomoticsCore::Components::WebUI;
 
 // Optimized WebUI provider using CachingWebUIProvider (ZERO-COPY)
 class OptimizedWebUIProvider : public CachingWebUIProvider {
@@ -189,6 +191,112 @@ void test_esp8266_stress_allocation() {
     TEST_ASSERT_TRUE(true);
 }
 
+// Provider with MANY large contexts to test chunking
+class LargeContextProvider : public CachingWebUIProvider {
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        // Create 10 contexts with large HTML/CSS (simulates complex WebUI)
+        for (int i = 0; i < 10; i++) {
+            String id = "ctx_" + String(i);
+            String title = "Context " + String(i);
+            
+            // ~500 bytes of HTML per context
+            String html = "<div class='large-context-" + String(i) + "'>";
+            for (int j = 0; j < 10; j++) {
+                html += "<span>Content block " + String(j) + " with padding text</span>";
+            }
+            html += "</div>";
+            
+            // ~200 bytes of CSS per context
+            String css = ".large-context-" + String(i) + " { background: #fff; padding: 1rem; margin: 0.5rem; border-radius: 8px; }";
+            
+            contexts.push_back(WebUIContext::dashboard(id, title)
+                .withField(WebUIField("field1", "Field 1", WebUIFieldType::Text, "value1"))
+                .withField(WebUIField("field2", "Field 2", WebUIFieldType::Number, "42"))
+                .withCustomHtml(html)
+                .withCustomCss(css));
+        }
+    }
+    
+public:
+    String getWebUIName() const override { return "LargeTest"; }
+    String getWebUIVersion() const override { return "1.0.0"; }
+    
+    String handleWebUIRequest(const String& contextId, const String& endpoint,
+                              const String& method, const std::map<String, String>& params) override {
+        return "{}";
+    }
+};
+
+void test_esp8266_chunked_large_schema() {
+    Serial.printf("\n[CHUNKED LARGE SCHEMA TEST]\n");
+    
+    LargeContextProvider provider;
+    
+    // Force cache build
+    size_t contextCount = provider.getContextCount();
+    Serial.printf("  Contexts: %d\n", (int)contextCount);
+    
+    uint32_t heapBefore = ESP.getFreeHeap();
+    Serial.printf("  Heap before: %u bytes\n", heapBefore);
+    
+    // Track peak heap usage during serialization
+    uint32_t minHeapDuring = heapBefore;
+    size_t totalBytes = 0;
+    size_t chunkCount = 0;
+    
+    // Simulate chunked streaming (like HTTP chunked response)
+    const size_t CHUNK_SIZE = 256;  // Small chunks like real HTTP
+    uint8_t buffer[CHUNK_SIZE];
+    
+    for (size_t i = 0; i < contextCount; i++) {
+        const WebUIContext* ctx = provider.getContextAtRef(i);
+        if (!ctx) continue;
+        
+        StreamingContextSerializer serializer;
+        serializer.begin(*ctx);
+        
+        while (!serializer.isComplete()) {
+            size_t written = serializer.write(buffer, CHUNK_SIZE);
+            totalBytes += written;
+            chunkCount++;
+            
+            // Check heap during operation
+            uint32_t currentHeap = ESP.getFreeHeap();
+            if (currentHeap < minHeapDuring) {
+                minHeapDuring = currentHeap;
+            }
+            
+            yield();  // Allow ESP8266 to breathe
+        }
+    }
+    
+    uint32_t heapAfter = ESP.getFreeHeap();
+    uint32_t peakUsage = heapBefore - minHeapDuring;
+    
+    Serial.printf("  Total bytes generated: %d\n", (int)totalBytes);
+    Serial.printf("  Chunks sent: %d\n", (int)chunkCount);
+    Serial.printf("  Heap after: %u bytes\n", heapAfter);
+    Serial.printf("  Peak heap usage during: %u bytes\n", peakUsage);
+    Serial.printf("  Heap delta: %d bytes\n", (int)(heapBefore - heapAfter));
+    
+    // Verify chunking worked (schema should be substantial)
+    TEST_ASSERT_TRUE_MESSAGE(totalBytes > 5000, "Schema too small, chunking not tested");
+    
+    // Verify peak heap usage stayed reasonable
+    // The streaming should NOT allocate the full schema in memory
+    const uint32_t MAX_PEAK_USAGE = 2048;  // Should never need more than 2KB extra
+    TEST_ASSERT_TRUE_MESSAGE(peakUsage < MAX_PEAK_USAGE, "Peak heap usage too high during chunking");
+    
+    // Verify no significant leak
+    int32_t leak = (int32_t)heapBefore - (int32_t)heapAfter;
+    const int32_t MAX_LEAK = 512;
+    TEST_ASSERT_TRUE_MESSAGE(leak < MAX_LEAK, "Memory leak during chunked schema generation");
+    
+    Serial.printf("  ✓ Chunking OK: %d bytes in %d chunks, peak %u bytes\n", 
+                  (int)totalBytes, (int)chunkCount, peakUsage);
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -208,6 +316,7 @@ void setup() {
     RUN_TEST(test_esp8266_webui_provider_repeated_calls);
     RUN_TEST(test_esp8266_fragmentation_detection);
     RUN_TEST(test_esp8266_stress_allocation);
+    RUN_TEST(test_esp8266_chunked_large_schema);
     
     UNITY_END();
 }
