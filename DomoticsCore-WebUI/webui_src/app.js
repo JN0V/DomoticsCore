@@ -308,15 +308,23 @@ class DomoticsApp {
                 break;
             case this.WebUIFieldType.Select:
                 {
-                    const options = (field.options || []).length ? field.options : (typeof field.unit === 'string' && field.unit.includes(',')) ? field.unit.split(',') : [];
                     const current = String(field.value || '');
-                    const labels = field.optionLabels || {};
-                    const optsHtml = options.map(opt => {
-                        const sel = (String(opt) === current) ? 'selected' : '';
-                        const label = labels[opt] || opt;  // Use label if available, fallback to value
-                        return `<option value="${opt}" ${sel}>${label}</option>`;
-                    }).join('');
-                    fieldHtml = `<select id="${fieldId}" ${field.readOnly ? 'disabled' : ''}>${optsHtml}</select>`;
+                    // Check if options should be loaded from endpoint
+                    if (field.endpoint && field.endpoint.length > 0) {
+                        // Create select with loading placeholder, fetch options async
+                        fieldHtml = `<select id="${fieldId}" ${field.readOnly ? 'disabled' : ''} data-endpoint="${field.endpoint}" data-current="${current}"><option value="">Loading...</option></select>`;
+                        // Queue async load after render
+                        setTimeout(() => this.loadSelectOptions(fieldId, field.endpoint, current), 0);
+                    } else {
+                        const options = (field.options || []).length ? field.options : (typeof field.unit === 'string' && field.unit.includes(',')) ? field.unit.split(',') : [];
+                        const labels = field.optionLabels || {};
+                        const optsHtml = options.map(opt => {
+                            const sel = (String(opt) === current) ? 'selected' : '';
+                            const label = labels[opt] || opt;  // Use label if available, fallback to value
+                            return `<option value="${opt}" ${sel}>${label}</option>`;
+                        }).join('');
+                        fieldHtml = `<select id="${fieldId}" ${field.readOnly ? 'disabled' : ''}>${optsHtml}</select>`;
+                    }
                 }
                 break;
             case this.WebUIFieldType.Slider:
@@ -388,6 +396,31 @@ class DomoticsApp {
                 <span class="field-label">${field.label}:</span>
                 ${fieldHtml}
             </div>`;
+    }
+
+    async loadSelectOptions(fieldId, endpoint, currentValue) {
+        try {
+            const response = await fetch(endpoint);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const options = await response.json();
+            
+            const select = document.getElementById(fieldId);
+            if (!select) return;
+            
+            // Build options HTML - expects [{value, label}] format
+            const optsHtml = options.map(opt => {
+                const val = opt.value || opt;
+                const label = opt.label || val;
+                const sel = (String(val) === String(currentValue)) ? 'selected' : '';
+                return `<option value="${val}" ${sel}>${label}</option>`;
+            }).join('');
+            
+            select.innerHTML = optsHtml;
+        } catch (err) {
+            console.error(`Failed to load options from ${endpoint}:`, err);
+            const select = document.getElementById(fieldId);
+            if (select) select.innerHTML = '<option value="">Error loading options</option>';
+        }
     }
 
     setupEventListeners() {
@@ -683,13 +716,21 @@ class DomoticsApp {
             statusContainer.appendChild(indicator);
         }
 
-        // Update status based on the first field's value
-        const firstField = Object.keys(data)[0];
-        if (firstField) {
-            const value = data[firstField];
-            indicator.classList.toggle('active', value === 'ON' || value === 'true' || value === true);
-            indicator.title = `${contextId}: ${value}`;
+        // Update status based on data
+        const state = data.state;
+        indicator.classList.toggle('active', state === 'ON' || state === 'true' || state === true);
+        
+        // Dynamic icon switching: backend can provide "icon" field to change the badge icon
+        if (data.icon) {
+            const svg = indicator.querySelector('svg');
+            if (svg) {
+                const use = svg.querySelector('use');
+                if (use) use.setAttribute('href', '#' + data.icon);
+            }
         }
+        
+        // Tooltip: use "tooltip" field if provided, otherwise show state
+        indicator.title = data.tooltip || `${state || 'unknown'}`;
     }
     
     formatValue(value) {
