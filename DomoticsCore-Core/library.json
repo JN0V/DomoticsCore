@@ -1,8 +1,8 @@
 {
   "name": "DomoticsCore-Core",
   "version": "1.4.0",
-  "description": "DomoticsCore core runtime (Core, ComponentRegistry, IComponent, Logger, EventBus)",
-  "keywords": ["esp32", "domotics", "core", "eventbus"],
+  "description": "DomoticsCore core runtime (Core, ComponentRegistry, IComponent, Logger, EventBus, Testing/HeapTracker)",
+  "keywords": ["esp32", "domotics", "core", "eventbus", "testing", "heaptracker"],
   "repository": {
     "type": "git",
     "url": "https://github.com/JN0V/DomoticsCore.git"
