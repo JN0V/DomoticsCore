@@ -174,7 +174,6 @@ private:
     }
     
     void handleWebSocketMessage(const String& message) {
-        DLOG_D(LOG_WEB, "WS message: %s", message.c_str());
         JsonDocument doc;
         if (deserializeJson(doc, message)) {
             DLOG_W(LOG_WEB, "WS JSON parse failed");
@@ -182,13 +181,16 @@ private:
         }
         
         const char* type = doc["type"];
-        DLOG_D(LOG_WEB, "WS type: %s, onUIAction: %s", type ? type : "null", onUIAction ? "set" : "null");
+        DLOG_D(LOG_WEB, "WS type: %s", type ? type : "null");
         if (type && strcmp(type, "ui_action") == 0 && onUIAction) {
             String contextId = doc["contextId"].as<String>();
             String field = doc["field"].as<String>();
             JsonVariant v = doc["value"];
             String value = v.is<bool>() ? (v.as<bool>() ? "true" : "false") : v.as<String>();
-            DLOG_D(LOG_WEB, "WS ui_action: ctx=%s, field=%s, value=%s", contextId.c_str(), field.c_str(), value.c_str());
+            // Mask sensitive fields (password) in logs
+            bool isSensitive = field.indexOf("password") >= 0 || field.indexOf("secret") >= 0 || field.indexOf("key") >= 0;
+            DLOG_D(LOG_WEB, "WS ui_action: ctx=%s, field=%s, value=%s", 
+                   contextId.c_str(), field.c_str(), isSensitive ? "***" : value.c_str());
             onUIAction(contextId, field, value);
         }
     }

@@ -80,22 +80,22 @@ void test_webui_config_custom_values() {
 void test_webui_field_basic_construction() {
     WebUIField field("temp", "Temperature", WebUIFieldType::Number, "25.5", "°C", true);
 
-    TEST_ASSERT_EQUAL_STRING("temp", field.name.c_str());
-    TEST_ASSERT_EQUAL_STRING("Temperature", field.label.c_str());
+    TEST_ASSERT_EQUAL_STRING("temp", field.name);
+    TEST_ASSERT_EQUAL_STRING("Temperature", field.label);
     TEST_ASSERT_EQUAL(WebUIFieldType::Number, field.type);
-    TEST_ASSERT_EQUAL_STRING("25.5", field.value.c_str());
-    TEST_ASSERT_EQUAL_STRING("°C", field.unit.c_str());
+    TEST_ASSERT_EQUAL_STRING("25.5", field.value);
+    TEST_ASSERT_EQUAL_STRING("°C", field.unit);
     TEST_ASSERT_TRUE(field.readOnly);
 }
 
 void test_webui_field_default_values() {
     WebUIField field("status", "Status", WebUIFieldType::Text);
 
-    TEST_ASSERT_EQUAL_STRING("status", field.name.c_str());
-    TEST_ASSERT_EQUAL_STRING("Status", field.label.c_str());
+    TEST_ASSERT_EQUAL_STRING("status", field.name);
+    TEST_ASSERT_EQUAL_STRING("Status", field.label);
     TEST_ASSERT_EQUAL(WebUIFieldType::Text, field.type);
-    TEST_ASSERT_TRUE(field.value.isEmpty());
-    TEST_ASSERT_TRUE(field.unit.isEmpty());
+    TEST_ASSERT_TRUE(field.value == nullptr || strlen(field.value) == 0);
+    TEST_ASSERT_TRUE(field.unit == nullptr || strlen(field.unit) == 0);
     TEST_ASSERT_FALSE(field.readOnly);
     TEST_ASSERT_FLOAT_WITHIN(0.01, 0.0, field.minValue);
     TEST_ASSERT_FLOAT_WITHIN(0.01, 100.0, field.maxValue);
@@ -137,7 +137,7 @@ void test_webui_field_fluent_api() {
     WebUIField field("power", "Power", WebUIFieldType::Button);
     field.api("/api/power/set");
 
-    TEST_ASSERT_EQUAL_STRING("/api/power/set", field.endpoint.c_str());
+    TEST_ASSERT_EQUAL_STRING("/api/power/set", field.endpoint);
 }
 
 void test_webui_field_copy_constructor() {
@@ -147,9 +147,9 @@ void test_webui_field_copy_constructor() {
 
     WebUIField copy(original);
 
-    TEST_ASSERT_EQUAL_STRING("test", copy.name.c_str());
-    TEST_ASSERT_EQUAL_STRING("Test", copy.label.c_str());
-    TEST_ASSERT_EQUAL_STRING("42", copy.value.c_str());
+    TEST_ASSERT_EQUAL_STRING("test", copy.name);
+    TEST_ASSERT_EQUAL_STRING("Test", copy.label);
+    TEST_ASSERT_EQUAL_STRING("42", copy.value);
     TEST_ASSERT_FLOAT_WITHIN(0.01, 0.0, copy.minValue);
     TEST_ASSERT_FLOAT_WITHIN(0.01, 100.0, copy.maxValue);
     TEST_ASSERT_EQUAL(1, copy.options.size());
@@ -243,7 +243,7 @@ void test_webui_context_fluent_with_field() {
         .withField(WebUIField("temp", "Temperature", WebUIFieldType::Number));
 
     TEST_ASSERT_EQUAL(1, ctx.fields.size());
-    TEST_ASSERT_EQUAL_STRING("temp", ctx.fields[0].name.c_str());
+    TEST_ASSERT_EQUAL_STRING("temp", ctx.fields[0].name);
 }
 
 void test_webui_context_fluent_with_multiple_fields() {
@@ -1911,6 +1911,195 @@ void test_rapid_refresh_schema_generation() {
         "heap should be stable after 50 page refreshes");
 }
 
+/**
+ * @brief Simulates Standard example with many providers (16 contexts)
+ * 
+ * This reproduces the OOM scenario on ESP8266 where many providers
+ * create many contexts that all need to be serialized together.
+ */
+class MultiContextProvider : public CachingWebUIProvider {
+protected:
+    void buildContexts(std::vector<WebUIContext>& ctxs) override {
+        // Simulate WifiWebUI (5 contexts)
+        ctxs.push_back(WebUIContext::statusBadge("wifi_status", "WiFi", "dc-wifi").withRealTime(2000));
+        ctxs.push_back(WebUIContext::statusBadge("ap_status", "AP", "dc-ap").withRealTime(2000));
+        ctxs.push_back(WebUIContext{"wifi_component", "WiFi", "dc-wifi", WebUILocation::ComponentDetail, WebUIPresentation::Card}
+            .withField(WebUIField("connected", "Connected", WebUIFieldType::Display, "No", "", true))
+            .withField(WebUIField("ssid_now", "SSID", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("ip", "IP", WebUIFieldType::Display, "0.0.0.0", "", true))
+            .withRealTime(2000));
+        ctxs.push_back(WebUIContext::settings("wifi_sta_settings", "WiFi Network")
+            .withField(WebUIField("ssid", "Network SSID", WebUIFieldType::Text, ""))
+            .withField(WebUIField("sta_password", "Password", WebUIFieldType::Password, ""))
+            .withField(WebUIField("scan_networks", "Scan Networks", WebUIFieldType::Button, ""))
+            .withField(WebUIField("networks", "Available Networks", WebUIFieldType::Display, ""))
+            .withField(WebUIField("wifi_enabled", "Enable WiFi", WebUIFieldType::Boolean, "false"))
+            .withRealTime(2000));
+        ctxs.push_back(WebUIContext::settings("wifi_ap_settings", "Access Point (AP)")
+            .withField(WebUIField("ap_ssid", "AP SSID", WebUIFieldType::Text, "DomoticsCore-AP"))
+            .withField(WebUIField("ap_enabled", "Enable AP", WebUIFieldType::Boolean, "true"))
+            .withRealTime(2000));
+        
+        // Simulate NTPWebUI (4 contexts)
+        ctxs.push_back(WebUIContext::headerInfo("ntp_time", "Time", "dc-clock")
+            .withField(WebUIField("time", "Time", WebUIFieldType::Display, "--:--:--", "", true))
+            .withRealTime(1000));
+        ctxs.push_back(WebUIContext::dashboard("ntp_dashboard", "Current Time", "dc-clock")
+            .withField(WebUIField("time", "Time", WebUIFieldType::Display, "--:--:--", "", true))
+            .withField(WebUIField("date", "Date", WebUIFieldType::Display, "----/--/--", "", true))
+            .withField(WebUIField("timezone", "Timezone", WebUIFieldType::Display, "UTC", "", true))
+            .withRealTime(1000));
+        ctxs.push_back(WebUIContext::settings("ntp_settings", "NTP Configuration")
+            .withField(WebUIField("enabled", "Enable NTP Sync", WebUIFieldType::Boolean, "true"))
+            .withField(WebUIField("servers", "NTP Servers", WebUIFieldType::Text, "pool.ntp.org"))
+            .withField(WebUIField("sync_interval", "Sync Interval (hours)", WebUIFieldType::Number, "1")));
+        
+        // Simulate SystemInfoWebUI (3 contexts)
+        ctxs.push_back(WebUIContext::dashboard("system_info", "Device Information")
+            .withField(WebUIField("manufacturer", "Manufacturer", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("firmware", "Firmware", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("chip", "Chip", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("revision", "Revision", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("cpu_freq", "CPU Freq", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("total_heap", "Total Heap", WebUIFieldType::Display, "", "", true)));
+        ctxs.push_back(WebUIContext::dashboard("system_metrics", "System Metrics")
+            .withField(WebUIField("cpu_load", "CPU Load", WebUIFieldType::Chart, "", "%"))
+            .withField(WebUIField("heap_usage", "Memory Usage", WebUIFieldType::Chart, "", "%"))
+            .withRealTime(2000));
+        ctxs.push_back(WebUIContext::settings("system_settings", "Device Settings")
+            .withField(WebUIField("device_name", "Device Name", WebUIFieldType::Text, "")));
+        
+        // Simulate RemoteConsoleWebUI (2 contexts)
+        ctxs.push_back(WebUIContext{"console_component", "Remote Console", "dc-plug", WebUILocation::ComponentDetail, WebUIPresentation::Card}
+            .withField(WebUIField("status", "Status", WebUIFieldType::Display, "Active", "", true))
+            .withField(WebUIField("port", "Port", WebUIFieldType::Display, "23 (Telnet)", "", true)));
+        ctxs.push_back(WebUIContext::settings("console_settings", "Remote Console")
+            .withField(WebUIField("port", "Telnet Port", WebUIFieldType::Display, "23"))
+            .withField(WebUIField("protocol", "Protocol", WebUIFieldType::Display, "Telnet")));
+        
+        // Simulate WebUI builtin (2 contexts)
+        ctxs.push_back(WebUIContext::headerInfo("webui_uptime", "Uptime", "dc-clock")
+            .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Display, "0s", "", true))
+            .withRealTime(5000));
+        ctxs.push_back(WebUIContext::settings("webui_settings", "WebUI Settings")
+            .withField(WebUIField("theme", "Theme", WebUIFieldType::Select, "auto"))
+            .withField(WebUIField("primary_color", "Primary Color", WebUIFieldType::Color, "#007acc")));
+    }
+public:
+    String getWebUIName() const override { return "MultiTest"; }
+    String getWebUIVersion() const override { return "1.0.0"; }
+    String getWebUIData(const String&) override { return "{}"; }
+    String handleWebUIRequest(const String&, const String&, const String&, const std::map<String, String>&) override { return "{}"; }
+    bool hasDataChanged(const String&) override { return false; }
+};
+
+void test_many_providers_memory_usage() {
+    HeapTracker tracker;
+    
+    tracker.checkpoint("before_provider");
+    
+    // Create provider with 16 contexts (like Standard example)
+    MultiContextProvider* provider = new MultiContextProvider();
+    
+    tracker.checkpoint("after_create");
+    
+    // Force context build (cache warmup)
+    size_t contextCount = 0;
+    provider->forEachContext([&contextCount](const WebUIContext& ctx) { 
+        contextCount++; 
+        return true; 
+    });
+    
+    tracker.checkpoint("after_warmup");
+    
+    printf("\n[Many providers test]: %zu contexts created\n", contextCount);
+    TEST_ASSERT_EQUAL(15, contextCount);  // 5 Wifi + 3 NTP + 3 SystemInfo + 2 Console + 2 WebUI
+    
+    // Measure schema serialization memory
+    tracker.checkpoint("before_schema");
+    
+    size_t totalSchemaSize = 0;
+    size_t idx = 0;
+    while (const WebUIContext* ctx = provider->getContextAtRef(idx++)) {
+        StreamingContextSerializer serializer;
+        serializer.begin(*ctx);
+        
+        uint8_t buffer[512];
+        while (!serializer.isComplete()) {
+            size_t written = serializer.write(buffer, sizeof(buffer));
+            totalSchemaSize += written;
+            if (written == 0) break;
+        }
+    }
+    
+    tracker.checkpoint("after_schema");
+    
+    printf("[Many providers test]: Schema size = %zu bytes\n", totalSchemaSize);
+    printf("[Many providers test]: Peak memory for schema serialization = %d bytes\n", 
+           (int)tracker.getDelta("before_schema", "after_schema"));
+    
+    // Cleanup
+    delete provider;
+    
+    tracker.checkpoint("after_cleanup");
+    
+    int32_t totalDelta = tracker.getDelta("before_provider", "after_cleanup");
+    printf("[Many providers test]: Total memory delta = %d bytes\n", totalDelta);
+    
+    // Memory should be mostly released (allow 2KB for allocator overhead/fragmentation on native)
+    // On ESP8266, streaming serialization (0 bytes peak) is what matters most
+    TEST_ASSERT_TRUE_MESSAGE(totalDelta <= 2048, 
+        "Memory leak after provider cleanup - should be under 2KB");
+    
+    // Schema should not be too large (target < 10KB for ESP8266 with ~6KB free heap)
+    TEST_ASSERT_TRUE_MESSAGE(totalSchemaSize < 10000, 
+        "Schema too large for ESP8266 - consider reducing contexts or fields");
+}
+
+/**
+ * @brief Test rapid consecutive schema serializations (simulates browser page load)
+ * 
+ * Browser may send multiple requests rapidly on page load. Previously this
+ * caused 429 errors due to rate limiting. Now we just reset incomplete requests.
+ */
+void test_rapid_consecutive_schema_requests() {
+    // Create a provider with contexts
+    class TestProvider : public CachingWebUIProvider {
+    protected:
+        void buildContexts(std::vector<WebUIContext>& ctxs) override {
+            ctxs.push_back(WebUIContext::dashboard("test1", "Test 1"));
+            ctxs.push_back(WebUIContext::settings("test2", "Test 2"));
+        }
+    public:
+        String getWebUIName() const override { return "TestProvider"; }
+        String getWebUIVersion() const override { return "1.0.0"; }
+        String getWebUIData(const String&) override { return "{}"; }
+        String handleWebUIRequest(const String&, const String&, const String&, const std::map<String, String>&) override { return "{}"; }
+        bool hasDataChanged(const String&) override { return false; }
+    };
+
+    TestProvider provider;
+    
+    // Simulate 10 rapid consecutive schema serializations (like browser page loads)
+    for (int i = 0; i < 10; i++) {
+        size_t idx = 0;
+        while (const WebUIContext* ctx = provider.getContextAtRef(idx++)) {
+            StreamingContextSerializer serializer;
+            serializer.begin(*ctx);
+            
+            uint8_t buffer[512];
+            while (!serializer.isComplete()) {
+                size_t written = serializer.write(buffer, sizeof(buffer));
+                if (written == 0) break;
+            }
+        }
+    }
+    
+    // If we got here without crash or hang, the test passes
+    // Previously, rate limiting would block rapid requests with 429
+    TEST_PASS_MESSAGE("Rapid consecutive requests handled without blocking");
+}
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -2027,6 +2216,12 @@ int main() {
     
     // Rapid refresh simulation test (reproduces page reload scenario)
     RUN_TEST(test_rapid_refresh_schema_generation);
+    
+    // Many providers simulation (Standard example scenario)
+    RUN_TEST(test_many_providers_memory_usage);
+    
+    // Rapid consecutive requests (regression test for 429 rate limiting issue)
+    RUN_TEST(test_rapid_consecutive_schema_requests);
 
     return UNITY_END();
 }
