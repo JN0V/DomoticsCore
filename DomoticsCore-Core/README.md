@@ -53,6 +53,36 @@ Main behaviors:
 
 - `Core.h`, `IComponent.h`, `ComponentRegistry.h`
 - `ComponentConfig.h`, `EventBus.h`, `Timer.h`, `Logger.h`
+- `Testing/HeapTracker.h` - Memory leak detection for tests
+
+## HeapTracker API (Testing)
+
+The `HeapTracker` provides platform-agnostic memory tracking for detecting leaks in unit tests.
+
+```cpp
+#include <DomoticsCore/Testing/HeapTracker.h>
+using namespace DomoticsCore::Testing;
+
+HeapTracker tracker;
+
+// Take snapshots
+tracker.checkpoint("before");
+// ... code under test ...
+tracker.checkpoint("after");
+
+// Check for leaks
+int64_t delta = tracker.getDelta("before", "after");
+TEST_ASSERT_TRUE(delta >= -100 && delta <= 100); // Allow 100 bytes tolerance
+
+// Or use macros
+HEAP_ASSERT_STABLE(tracker, "before", "after", 100);
+HEAP_ASSERT_NO_GROWTH(tracker, "before");
+```
+
+**Platform Support:**
+- **Native**: Real malloc/free tracking via mallinfo
+- **ESP32**: heap_caps API
+- **ESP8266**: ESP.getFreeHeap()
 
 ## Examples
 
