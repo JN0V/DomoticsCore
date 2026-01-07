@@ -100,7 +100,9 @@ void setup() {
 
     // Register NTP WebUI provider (time will appear in header info zone automatically)
     if (webuiPtr && ntpPtr) {
-        webuiPtr->registerProviderWithComponent(new NTPWebUI(ntpPtr), ntpPtr);
+        auto* ntpWebUI = new NTPWebUI(ntpPtr);
+        ntpWebUI->init(webuiPtr);  // Register /api/ntp/timezones endpoint
+        webuiPtr->registerProviderWithComponent(ntpWebUI, ntpPtr);
         DLOG_I(LOG_APP, "NTP WebUI provider registered");
     }
 
