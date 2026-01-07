@@ -146,25 +146,16 @@ public:
 
 protected:
     // CachingWebUIProvider: build contexts once, they're cached for subsequent requests
+    // OPTIMIZED for ESP8266: reduced from 3 to 2 contexts
     void buildContexts(std::vector<WebUIContext>& contexts) override {
         if (!ntp) return;
 
-        // Header info - NTP provides time to the header zone
-        // Use placeholder value; real value comes from getWebUIData()
+        // Header info - compact time display (also serves dashboard needs)
         contexts.push_back(WebUIContext::headerInfo("ntp_time", "Time", "dc-clock")
             .withField(WebUIField("time", "Time", WebUIFieldType::Display, "--:--:--", "", true))
+            .withField(WebUIField("date", "Date", WebUIFieldType::Display, "", "", true))
             .withRealTime(1000)
             .withAPI("/api/ntp/time")
-            .withPriority(100));
-
-        // Dashboard card - Current time display
-        // Use placeholder values; real values come from getWebUIData()
-        contexts.push_back(WebUIContext::dashboard("ntp_dashboard", "Current Time", "dc-clock")
-            .withField(WebUIField("time", "Time", WebUIFieldType::Display, "--:--:--", "", true))
-            .withField(WebUIField("date", "Date", WebUIFieldType::Display, "----/--/--", "", true))
-            .withField(WebUIField("timezone", "Timezone", WebUIFieldType::Display, "UTC", "", true))
-            .withRealTime(1000)
-            .withAPI("/api/ntp/dashboard")
             .withPriority(100));
 
         // Settings card - Use placeholder values; real values come from getWebUIData()
@@ -187,13 +178,9 @@ public:
         JsonDocument doc;
 
         if (contextId == "ntp_time") {
-            // Provide time for header info zone
+            // Provide time and date for header info zone
             doc["time"] = ntp->isSynced() ? ntp->getFormattedTime("%H:%M:%S") : "--:--:--";
-
-        } else if (contextId == "ntp_dashboard") {
-            doc["time"] = ntp->getFormattedTime("%H:%M:%S");
-            doc["date"] = ntp->getFormattedTime("%Y-%m-%d");
-            doc["timezone"] = getTimezoneFriendlyName(ntp->getTimezone());
+            doc["date"] = ntp->isSynced() ? ntp->getFormattedTime("%Y-%m-%d") : "";
 
         } else if (contextId == "ntp_settings") {
             const NTPConfig& cfg = ntp->getConfig();
@@ -320,9 +307,6 @@ public:
         if (contextId == "ntp_time") {
             return ntpTimeState.hasChanged(ntp->getUnixTime());
         }
-        else if (contextId == "ntp_dashboard") {
-            return ntpDashboardState.hasChanged(ntp->getUnixTime());
-        }
         else if (contextId == "ntp_settings") {
             const NTPConfig& cfg = ntp->getConfig();
             NTPSettingsState current = {cfg.enabled, cfg.timezone};
@@ -333,11 +317,9 @@ public:
 
 private:
     NTPComponent* ntp;  // Non-owning pointer
-    // Timezone lookup uses constexpr TIMEZONE_LOOKUP[] table (stored in flash)
 
-    // State tracking using LazyState helper for timing-independent initialization
-    LazyState<time_t> ntpTimeState;           // ntp_time context
-    LazyState<time_t> ntpDashboardState;      // ntp_dashboard context
+    // State tracking using LazyState helper
+    LazyState<time_t> ntpTimeState;
 
     struct NTPSettingsState {
         bool enabled;
