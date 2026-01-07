@@ -9,11 +9,11 @@
 
 namespace DomoticsCore {
 namespace Components {
+
 namespace WebUI {
 
 class WifiWebUI : public CachingWebUIProvider {
     WifiComponent* wifi; // non-owning
-    Components::WebUIComponent* webui = nullptr; // non-owning, for network change notifications
     std::function<void(const Components::WifiConfig&)> onConfigChanged; // unified callback for config persistence
     // Keep pending credentials updated from UI
     String pendingSsid;
@@ -76,13 +76,6 @@ public:
         }
     }
 
-    /**
-     * @brief Set WebUI component reference for network change notifications
-     */
-    void setWebUIComponent(Components::WebUIComponent* webuiComp) {
-        webui = webuiComp;
-    }
-
     // Set callback for config persistence (optional) - unified callback
     void setConfigSaveCallback(std::function<void(const Components::WifiConfig&)> callback) {
         onConfigChanged = callback;
@@ -93,40 +86,37 @@ public:
 
 protected:
     // CachingWebUIProvider: build contexts once, they're cached
+    // OPTIMIZED for ESP8266: reduced from 5 to 3 contexts
     void buildContexts(std::vector<WebUIContext>& ctxs) override {
-        if (!wifi) return;
+        DLOG_I(LOG_WIFI_WEBUI, "Building WiFi WebUI contexts, wifi=%p", (void*)wifi);
+        if (!wifi) {
+            DLOG_W(LOG_WIFI_WEBUI, "WiFi pointer is null, skipping context build");
+            return;
+        }
 
-        // Header badge for quick status
-        ctxs.push_back(WebUIContext::statusBadge("wifi_status", "WiFi", "dc-wifi").withRealTime(2000));
-        // AP status badge with custom icon
-        ctxs.push_back(WebUIContext::statusBadge("ap_status", "AP", "dc-ap").withRealTime(2000));
+        // Single header badge showing network status (STA or AP)
+        ctxs.push_back(WebUIContext::statusBadge("wifi_status", "Network", "dc-wifi").withRealTime(2000));
 
-        // Components tab card - placeholder values, real values from getWebUIData()
+        // Components tab - compact status display
         ctxs.push_back(WebUIContext{
             "wifi_component", "WiFi", "dc-wifi", WebUILocation::ComponentDetail, WebUIPresentation::Card
         }
-        .withField(WebUIField("connected", "Connected", WebUIFieldType::Display, "No", "", true))
-        .withField(WebUIField("ssid_now", "SSID", WebUIFieldType::Display, "", "", true))
+        .withField(WebUIField("mode", "Mode", WebUIFieldType::Display, "AP", "", true))
+        .withField(WebUIField("ssid_now", "Network", WebUIFieldType::Display, "", "", true))
         .withField(WebUIField("ip", "IP", WebUIFieldType::Display, "0.0.0.0", "", true))
         .withRealTime(2000));
 
-        // Settings controls - STA section (placeholder values)
-        ctxs.push_back(WebUIContext::settings("wifi_sta_settings", "WiFi Network")
+        // Unified settings - STA and AP in one card with clear sections
+        ctxs.push_back(WebUIContext::settings("wifi_settings", "WiFi Configuration")
+            // STA Mode
+            .withField(WebUIField("wifi_enabled", "Connect to Network", WebUIFieldType::Boolean, "false"))
             .withField(WebUIField("ssid", "Network SSID", WebUIFieldType::Text, ""))
             .withField(WebUIField("sta_password", "Password", WebUIFieldType::Password, ""))
-            .withField(WebUIField("scan_networks", "Scan Networks", WebUIFieldType::Button, ""))
-            .withField(WebUIField("networks", "Available Networks", WebUIFieldType::Display, ""))
-            .withField(WebUIField("wifi_enabled", "Enable WiFi", WebUIFieldType::Boolean, "false"))
+            // AP Mode  
+            .withField(WebUIField("ap_enabled", "Enable Access Point", WebUIFieldType::Boolean, "true"))
+            .withField(WebUIField("ap_ssid", "AP Name", WebUIFieldType::Text, "DomoticsCore-AP"))
             .withAPI("/api/wifi")
-            .withRealTime(2000)
-        );
-
-        // Settings controls - AP section (placeholder values)
-        ctxs.push_back(WebUIContext::settings("wifi_ap_settings", "Access Point (AP)")
-            .withField(WebUIField("ap_ssid", "AP SSID", WebUIFieldType::Text, "DomoticsCore-AP"))
-            .withField(WebUIField("ap_enabled", "Enable AP", WebUIFieldType::Boolean, "true"))
-            .withAPI("/api/wifi")
-            .withRealTime(2000)
+            .withRealTime(5000)
         );
     }
 
@@ -155,6 +145,14 @@ public:
                 Components::WifiConfig cfg = wifi->getConfig();
                 
                 if (enable) {
+                    // Validate: cannot enable STA without SSID
+                    if (pendingSsid.isEmpty()) {
+                        DLOG_W(LOG_WIFI_WEBUI, "Cannot enable WiFi: no SSID configured");
+                        // Force UI refresh to revert toggle to actual state
+                        staSettingsState.reset();
+                        return "{\"success\":false,\"error\":\"SSID required\",\"refresh\":true}";
+                    }
+                    
                     // Enabling: apply pending credentials and connect
                     DLOG_I(LOG_WIFI_WEBUI, "Enabling WiFi with SSID='%s'", pendingSsid.c_str());
                     
@@ -175,10 +173,8 @@ public:
                         DLOG_W(LOG_WIFI_WEBUI, "WARNING: No save callback set!");
                     }
                     
-                    // Notify WebSocket clients to reconnect (network change from AP->STA)
-                    if (webui) {
-                        webui->notifyWiFiNetworkChanged();
-                    }
+                    // Note: WebSocket notification removed - clients will get updates via periodic refresh
+                    // Calling notifyWiFiNetworkChanged() during mode transition can crash ESP8266
                     
                     // Clear password for safety
                     pendingPassword = "";
@@ -216,13 +212,8 @@ public:
                 wifi->startScanAsync();
                 lastScanSummary = "Scanning...";
                 return "{\"success\":true}";
-            }
-        } else if (contextId == "wifi_ap_settings" && method == "POST") {
-            auto f = params.find("field");
-            auto v = params.find("value");
-            if (f == params.end() || v == params.end()) return "{\"success\":false}";
-            String field = f->second; String value = v->second;
-            if (field == "ap_enabled") {
+            } else if (field == "ap_enabled") {
+                // AP fields now in unified wifi_settings context
                 bool en = (value == "true" || value == "1" || value == "on");
                 
                 // Use Get → Override → Set pattern
@@ -237,15 +228,21 @@ public:
                     pendingApSsid = "";
                 } else {
                     cfg.enableAP = false;
+                    // When disabling AP, apply pending STA credentials if available
+                    if (pendingSsid.length()) {
+                        cfg.ssid = pendingSsid;
+                        cfg.password = pendingPassword;
+                        cfg.autoConnect = true;
+                        DLOG_I(LOG_WIFI_WEBUI, "Applying pending STA credentials: SSID='%s'", pendingSsid.c_str());
+                    }
                 }
                 
-                // Apply config
+                // Apply config and update mode
                 wifi->setConfig(cfg);
                 wifi->updateWifiMode();
                 
-                // Invoke persistence callback if set (unified callback)
+                // Invoke persistence callback if set
                 if (onConfigChanged) {
-                    DLOG_I(LOG_WIFI_WEBUI, "Invoking config save callback");
                     onConfigChanged(cfg);
                 }
                 
@@ -254,6 +251,7 @@ public:
                 apStatusState.reset();
                 staComponentState.reset();
                 apSettingsState.reset();
+                
                 return "{\"success\":true}";
             } else if (field == "ap_ssid") {
                 // Update AP SSID immediately if AP enabled
@@ -286,35 +284,46 @@ public:
         if (!wifi) return "{}";
         if (contextId == "wifi_component") {
             JsonDocument doc;
-            doc["connected"] = wifi->isSTAConnected() ? "Yes" : "No";
-            doc["ssid_now"] = wifi->getSSID();
+            // Determine mode: STA, AP, or STA+AP
+            bool sta = wifi->isSTAConnected();
+            bool ap = wifi->isAPEnabled();
+            doc["mode"] = sta && ap ? "STA+AP" : (sta ? "STA" : (ap ? "AP" : "Off"));
+            doc["ssid_now"] = sta ? wifi->getSSID() : wifi->getAPSSID();
             doc["ip"] = wifi->getLocalIP();
             String json; serializeJson(doc, json); return json;
         }
-        if (contextId == "wifi_sta_settings" || contextId == "wifi_settings") {
+        if (contextId == "wifi_settings" || contextId == "wifi_sta_settings") {
             JsonDocument doc;
+            // STA fields
             doc["wifi_enabled"] = wifi->isWifiEnabled() ? "true" : "false";
-            // Prefer pending SSID if user typed one
             doc["ssid"] = pendingSsid.length() ? pendingSsid : wifi->getConfiguredSSID();
             doc["sta_password"] = ""; // never echo back
-            doc["networks"] = wifi->getLastScanSummary();
-            String json; serializeJson(doc, json); return json;
-        }
-        if (contextId == "ap_status") {
-            JsonDocument doc;
-            doc["state"] = wifi->isAPEnabled() ? "ON" : "OFF";
+            // AP fields
+            doc["ap_enabled"] = wifi->isAPEnabled() ? "true" : "false";
+            doc["ap_ssid"] = wifi->getAPSSID().length() ? wifi->getAPSSID() : (pendingApSsid.length() ? pendingApSsid : String("DomoticsCore-AP"));
             String json; serializeJson(doc, json); return json;
         }
         if (contextId == "wifi_status") {
             JsonDocument doc;
-            doc["state"] = wifi->isSTAConnected() ? "ON" : "OFF";
-            String json; serializeJson(doc, json); return json;
-        }
-        if (contextId == "wifi_ap_settings") {
-            JsonDocument doc;
-            doc["ap_enabled"] = wifi->isAPEnabled() ? "true" : "false";
-            // Prefer configured AP SSID; else pending; else default
-            doc["ap_ssid"] = wifi->getAPSSID().length() ? wifi->getAPSSID() : (pendingApSsid.length() ? pendingApSsid : String("DomoticsCore-AP"));
+            bool sta = wifi->isSTAConnected();
+            bool ap = wifi->isAPEnabled();
+            // State for badge color
+            doc["state"] = (sta || ap) ? "ON" : "OFF";
+            // Icon for dynamic switching (uses existing CSS icons)
+            doc["icon"] = sta && ap ? "dc-wifi-both" : (sta ? "dc-wifi" : (ap ? "dc-wifi-ap" : "dc-wifi-off"));
+            // Tooltip: mode + network name with fallbacks
+            if (sta && ap) {
+                String ssid = wifi->getSSID();
+                doc["tooltip"] = ssid.length() ? ssid.c_str() : "WiFi+AP";
+            } else if (sta) {
+                String ssid = wifi->getSSID();
+                doc["tooltip"] = ssid.length() ? ssid.c_str() : "Connected";
+            } else if (ap) {
+                String apSsid = wifi->getAPSSID();
+                doc["tooltip"] = apSsid.length() ? apSsid.c_str() : "AP Mode";
+            } else {
+                doc["tooltip"] = "Off";
+            }
             String json; serializeJson(doc, json); return json;
         }
         return "{}";
@@ -325,10 +334,9 @@ public:
         
         // Use LazyState helper for timing-independent change tracking
         if (contextId == "wifi_status") {
-            return wifiStatusState.hasChanged(wifi->isSTAConnected());
-        } 
-        else if (contextId == "ap_status") {
-            return apStatusState.hasChanged(wifi->isAPEnabled());
+            // Track both STA and AP status changes
+            bool current = wifi->isSTAConnected() || wifi->isAPEnabled();
+            return wifiStatusState.hasChanged(current);
         }
         else if (contextId == "wifi_component") {
             STAComponentState current = {
@@ -338,19 +346,19 @@ public:
             };
             return staComponentState.hasChanged(current);
         }
-        else if (contextId == "wifi_sta_settings" || contextId == "wifi_settings") {
+        else if (contextId == "wifi_settings" || contextId == "wifi_sta_settings") {
+            // Unified settings - track both STA and AP changes
             STASettingsState current = {
                 wifi->isWifiEnabled(),
                 wifi->getConfiguredSSID()
             };
-            return staSettingsState.hasChanged(current);
-        }
-        else if (contextId == "wifi_ap_settings") {
-            APSettingsState current = {
+            bool staChanged = staSettingsState.hasChanged(current);
+            APSettingsState apCurrent = {
                 wifi->isAPEnabled(),
-                wifi->isAPEnabled() ? wifi->getAPSSID() : String("")
+                wifi->getAPSSID()
             };
-            return apSettingsState.hasChanged(current);
+            bool apChanged = apSettingsState.hasChanged(apCurrent);
+            return staChanged || apChanged;
         }
         else {
             // Unknown context, always send
