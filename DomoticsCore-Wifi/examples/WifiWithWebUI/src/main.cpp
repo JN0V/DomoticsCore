@@ -24,23 +24,21 @@ Core core;
 void setup() {
     DLOG_I(LOG_APP, "=== DomoticsCore WifiWithWebUI Starting ===");
 
-    // Core initialized
-
     WebUIConfig webCfg; webCfg.deviceName = "WiFi With WebUI"; webCfg.wsUpdateInterval = 5000; // 5 sec - WiFi state changes infrequently
     core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 
     // Start in AP mode for easy access (empty SSID means AP-only in WifiComponent implementation)
     core.addComponent(std::make_unique<WifiComponent>("", ""));
 
-    // Register provider
+    CoreConfig cfg; cfg.deviceName = "WifiWithWebUI"; cfg.logLevel = 3;
+    core.begin(cfg);
+    
+    // Register provider AFTER core.begin() so WebUI component is fully initialized
     auto* webui = core.getComponent<WebUIComponent>("WebUI");
     auto* wifi = core.getComponent<WifiComponent>("Wifi");
     if (webui && wifi) {
         webui->registerProviderWithComponent(new DomoticsCore::Components::WebUI::WifiWebUI(wifi), wifi);
     }
-
-    CoreConfig cfg; cfg.deviceName = "WifiWithWebUI"; cfg.logLevel = 3;
-    core.begin(cfg);
 }
 
 void loop() {
