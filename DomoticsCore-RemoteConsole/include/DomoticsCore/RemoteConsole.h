@@ -14,12 +14,11 @@
 #include <vector>
 #include <map>
 #include <functional>
-#include <deque>
 
 namespace DomoticsCore {
 namespace Components {
 
-// Log entry structure
+// Log entry structure - uses String for compact storage
 struct LogEntry {
     uint32_t timestamp;
     LogLevel level;
@@ -27,7 +26,7 @@ struct LogEntry {
     String message;
     
     LogEntry() : timestamp(0), level(LOG_LEVEL_INFO) {}
-    LogEntry(uint32_t ts, LogLevel lvl, const String& t, const String& msg)
+    LogEntry(uint32_t ts, LogLevel lvl, const char* t, const char* msg)
         : timestamp(ts), level(lvl), tag(t), message(msg) {}
 };
 
@@ -37,7 +36,7 @@ struct RemoteConsoleConfig {
     uint16_t port = 23;                    // Telnet port
     bool requireAuth = false;              // Password authentication
     String password = "";                  // Auth password
-    uint32_t bufferSize = 500;             // Circular buffer size
+    uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;  // Platform-specific (ESP8266=5, ESP32=100)
     bool allowCommands = true;             // Enable command execution
     std::vector<HAL::IPAddress> allowedIPs;     // IP whitelist (empty = all allowed)
     bool colorOutput = true;               // ANSI color codes
@@ -66,7 +65,12 @@ private:
     RemoteConsoleConfig config;
     HAL::WiFiServer* telnetServer = nullptr;
     std::vector<HAL::WiFiClient> clients;
-    std::deque<LogEntry> logBuffer;
+    
+    // Circular buffer for log entries - grows lazily to avoid OOM on startup
+    std::vector<LogEntry> logBuffer;
+    size_t logBufferHead = 0;    // Next write position
+    size_t logBufferCount = 0;   // Current number of entries
+    
     std::map<String, CommandHandler> commands;
     std::map<uint32_t, String> clientBuffers;  // Per-client command buffers (key = client ID)
     LogLevel currentLogLevel;
@@ -211,20 +215,29 @@ public:
             if (!tagMatch) return;
         }
         
-        // Add to circular buffer
+        // Create entry on stack first (no heap allocation)
         LogEntry entry(HAL::Platform::getMillis(), level, tag, message);
-        logBuffer.push_back(entry);
         
-        // Maintain buffer size
-        while (logBuffer.size() > config.bufferSize) {
-            logBuffer.pop_front();
+        // Add to circular buffer - grow lazily up to max size
+        if (config.bufferSize > 0) {
+            if (logBufferCount < config.bufferSize) {
+                // Buffer not full yet - just append
+                logBuffer.push_back(entry);
+                logBufferCount++;
+            } else {
+                // Buffer full - overwrite oldest (circular)
+                logBuffer[logBufferHead] = entry;
+            }
+            logBufferHead = (logBufferHead + 1) % config.bufferSize;
         }
         
         // Send to connected clients
-        String formatted = formatLogEntry(entry);
-        for (auto& client : clients) {
-            if (client.connected()) {
-                client.print(formatted);
+        if (!clients.empty()) {
+            String formatted = formatLogEntry(entry);
+            for (auto& client : clients) {
+                if (client.connected()) {
+                    client.print(formatted);
+                }
             }
         }
     }
@@ -253,22 +266,39 @@ public:
     }
     
     /**
-     * @brief Clear log buffer
+     * @brief Clear log buffer and release memory
      */
     void clearBuffer() {
         logBuffer.clear();
+        logBuffer.shrink_to_fit();  // Release memory back to heap
+        logBufferHead = 0;
+        logBufferCount = 0;
         DLOG_I(LOG_CONSOLE, "Log buffer cleared");
     }
     
     /**
-     * @brief Get recent logs
+     * @brief Get recent logs from circular buffer
      */
     std::vector<LogEntry> getRecentLogs(uint32_t count = 100) {
         std::vector<LogEntry> result;
-        uint32_t start = logBuffer.size() > count ? logBuffer.size() - count : 0;
+        if (logBufferCount == 0 || config.bufferSize == 0) return result;
         
-        for (uint32_t i = start; i < logBuffer.size(); i++) {
-            result.push_back(logBuffer[i]);
+        uint32_t actualCount = (count < logBufferCount) ? count : logBufferCount;
+        result.reserve(actualCount);
+        
+        // Calculate start position in circular buffer
+        size_t startIdx;
+        if (logBufferCount < config.bufferSize) {
+            // Buffer not full yet - start from beginning
+            startIdx = (logBufferCount > actualCount) ? (logBufferCount - actualCount) : 0;
+        } else {
+            // Buffer is full - oldest is at logBufferHead
+            startIdx = (logBufferHead + config.bufferSize - actualCount) % config.bufferSize;
+        }
+        
+        for (uint32_t i = 0; i < actualCount; i++) {
+            size_t idx = (startIdx + i) % config.bufferSize;
+            result.push_back(logBuffer[idx]);
         }
         
         return result;

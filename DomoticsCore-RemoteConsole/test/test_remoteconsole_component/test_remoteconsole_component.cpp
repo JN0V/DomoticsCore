@@ -295,6 +295,94 @@ void test_remoteconsole_commands_disabled(void) {
 }
 
 // ============================================================================
+// Memory Leak Tests
+// ============================================================================
+
+/**
+ * @brief Test that simulates long-running logging to detect memory leaks
+ * 
+ * This test reproduces the OOM crash observed overnight where heap dropped
+ * from 30KB to 0 due to std::deque<LogEntry> not releasing memory on pop_front()
+ */
+void test_remoteconsole_log_buffer_no_memory_leak(void) {
+    RemoteConsoleConfig config;
+    config.bufferSize = 100;  // Small buffer to force rotation quickly
+    config.enabled = true;
+    
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+    
+    // Measure initial heap
+    size_t heapBefore = HAL::getFreeHeap();
+    
+    // Simulate long-running logging (5000 log entries = 50x buffer rotation)
+    // This should NOT leak memory if the circular buffer is implemented correctly
+    for (int i = 0; i < 5000; i++) {
+        // Simulate what DLOG_I does - calls log() via callback
+        consolePtr->log(LOG_LEVEL_INFO, "TEST", ("Log message number " + String(i)).c_str());
+    }
+    
+    // Force cleanup
+    consolePtr->clearBuffer();
+    
+    size_t heapAfter = HAL::getFreeHeap();
+    
+    // Calculate leak per iteration
+    int heapDelta = (int)heapBefore - (int)heapAfter;
+    float leakPerLog = heapDelta / 5000.0f;
+    
+    printf("\n[MEMORY TEST] Log buffer rotation x5000:\n");
+    printf("  Heap before: %zu bytes\n", heapBefore);
+    printf("  Heap after:  %zu bytes\n", heapAfter);
+    printf("  Delta: %d bytes (%.2f bytes/log)\n", heapDelta, leakPerLog);
+    
+    // Allow some tolerance for fragmentation, but should be < 1 byte per log
+    // With the bug, this would be ~56 bytes per log = 280KB leak!
+    TEST_ASSERT_LESS_THAN_MESSAGE(5000, heapDelta, 
+        "Memory leak detected in log buffer! Each log leaks memory.");
+}
+
+/**
+ * @brief Test rapid log buffer fill/clear cycles
+ */
+void test_remoteconsole_rapid_buffer_cycles_no_leak(void) {
+    RemoteConsoleConfig config;
+    config.bufferSize = 50;
+    config.enabled = true;
+    
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+    
+    size_t heapBefore = HAL::getFreeHeap();
+    
+    // 100 cycles of fill + clear
+    for (int cycle = 0; cycle < 100; cycle++) {
+        // Fill buffer
+        for (int i = 0; i < 60; i++) {  // More than bufferSize to trigger rotation
+            consolePtr->log(LOG_LEVEL_INFO, "CYCLE", ("Cycle " + String(cycle) + " msg " + String(i)).c_str());
+        }
+        // Clear buffer
+        consolePtr->clearBuffer();
+    }
+    
+    size_t heapAfter = HAL::getFreeHeap();
+    int heapDelta = (int)heapBefore - (int)heapAfter;
+    
+    printf("\n[MEMORY TEST] Rapid buffer cycles x100:\n");
+    printf("  Heap delta: %d bytes\n", heapDelta);
+    
+    // Should have zero or minimal leak after clear
+    TEST_ASSERT_LESS_THAN_MESSAGE(1000, heapDelta,
+        "Memory leak in rapid buffer cycles!");
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -332,6 +420,10 @@ int main(int argc, char **argv) {
     RUN_TEST(test_remoteconsole_empty_password);
     RUN_TEST(test_remoteconsole_color_output_disabled);
     RUN_TEST(test_remoteconsole_commands_disabled);
+
+    // Memory leak tests
+    RUN_TEST(test_remoteconsole_log_buffer_no_memory_leak);
+    RUN_TEST(test_remoteconsole_rapid_buffer_cycles_no_leak);
 
     return UNITY_END();
 }

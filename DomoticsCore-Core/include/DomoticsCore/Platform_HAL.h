@@ -79,7 +79,7 @@
     #define DOMOTICS_RAM_SIZE_KB 96     // Due has 96KB
     #define DOMOTICS_FLASH_SIZE_KB 512
 
-// Unknown platform
+// Unknown platform (native tests, etc.)
 #else
     #define DOMOTICS_PLATFORM_UNKNOWN 1
     #define DOMOTICS_PLATFORM_NAME "Unknown"
@@ -93,6 +93,11 @@
     #define DOMOTICS_HAS_LITTLEFS 0
     #define DOMOTICS_RAM_SIZE_KB 0
     #define DOMOTICS_FLASH_SIZE_KB 0
+#endif
+
+// Default log buffer size if not defined by platform
+#ifndef DOMOTICS_LOG_BUFFER_SIZE
+    #define DOMOTICS_LOG_BUFFER_SIZE 100
 #endif
 
 // ============================================================================

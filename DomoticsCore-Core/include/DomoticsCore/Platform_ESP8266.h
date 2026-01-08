@@ -13,6 +13,9 @@
 
 #if DOMOTICS_PLATFORM_ESP8266
 
+// ESP8266-specific resource limits (must be defined before Platform_HAL.h fallback)
+#define DOMOTICS_LOG_BUFFER_SIZE 5  // Minimal buffer due to limited RAM (~80KB total)
+
 #include "Platform_Arduino.h"
 #include <bearssl/bearssl_hash.h>
 
