@@ -13,6 +13,9 @@
 
 #if DOMOTICS_PLATFORM_ESP32
 
+// ESP32-specific resource limits (must be defined before Platform_HAL.h fallback)
+#define DOMOTICS_LOG_BUFFER_SIZE 50  // ESP32 has plenty of RAM (~320KB)
+
 #include "Platform_Arduino.h"
 #include <mbedtls/sha256.h>
 #include <esp_system.h>
