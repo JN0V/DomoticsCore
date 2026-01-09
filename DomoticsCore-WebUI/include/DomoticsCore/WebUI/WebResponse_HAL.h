@@ -49,16 +49,25 @@ inline AsyncWebServerResponse* createProgmemResponse(
  * @param contentType MIME type
  * @param data Pointer to gzipped data
  * @param len Length of data
+ * @param cacheSeconds Cache duration (0 = no cache, default = 1 hour for static assets)
  */
 inline void sendGzipResponse(
     AsyncWebServerRequest* request,
     const String& contentType,
     const uint8_t* data,
-    size_t len
+    size_t len,
+    int cacheSeconds = 3600
 ) {
     auto* resp = createProgmemResponse(request, 200, contentType, data, len);
     resp->addHeader("Content-Encoding", "gzip");
-    resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    if (cacheSeconds > 0) {
+        // Cache static assets to reduce concurrent requests on ESP8266
+        char cacheHeader[64];
+        snprintf(cacheHeader, sizeof(cacheHeader), "public, max-age=%d", cacheSeconds);
+        resp->addHeader("Cache-Control", cacheHeader);
+    } else {
+        resp->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    }
     request->send(resp);
 }
 

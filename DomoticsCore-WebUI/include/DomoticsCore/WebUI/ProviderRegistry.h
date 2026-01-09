@@ -100,10 +100,13 @@ public:
      */
     void discoverProviders(const Components::ComponentRegistry& registry) {
         auto comps = registry.getAllComponents();
+        DLOG_I(LOG_WEB, "discoverProviders: %d components", (int)comps.size());
         for (auto* comp : comps) {
             if (!comp) continue;
+            DLOG_D(LOG_WEB, "Checking component: %s", comp->metadata.name.c_str());
             IWebUIProvider* provider = comp->getWebUIProvider();
             if (provider) {
+                DLOG_D(LOG_WEB, "Component %s has provider", comp->metadata.name.c_str());
                 // Avoid duplicate registration
                 bool already = false;
                 for (const auto& pair : contextProviders) {
@@ -111,6 +114,8 @@ public:
                 }
                 if (!already) {
                     registerProviderWithComponent(provider, comp);
+                } else {
+                    DLOG_W(LOG_WEB, "Provider already registered for %s", comp->metadata.name.c_str());
                 }
             } else {
                 // Try factory by typeKey for composition-based providers
@@ -273,6 +278,7 @@ public:
 
         // Build unique provider list
         std::vector<IWebUIProvider*> providers;
+        providers.reserve(providerEnabled.size() + contextProviders.size());
         for (const auto& kv : providerEnabled) {
             if (kv.first && std::find(providers.begin(), providers.end(), kv.first) == providers.end()) {
                 providers.push_back(kv.first);
@@ -283,10 +289,10 @@ public:
                 providers.push_back(pair.second);
             }
         }
-        state->providers = providers;
+        state->providers = std::move(providers);
 
-        DLOG_I(LOG_WEB, "Schema: %u providers, heap: %u",
-               (unsigned)providers.size(), HAL::getFreeHeap());
+        DLOG_D(LOG_WEB, "Schema: %u providers, heap: %u",
+               (unsigned)state->providers.size(), HAL::getFreeHeap());
 
         return state;
     }

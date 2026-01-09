@@ -542,6 +542,89 @@ private:
     }
 
     /**
+     * @brief Write a JSON-escaped C-string (const char*), null-safe
+     * @return Bytes written
+     */
+    size_t writeJsonString(uint8_t* buffer, size_t maxLen, const char* str) {
+        // Handle nullptr as empty string
+        if (str == nullptr || str[0] == '\0') {
+            if (maxLen < 2) return 0;
+            buffer[0] = '"';
+            buffer[1] = '"';
+            stringOffset = 0;  // Reset
+            return 2;
+        }
+        
+        size_t written = 0;
+        size_t strLen = strlen(str);
+
+        // Opening quote
+        if (stringOffset == 0) {
+            if (maxLen < 1) return 0;
+            buffer[written++] = '"';
+            stringOffset = 1;  // Mark that we've written opening quote
+        }
+
+        // String content with escaping
+        size_t strPos = stringOffset - 1;
+
+        while (written < maxLen && strPos < strLen) {
+            char c = str[strPos];
+            const char* escaped = nullptr;
+
+            switch (c) {
+                case '"':  escaped = "\\\""; break;
+                case '\\': escaped = "\\\\"; break;
+                case '\n': escaped = "\\n"; break;
+                case '\r': escaped = "\\r"; break;
+                case '\t': escaped = "\\t"; break;
+                default:
+                    if (c < 0x20) {
+                        if (written + 6 > maxLen) {
+                            stringOffset = strPos + 1;
+                            return written;
+                        }
+                        static const char hex[] = "0123456789abcdef";
+                        buffer[written++] = '\\';
+                        buffer[written++] = 'u';
+                        buffer[written++] = '0';
+                        buffer[written++] = '0';
+                        buffer[written++] = hex[(c >> 4) & 0xF];
+                        buffer[written++] = hex[c & 0xF];
+                        strPos++;
+                        continue;
+                    }
+                    break;
+            }
+
+            if (escaped) {
+                size_t escLen = strlen(escaped);
+                if (written + escLen > maxLen) {
+                    stringOffset = strPos + 1;
+                    return written;
+                }
+                memcpy(buffer + written, escaped, escLen);
+                written += escLen;
+            } else {
+                buffer[written++] = c;
+            }
+            strPos++;
+        }
+
+        // Closing quote
+        if (strPos >= strLen) {
+            if (written < maxLen) {
+                buffer[written++] = '"';
+                stringOffset = 0;  // Reset for next string
+                return written;
+            }
+        }
+
+        stringOffset = strPos + 1;
+        return written;
+    }
+
+    /**
      * @brief Write current field object
      * @return Bytes written
      */

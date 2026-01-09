@@ -43,7 +43,7 @@ using WebUIConfig = WebUI::WebUIConfig;
  * Serves embedded HTML/CSS/JS assets, registers component providers, and pushes real-time updates
  * to connected clients. Acts as both a component and a provider to expose global WebUI settings.
  */
-class WebUIComponent : public IComponent, public virtual IWebUIProvider, public Components::ComponentRegistry::IComponentLifecycleListener {
+class WebUIComponent : public IComponent, public CachingWebUIProvider, public Components::ComponentRegistry::IComponentLifecycleListener {
 private:
     WebUIConfig config;
     
@@ -54,6 +54,22 @@ private:
 
     // State
     bool forceNextUpdate = false; // force full contexts send on next tick (e.g., after WS reconnect)
+
+    struct SchemaMemProbe {
+        bool active = false;
+        uint32_t seq = 0;
+        unsigned long t0 = 0;
+        uint32_t heapBefore = 0;
+        uint32_t maxBefore = 0;
+        uint32_t heapAfterSend = 0;
+        uint32_t maxAfterSend = 0;
+        uint8_t stage = 0;
+    };
+
+    static constexpr uint8_t SCHEMA_PROBE_SLOTS = 6;
+    SchemaMemProbe schemaMemProbes[SCHEMA_PROBE_SLOTS];
+    uint32_t schemaProbeSeq = 0;
+    uint8_t schemaProbeNext = 0;
     
     // Config persistence callback
     std::function<void(const WebUIConfig&)> onConfigChanged;
@@ -120,6 +136,40 @@ public:
     void loop() override {
         webSocket->loop();
 
+        for (uint8_t i = 0; i < SCHEMA_PROBE_SLOTS; i++) {
+            SchemaMemProbe& p = schemaMemProbes[i];
+            if (!p.active) continue;
+
+            const unsigned long now = HAL::Platform::getMillis();
+            const unsigned long dt = now - p.t0;
+
+            if (p.stage == 0 && dt >= 500) {
+                const uint32_t h = HAL::Platform::getFreeHeap();
+                const uint32_t m = HAL::Platform::getMaxAllocHeap();
+                DLOG_D(LOG_WEB, "Schema mem #%u +500ms: heap=%u (delta=%d), max=%u (delta=%d)",
+                       (unsigned)p.seq,
+                       (unsigned)h, (int)h - (int)p.heapBefore,
+                       (unsigned)m, (int)m - (int)p.maxBefore);
+                p.stage = 1;
+            } else if (p.stage == 1 && dt >= 2000) {
+                const uint32_t h = HAL::Platform::getFreeHeap();
+                const uint32_t m = HAL::Platform::getMaxAllocHeap();
+                DLOG_D(LOG_WEB, "Schema mem #%u +2s: heap=%u (delta=%d), max=%u (delta=%d)",
+                       (unsigned)p.seq,
+                       (unsigned)h, (int)h - (int)p.heapBefore,
+                       (unsigned)m, (int)m - (int)p.maxBefore);
+                p.stage = 2;
+            } else if (p.stage == 2 && dt >= 10000) {
+                const uint32_t h = HAL::Platform::getFreeHeap();
+                const uint32_t m = HAL::Platform::getMaxAllocHeap();
+                DLOG_D(LOG_WEB, "Schema mem #%u +10s: heap=%u (delta=%d), max=%u (delta=%d)",
+                       (unsigned)p.seq,
+                       (unsigned)h, (int)h - (int)p.heapBefore,
+                       (unsigned)m, (int)m - (int)p.maxBefore);
+                p.active = false;
+            }
+        }
+
         if (webSocket->shouldSendUpdates()) {
             sendWebSocketUpdates();
         }
@@ -157,6 +207,10 @@ public:
     void notifyWiFiNetworkChanged() {
         webSocket->notifyWiFiNetworkChanged();
     }
+    
+    void closeAllWebSocketConnections() {
+        webSocket->closeAllConnections();
+    }
 
     void setConfigCallback(std::function<void(const WebUIConfig&)> callback) {
         onConfigChanged = callback;
@@ -190,47 +244,46 @@ public:
         // Subscribe to future add/remove events
         auto& reg = const_cast<Components::ComponentRegistry&>(registry);
         reg.addListener(this);
+        
+        // Subscribe to WiFi AP events - close WebSocket connections when network changes
+        // This prevents crashes from sending to clients connected via the old network
+        // Note: Using string literal to avoid WebUI depending on Wifi module
+        // Event topic matches WifiEvents::EVENT_AP_ENABLED from DomoticsCore-Wifi
+        on<bool>("wifi/ap/enabled", [this](const bool& enabled) {
+            if (!enabled) {
+                DLOG_I(LOG_WEB, "AP disabled - closing WebSocket connections");
+                webSocket->closeAllConnections();
+            }
+        });
     }
 
-    // IWebUIProvider implementation for self-registration
+    // CachingWebUIProvider implementation for self-registration
     String getWebUIName() const override { return "WebUI"; }
     String getWebUIVersion() const override { return metadata.version; }
     IWebUIProvider* getWebUIProvider() override { return this; }
 
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> contexts;
-        
-        // Provide default uptime header info item
-        uint32_t seconds = HAL::Platform::getMillis() / 1000;
-        uint32_t days = seconds / 86400;
-        seconds %= 86400;
-        uint32_t hours = seconds / 3600;
-        seconds %= 3600;
-        uint32_t minutes = seconds / 60;
-        seconds %= 60;
-        
-        String uptimeStr;
-        if (days > 0) uptimeStr += String(days) + "d ";
-        if (hours > 0 || days > 0) uptimeStr += String(hours) + "h ";
-        if (minutes > 0 || hours > 0 || days > 0) uptimeStr += String(minutes) + "m ";
-        uptimeStr += String(seconds) + "s";
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        // IMPORTANT: Schema must use STATIC string literals only!
+        // Dynamic values cause memory corruption when cached.
+        // Real-time data comes from getWebUIData(), not from the schema.
         
         contexts.push_back(WebUIContext::headerInfo("webui_uptime", "Uptime", "dc-info")
-            .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Display, uptimeStr, "", true))
+            .withField(WebUIField("uptime", "Uptime", WebUIFieldType::Display, "--", "", true))
             .withRealTime(1000)
             .withAPI("/api/webui/uptime"));
         
-        // Settings context
+        // Settings context - use static literals, not config.* members
         contexts.push_back(WebUIContext::settings("webui_settings", "Web Interface")
-            .withField(WebUIField("theme", "Theme", WebUIFieldType::Select, config.theme, "dark,light,auto"))
-            .withField(WebUIField("primary_color", "Primary Color", WebUIFieldType::Text, config.primaryColor))
-            .withField(WebUIField("enable_auth", "Enable Authentication", WebUIFieldType::Boolean, config.enableAuth ? "true" : "false"))
-            .withField(WebUIField("username", "Username", WebUIFieldType::Text, config.username))
+            .withField(WebUIField("theme", "Theme", WebUIFieldType::Select, "auto", "dark,light,auto"))
+            .withField(WebUIField("primary_color", "Primary Color", WebUIFieldType::Text, "#007acc"))
+            .withField(WebUIField("enable_auth", "Enable Authentication", WebUIFieldType::Boolean, "false"))
+            .withField(WebUIField("username", "Username", WebUIFieldType::Text, "admin"))
             .withField(WebUIField("password", "Password", WebUIFieldType::Password, ""))
         );
-        return contexts;
     }
 
+public:
     String getWebUIData(const String& contextId) override {
         if (contextId == "webui_uptime") {
             JsonDocument doc;
@@ -480,56 +533,43 @@ private:
             DLOG_I(LOG_WEB, "Context schema sent for: %s (heap: %u)", contextId.c_str(), HAL::Platform::getFreeHeap());
         });
 
-        // Schema endpoint - uses streaming serializer with static state
-        // Memory-optimized: loads one context at a time using getContextAt()
+        // Schema endpoint - uses ResponseStream for better memory management than chunked
+        // ESPAsyncWebServer's chunked response has known memory leak issues
         webServer->registerChunkedRoute("/api/ui/schema", HTTP_GET, [this](AsyncWebServerRequest* request) {
             if (config.enableAuth && !authenticate(request)) {
                 request->requestAuthentication();
                 return;
             }
 
-            // Use static serializer state to minimize heap allocations
-            static WebUI::ProviderRegistry::SchemaChunkState staticState;
-            static bool schemaInProgress = false;
-            
-            // If previous schema is still in progress, reset it (client likely disconnected)
-            // This replaces rate limiting - we allow new requests but reset incomplete ones
-            if (schemaInProgress) {
-                DLOG_W(LOG_WEB, "Schema: previous request incomplete, resetting");
-                staticState.finished = true;
-                staticState.providers.clear();
-            }
-            
-            schemaInProgress = true;
+            SchemaMemProbe& probe = schemaMemProbes[schemaProbeNext % SCHEMA_PROBE_SLOTS];
+            schemaProbeNext = (uint8_t)(schemaProbeNext + 1);
 
-            // Reset state - clear strings explicitly to release memory
-            staticState.providers.clear();
-            staticState.providers.shrink_to_fit();
-            staticState.providerIndex = 0;
-            staticState.contextIndexInProvider = 0;
-            staticState.began = false;
-            staticState.finished = false;
-            staticState.needComma = false;
-            staticState.serializingContext = false;
-            // Clear context pointer
-            staticState.currentContextPtr = nullptr;
+            probe.active = true;
+            probe.seq = ++schemaProbeSeq;
+            const uint32_t schemaSeq = probe.seq;
+            probe.stage = 0;
+            probe.t0 = HAL::Platform::getMillis();
+            probe.heapBefore = HAL::Platform::getFreeHeap();
+            probe.maxBefore = HAL::Platform::getMaxAllocHeap();
 
-            // Build provider list (just pointers, low memory)
-            for (const auto& kv : registry->getContextProviders()) {
-                if (kv.second && std::find(staticState.providers.begin(), staticState.providers.end(), kv.second) == staticState.providers.end()) {
-                    staticState.providers.push_back(kv.second);
-                }
-            }
+            const uint32_t heapBefore = probe.heapBefore;
+            const uint32_t maxBefore = probe.maxBefore;
 
-            DLOG_I(LOG_WEB, "Schema: %d providers, heap: %u", (int)staticState.providers.size(), HAL::Platform::getFreeHeap());
+            request->onDisconnect([schemaSeq, heapBefore, maxBefore]() {
+                DLOG_D(LOG_WEB, "Schema disconnect #%u: heap=%u (delta=%d), max=%u (delta=%d)",
+                       (unsigned)schemaSeq,
+                       (unsigned)HAL::Platform::getFreeHeap(), (int)HAL::Platform::getFreeHeap() - (int)heapBefore,
+                       (unsigned)HAL::Platform::getMaxAllocHeap(), (int)HAL::Platform::getMaxAllocHeap() - (int)maxBefore);
+            });
 
-            auto* state = &staticState;
+            std::shared_ptr<WebUI::ProviderRegistry::SchemaChunkState> state = registry->prepareSchemaGeneration();
 
-            AsyncWebServerResponse *response = request->beginChunkedResponse("application/json",
-                [this, state](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+            AsyncWebServerResponse* response = request->beginChunkedResponse(
+                "application/json",
+                [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
                     size_t written = 0;
 
-                    if (state->finished) return 0;
+                    if (!state || state->finished) return 0;
 
                     if (!state->began) {
                         if (maxLen < 1) return 0;
@@ -545,7 +585,6 @@ private:
                             if (state->serializer.isComplete()) {
                                 state->serializingContext = false;
                                 state->needComma = true;
-                                // Clear context pointer
                                 state->currentContextPtr = nullptr;
                             } else if (n == 0) {
                                 break;
@@ -553,7 +592,6 @@ private:
                             continue;
                         }
 
-                        // Get next context from providers using indexed access
                         bool hasNext = false;
                         while (state->providerIndex < state->providers.size()) {
                             IWebUIProvider* provider = state->providers[state->providerIndex];
@@ -563,7 +601,6 @@ private:
                                 continue;
                             }
 
-                            // Get context pointer - ZERO COPY from cache
                             const WebUIContext* ctxPtr = provider->getContextAtRef(state->contextIndexInProvider);
                             if (ctxPtr) {
                                 state->currentContextPtr = ctxPtr;
@@ -572,7 +609,6 @@ private:
                                 break;
                             }
 
-                            // No more contexts in this provider
                             state->providerIndex++;
                             state->contextIndexInProvider = 0;
                         }
@@ -582,13 +618,7 @@ private:
                                 buffer[written++] = ']';
                             }
                             state->finished = true;
-                            // Clear state to release memory
-                            state->providers.clear();
-                            state->providers.shrink_to_fit();
-                            state->currentContextPtr = nullptr;
-                            // Release schema lock for next request
-                            schemaInProgress = false;
-                            DLOG_I(LOG_WEB, "Schema done, heap: %u", HAL::Platform::getFreeHeap());
+                            std::vector<IWebUIProvider*>().swap(state->providers);
                             return written;
                         }
 
@@ -622,7 +652,15 @@ private:
                 });
 
             addCorsHeaders(response);
+            response->addHeader("Connection", "close");
             request->send(response);
+
+            probe.heapAfterSend = HAL::Platform::getFreeHeap();
+            probe.maxAfterSend = HAL::Platform::getMaxAllocHeap();
+            DLOG_D(LOG_WEB, "Schema queued #%u: heap=%u (delta=%d), max=%u (delta=%d)",
+                   (unsigned)probe.seq,
+                   (unsigned)probe.heapAfterSend, (int)probe.heapAfterSend - (int)probe.heapBefore,
+                   (unsigned)probe.maxAfterSend, (int)probe.maxAfterSend - (int)probe.maxBefore);
         });
     }
     
@@ -730,7 +768,7 @@ private:
         }
         
         int contextCount = 0;
-        auto contextProviders = registry->getContextProviders();
+        const auto& contextProviders = registry->getContextProviders();
         
         for (const auto& pair : contextProviders) {
             // Leave room for context data + closing braces

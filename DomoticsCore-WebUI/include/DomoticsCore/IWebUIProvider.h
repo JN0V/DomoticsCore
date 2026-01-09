@@ -133,12 +133,16 @@ enum class WebUIFieldType {
 
 /**
  * Enhanced field definition with context-aware configuration
+ * 
+ * NOTE: Strings are stored as Arduino String objects to prevent dangling
+ * pointer issues when contexts are cached in CachingWebUIProvider.
+ * This uses more RAM than const char* but ensures memory safety.
  */
 struct WebUIField {
     String name;                    // Field identifier
     String label;                   // Display label
     WebUIFieldType type;            // Field type
-    String value;                   // Current value
+    String value;                   // Default value
     String unit;                    // Unit of measurement
     bool readOnly;                  // Read-only flag
     
@@ -154,6 +158,12 @@ struct WebUIField {
     // Only allocated when configure() is called - most fields don't need custom config
     std::unique_ptr<JsonDocument> config;  // Custom field configuration (optional)
 
+    // Constructor with const char* - copies strings for safety
+    WebUIField(const char* n, const char* l, WebUIFieldType t,
+               const char* v = "", const char* u = "", bool ro = false)
+        : name(n), label(l), type(t), value(v), unit(u), readOnly(ro) {}
+    
+    // Constructor with String - copies strings for safety
     WebUIField(const String& n, const String& l, WebUIFieldType t,
                const String& v = "", const String& u = "", bool ro = false)
         : name(n), label(l), type(t), value(v), unit(u), readOnly(ro) {}
@@ -192,30 +202,34 @@ struct WebUIField {
         return *this;
     }
 
-    // Move constructor and assignment are defaulted (unique_ptr handles move correctly)
+    // Move constructor and assignment are defaulted
     WebUIField(WebUIField&&) = default;
     WebUIField& operator=(WebUIField&&) = default;
 
     // Fluent interface
     WebUIField& range(float min, float max) { minValue = min; maxValue = max; return *this; }
     WebUIField& choices(const std::vector<String>& opts) { options = opts; return *this; }
-    WebUIField& addOption(const String& value, const String& label) {
-        options.push_back(value);
-        optionLabels[value] = label;
+    WebUIField& addOption(const String& val, const String& lbl) {
+        options.push_back(val);
+        optionLabels[val] = lbl;
         return *this;
     }
-    WebUIField& api(const String& ep) { endpoint = ep; return *this; }
-    WebUIField& configure(const String& key, const JsonVariant& value) {
+    WebUIField& api(const char* ep) { endpoint = ep; return *this; }
+    WebUIField& configure(const String& key, const JsonVariant& val) {
         if (!config) {
             config = std::make_unique<JsonDocument>();
         }
-        (*config)[key] = value;
+        (*config)[key] = val;
         return *this;
     }
 };
 
 /**
  * WebUI context - defines how component data appears in specific UI location
+ * 
+ * MEMORY OPTIMIZATION (ESP8266):
+ * Static strings (contextId, title, icon, apiEndpoint) are stored as const char*
+ * pointers which can point to PROGMEM data, saving ~100+ bytes per context.
  */
 struct WebUIContext {
     String contextId;               // Unique context identifier
@@ -225,7 +239,7 @@ struct WebUIContext {
     WebUIPresentation presentation; // How to display
     int priority = 0;               // Display order (higher = first)
     
-    // Component-provided custom UI elements
+    // Component-provided custom UI elements (usually empty - only allocated when used)
     String customHtml;              // Custom HTML structure for this context
     String customCss;               // Custom CSS styling for this context  
     String customJs;                // Custom JavaScript behavior for this context
@@ -244,6 +258,12 @@ struct WebUIContext {
     // Constructors
     WebUIContext() = default;
 
+    // Constructor with const char* (PROGMEM compatible) - preferred for static contexts
+    WebUIContext(const char* id, const char* t, const char* ic,
+                 WebUILocation loc, WebUIPresentation pres = WebUIPresentation::Card)
+        : contextId(id), title(t), icon(ic), location(loc), presentation(pres) {}
+
+    // Constructor with String (for backward compatibility)
     WebUIContext(const String& id, const String& t, const String& ic,
                  WebUILocation loc, WebUIPresentation pres = WebUIPresentation::Card)
         : contextId(id), title(t), icon(ic), location(loc), presentation(pres) {}
