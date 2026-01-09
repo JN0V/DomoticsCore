@@ -71,24 +71,32 @@ public:
     String getWebUIData(const String& contextId) override {
         if (!sys) return "{}";
         const auto& metrics = sys->getMetrics();
+        const auto& cfg = sys->getConfig();
 
-        if (contextId == "system_metrics") {
+        if (contextId == "system_info") {
             JsonDocument doc;
-            // Send raw numeric values (frontend will format and chart)
-            doc["cpu_load"] = metrics.cpuLoad;  // Raw float value
+            doc["manufacturer"] = cfg.manufacturer;
+            doc["firmware"] = cfg.firmwareVersion;
+            doc["chip"] = metrics.chipModel;
+            doc["revision"] = metrics.chipRevision;
+            doc["cpu_freq"] = String((uint32_t)metrics.cpuFreq) + " MHz";
+            doc["total_heap"] = String(metrics.totalHeap / 1024) + " KB";
+            String json; serializeJson(doc, json); return json;
+
+        } else if (contextId == "system_metrics") {
+            JsonDocument doc;
+            doc["cpu_load"] = metrics.cpuLoad;
             float heapPercent = metrics.totalHeap > 0 ?
                 ((float)(metrics.totalHeap - metrics.freeHeap) / metrics.totalHeap) * 100.0f : 0.0f;
-            doc["heap_usage"] = heapPercent;    // Raw float value
+            doc["heap_usage"] = heapPercent;
             String json; serializeJson(doc, json); return json;
 
         } else if (contextId == "system_settings") {
             JsonDocument doc;
-            const auto& cfg = sys->getConfig();
             doc["device_name"] = cfg.deviceName;
             String json; serializeJson(doc, json); return json;
         }
 
-        // system_info is static, no data updates needed
         return "{}";
     }
 
