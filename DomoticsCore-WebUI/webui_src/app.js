@@ -19,11 +19,13 @@ class DomoticsApp {
 
     async init() {
         this.setupEventListeners();
-        this.setupWebSocket();
+        // Load schema FIRST, before WebSocket to avoid race condition
         await this.loadUISchema();
         // Apply initial theme from schema if available
         this.applyThemeFromSchema();
         this.renderUI();
+        // Setup WebSocket AFTER schema is loaded
+        this.setupWebSocket();
     }
 
     async loadUISchema() {
@@ -461,11 +463,8 @@ class DomoticsApp {
         this.ws.onopen = () => {
             console.log('WebSocket connected');
             this.clearReconnectInterval();
-            // After reconnect (e.g., AP -> AP+STA), refresh schema and UI to sync badges/cards
-            this.loadUISchema().then(() => {
-                this.renderUI();
-            });
-            // no polling/banner
+            // Schema already loaded in init() - no need to reload on connect
+            // This avoids memory leaks on ESP8266 from repeated schema fetches
         };
 
         this.ws.onmessage = event => {
@@ -754,16 +753,22 @@ class DomoticsApp {
     async loadComponents() {
         const grid = document.getElementById('componentsGrid');
         if (!grid) return;
-        grid.innerHTML = '<div class="loading-message">Loading components...</div>';
+
+        this.renderSection(this.WebUILocation.ComponentDetail, 'componentsGrid');
+
+        let card = grid.querySelector('.components-card');
+        if (!card) {
+            card = document.createElement('div');
+            card.className = 'card components-card';
+            grid.appendChild(card);
+        }
+        card.innerHTML = '<div class="card-content"><div class="loading-message">Loading components...</div></div>';
 
         try {
             const response = await fetch('/api/components');
             const data = await response.json();
             
             if (data.components && data.components.length > 0) {
-                grid.innerHTML = '';
-                const card = document.createElement('div');
-                card.className = 'card components-card';
                 let fieldsHtml = '<div class="components-list">';
                 data.components.forEach(comp => {
                     const isWebUI = comp.name === 'WebUI';
@@ -788,7 +793,6 @@ class DomoticsApp {
                     </div>
                     <div class="card-content">${fieldsHtml}</div>
                 `;
-                grid.appendChild(card);
 
                 // Attach listeners for component enable/disable toggles
                 card.querySelectorAll('.field-row').forEach(row => {
@@ -841,11 +845,11 @@ class DomoticsApp {
                     });
                 });
             } else {
-                grid.innerHTML = '<div class="loading-message">No components registered.</div>';
+                card.innerHTML = '<div class="card-content"><div class="loading-message">No components registered.</div></div>';
             }
         } catch (error) {
             console.error('Failed to load components:', error);
-            grid.innerHTML = '<div class="loading-message">Error loading components.</div>';
+            card.innerHTML = '<div class="card-content"><div class="loading-message">Error loading components.</div></div>';
         }
     }
 

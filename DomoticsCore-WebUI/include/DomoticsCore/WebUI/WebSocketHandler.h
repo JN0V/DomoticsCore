@@ -34,7 +34,7 @@ private:
     // Connection management
     std::vector<uint32_t> activeClientIds;
     unsigned long lastConnectionCleanup = 0;
-    static const unsigned long CONNECTION_CLEANUP_INTERVAL = 30000; // 30 seconds
+    static const unsigned long CONNECTION_CLEANUP_INTERVAL = 5000; // 5 seconds - more aggressive cleanup
     
     // State tracking
     unsigned long lastWebSocketUpdate = 0;
@@ -56,6 +56,8 @@ public:
     void begin(AsyncWebServer* server) {
         if (config.enableWebSocket && server) {
             webSocket = new AsyncWebSocket("/ws");
+
+            activeClientIds.reserve((size_t)config.maxWebSocketClients);
             
             webSocket->onEvent([this](AsyncWebSocket* server, AsyncWebSocketClient* client, 
                                      AwsEventType type, void* arg, uint8_t* data, size_t len) {
@@ -91,6 +93,18 @@ public:
         }
     }
 
+    // Close all WebSocket connections (call before network changes)
+    void closeAllConnections() {
+        if (webSocket) {
+            int count = webSocket->count();
+            if (count > 0) {
+                DLOG_I(LOG_WEB, "Closing %d WebSocket connections before network change", count);
+                webSocket->closeAll(1001, "Network changing");
+                activeClientIds.clear();
+            }
+        }
+    }
+
     void broadcastSchemaChange(const String& componentName) {
          if (webSocket && webSocket->count() > 0) {
             String msg = String("{\"type\":\"schema_changed\",\"name\":\"") + componentName + "\"}";
@@ -120,6 +134,7 @@ private:
     void handleWebSocketEvent(AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len) {
         if (type == WS_EVT_CONNECT) {
             DLOG_I(LOG_WEB, "WS Client connected: #%u", client->id());
+            DLOG_D(LOG_WEB, "WS mem connect: heap=%u, max=%u", (unsigned)HAL::Platform::getFreeHeap(), (unsigned)HAL::Platform::getMaxAllocHeap());
             if (activeClientIds.size() >= (size_t)config.maxWebSocketClients) {
                 DLOG_W(LOG_WEB, "Max clients reached, closing #%u", client->id());
                 client->close();
@@ -136,14 +151,13 @@ private:
             if (it != activeClientIds.end()) {
                 activeClientIds.erase(it);
             }
+            DLOG_D(LOG_WEB, "WS mem disconnect: heap=%u, max=%u", (unsigned)HAL::Platform::getFreeHeap(), (unsigned)HAL::Platform::getMaxAllocHeap());
         } else if (type == WS_EVT_DATA) {
-            DLOG_D(LOG_WEB, "WS data received: len=%u", (unsigned)len);
             if (!arg || !data || len == 0 || len > 512) {
-                DLOG_W(LOG_WEB, "WS data rejected: arg=%p data=%p len=%u", arg, data, (unsigned)len);
+                DLOG_W(LOG_WEB, "WS data rejected: len=%u", (unsigned)len);
                 return;
             }
             AwsFrameInfo* info = (AwsFrameInfo*)arg;
-            DLOG_D(LOG_WEB, "WS frame: final=%d index=%u len=%u opcode=%d", info->final, (unsigned)info->index, (unsigned)info->len, info->opcode);
             if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
                 // ESP8266 String doesn't have (char*, size_t) constructor - null-terminate manually
                 char buf[513];
@@ -160,6 +174,8 @@ private:
     void cleanupStaleConnections() {
         if (!webSocket) return;
         
+        size_t before = activeClientIds.size();
+        
         // Remove IDs of clients that are no longer connected
         activeClientIds.erase(
             std::remove_if(activeClientIds.begin(), activeClientIds.end(),
@@ -170,7 +186,10 @@ private:
             activeClientIds.end()
         );
         
-        DLOG_D(LOG_WEB, "WS cleanup: %d active clients", (int)activeClientIds.size());
+        size_t after = activeClientIds.size();
+        if (before != after) {
+            DLOG_D(LOG_WEB, "WS cleanup: removed %d stale, %d active", (int)(before - after), (int)after);
+        }
     }
     
     void handleWebSocketMessage(const String& message) {
