@@ -1,13 +1,13 @@
 <!--
 Sync Impact Report:
-- Version change: 1.4.0 → 1.5.0 (strengthened HAL isolation rule)
-- Modified principles: IX. Hardware Abstraction Layer (HAL) - strengthened #ifdef isolation
-- Added sections: None
+- Version change: 1.5.0 → 1.6.0 (added Memory Leak Prevention principle - ABSOLUTE PRIORITY)
+- Modified principles: None
+- Added sections: XV. Memory Leak Prevention (NON-NEGOTIABLE)
 - Removed sections: None
 - Templates updated:
-  - .specify/templates/plan-template.md: ⚠ Check HAL compliance
-  - .specify/templates/spec-template.md: ⚠ Check HAL compliance
-  - .specify/templates/tasks-template.md: ⚠ Check HAL compliance
+  - .specify/templates/plan-template.md: ⚠ Add memory leak testing phase
+  - .specify/templates/spec-template.md: ⚠ Add memory budget requirements
+  - .specify/templates/tasks-template.md: ⚠ Add memory validation tasks
 - Follow-up TODOs: None
 -->
 
@@ -227,7 +227,47 @@ The codebase MUST avoid known anti-patterns that compromise reliability and test
 
 **Rationale**: Anti-patterns increase technical debt, reduce testability, and make bugs harder to diagnose. Early detection prevents accumulation.
 
-### XIV. Semantic Versioning Discipline
+### XIV. Memory Leak Prevention (NON-NEGOTIABLE - ABSOLUTE PRIORITY)
+
+Memory leak prevention is the **HIGHEST PRIORITY** for all development. IoT devices run 24/7 and ANY memory leak will eventually crash the device.
+
+**Mandatory Practices:**
+
+- **Heap Stability Verification**: Every feature MUST be tested for heap stability over extended operation (minimum 1 hour continuous use)
+- **Before/After Heap Checks**: All request handlers, event callbacks, and periodic operations MUST NOT cause cumulative heap reduction
+- **Vector/Container Discipline**: After `clear()` or `erase()`, ALWAYS call `shrink_to_fit()` to release memory back to heap
+- **String Concatenation Ban**: Avoid `String` concatenation in loops or hot paths; use `snprintf()` with static buffers
+- **PROGMEM for Constants**: All static strings, HTML, CSS, JS MUST be stored in PROGMEM/Flash, not RAM
+- **Lazy Allocation**: Prefer lazy allocation over pre-allocation for large buffers
+- **Explicit Cleanup**: Resources allocated during a request MUST be explicitly freed before response completion
+
+**Testing Requirements:**
+
+| Test Type | Description | Frequency |
+|-----------|-------------|-----------|
+| **Leak Detection** | Log heap before/after repeated operations | Every feature |
+| **Soak Test** | Run feature continuously for 1h, verify heap stable | Before merge |
+| **Stress Test** | Rapid repeated requests (10+), verify heap recovery | Before merge |
+| **Fragmentation Check** | Monitor `getMaxFreeBlockSize()` vs `getFreeHeap()` | Weekly |
+
+**ESP8266 Specific Constraints:**
+
+- Maximum allocation ~30KB (heap fragmentation)
+- `std::deque` does NOT release memory on `pop_front()` — use circular buffer with `std::vector`
+- Chunked HTTP responses create internal buffers — ensure cleanup handlers are registered
+- WebSocket client tracking vectors MUST call `shrink_to_fit()` on disconnect
+
+**Code Review Checklist:**
+
+- [ ] No `new`/`malloc` without corresponding `delete`/`free`
+- [ ] All `std::vector` operations followed by `shrink_to_fit()` when size decreases
+- [ ] No `String` concatenation in loops
+- [ ] Static buffers used for formatting operations
+- [ ] Heap logged before/after in debug mode for complex operations
+
+**Rationale**: A 100-byte leak every 30 seconds = 288KB lost per day = guaranteed OOM crash. Memory discipline is non-negotiable for production IoT devices.
+
+### XV. Semantic Versioning Discipline
 
 DomoticsCore uses [Semantic Versioning](https://semver.org/) with per-component versions and a root framework version:
 
@@ -340,4 +380,4 @@ python tools/bump_version.py MQTT minor --dry-run --verbose
 - **PR Review**: Verify SOLID compliance, EventBus usage, performance impact
 - **Release**: Verify binary sizes, memory usage, documentation completeness
 
-**Version**: 1.5.0 | **Ratified**: 2025-12-17 | **Last Amended**: 2025-12-19
+**Version**: 1.6.0 | **Ratified**: 2025-12-17 | **Last Amended**: 2026-01-08
