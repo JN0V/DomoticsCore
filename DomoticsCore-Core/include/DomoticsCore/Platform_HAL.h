@@ -95,11 +95,6 @@
     #define DOMOTICS_FLASH_SIZE_KB 0
 #endif
 
-// Default log buffer size if not defined by platform
-#ifndef DOMOTICS_LOG_BUFFER_SIZE
-    #define DOMOTICS_LOG_BUFFER_SIZE 100
-#endif
-
 // ============================================================================
 // Feature Availability Checks (compile-time)
 // ============================================================================
@@ -140,6 +135,11 @@
     #include "Platform_ESP8266.h"
 #else
     #include "Platform_Stub.h"
+#endif
+
+// Default log buffer size if not defined by platform
+#ifndef DOMOTICS_LOG_BUFFER_SIZE
+    #define DOMOTICS_LOG_BUFFER_SIZE 100
 #endif
 
 // ============================================================================
