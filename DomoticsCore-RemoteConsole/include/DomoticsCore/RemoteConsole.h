@@ -92,6 +92,44 @@ public:
         // Register built-in commands
         registerBuiltInCommands();
     }
+
+    uint16_t getPort() const { return config.port; }
+
+    LogLevel getLogLevel() const { return currentLogLevel; }
+
+    bool setPort(uint16_t port) {
+        if (port == 0) return false;
+        if (config.port == port) return true;
+
+        config.port = port;
+
+        if (!config.enabled) {
+            return true;
+        }
+
+        if (!telnetServer) {
+            return true;
+        }
+
+        for (auto& client : clients) {
+            if (client.connected()) {
+                client.println("\nRemoteConsole port changed - disconnecting...");
+                client.stop();
+            }
+        }
+        clients.clear();
+
+        telnetServer->stop();
+        delete telnetServer;
+        telnetServer = nullptr;
+
+        telnetServer = new HAL::WiFiServer(config.port);
+        telnetServer->begin();
+        telnetServer->setNoDelay(true);
+
+        DLOG_I(LOG_CONSOLE, "RemoteConsole restarted on port %d", config.port);
+        return true;
+    }
     
     ~RemoteConsoleComponent() {
         if (telnetServer) {

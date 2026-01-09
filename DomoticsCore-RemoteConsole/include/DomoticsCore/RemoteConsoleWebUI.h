@@ -3,6 +3,7 @@
 
 #include <DomoticsCore/IWebUIProvider.h>
 #include <DomoticsCore/RemoteConsole.h>
+#include <DomoticsCore/WebUI.h>
 #include <ArduinoJson.h>
 
 namespace DomoticsCore {
@@ -18,8 +19,55 @@ class RemoteConsoleWebUI : public CachingWebUIProvider {
 private:
     RemoteConsoleComponent* console;
 
+    struct LogLevelOption {
+        const char* value;
+        const char* label;
+    };
+
+    static constexpr LogLevelOption LOG_LEVEL_OPTIONS[] = {
+        {"0", "NONE"},
+        {"1", "ERROR"},
+        {"2", "WARN"},
+        {"3", "INFO"},
+        {"4", "DEBUG"},
+        {"5", "VERBOSE"},
+    };
+    static constexpr size_t LOG_LEVEL_OPTIONS_COUNT = sizeof(LOG_LEVEL_OPTIONS) / sizeof(LOG_LEVEL_OPTIONS[0]);
+
+    struct ConsoleUIState {
+        bool active;
+        uint16_t port;
+        uint8_t logLevel;
+        String ip;
+
+        bool operator==(const ConsoleUIState& other) const {
+            return active == other.active && port == other.port && logLevel == other.logLevel && ip == other.ip;
+        }
+        bool operator!=(const ConsoleUIState& other) const { return !(*this == other); }
+    };
+    LazyState<ConsoleUIState> uiState;
+
 public:
     explicit RemoteConsoleWebUI(RemoteConsoleComponent* c) : console(c) {}
+
+    void init(WebUIComponent* webui) {
+        if (!webui) return;
+
+        webui->registerApiRoute("/api/console/loglevels", HTTP_GET, [](AsyncWebServerRequest* request) {
+            AsyncResponseStream* response = request->beginResponseStream("application/json");
+            response->print("[");
+            for (size_t i = 0; i < LOG_LEVEL_OPTIONS_COUNT; ++i) {
+                if (i > 0) response->print(",");
+                response->print("{\"value\":\"");
+                response->print(LOG_LEVEL_OPTIONS[i].value);
+                response->print("\",\"label\":\"");
+                response->print(LOG_LEVEL_OPTIONS[i].label);
+                response->print("\"}");
+            }
+            response->print("]");
+            request->send(response);
+        });
+    }
 
     String getWebUIName() const override {
         return console ? console->metadata.name : String("RemoteConsole");
@@ -33,24 +81,15 @@ protected:
     void buildContexts(std::vector<WebUIContext>& ctxs) override {
         if (!console) return;
 
-        // Component card - static values (no real-time updates needed)
-        ctxs.push_back(WebUIContext{
-            "console_component",
-            "Remote Console",
-            "dc-plug",
-            WebUILocation::ComponentDetail,
-            WebUIPresentation::Card
-        }
-        .withField(WebUIField("status", "Status", WebUIFieldType::Display, "Active", "", true))
-        .withField(WebUIField("port", "Port", WebUIFieldType::Display, "23 (Telnet)", "", true)));
+        WebUIField logLevelField("log_level", "Log level", WebUIFieldType::Select, "3");
+        logLevelField.endpoint = "/api/console/loglevels";
 
-        // Settings context
         ctxs.push_back(WebUIContext::settings("console_settings", "Remote Console")
-            .withField(WebUIField("port", "Telnet Port", WebUIFieldType::Display, "23"))
-            .withField(WebUIField("protocol", "Protocol", WebUIFieldType::Display, "Telnet"))
-            .withField(WebUIField("info", "Info", WebUIFieldType::Display,
-                      "Connect via: telnet <device-ip> 23"))
-        );
+            .withField(WebUIField("status", "Status", WebUIFieldType::Display, "--", "", true))
+            .withField(WebUIField("connect", "Connect", WebUIFieldType::Display, "--", "", true))
+            .withField(WebUIField("port", "Port", WebUIFieldType::Number, "23"))
+            .withField(logLevelField)
+            .withRealTime(5000));
     }
 
 public:
@@ -59,14 +98,16 @@ public:
         if (!console) return "{}";
         
         JsonDocument doc;
-        
-        if (contextId == "console_component") {
-            doc["status"] = "Active";
-            doc["port"] = "23 (Telnet)";
-        } else if (contextId == "console_settings") {
-            doc["port"] = "23";
-            doc["protocol"] = "Telnet";
-            doc["info"] = "Connect via: telnet <device-ip> 23";
+
+        if (contextId == "console_settings") {
+            const uint16_t port = console->getPort();
+            const String ip = HAL::WiFiHAL::getLocalIP();
+            const String connect = String("telnet ") + (ip.length() ? ip : String("0.0.0.0")) + " " + String(port);
+
+            doc["status"] = console->isActive() ? "Active" : "Inactive";
+            doc["connect"] = connect;
+            doc["port"] = String(port);
+            doc["log_level"] = String((int)console->getLogLevel());
         }
         
         String json;
@@ -74,13 +115,60 @@ public:
         return json;
     }
     
-    String handleWebUIRequest(const String& /*contextId*/, const String& /*endpoint*/, 
-                             const String& /*method*/, const std::map<String, String>& /*params*/) override {
+    String handleWebUIRequest(const String& contextId, const String& /*endpoint*/, 
+                             const String& method, const std::map<String, String>& params) override {
+        if (!console) return "{\"success\":false}";
+        if (contextId != "console_settings" || method != "POST") return "{\"success\":false}";
+
+        auto fieldIt = params.find("field");
+        auto valueIt = params.find("value");
+        if (fieldIt == params.end() || valueIt == params.end()) return "{\"success\":false}";
+
+        const String& field = fieldIt->second;
+        const String& value = valueIt->second;
+
+        if (field == "port") {
+            long p = value.toInt();
+            if (p <= 0 || p > 65535) {
+                DLOG_W(LOG_CONSOLE, "WebUI: invalid port '%s'", value.c_str());
+                uiState.reset();
+                return "{\"success\":false}";
+            }
+            if (!console->setPort((uint16_t)p)) {
+                uiState.reset();
+                return "{\"success\":false}";
+            }
+            uiState.reset();
+            return "{\"success\":true}";
+        }
+
+        if (field == "log_level") {
+            long lvl = value.toInt();
+            if (lvl < 0 || lvl > 5) {
+                DLOG_W(LOG_CONSOLE, "WebUI: invalid log level '%s'", value.c_str());
+                uiState.reset();
+                return "{\"success\":false}";
+            }
+            console->setLogLevel((LogLevel)lvl);
+            uiState.reset();
+            return "{\"success\":true}";
+        }
+
         return "{\"success\":false}";
     }
     
-    bool hasDataChanged(const String& /*contextId*/) override {
-        return false;  // Static data, no updates needed
+    bool hasDataChanged(const String& contextId) override {
+        if (!console) return false;
+        if (contextId != "console_settings") return true;
+
+        ConsoleUIState current{
+            console->isActive(),
+            console->getPort(),
+            (uint8_t)console->getLogLevel(),
+            HAL::WiFiHAL::getLocalIP()
+        };
+
+        return uiState.hasChanged(current);
     }
 };
 

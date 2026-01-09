@@ -56,7 +56,7 @@ void test_remoteconsole_config_defaults(void) {
     TEST_ASSERT_EQUAL_UINT16(23, config.port);
     TEST_ASSERT_FALSE(config.requireAuth);
     TEST_ASSERT_TRUE(config.password.isEmpty());
-    TEST_ASSERT_EQUAL_UINT32(500, config.bufferSize);
+    TEST_ASSERT_EQUAL_UINT32(DOMOTICS_LOG_BUFFER_SIZE, config.bufferSize);
     TEST_ASSERT_TRUE(config.allowCommands);
     // Skip allowedIPs check (requires IPAddress stub implementation)
     // TEST_ASSERT_EQUAL(0, config.allowedIPs.size());
