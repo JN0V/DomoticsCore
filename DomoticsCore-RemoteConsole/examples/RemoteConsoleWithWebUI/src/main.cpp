@@ -15,6 +15,7 @@
 #include <DomoticsCore/Wifi_HAL.h>
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/RemoteConsole.h>
+#include <DomoticsCore/RemoteConsoleWebUI.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -67,7 +68,6 @@ void setup() {
     RemoteConsoleConfig consoleConfig;
     consoleConfig.enabled = true;
     consoleConfig.port = 23;  // Standard telnet port
-    consoleConfig.bufferSize = 500;  // Keep last 500 log entries
     consoleConfig.maxClients = 3;  // Allow up to 3 concurrent telnet clients
     consoleConfig.colorOutput = true;  // ANSI colors in telnet
     consoleConfig.allowCommands = true;  // Enable built-in commands
@@ -81,6 +81,15 @@ void setup() {
 
     // Initialize
     core.begin();
+
+    // Register WebUI provider for RemoteConsole
+    auto* webuiPtr = core.getComponent<WebUIComponent>("WebUI");
+    auto* consolePtr = core.getComponent<RemoteConsoleComponent>("RemoteConsole");
+    if (webuiPtr && consolePtr) {
+        auto* provider = new DomoticsCore::Components::WebUI::RemoteConsoleWebUI(consolePtr);
+        webuiPtr->registerProviderWithComponent(provider, consolePtr);
+        provider->init(webuiPtr);
+    }
 
     DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "System ready!");
