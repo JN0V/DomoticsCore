@@ -80,22 +80,22 @@ void test_webui_config_custom_values() {
 void test_webui_field_basic_construction() {
     WebUIField field("temp", "Temperature", WebUIFieldType::Number, "25.5", "°C", true);
 
-    TEST_ASSERT_EQUAL_STRING("temp", field.name);
-    TEST_ASSERT_EQUAL_STRING("Temperature", field.label);
+    TEST_ASSERT_EQUAL_STRING("temp", field.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("Temperature", field.label.c_str());
     TEST_ASSERT_EQUAL(WebUIFieldType::Number, field.type);
-    TEST_ASSERT_EQUAL_STRING("25.5", field.value);
-    TEST_ASSERT_EQUAL_STRING("°C", field.unit);
+    TEST_ASSERT_EQUAL_STRING("25.5", field.value.c_str());
+    TEST_ASSERT_EQUAL_STRING("°C", field.unit.c_str());
     TEST_ASSERT_TRUE(field.readOnly);
 }
 
 void test_webui_field_default_values() {
     WebUIField field("status", "Status", WebUIFieldType::Text);
 
-    TEST_ASSERT_EQUAL_STRING("status", field.name);
-    TEST_ASSERT_EQUAL_STRING("Status", field.label);
+    TEST_ASSERT_EQUAL_STRING("status", field.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("Status", field.label.c_str());
     TEST_ASSERT_EQUAL(WebUIFieldType::Text, field.type);
-    TEST_ASSERT_TRUE(field.value == nullptr || strlen(field.value) == 0);
-    TEST_ASSERT_TRUE(field.unit == nullptr || strlen(field.unit) == 0);
+    TEST_ASSERT_TRUE(field.value.isEmpty());
+    TEST_ASSERT_TRUE(field.unit.isEmpty());
     TEST_ASSERT_FALSE(field.readOnly);
     TEST_ASSERT_FLOAT_WITHIN(0.01, 0.0, field.minValue);
     TEST_ASSERT_FLOAT_WITHIN(0.01, 100.0, field.maxValue);
@@ -137,7 +137,7 @@ void test_webui_field_fluent_api() {
     WebUIField field("power", "Power", WebUIFieldType::Button);
     field.api("/api/power/set");
 
-    TEST_ASSERT_EQUAL_STRING("/api/power/set", field.endpoint);
+    TEST_ASSERT_EQUAL_STRING("/api/power/set", field.endpoint.c_str());
 }
 
 void test_webui_field_copy_constructor() {
@@ -147,9 +147,9 @@ void test_webui_field_copy_constructor() {
 
     WebUIField copy(original);
 
-    TEST_ASSERT_EQUAL_STRING("test", copy.name);
-    TEST_ASSERT_EQUAL_STRING("Test", copy.label);
-    TEST_ASSERT_EQUAL_STRING("42", copy.value);
+    TEST_ASSERT_EQUAL_STRING("test", copy.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("Test", copy.label.c_str());
+    TEST_ASSERT_EQUAL_STRING("42", copy.value.c_str());
     TEST_ASSERT_FLOAT_WITHIN(0.01, 0.0, copy.minValue);
     TEST_ASSERT_FLOAT_WITHIN(0.01, 100.0, copy.maxValue);
     TEST_ASSERT_EQUAL(1, copy.options.size());
@@ -243,7 +243,7 @@ void test_webui_context_fluent_with_field() {
         .withField(WebUIField("temp", "Temperature", WebUIFieldType::Number));
 
     TEST_ASSERT_EQUAL(1, ctx.fields.size());
-    TEST_ASSERT_EQUAL_STRING("temp", ctx.fields[0].name);
+    TEST_ASSERT_EQUAL_STRING("temp", ctx.fields[0].name.c_str());
 }
 
 void test_webui_context_fluent_with_multiple_fields() {

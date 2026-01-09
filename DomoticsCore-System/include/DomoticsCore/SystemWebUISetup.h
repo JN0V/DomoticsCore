@@ -199,7 +199,6 @@ inline void setupWebUIProviders(
 #if WEBUI_SETUP_HAS_WIFI_WEBUI
     if (wifi) {
         providers.wifi = new Components::WebUI::WifiWebUI(wifi);
-        providers.wifi->setWebUIComponent(webuiComponent);
         
 #if WEBUI_SETUP_HAS_STORAGE
         if (storage) {
@@ -325,6 +324,7 @@ inline void setupWebUIProviders(
     if (console) {
         providers.console = new Components::WebUI::RemoteConsoleWebUI(console);
         webuiComponent->registerProviderWithComponent(providers.console, console);
+        providers.console->init(webuiComponent);
         DLOG_I(LOG_WEBUI_SETUP, "✓ RemoteConsole WebUI provider registered (heap: %u)", HAL::getFreeHeap());
     }
 #endif
