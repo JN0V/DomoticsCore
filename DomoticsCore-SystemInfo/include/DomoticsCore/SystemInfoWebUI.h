@@ -4,6 +4,7 @@
 #include "DomoticsCore/IWebUIProvider.h"
 #include "DomoticsCore/BaseWebUIComponents.h"
 #include "DomoticsCore/Platform_HAL.h"  // For getMillis()
+#include "DomoticsCore/MemoryManager.h" // For memory profile
 #include <ArduinoJson.h>
 
 namespace DomoticsCore {
@@ -42,7 +43,8 @@ protected:
             .withField(WebUIField("chip", "Chip", WebUIFieldType::Display, "", "", true))
             .withField(WebUIField("revision", "Revision", WebUIFieldType::Display, "", "", true))
             .withField(WebUIField("cpu_freq", "CPU Freq", WebUIFieldType::Display, "", "", true))
-            .withField(WebUIField("total_heap", "Total Heap", WebUIFieldType::Display, "", "", true)));
+            .withField(WebUIField("total_heap", "Total Heap", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("mem_profile", "Mem Profile", WebUIFieldType::Display, "", "", true)));
 
         // Dashboard: Real-time metrics with charts
         contexts.push_back(WebUIContext::dashboard("system_metrics", "System Metrics")
@@ -81,6 +83,7 @@ public:
             doc["revision"] = metrics.chipRevision;
             doc["cpu_freq"] = String((uint32_t)metrics.cpuFreq) + " MHz";
             doc["total_heap"] = String(metrics.totalHeap / 1024) + " KB";
+            doc["mem_profile"] = MemoryManager::instance().getProfileName();
             String json; serializeJson(doc, json); return json;
 
         } else if (contextId == "system_metrics") {

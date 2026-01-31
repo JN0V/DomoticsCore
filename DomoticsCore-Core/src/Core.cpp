@@ -2,6 +2,7 @@
 #include "DomoticsCore/Logger.h"
 #include "DomoticsCore/ComponentConfig.h"
 #include "DomoticsCore/Platform_HAL.h"      // For HAL::getChipId(), HAL::getFreeHeap()
+#include "DomoticsCore/MemoryManager.h"     // For memory profile detection
 
 namespace DomoticsCore {
 
@@ -35,11 +36,17 @@ bool Core::begin(const CoreConfig& cfg) {
     
     DLOG_I(LOG_CORE, "DomoticsCore initializing...");
     DLOG_I(LOG_CORE, "Device: %s (ID: %s)", config.deviceName.c_str(), config.deviceId.c_str());
-    DLOG_I(LOG_CORE, "Free heap: %d bytes", HAL::getFreeHeap());
-    
+
+    // Detect memory profile BEFORE component initialization
+    // Components can query MemoryManager::instance().getProfile() during their begin()
+    auto& memMgr = MemoryManager::instance();
+    memMgr.detectProfile();
+    DLOG_I(LOG_CORE, "Memory profile: %s (heap: %u bytes)",
+           memMgr.getProfileName(), memMgr.getHeapAtBoot());
+
     // Provide Core reference to registry for component injection
     componentRegistry.setCore(this);
-    
+
     // Initialize all registered components
     Components::ComponentStatus status = componentRegistry.initializeAll();
     if (status != Components::ComponentStatus::Success) {
