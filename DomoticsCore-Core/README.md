@@ -53,7 +53,48 @@ Main behaviors:
 
 - `Core.h`, `IComponent.h`, `ComponentRegistry.h`
 - `ComponentConfig.h`, `EventBus.h`, `Timer.h`, `Logger.h`
+- `MemoryManager.h` - Runtime memory adaptation
 - `Testing/HeapTracker.h` - Memory leak detection for tests
+
+## MemoryManager API
+
+The `MemoryManager` provides runtime memory profiling and adaptive configuration based on available heap. It detects the memory profile automatically during `Core::begin()` and logs the result.
+
+```cpp
+#include <DomoticsCore/MemoryManager.h>
+using namespace DomoticsCore;
+
+// Profile is auto-detected in Core::begin(), but you can query it anywhere:
+auto& mm = MemoryManager::instance();
+MemoryProfile profile = mm.getProfile();
+
+// Get profile name for logging
+DLOG_I("APP", "Memory profile: %s", mm.getProfileName());
+
+// Get adaptive buffer sizes
+size_t wsBuffer = mm.getBufferSize(BufferType::WebSocket);
+
+// Check if feature should be enabled
+if (mm.shouldEnable(Feature::ChartHistory)) {
+    // Store chart history
+}
+
+// Get adaptive timing intervals
+uint32_t wsInterval = mm.getWsUpdateInterval();
+
+// Runtime low-memory checks
+if (mm.isLowMemory()) {
+    // Reduce operations
+}
+```
+
+**Memory Profiles:**
+| Profile | Free Heap | WS Interval | Max Clients | Chart Points |
+|---------|-----------|-------------|-------------|--------------|
+| FULL | > 30KB | 2s | 8 | 60 |
+| STANDARD | 15-30KB | 5s | 4 | 30 |
+| MINIMAL | 8-15KB | 10s | 2 | 10 |
+| CRITICAL | < 8KB | disabled | 1 | 0 |
 
 ## HeapTracker API (Testing)
 
