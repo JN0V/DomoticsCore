@@ -164,8 +164,8 @@ void setup() {
         
         // Publish online status via EventBus
         DomoticsCore::Components::MQTTPublishEvent pubEv{};
-        pubEv.topic = TOPIC_STATUS;
-        pubEv.payload = "online";
+        strncpy(pubEv.topic, TOPIC_STATUS, sizeof(pubEv.topic) - 1);
+        strncpy(pubEv.payload, "online", sizeof(pubEv.payload) - 1);
         pubEv.qos = 1;
         pubEv.retain = true;
         corePtr->emit("mqtt/publish", pubEv);
@@ -173,7 +173,7 @@ void setup() {
 
         // Subscribe to commands via EventBus
         DomoticsCore::Components::MQTTSubscribeEvent subEv{};
-        subEv.topic = TOPIC_COMMAND;
+        strncpy(subEv.topic, TOPIC_COMMAND, sizeof(subEv.topic) - 1);
         subEv.qos = 1;
         corePtr->emit("mqtt/subscribe", subEv);
         DLOG_I(LOG_APP, "  ✓ Subscribed to: %s", TOPIC_COMMAND);

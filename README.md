@@ -2,7 +2,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.5.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-ESP32%20|%20ESP8266-orange.svg)](https://platformio.org/)
+[![Platform](https://img.shields.io/badge/platform-ESP32%20|%20ESP32--C3%20|%20ESP8266-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
@@ -193,6 +193,7 @@ DomoticsCore includes a **Hardware Abstraction Layer (HAL)** for platform portab
 | Platform | Status | WiFi | Storage | NTP | Full Framework |
 |----------|--------|------|---------|-----|----------------|
 | **ESP32** | ✅ Full Support | ✅ | ✅ NVS | ✅ SNTP | ✅ |
+| **ESP32-C3** | ✅ Full Support | ✅ | ✅ NVS | ✅ SNTP | ✅ (USB CDC) |
 | **ESP8266** | ⚠️ In Progress | ✅ | ✅ LittleFS | ✅ configTime | ⚠️ (limited RAM) |
 | **AVR** | ❌ Not Suitable | ❌ | ❌ | ❌ | ❌ (2KB RAM) |
 | **ARM** | 🔬 Experimental | ⚠️ shields | ⚠️ | ⚠️ | ⚠️ |
