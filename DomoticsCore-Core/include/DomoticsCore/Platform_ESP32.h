@@ -293,8 +293,11 @@ private:
 
 /**
  * @brief Built-in LED pin number for ESP32
+ * @note Only define if not already provided by the board variant
  */
+#ifndef LED_BUILTIN
 #define LED_BUILTIN 2
+#endif
 
 } // namespace Platform
 } // namespace HAL

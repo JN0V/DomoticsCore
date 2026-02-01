@@ -168,8 +168,8 @@ void setup() {
         // Publish online status via EventBus (pointer-based event)
         static String statusTopic = clientId + "/status";
         DomoticsCore::Components::MQTTPublishEvent pubEv{};
-        pubEv.topic = statusTopic.c_str();
-        pubEv.payload = "online";
+        strncpy(pubEv.topic, statusTopic.c_str(), sizeof(pubEv.topic) - 1);
+        strncpy(pubEv.payload, "online", sizeof(pubEv.payload) - 1);
         pubEv.qos = 1;
         pubEv.retain = true;
         core.emit("mqtt/publish", pubEv);
@@ -177,7 +177,7 @@ void setup() {
         // Subscribe to command topics via EventBus (pointer-based event)
         static String commandTopic = clientId + "/command/#";
         DomoticsCore::Components::MQTTSubscribeEvent subEv{};
-        subEv.topic = commandTopic.c_str();
+        strncpy(subEv.topic, commandTopic.c_str(), sizeof(subEv.topic) - 1);
         subEv.qos = 1;
         core.emit("mqtt/subscribe", subEv);
 
