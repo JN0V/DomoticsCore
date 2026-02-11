@@ -141,7 +141,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps =
-    jn0v/DomoticsCore@^1.3.3
+    jn0v/DomoticsCore@^1.5.0
 ```
 
 ### PlatformIO (GitHub)
@@ -154,8 +154,8 @@ platform = espressif32
 board = esp32dev
 framework = arduino
 
-lib_deps = 
-    https://github.com/JN0V/DomoticsCore.git#v1.3.3
+lib_deps =
+    https://github.com/JN0V/DomoticsCore.git#v1.5.0
 ```
 
 ### Specific Components Only
@@ -169,20 +169,20 @@ lib_deps =
 
 ## 🧩 Available Components
 
-| Component | Description | Size | Status |
-|-----------|-------------|------|--------|
-| **Core** | Essential framework, component registry, event bus | ~50KB | ✅ Stable |
-| **System** | High-level orchestration (batteries included) | ~100KB | ✅ Stable |
-| **WiFi** | Network connectivity with AP fallback | ~40KB | ✅ Stable |
-| **LED** | Visual status indicators (6 effects) | ~20KB | ✅ Stable |
-| **Storage** | NVS persistent data | ~30KB | ✅ Stable |
-| **RemoteConsole** | Telnet debugging console | ~25KB | ✅ Stable |
-| **WebUI** | Modern web interface with WebSocket | ~150KB | ✅ Stable |
-| **MQTT** | Message broker with auto-reconnect | ~40KB | ✅ Stable |
-| **NTP** | Time synchronization | ~15KB | ✅ Stable |
-| **OTA** | Over-the-air updates | ~30KB | ✅ Stable |
-| **HomeAssistant** | Auto-discovery integration | ~20KB | ✅ Stable |
-| **SystemInfo** | Real-time monitoring with charts | ~25KB | ✅ Stable |
+| Component | Version | Description | Size | Status |
+|-----------|---------|-------------|------|--------|
+| **Core** | 1.5.0 | Framework, registry, event bus, MemoryManager, HeapTracker | ~50KB | ✅ Stable |
+| **System** | 1.4.1 | High-level orchestration (batteries included) | ~100KB | ✅ Stable |
+| **WiFi** | 1.4.1 | Network connectivity with AP fallback | ~40KB | ✅ Stable |
+| **LED** | 1.3.0 | Visual status indicators (6 effects) | ~20KB | ✅ Stable |
+| **Storage** | 1.4.1 | NVS / LittleFS persistent data | ~30KB | ✅ Stable |
+| **RemoteConsole** | 1.4.1 | Telnet debugging console with WebUI integration | ~25KB | ✅ Stable |
+| **WebUI** | 1.5.0 | Web interface with WebSocket + SSE dual-mode | ~150KB | ✅ Stable |
+| **MQTT** | 1.4.0 | Message broker with auto-reconnect | ~40KB | ✅ Stable |
+| **NTP** | 1.3.0 | Time synchronization | ~15KB | ✅ Stable |
+| **OTA** | 1.4.1 | Over-the-air updates | ~30KB | ✅ Stable |
+| **HomeAssistant** | 1.4.0 | Auto-discovery integration | ~20KB | ✅ Stable |
+| **SystemInfo** | 1.4.0 | Real-time monitoring with charts | ~25KB | ✅ Stable |
 
 **Total with everything:** ~545KB flash, ~50KB RAM
 
@@ -194,7 +194,7 @@ DomoticsCore includes a **Hardware Abstraction Layer (HAL)** for platform portab
 |----------|--------|------|---------|-----|----------------|
 | **ESP32** | ✅ Full Support | ✅ | ✅ NVS | ✅ SNTP | ✅ |
 | **ESP32-C3** | ✅ Full Support | ✅ | ✅ NVS | ✅ SNTP | ✅ (USB CDC) |
-| **ESP8266** | ⚠️ In Progress | ✅ | ✅ LittleFS | ✅ configTime | ⚠️ (limited RAM) |
+| **ESP8266** | ⚠️ Partial | ✅ | ✅ LittleFS | ✅ configTime | ⚠️ (~80KB RAM, optimized) |
 | **AVR** | ❌ Not Suitable | ❌ | ❌ | ❌ | ❌ (2KB RAM) |
 | **ARM** | 🔬 Experimental | ⚠️ shields | ⚠️ | ⚠️ | ⚠️ |
 
@@ -276,32 +276,37 @@ The bump script:
 
 ```
 DomoticsCore/                      # Monorepo with 12 component packages
-├── DomoticsCore-Core/             # Essential framework
+├── DomoticsCore-Core/             # Essential framework, MemoryManager, HeapTracker
 ├── DomoticsCore-System/           # High-level orchestration (batteries included)
-├── DomoticsCore-WiFi/             # Network connectivity
+├── DomoticsCore-Wifi/             # Network connectivity
 ├── DomoticsCore-LED/              # Visual status indicators
-├── DomoticsCore-Storage/          # Persistent data (NVS)
+├── DomoticsCore-Storage/          # Persistent data (NVS / LittleFS)
 ├── DomoticsCore-RemoteConsole/    # Telnet debugging console
-├── DomoticsCore-WebUI/            # Web interface with WebSocket
+├── DomoticsCore-WebUI/            # Web interface with WebSocket + SSE
 ├── DomoticsCore-MQTT/             # Message broker client
 ├── DomoticsCore-NTP/              # Time synchronization
 ├── DomoticsCore-OTA/              # Firmware updates
 ├── DomoticsCore-HomeAssistant/    # Auto-discovery integration
-└── DomoticsCore-SystemInfo/       # System monitoring
+├── DomoticsCore-SystemInfo/       # System monitoring
+├── docs/                          # Guides, architecture, reference docs
+├── tests/                         # Unit tests and mocks
+├── examples/                      # Examples index
+├── specs/                         # Feature specifications
+└── tools/                         # Version management scripts
 
 Each component has:
 ├── include/                       # Public headers
 ├── src/                           # Implementation (if needed)
 ├── examples/                      # Working examples
 ├── README.md                      # Component documentation
-└── library.json                   # Package metadata (v1.0.0)
+└── library.json                   # Package metadata
 ```
 
 ## 💡 Examples
 
 ### Full-Featured Application
 
-**Location:** `DomoticsCore-System/examples/FullStack/`
+**Location:** [`DomoticsCore-System/examples/FullStack/`](DomoticsCore-System/examples/FullStack/)
 
 Complete IoT device with:
 - ✅ WiFi with AP fallback
@@ -351,13 +356,17 @@ Learn to build custom components:
 
 ### Event Bus Communication
 
-**Location:** `DomoticsCore-Core/examples/03-EventBusBasics/`
+**Location:** [`DomoticsCore-Core/examples/03-EventBusBasics/`](DomoticsCore-Core/examples/03-EventBusBasics/)
 
 Inter-component messaging:
 - Publish/subscribe pattern
 - Sticky events
 - Type-safe payloads
 - Event coordination
+
+### All Examples
+
+See [`examples/README.md`](examples/README.md) for the complete list of 30+ examples across all components.
 
 ## 🔧 Key Features Deep Dive
 
@@ -459,13 +468,20 @@ Built on top of excellent ESP32 ecosystem:
 
 ## 🗺️ Roadmap
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for planned features and improvements.
+### Completed
+- ✅ PlatformIO Registry publication
+- ✅ ESP32-C3 full support (USB CDC serial)
+- ✅ MemoryManager for device-agnostic memory adaptation
+- ✅ HeapTracker for memory leak testing (native + hardware)
+- ✅ ESP8266 memory optimizations (4 spec phases completed)
+- ✅ WebUI SSE dual-mode transport
+- ✅ RemoteConsole WebUI integration
+- ✅ 37+ isolated unit tests with mock infrastructure
 
 ### Current Priorities
-- PlatformIO Registry publication
-- Additional component examples
-- Performance optimization
-- Extended Home Assistant integration
+- ESP8266 full framework validation
+- Additional Home Assistant entity types
+- Performance profiling and optimization
 
 ---
 

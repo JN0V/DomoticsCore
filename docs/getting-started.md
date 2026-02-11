@@ -1,12 +1,12 @@
 # Getting Started with DomoticsCore
 
-**Quick guide to start building ESP32 IoT applications**
+**Quick guide to start building IoT applications for ESP32, ESP32-C3, and ESP8266**
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### Installation from GitHub (Development/Testing)
+### Installation from PlatformIO Registry (Recommended)
 
 **Step 1: Add to platformio.ini**
 ```ini
@@ -14,16 +14,9 @@
 platform = espressif32
 board = esp32dev
 framework = arduino
-board_build.partitions = min_spiffs.csv
 
-lib_deps = 
-    https://github.com/JN0V/DomoticsCore.git#v1.0.0
-
-build_unflags = 
-    -std=gnu++11
-
-build_flags = 
-    -std=gnu++14
+lib_deps =
+    jn0v/DomoticsCore@^1.5.0
 ```
 
 **Step 2: Write your code**
@@ -34,12 +27,21 @@ using namespace DomoticsCore;
 System* domotics = nullptr;
 
 void setup() {
+    Serial.begin(115200);
+
     SystemConfig config = SystemConfig::fullStack();
     config.deviceName = "MyDevice";
-    config.wifiSSID = "";  // Empty = AP mode
-    
+    config.wifiSSID = "YOUR_WIFI";
+    config.wifiPassword = "YOUR_PASSWORD";
+
     domotics = new System(config);
-    domotics->begin();
+
+    if (!domotics->begin()) {
+        while (1) {
+            domotics->loop();  // Keep LED error animation running
+            yield();
+        }
+    }
 }
 
 void loop() {
@@ -52,133 +54,103 @@ void loop() {
 pio run -t upload -t monitor
 ```
 
-That's it! Everything is configured automatically.
+That's it! WiFi, LED status, telnet console, error recovery - all automatic.
 
 ---
 
-### Installation from PlatformIO Registry (Recommended for Production)
-
-### 1. Install DomoticsCore-System
+### Installation from GitHub (Development/Testing)
 
 ```ini
 [env:esp32dev]
 platform = espressif32
 board = esp32dev
 framework = arduino
+board_build.partitions = min_spiffs.csv
 
-lib_deps = 
-    DomoticsCore-System
+lib_deps =
+    https://github.com/JN0V/DomoticsCore.git#v1.5.0
 ```
 
-### 2. Write Your Application
+### ESP32-C3 Configuration
 
-```cpp
-#include <DomoticsCore/System.h>
+```ini
+[env:esp32c3]
+platform = espressif32
+board = esp32-c3-devkitm-1
+framework = arduino
 
-using namespace DomoticsCore;
-
-System* domotics = nullptr;
-
-// YOUR sensor code
-float readTemperature() {
-    return 22.5;  // Replace with real sensor
-}
-
-void setup() {
-    Serial.begin(115200);
-    
-    // Simple configuration
-    SystemConfig config;
-    config.deviceName = "MyDevice";
-    config.wifiSSID = "YOUR_WIFI";
-    config.wifiPassword = "YOUR_PASSWORD";
-    
-    domotics = new System(config);
-    
-    // Add custom commands
-    domotics->registerCommand("temp", [](const String& args) {
-        return String("Temp: ") + String(readTemperature(), 1) + "°C\n";
-    });
-    
-    // Initialize (automatic: WiFi, LED, Console)
-    if (!domotics->begin()) {
-        while (1) delay(1000);
-    }
-}
-
-void loop() {
-    domotics->loop();
-    
-    // YOUR application code here
-}
+lib_deps =
+    jn0v/DomoticsCore@^1.5.0
 ```
 
-### 3. Build and Upload
-
-```bash
-pio run -t upload -t monitor
-```
-
-### 4. Access Your Device
-
-Once running:
-- **Telnet**: `telnet <device-ip> 23`
-- **LED**: Watch for system status (automatic)
-- **Serial**: Monitor for logs
-
-**That's it!** WiFi, LED patterns, telnet console - all automatic.
+ESP32-C3 is fully supported with USB CDC serial.
 
 ---
 
-## 📚 What You Get Automatically
+## What You Get Automatically
 
-### ✅ WiFi Connection
+### WiFi Connection
 - Connects on `begin()`
 - Handles timeouts
+- AP fallback mode when STA credentials are empty
 - Logs connection status
 
-### ✅ LED Status (Automatic Patterns)
+### LED Status (Automatic Patterns)
 - **Fast Blink (200ms)** - Booting
 - **Slow Blink (1s)** - WiFi connecting
 - **Heartbeat (2s)** - WiFi connected
-- **Breathing (3s)** - System ready ← Normal operation
+- **Breathing (3s)** - System ready (normal operation)
 - **Fast Blink (300ms)** - Error
 
-### ✅ Remote Console (Telnet)
+### Remote Console (Telnet)
 Built-in commands:
 - `status` - System status
 - `wifi` - WiFi info
 - `help` - Show all commands
 - `level <0-4>` - Change log level
 - `heap` - Memory usage
+- `bootdiag` - Boot diagnostics
 - `reboot` - Restart
 
 Plus YOUR custom commands!
 
 ---
 
-## 📖 Examples
+## Examples
 
 ### Start Here
 
-**`DomoticsCore-System/examples/SimpleApp/`**
+**[`DomoticsCore-System/examples/Minimal/`](../DomoticsCore-System/examples/Minimal/)**
 
-Complete production-ready template with:
-- Temperature sensor (simulated)
-- Relay control
-- Custom console commands
-- Only ~100 lines of code!
+The simplest way to get started - minimal system with WiFi, LED, and console.
 
-### Advanced Examples
+### Standard Setup
 
-**Component-specific:**
-- `DomoticsCore-RemoteConsole/examples/BasicRemoteConsole/`
-- `DomoticsCore-Coordinator/examples/BasicCoordinator/`
-- See individual component directories
+**[`DomoticsCore-System/examples/Standard/`](../DomoticsCore-System/examples/Standard/)**
+
+Standard setup with common features enabled.
+
+### Full-Featured
+
+**[`DomoticsCore-System/examples/FullStack/`](../DomoticsCore-System/examples/FullStack/)**
+
+Production-ready example with all features (WebUI, MQTT, HA, OTA, NTP, etc.).
+
+### Component-Specific Examples
+
+Each component has its own examples directory:
+- `DomoticsCore-Core/examples/` - Core, EventBus basics
+- `DomoticsCore-Wifi/examples/` - WiFi connection patterns
+- `DomoticsCore-WebUI/examples/` - Web interface
+- `DomoticsCore-MQTT/examples/` - MQTT with WebUI
+- `DomoticsCore-LED/examples/` - LED effects
+- `DomoticsCore-Storage/examples/` - Persistent storage
+- `DomoticsCore-RemoteConsole/examples/` - Telnet console with WebUI
+- See [`examples/README.md`](../examples/README.md) for the full list
 
 ---
 
-## 🎯 Common Use Cases
+## Common Use Cases
 
 ### Temperature Monitoring
 
@@ -190,7 +162,7 @@ DHT dht(4, DHT22);
 void setup() {
     // ... system setup ...
     dht.begin();
-    
+
     domotics->registerCommand("temp", [](const String& args) {
         float temp = dht.readTemperature();
         return String("Temperature: ") + String(temp, 1) + "°C\n";
@@ -206,7 +178,7 @@ void setup() {
 void setup() {
     // ... system setup ...
     pinMode(RELAY_PIN, OUTPUT);
-    
+
     domotics->registerCommand("relay", [](const String& args) {
         if (args == "on") {
             digitalWrite(RELAY_PIN, HIGH);
@@ -225,17 +197,16 @@ void setup() {
 ```cpp
 void loop() {
     domotics->loop();
-    
+
     static unsigned long lastRead = 0;
     if (millis() - lastRead > 10000) {  // Every 10 seconds
         float temp = readTemperature();
         Serial.printf("Temperature: %.1f°C\n", temp);
-        
-        // Control based on sensor
+
         if (temp > 25.0) {
             digitalWrite(RELAY_PIN, HIGH);  // Turn on cooling
         }
-        
+
         lastRead = millis();
     }
 }
@@ -243,7 +214,7 @@ void loop() {
 
 ---
 
-## 🔧 Adding More Components
+## Adding More Components
 
 The System handles the basics. Add more as needed:
 
@@ -283,7 +254,7 @@ domotics->getCore().addComponent(std::move(ntp));
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### WiFi Won't Connect
 
@@ -306,27 +277,27 @@ domotics->getCore().addComponent(std::move(ntp));
 
 ---
 
-## 📚 Documentation
+## Documentation
 
-- **Main README**: `README.md`
-- **System Component**: `SYSTEM_COMPONENT.md`
-- **Architecture**: `ARCHITECTURE_DECISIONS.md`
-- **Changelog**: `CHANGELOG.md`
-- **Component READMEs**: See each component directory
+- **[Main README](../README.md)** - Project overview and features
+- **[Architecture Guide](architecture.md)** - Design decisions and patterns
+- **[Documentation Index](README.md)** - All guides and references
+- **[CHANGELOG.md](../CHANGELOG.md)** - Version history
+- **Component READMEs** - See each `DomoticsCore-*/README.md`
 
 ---
 
-## 🎓 Learning Path
+## Learning Path
 
-1. **Start**: `DomoticsCore-System/examples/SimpleApp/`
-2. **Understand**: Read `SYSTEM_COMPONENT.md`
+1. **Start**: `DomoticsCore-System/examples/Minimal/`
+2. **Understand**: Read [System README](../DomoticsCore-System/README.md)
 3. **Customize**: Add your sensors/actuators
 4. **Extend**: Add MQTT, WebUI, etc.
-5. **Advanced**: Explore individual components
+5. **Advanced**: Explore individual components and [architecture docs](architecture.md)
 
 ---
 
-## 💡 Tips
+## Tips
 
 ### Development
 - Use `CORE_DEBUG_LEVEL=4` for development
@@ -347,25 +318,3 @@ domotics->getCore().addComponent(std::move(ntp));
 - Handle sensor errors gracefully
 - Log important events
 - Document custom commands
-
----
-
-## 🆘 Support
-
-- **Examples**: See `examples/` directories
-- **Documentation**: Component READMEs
-- **Issues**: GitHub issues
-- **Community**: [Add your community link]
-
----
-
-## ✅ Next Steps
-
-1. ✅ Copy `SimpleApp` example
-2. ✅ Configure WiFi credentials
-3. ✅ Add your sensors/actuators
-4. ✅ Test via telnet console
-5. ✅ Add MQTT/WebUI as needed
-6. ✅ Deploy to production
-
-**Happy building!** 🚀
