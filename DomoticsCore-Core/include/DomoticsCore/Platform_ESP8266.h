@@ -24,11 +24,31 @@ extern "C" {
 }
 
 // ESP8266 logging macros (ESP32 has these built-in)
-#define log_e(fmt, ...) Serial.printf("[E] " fmt "\n", ##__VA_ARGS__)
-#define log_w(fmt, ...) Serial.printf("[W] " fmt "\n", ##__VA_ARGS__)
-#define log_i(fmt, ...) Serial.printf("[I] " fmt "\n", ##__VA_ARGS__)
-#define log_d(fmt, ...) Serial.printf("[D] " fmt "\n", ##__VA_ARGS__)
-#define log_v(fmt, ...) Serial.printf("[V] " fmt "\n", ##__VA_ARGS__)
+// Use printf_P + PSTR to keep format strings in Flash instead of DRAM
+#define log_e(fmt, ...) Serial.printf_P(PSTR("[E] " fmt "\n"), ##__VA_ARGS__)
+#define log_w(fmt, ...) Serial.printf_P(PSTR("[W] " fmt "\n"), ##__VA_ARGS__)
+#define log_i(fmt, ...) Serial.printf_P(PSTR("[I] " fmt "\n"), ##__VA_ARGS__)
+#define log_d(fmt, ...) Serial.printf_P(PSTR("[D] " fmt "\n"), ##__VA_ARGS__)
+#define log_v(fmt, ...) Serial.printf_P(PSTR("[V] " fmt "\n"), ##__VA_ARGS__)
+
+// Helper: snprintf with PROGMEM format string (snprintf_P doesn't exist on ESP8266)
+// Used by DLOG macros (Logger.h) and DSNPRINTF_P (Platform_HAL.h)
+#include <stdarg.h>
+static inline int _dlog_snprintf_P(char* buf, size_t size, PGM_P fmt, ...)
+    __attribute__((format(printf, 3, 4)));
+static inline int _dlog_snprintf_P(char* buf, size_t size, PGM_P fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int ret = vsnprintf_P(buf, size, fmt, args);
+    va_end(args);
+    return ret;
+}
+
+// DLOG platform abstraction: format string goes to PROGMEM, buffer reduced for RAM savings
+#define DLOG_SNPRINTF(buf, size, fmt, ...) _dlog_snprintf_P(buf, size, PSTR(fmt), ##__VA_ARGS__)
+#define DOMOTICS_DLOG_BUF_SIZE 128
+// General PROGMEM snprintf for non-DLOG use (WebUI JSON, etc.)
+#define DSNPRINTF_P(buf, size, fmt, ...) _dlog_snprintf_P(buf, size, PSTR(fmt), ##__VA_ARGS__)
 
 namespace DomoticsCore {
 namespace HAL {

@@ -28,8 +28,11 @@ namespace WebUI {
 class ProviderRegistry {
 private:
     std::map<String, IWebUIProvider*> contextProviders;
-    std::map<IWebUIProvider*, bool> providerEnabled;
-    std::map<IWebUIProvider*, IComponent*> providerComponent;
+    struct ProviderInfo {
+        IComponent* component = nullptr;
+        bool enabled = true;
+    };
+    std::map<IWebUIProvider*, ProviderInfo> providerInfo_;
     std::map<String, std::function<IWebUIProvider*(IComponent*)>> providerFactories;
     std::vector<std::unique_ptr<IWebUIProvider>> ownedProviders;
 
@@ -45,8 +48,8 @@ public:
 
         int contextCount = 0;
         provider->forEachContext([this, provider, &contextCount](const WebUIContext& context) {
-            contextProviders[context.contextId] = provider;
-            DLOG_I(LOG_WEB, "Registered provider for context: %s", context.contextId.c_str());
+            contextProviders[context.getContextIdCStr()] = provider;
+            DLOG_I(LOG_WEB, "Registered provider for context: %s", context.getContextIdCStr());
             contextCount++;
             return true; // continue iteration
         });
@@ -57,8 +60,8 @@ public:
         }
 
         // Default to enabled if not already tracked
-        if (providerEnabled.find(provider) == providerEnabled.end()) {
-            providerEnabled[provider] = true;
+        if (providerInfo_.find(provider) == providerInfo_.end()) {
+            providerInfo_[provider] = ProviderInfo();
         }
     }
 
@@ -67,8 +70,8 @@ public:
      */
     void registerProviderWithComponent(IWebUIProvider* provider, IComponent* component) {
         registerProvider(provider);
-        if (provider && component) {
-            providerComponent[provider] = component;
+        if (provider) {
+            providerInfo_[provider].component = component;
         }
     }
 
@@ -98,15 +101,28 @@ public:
     /**
      * @brief Iterate through the registry and register providers (direct or via factories).
      */
+    static constexpr uint32_t MIN_HEAP_FOR_DISCOVERY = 2048;
+
     void discoverProviders(const Components::ComponentRegistry& registry) {
         auto comps = registry.getAllComponents();
         DLOG_I(LOG_WEB, "discoverProviders: %d components", (int)comps.size());
+        int registered = 0;
+        int skipped = 0;
         for (auto* comp : comps) {
             if (!comp) continue;
-            DLOG_D(LOG_WEB, "Checking component: %s", comp->metadata.name.c_str());
+
+            // Heap guard: stop discovery if heap is critically low
+            uint32_t freeHeap = HAL::Platform::getFreeHeap();
+            if (freeHeap < MIN_HEAP_FOR_DISCOVERY) {
+                DLOG_W(LOG_WEB, "Low heap (%u bytes), stopping provider discovery", (unsigned)freeHeap);
+                skipped = (int)comps.size() - registered;
+                break;
+            }
+
+            DLOG_D(LOG_WEB, "Checking component: %s", comp->metadata.name);
             IWebUIProvider* provider = comp->getWebUIProvider();
             if (provider) {
-                DLOG_D(LOG_WEB, "Component %s has provider", comp->metadata.name.c_str());
+                DLOG_D(LOG_WEB, "Component %s has provider", comp->metadata.name);
                 // Avoid duplicate registration
                 bool already = false;
                 for (const auto& pair : contextProviders) {
@@ -114,8 +130,9 @@ public:
                 }
                 if (!already) {
                     registerProviderWithComponent(provider, comp);
+                    registered++;
                 } else {
-                    DLOG_W(LOG_WEB, "Provider already registered for %s", comp->metadata.name.c_str());
+                    DLOG_W(LOG_WEB, "Provider already registered for %s", comp->metadata.name);
                 }
             } else {
                 // Try factory by typeKey for composition-based providers
@@ -128,10 +145,13 @@ public:
                         IWebUIProvider* raw = created.get();
                         ownedProviders.push_back(std::move(created));
                         registerProviderWithComponent(raw, comp);
+                        registered++;
                     }
                 }
             }
         }
+        DLOG_I(LOG_WEB, "Discovery done: %d providers registered, %d skipped (heap: %u)",
+               registered, skipped, (unsigned)HAL::Platform::getFreeHeap());
     }
 
     // Logic for API /api/components
@@ -143,8 +163,8 @@ public:
 
         // Build a unique list from providerEnabled to include disabled providers as well
         std::vector<IWebUIProvider*> providers;
-        providers.reserve(providerEnabled.size());
-        for (const auto& kv : providerEnabled) {
+        providers.reserve(providerInfo_.size());
+        for (const auto& kv : providerInfo_) {
             if (kv.first && std::find(providers.begin(), providers.end(), kv.first) == providers.end()) {
                 providers.push_back(kv.first);
             }
@@ -163,7 +183,8 @@ public:
             String name = provider->getWebUIName();
             compObj["name"] = name;
             compObj["version"] = provider->getWebUIVersion();
-            bool enabled = (providerEnabled.find(provider) != providerEnabled.end()) ? providerEnabled[provider] : true;
+            auto infoIt = providerInfo_.find(provider);
+            bool enabled = (infoIt != providerInfo_.end()) ? infoIt->second.enabled : true;
             compObj["status"] = enabled ? "Enabled" : "Disabled";
             compObj["enabled"] = enabled;
             compObj["canDisable"] = (name != "WebUI");
@@ -202,7 +223,7 @@ public:
                 }
             }
         }
-        for (const auto& kv : providerEnabled) {
+        for (const auto& kv : providerInfo_) {
             IWebUIProvider* prov = kv.first;
             if (prov && prov->getWebUIName() == name) {
                 if (std::find(matched.begin(), matched.end(), prov) == matched.end()) {
@@ -212,16 +233,16 @@ public:
         }
 
         for (IWebUIProvider* provider : matched) {
-            providerEnabled[provider] = enabled;
+            providerInfo_[provider].enabled = enabled;
             result.found = true;
 
             // Lifecycle callbacks
-            auto itComp = providerComponent.find(provider);
-            if (itComp != providerComponent.end() && itComp->second) {
+            auto infoIt = providerInfo_.find(provider);
+            if (infoIt != providerInfo_.end() && infoIt->second.component) {
                 if (!enabled) {
-                    itComp->second->shutdown();
+                    infoIt->second.component->shutdown();
                 } else {
-                    itComp->second->begin();
+                    infoIt->second.component->begin();
                 }
             }
 
@@ -229,7 +250,8 @@ public:
             if (!enabled) {
                 unregisterProvider(provider);
             } else {
-                registerProviderWithComponent(provider, (providerComponent.find(provider) != providerComponent.end()) ? providerComponent[provider] : nullptr);
+                auto pi = providerInfo_.find(provider);
+                registerProviderWithComponent(provider, (pi != providerInfo_.end()) ? pi->second.component : nullptr);
             }
         }
 
@@ -278,8 +300,8 @@ public:
 
         // Build unique provider list
         std::vector<IWebUIProvider*> providers;
-        providers.reserve(providerEnabled.size() + contextProviders.size());
-        for (const auto& kv : providerEnabled) {
+        providers.reserve(providerInfo_.size() + contextProviders.size());
+        for (const auto& kv : providerInfo_) {
             if (kv.first && std::find(providers.begin(), providers.end(), kv.first) == providers.end()) {
                 providers.push_back(kv.first);
             }
@@ -300,8 +322,8 @@ public:
     void handleComponentRemoved(IComponent* comp) {
         if (!comp) return;
         std::vector<IWebUIProvider*> toRemove;
-        for (const auto& kv : providerComponent) {
-            if (kv.second == comp) {
+        for (const auto& kv : providerInfo_) {
+            if (kv.second.component == comp) {
                 toRemove.push_back(kv.first);
             }
         }
@@ -309,8 +331,7 @@ public:
             for (auto it = contextProviders.begin(); it != contextProviders.end(); ) {
                 if (it->second == prov) it = contextProviders.erase(it); else ++it;
             }
-            providerEnabled.erase(prov);
-            providerComponent.erase(prov);
+            providerInfo_.erase(prov);
         }
     }
 

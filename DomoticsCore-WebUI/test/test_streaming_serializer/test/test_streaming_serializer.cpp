@@ -207,15 +207,13 @@ void test_caching_provider_caches_contexts(void) {
     TestCachingProvider provider;
 
     // First call should build
-    auto contexts1 = provider.getWebUIContexts();
+    TEST_ASSERT_EQUAL(1, provider.getContextCount());
     TEST_ASSERT_EQUAL(1, provider.buildCount);
-    TEST_ASSERT_EQUAL(1, contexts1.size());
 
     // Second call should use cache
-    auto contexts2 = provider.getWebUIContexts();
+    TEST_ASSERT_EQUAL(1, provider.getContextCount());
     TEST_ASSERT_EQUAL_MESSAGE(1, provider.buildCount,
                               "buildContexts should only be called once");
-    TEST_ASSERT_EQUAL(1, contexts2.size());
 
     // Third call with getContextAt
     WebUIContext ctx;
@@ -223,11 +221,11 @@ void test_caching_provider_caches_contexts(void) {
     TEST_ASSERT_TRUE(found);
     TEST_ASSERT_EQUAL_MESSAGE(1, provider.buildCount,
                               "getContextAt should use cache");
-    TEST_ASSERT_EQUAL_STRING("test_dash", ctx.contextId.c_str());
+    TEST_ASSERT_EQUAL_STRING("test_dash", ctx.getContextIdCStr());
 
     // After invalidation, buildContexts should be called again
     provider.invalidateContextCache();
-    auto contexts3 = provider.getWebUIContexts();
+    TEST_ASSERT_EQUAL(1, provider.getContextCount());
     TEST_ASSERT_EQUAL_MESSAGE(2, provider.buildCount,
                               "After invalidation, buildContexts should be called again");
 }
@@ -310,6 +308,34 @@ void test_chunked_serialization(void) {
     TEST_ASSERT_EQUAL(2, doc["fields"].as<JsonArray>().size());
 }
 
+// T076: Verify Ptr vs String storage produces identical JSON
+void test_hybrid_ptr_vs_string_identical_json(void) {
+    // Context built with const char* (Ptr path)
+    WebUIContext ptrCtx("hybrid_test", "Hybrid Title", "dc-test",
+                        WebUILocation::Dashboard, WebUIPresentation::Card);
+    ptrCtx.withField(WebUIField("sensor", "Sensor Value", WebUIFieldType::Number, "42", "°C"));
+    ptrCtx.withAPI("/api/hybrid");
+
+    // Context built with String (String path)
+    WebUIContext strCtx(String("hybrid_test"), String("Hybrid Title"), String("dc-test"),
+                        WebUILocation::Dashboard, WebUIPresentation::Card);
+    strCtx.withField(WebUIField(String("sensor"), String("Sensor Value"), WebUIFieldType::Number, String("42"), String("°C")));
+    strCtx.withAPI(String("/api/hybrid"));
+
+    std::string ptrJson = serializeContextToStdString(ptrCtx);
+    std::string strJson = serializeContextToStdString(strCtx);
+
+    TEST_ASSERT_EQUAL_STRING_MESSAGE(strJson.c_str(), ptrJson.c_str(),
+        "Ptr-based and String-based contexts must produce identical JSON");
+
+    // Also verify both are valid JSON
+    JsonDocument doc;
+    TEST_ASSERT_EQUAL(DeserializationError::Ok, deserializeJson(doc, ptrJson).code());
+    TEST_ASSERT_EQUAL_STRING("hybrid_test", doc["contextId"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("/api/hybrid", doc["apiEndpoint"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("sensor", doc["fields"][0]["name"].as<const char*>());
+}
+
 void setUp(void) {
     // Setup before each test
 }
@@ -328,6 +354,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_caching_provider_caches_contexts);
     RUN_TEST(test_serialize_multiple_contexts);
     RUN_TEST(test_chunked_serialization);
+    RUN_TEST(test_hybrid_ptr_vs_string_identical_json);
 
     return UNITY_END();
 }

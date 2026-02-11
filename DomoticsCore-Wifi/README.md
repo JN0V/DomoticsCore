@@ -65,6 +65,25 @@ Integration tips:
 - Combine with `DomoticsCore-Storage` to persist WiFi credentials; listen for storage events to reapply.
 - Register the optional WebUI provider wrapper (`WifiWebUI`) via `registerProviderWithComponent()` to keep networking logic decoupled from UI.
 
+## Platform Notes
+
+### ESP32
+- AP and STA use separate radios — simultaneous AP+STA works on different channels without disruption.
+- `updateWifiMode()` uses direct `StationAndAP` mode (no AP restart needed).
+
+### ESP8266 — AP+STA Limitations
+ESP8266 has a **single radio** shared between AP and STA. This imposes several constraints:
+
+1. **Channel sync**: AP and STA must share one channel. If the target router is on a different channel than the AP, STA connection fails silently (`WL_IDLE_STATUS`). The component works around this by stopping the AP, connecting STA first, then restarting the AP locked to the STA's channel.
+
+2. **Heap pressure**: AP+STA mode consumes ~2.5KB additional heap. With the FullStack firmware (~3KB free in AP+STA), there is not enough memory for HTTP serving. The component **skips the AP restart** when heap is too low (`< 6.5KB`), staying in STA-only mode to keep the WebUI functional.
+
+3. **WebUI serving**: The WebUI uses a runtime heap check to serve a combined HTML+CSS+JS response (single HTTP connection) instead of separate files (3 concurrent connections) when `MemoryManager::isLowMemory()` is true. A hard guard at `< 1.2KB` heap returns HTTP 503 to prevent OOM crashes.
+
+4. **SDK auto-connect**: `WiFi.persistent(false)` and `WiFi.setAutoConnect(false)` are called in the ESP8266 HAL `init()` to prevent the SDK from auto-restoring stale STA state on boot, which would consume ~4KB heap.
+
+5. **Config save deferral**: NVS writes from HTTP handlers are deferred to `loop()` via `scheduleConfigSave()` to avoid OOM during request handling.
+
 ## Examples
 
 - `DomoticsCore-Wifi/examples/WifiNoWebUI` – CLI-only control and logging.

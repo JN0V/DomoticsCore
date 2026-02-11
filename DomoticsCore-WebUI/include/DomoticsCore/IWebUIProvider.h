@@ -139,47 +139,59 @@ enum class WebUIFieldType {
  * This uses more RAM than const char* but ensures memory safety.
  */
 struct WebUIField {
-    String name;                    // Field identifier
-    String label;                   // Display label
+    String name;                    // Field identifier (dynamic storage)
+    String label;                   // Display label (dynamic storage)
     WebUIFieldType type;            // Field type
-    String value;                   // Default value
-    String unit;                    // Unit of measurement
+    String value;                   // Default value (dynamic storage)
+    String unit;                    // Unit of measurement (dynamic storage)
     bool readOnly;                  // Read-only flag
     
+    // Hybrid static pointers — when non-null, these take priority over String members
+    const char* namePtr = nullptr;
+    const char* labelPtr = nullptr;
+    const char* valuePtr = nullptr;
+    const char* unitPtr = nullptr;
+    const char* endpointPtr = nullptr;
+
     // Constraints and options
     float minValue = 0;
     float maxValue = 100;
     std::vector<String> options;    // For select fields (option values)
     std::map<String, String> optionLabels;  // Option value -> label mapping
-    String endpoint;                // API endpoint for updates
+    String endpoint;                // API endpoint for updates (dynamic storage)
 
     // Context-specific configuration
     // Use pointer to avoid large JsonDocument allocation on stack/heap for every field
     // Only allocated when configure() is called - most fields don't need custom config
     std::unique_ptr<JsonDocument> config;  // Custom field configuration (optional)
 
-    // Constructor with const char* - copies strings for safety
+    // Constructor with const char* — stores pointers directly, no String allocation
     WebUIField(const char* n, const char* l, WebUIFieldType t,
                const char* v = "", const char* u = "", bool ro = false)
-        : name(n), label(l), type(t), value(v), unit(u), readOnly(ro) {}
+        : type(t), readOnly(ro),
+          namePtr(n), labelPtr(l), valuePtr(v), unitPtr(u) {}
     
-    // Constructor with String - copies strings for safety
+    // Constructor with String — stores in String members, pointers remain null
     WebUIField(const String& n, const String& l, WebUIFieldType t,
                const String& v = "", const String& u = "", bool ro = false)
         : name(n), label(l), type(t), value(v), unit(u), readOnly(ro) {}
 
-    // Copy constructor - deep copy of config if present
+    // Copy constructor - preserves hybrid state
     WebUIField(const WebUIField& other)
         : name(other.name), label(other.label), type(other.type), value(other.value),
-          unit(other.unit), readOnly(other.readOnly), minValue(other.minValue),
-          maxValue(other.maxValue), options(other.options), optionLabels(other.optionLabels),
+          unit(other.unit), readOnly(other.readOnly),
+          namePtr(other.namePtr), labelPtr(other.labelPtr),
+          valuePtr(other.valuePtr), unitPtr(other.unitPtr),
+          endpointPtr(other.endpointPtr),
+          minValue(other.minValue), maxValue(other.maxValue),
+          options(other.options), optionLabels(other.optionLabels),
           endpoint(other.endpoint) {
         if (other.config) {
             config = std::make_unique<JsonDocument>(*other.config);
         }
     }
 
-    // Copy assignment
+    // Copy assignment - preserves hybrid state
     WebUIField& operator=(const WebUIField& other) {
         if (this != &other) {
             name = other.name;
@@ -188,6 +200,11 @@ struct WebUIField {
             value = other.value;
             unit = other.unit;
             readOnly = other.readOnly;
+            namePtr = other.namePtr;
+            labelPtr = other.labelPtr;
+            valuePtr = other.valuePtr;
+            unitPtr = other.unitPtr;
+            endpointPtr = other.endpointPtr;
             minValue = other.minValue;
             maxValue = other.maxValue;
             options = other.options;
@@ -206,6 +223,13 @@ struct WebUIField {
     WebUIField(WebUIField&&) = default;
     WebUIField& operator=(WebUIField&&) = default;
 
+    // Hybrid accessors — return Ptr if non-null, else String::c_str()
+    const char* getNameCStr() const { return namePtr ? namePtr : name.c_str(); }
+    const char* getLabelCStr() const { return labelPtr ? labelPtr : label.c_str(); }
+    const char* getValueCStr() const { return valuePtr ? valuePtr : value.c_str(); }
+    const char* getUnitCStr() const { return unitPtr ? unitPtr : unit.c_str(); }
+    const char* getEndpointCStr() const { return endpointPtr ? endpointPtr : endpoint.c_str(); }
+
     // Fluent interface
     WebUIField& range(float min, float max) { minValue = min; maxValue = max; return *this; }
     WebUIField& choices(const std::vector<String>& opts) { options = opts; return *this; }
@@ -214,7 +238,7 @@ struct WebUIField {
         optionLabels[val] = lbl;
         return *this;
     }
-    WebUIField& api(const char* ep) { endpoint = ep; return *this; }
+    WebUIField& api(const char* ep) { endpointPtr = ep; endpoint = ""; return *this; }
     WebUIField& configure(const String& key, const JsonVariant& val) {
         if (!config) {
             config = std::make_unique<JsonDocument>();
@@ -232,20 +256,30 @@ struct WebUIField {
  * pointers which can point to PROGMEM data, saving ~100+ bytes per context.
  */
 struct WebUIContext {
-    String contextId;               // Unique context identifier
-    String title;                   // Context title
-    String icon;                    // Icon class/name
+    String contextId;               // Unique context identifier (dynamic storage)
+    String title;                   // Context title (dynamic storage)
+    String icon;                    // Icon class/name (dynamic storage)
     WebUILocation location;         // Where to display
     WebUIPresentation presentation; // How to display
     int priority = 0;               // Display order (higher = first)
     
+    // Hybrid static pointers for identity fields — when non-null, take priority over String
+    const char* contextIdPtr = nullptr;
+    const char* titlePtr = nullptr;
+    const char* iconPtr = nullptr;
+    const char* apiEndpointPtr = nullptr;
+
     // Component-provided custom UI elements (usually empty - only allocated when used)
-    String customHtml;              // Custom HTML structure for this context
-    String customCss;               // Custom CSS styling for this context  
-    String customJs;                // Custom JavaScript behavior for this context
+    // Hybrid storage: const char* for static/Flash content, String for dynamic content
+    String customHtml;              // Dynamic custom HTML (heap-allocated)
+    String customCss;               // Dynamic custom CSS
+    String customJs;                // Dynamic custom JS
+    const char* customHtmlPtr = nullptr;  // Static/Flash custom HTML (no heap)
+    const char* customCssPtr = nullptr;   // Static/Flash custom CSS
+    const char* customJsPtr = nullptr;    // Static/Flash custom JS
     
     std::vector<WebUIField> fields; // Context fields
-    String apiEndpoint;             // API endpoint for this context
+    String apiEndpoint;             // API endpoint for this context (dynamic storage)
     bool realTime = false;          // Enable real-time updates
     int updateInterval = 5000;      // Update interval in ms
     bool alwaysInteractive = false; // If true, controls are always enabled (bypassing Settings lock)
@@ -258,21 +292,25 @@ struct WebUIContext {
     // Constructors
     WebUIContext() = default;
 
-    // Constructor with const char* (PROGMEM compatible) - preferred for static contexts
+    // Constructor with const char* — stores pointers directly, no String allocation
     WebUIContext(const char* id, const char* t, const char* ic,
                  WebUILocation loc, WebUIPresentation pres = WebUIPresentation::Card)
-        : contextId(id), title(t), icon(ic), location(loc), presentation(pres) {}
+        : location(loc), presentation(pres),
+          contextIdPtr(id), titlePtr(t), iconPtr(ic) {}
 
     // Constructor with String (for backward compatibility)
     WebUIContext(const String& id, const String& t, const String& ic,
                  WebUILocation loc, WebUIPresentation pres = WebUIPresentation::Card)
         : contextId(id), title(t), icon(ic), location(loc), presentation(pres) {}
 
-    // Copy constructor - deep copy of contextConfig if present
+    // Copy constructor - preserves hybrid state for all Ptr/String pairs
     WebUIContext(const WebUIContext& other)
         : contextId(other.contextId), title(other.title), icon(other.icon),
           location(other.location), presentation(other.presentation), priority(other.priority),
+          contextIdPtr(other.contextIdPtr), titlePtr(other.titlePtr),
+          iconPtr(other.iconPtr), apiEndpointPtr(other.apiEndpointPtr),
           customHtml(other.customHtml), customCss(other.customCss), customJs(other.customJs),
+          customHtmlPtr(other.customHtmlPtr), customCssPtr(other.customCssPtr), customJsPtr(other.customJsPtr),
           fields(other.fields), apiEndpoint(other.apiEndpoint), realTime(other.realTime),
           updateInterval(other.updateInterval), alwaysInteractive(other.alwaysInteractive) {
         if (other.contextConfig) {
@@ -280,7 +318,7 @@ struct WebUIContext {
         }
     }
 
-    // Copy assignment
+    // Copy assignment - preserves hybrid state
     WebUIContext& operator=(const WebUIContext& other) {
         if (this != &other) {
             contextId = other.contextId;
@@ -289,9 +327,16 @@ struct WebUIContext {
             location = other.location;
             presentation = other.presentation;
             priority = other.priority;
+            contextIdPtr = other.contextIdPtr;
+            titlePtr = other.titlePtr;
+            iconPtr = other.iconPtr;
+            apiEndpointPtr = other.apiEndpointPtr;
             customHtml = other.customHtml;
             customCss = other.customCss;
             customJs = other.customJs;
+            customHtmlPtr = other.customHtmlPtr;
+            customCssPtr = other.customCssPtr;
+            customJsPtr = other.customJsPtr;
             fields = other.fields;
             apiEndpoint = other.apiEndpoint;
             realTime = other.realTime;
@@ -316,8 +361,14 @@ struct WebUIContext {
         return *this; 
     }
     
-    WebUIContext& withAPI(const String& endpoint) { 
-        apiEndpoint = endpoint; 
+    WebUIContext& withAPI(const char* ep) { 
+        apiEndpointPtr = ep;
+        apiEndpoint = "";
+        return *this; 
+    }
+    WebUIContext& withAPI(const String& ep) { 
+        apiEndpoint = ep;
+        apiEndpointPtr = nullptr;
         return *this; 
     }
     
@@ -345,56 +396,101 @@ struct WebUIContext {
         return *this;
     }
     
-    WebUIContext& withCustomHtml(const String& html) {
+    // Static content (const char* / Flash / PROGMEM) — no heap allocation
+    WebUIContext& withCustomHtml(const char* html) {
+        customHtmlPtr = html;
+        customHtml = String();
+        return *this;
+    }
+    WebUIContext& withCustomCss(const char* css) {
+        customCssPtr = css;
+        customCss = String();
+        return *this;
+    }
+    WebUIContext& withCustomJs(const char* js) {
+        customJsPtr = js;
+        customJs = String();
+        return *this;
+    }
+
+    // Dynamic content (String / runtime-generated) — heap-allocated
+    WebUIContext& withCustomHtmlDynamic(const String& html) {
         customHtml = html;
+        customHtmlPtr = nullptr;
         return *this;
     }
-    
-    WebUIContext& withCustomCss(const String& css) {
+    WebUIContext& withCustomCssDynamic(const String& css) {
         customCss = css;
+        customCssPtr = nullptr;
         return *this;
     }
-    
-    WebUIContext& withCustomJs(const String& js) {
+    WebUIContext& withCustomJsDynamic(const String& js) {
         customJs = js;
+        customJsPtr = nullptr;
         return *this;
     }
+
+    // Hybrid accessors for identity fields — return Ptr if non-null, else String::c_str()
+    const char* getContextIdCStr() const { return contextIdPtr ? contextIdPtr : contextId.c_str(); }
+    const char* getTitleCStr() const { return titlePtr ? titlePtr : title.c_str(); }
+    const char* getIconCStr() const { return iconPtr ? iconPtr : icon.c_str(); }
+    const char* getApiEndpointCStr() const { return apiEndpointPtr ? apiEndpointPtr : apiEndpoint.c_str(); }
+
+    // Hybrid accessors for custom content — return Ptr if set, else String
+    bool hasCustomHtml() const { return customHtmlPtr != nullptr || customHtml.length() > 0; }
+    bool hasCustomCss() const { return customCssPtr != nullptr || customCss.length() > 0; }
+    bool hasCustomJs() const { return customJsPtr != nullptr || customJs.length() > 0; }
+
+    const char* getCustomHtmlCStr() const { return customHtmlPtr ? customHtmlPtr : customHtml.c_str(); }
+    const char* getCustomCssCStr() const { return customCssPtr ? customCssPtr : customCss.c_str(); }
+    const char* getCustomJsCStr() const { return customJsPtr ? customJsPtr : customJs.c_str(); }
+
+    size_t getCustomHtmlLen() const { return customHtmlPtr ? strlen(customHtmlPtr) : customHtml.length(); }
+    size_t getCustomCssLen() const { return customCssPtr ? strlen(customCssPtr) : customCss.length(); }
+    size_t getCustomJsLen() const { return customJsPtr ? strlen(customJsPtr) : customJs.length(); }
     
-    // Factory methods for common contexts
+    // Factory methods — const char* overloads store pointers directly (zero heap)
+    static WebUIContext dashboard(const char* id, const char* title, const char* icon = "fas fa-tachometer-alt") {
+        return WebUIContext(id, title, icon, WebUILocation::Dashboard, WebUIPresentation::Card);
+    }
+    static WebUIContext gauge(const char* id, const char* title, const char* icon = "fas fa-gauge") {
+        return WebUIContext(id, title, icon, WebUILocation::Dashboard, WebUIPresentation::Gauge);
+    }
+    static WebUIContext statusBadge(const char* id, const char* title, const char* icon = "dc-info") {
+        return WebUIContext(id, title, icon, WebUILocation::HeaderStatus, WebUIPresentation::StatusBadge);
+    }
+    static WebUIContext headerInfo(const char* id, const char* label, const char* icon = "dc-info") {
+        return WebUIContext(id, label, icon, WebUILocation::HeaderInfo, WebUIPresentation::Text);
+    }
+    static WebUIContext graph(const char* id, const char* title, const char* icon = "dc-chart") {
+        return WebUIContext(id, title, icon, WebUILocation::ComponentDetail, WebUIPresentation::Graph);
+    }
+    static WebUIContext quickControl(const char* id, const char* title, const char* icon = "dc-settings") {
+        return WebUIContext(id, title, icon, WebUILocation::QuickControls, WebUIPresentation::Toggle);
+    }
+    static WebUIContext settings(const char* id, const char* title, const char* icon = "dc-cog") {
+        return WebUIContext(id, title, icon, WebUILocation::Settings, WebUIPresentation::Card);
+    }
+
+    // Factory methods — String overloads for backward compatibility
     static WebUIContext dashboard(const String& id, const String& title, const String& icon = "fas fa-tachometer-alt") {
         return WebUIContext(id, title, icon, WebUILocation::Dashboard, WebUIPresentation::Card);
     }
-    
     static WebUIContext gauge(const String& id, const String& title, const String& icon = "fas fa-gauge") {
         return WebUIContext(id, title, icon, WebUILocation::Dashboard, WebUIPresentation::Gauge);
     }
-    
-    /**
-     * Factory for status badge in header
-     * Icon is rendered by frontend JS using the icon field
-     * CSS is in style.css (.status-indicator, .icon classes)
-     */
     static WebUIContext statusBadge(const String& id, const String& title, const String& icon = "dc-info") {
         return WebUIContext(id, title, icon, WebUILocation::HeaderStatus, WebUIPresentation::StatusBadge);
     }
-    
-    /**
-     * Factory for header info items (time, uptime, etc.)
-     * Appears in main header as injectable info zone
-     */
     static WebUIContext headerInfo(const String& id, const String& label, const String& icon = "dc-info") {
-        WebUIContext ctx(id, label, icon, WebUILocation::HeaderInfo, WebUIPresentation::Text);
-        return ctx;
+        return WebUIContext(id, label, icon, WebUILocation::HeaderInfo, WebUIPresentation::Text);
     }
-    
     static WebUIContext graph(const String& id, const String& title, const String& icon = "dc-chart") {
         return WebUIContext(id, title, icon, WebUILocation::ComponentDetail, WebUIPresentation::Graph);
     }
-    
     static WebUIContext quickControl(const String& id, const String& title, const String& icon = "dc-settings") {
         return WebUIContext(id, title, icon, WebUILocation::QuickControls, WebUIPresentation::Toggle);
     }
-    
     static WebUIContext settings(const String& id, const String& title, const String& icon = "dc-cog") {
         return WebUIContext(id, title, icon, WebUILocation::Settings, WebUIPresentation::Card);
     }
@@ -409,53 +505,23 @@ public:
     virtual ~IWebUIProvider() = default;
 
     /**
-     * Get all WebUI contexts for this component
-     * @return Vector of contexts defining how component appears in different UI locations
-     *
-     * @note This method creates copies. For memory-constrained devices, consider
-     *       overriding forEachContext() instead.
-     */
-    virtual std::vector<WebUIContext> getWebUIContexts() = 0;
-
-    /**
      * Iterate over contexts without copying (memory optimization)
      * @param callback Called for each context; return false to stop iteration
-     *
-     * Default implementation calls getWebUIContexts() for backward compatibility.
-     * Override this for better memory efficiency on ESP8266.
      */
-    virtual void forEachContext(std::function<bool(const WebUIContext&)> callback) {
-        auto contexts = getWebUIContexts();
-        for (const auto& ctx : contexts) {
-            if (!callback(ctx)) break;
-        }
-    }
+    virtual void forEachContext(std::function<bool(const WebUIContext&)> callback) = 0;
 
     /**
-     * Get context count (for indexed access during streaming)
-     * Default implementation calls getWebUIContexts() - override for better efficiency
+     * Get context count
      */
-    virtual size_t getContextCount() {
-        return getWebUIContexts().size();
-    }
+    virtual size_t getContextCount() = 0;
 
     /**
      * Get context by index for streaming serialization
      * @param index Context index (0-based)
      * @param outContext Output - will be filled with context data
      * @return true if context exists at index, false otherwise
-     *
-     * This method allows streaming without holding all contexts in memory.
-     * Override for better efficiency - default calls getWebUIContexts().
      */
-    virtual bool getContextAt(size_t index, WebUIContext& outContext) {
-        auto contexts = getWebUIContexts();
-        if (index < contexts.size()) {
-            outContext = std::move(contexts[index]);
-            return true;
-        }
-        return false;
-    }
+    virtual bool getContextAt(size_t index, WebUIContext& outContext) = 0;
     
     /**
      * Get const reference to context at index - NO COPY (for memory efficiency)
@@ -503,15 +569,7 @@ public:
      * @param contextId The context identifier
      * @return WebUIContext object for the specified ID
      */
-    virtual WebUIContext getWebUIContext(const String& contextId) {
-        auto contexts = getWebUIContexts();
-        for (const auto& context : contexts) {
-            if (context.contextId == contextId) {
-                return context;
-            }
-        }
-        return WebUIContext(); // Return empty context if not found
-    }
+    virtual WebUIContext getWebUIContext(const String& contextId) = 0;
     
     /**
      * Check if component should be visible in WebUI
@@ -577,11 +635,6 @@ public:
 
     // IWebUIProvider implementation with caching
 
-    std::vector<WebUIContext> getWebUIContexts() override {
-        ensureContextsCached();
-        return cachedContexts_;  // Returns copy from cache
-    }
-
     void forEachContext(std::function<bool(const WebUIContext&)> callback) override {
         ensureContextsCached();
         for (const auto& ctx : cachedContexts_) {
@@ -617,7 +670,7 @@ public:
     WebUIContext getWebUIContext(const String& contextId) override {
         ensureContextsCached();
         for (const auto& ctx : cachedContexts_) {
-            if (ctx.contextId == contextId) {
+            if (strcmp(ctx.getContextIdCStr(), contextId.c_str()) == 0) {
                 return ctx;
             }
         }

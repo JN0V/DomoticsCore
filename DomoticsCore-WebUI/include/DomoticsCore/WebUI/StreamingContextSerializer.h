@@ -172,7 +172,7 @@ public:
                     break;
 
                 case State::ContextIdValue:
-                    n = writeJsonString(buffer + written, remaining, ctx->contextId);
+                    n = writeJsonString(buffer + written, remaining, ctx->getContextIdCStr());
                     if (stringOffset == 0) state = State::ContextIdComma;
                     break;
 
@@ -187,7 +187,7 @@ public:
                     break;
 
                 case State::TitleValue:
-                    n = writeJsonString(buffer + written, remaining, ctx->title);
+                    n = writeJsonString(buffer + written, remaining, ctx->getTitleCStr());
                     if (stringOffset == 0) state = State::TitleComma;
                     break;
 
@@ -202,7 +202,7 @@ public:
                     break;
 
                 case State::IconValue:
-                    n = writeJsonString(buffer + written, remaining, ctx->icon);
+                    n = writeJsonString(buffer + written, remaining, ctx->getIconCStr());
                     if (stringOffset == 0) state = State::IconComma;
                     break;
 
@@ -265,7 +265,7 @@ public:
                     break;
 
                 case State::ApiEndpointValue:
-                    n = writeJsonString(buffer + written, remaining, ctx->apiEndpoint);
+                    n = writeJsonString(buffer + written, remaining, ctx->getApiEndpointCStr());
                     if (stringOffset == 0) state = State::ApiEndpointComma;
                     break;
 
@@ -284,9 +284,9 @@ public:
                     if (isLiteralComplete()) state = State::CustomHtmlCheck;
                     break;
 
-                // Optional customHtml
+                // Optional customHtml (hybrid: Ptr or String)
                 case State::CustomHtmlCheck:
-                    if (!ctx->customHtml.isEmpty()) {
+                    if (ctx->hasCustomHtml()) {
                         state = State::CustomHtmlKey;
                     } else {
                         state = State::CustomCssCheck;
@@ -299,13 +299,13 @@ public:
                     break;
 
                 case State::CustomHtmlValue:
-                    n = writeJsonString(buffer + written, remaining, ctx->customHtml);
+                    n = writeJsonString(buffer + written, remaining, ctx->getCustomHtmlCStr());
                     if (stringOffset == 0) state = State::CustomCssCheck;
                     break;
 
-                // Optional customCss
+                // Optional customCss (hybrid: Ptr or String)
                 case State::CustomCssCheck:
-                    if (!ctx->customCss.isEmpty()) {
+                    if (ctx->hasCustomCss()) {
                         state = State::CustomCssKey;
                     } else {
                         state = State::CustomJsCheck;
@@ -318,13 +318,13 @@ public:
                     break;
 
                 case State::CustomCssValue:
-                    n = writeJsonString(buffer + written, remaining, ctx->customCss);
+                    n = writeJsonString(buffer + written, remaining, ctx->getCustomCssCStr());
                     if (stringOffset == 0) state = State::CustomJsCheck;
                     break;
 
-                // Optional customJs
+                // Optional customJs (hybrid: Ptr or String)
                 case State::CustomJsCheck:
-                    if (!ctx->customJs.isEmpty()) {
+                    if (ctx->hasCustomJs()) {
                         state = State::CustomJsKey;
                     } else {
                         state = State::FieldsKey;
@@ -337,7 +337,7 @@ public:
                     break;
 
                 case State::CustomJsValue:
-                    n = writeJsonString(buffer + written, remaining, ctx->customJs);
+                    n = writeJsonString(buffer + written, remaining, ctx->getCustomJsCStr());
                     if (stringOffset == 0) state = State::FieldsKey;
                     break;
 
@@ -653,7 +653,7 @@ private:
                     break;
 
                 case FieldState::NameValue:
-                    n = writeJsonString(buffer + written, remaining, field.name);
+                    n = writeJsonString(buffer + written, remaining, field.getNameCStr());
                     if (stringOffset == 0) fieldState = FieldState::NameComma;
                     break;
 
@@ -668,7 +668,7 @@ private:
                     break;
 
                 case FieldState::LabelValue:
-                    n = writeJsonString(buffer + written, remaining, field.label);
+                    n = writeJsonString(buffer + written, remaining, field.getLabelCStr());
                     if (stringOffset == 0) fieldState = FieldState::LabelComma;
                     break;
 
@@ -699,7 +699,7 @@ private:
                     break;
 
                 case FieldState::ValueValue:
-                    n = writeJsonString(buffer + written, remaining, field.value);
+                    n = writeJsonString(buffer + written, remaining, field.getValueCStr());
                     if (stringOffset == 0) fieldState = FieldState::ValueComma;
                     break;
 
@@ -714,7 +714,7 @@ private:
                     break;
 
                 case FieldState::UnitValue:
-                    n = writeJsonString(buffer + written, remaining, field.unit);
+                    n = writeJsonString(buffer + written, remaining, field.getUnitCStr());
                     if (stringOffset == 0) fieldState = FieldState::UnitComma;
                     break;
 
@@ -776,7 +776,7 @@ private:
                     break;
 
                 case FieldState::EndpointValue:
-                    n = writeJsonString(buffer + written, remaining, field.endpoint);
+                    n = writeJsonString(buffer + written, remaining, field.getEndpointCStr());
                     if (stringOffset == 0) fieldState = FieldState::OptionsCheck;
                     break;
 

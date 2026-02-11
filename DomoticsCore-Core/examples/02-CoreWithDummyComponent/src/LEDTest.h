@@ -18,8 +18,8 @@ private:
     int maxDemos = 6;
     
 public:
-    LEDTestComponent(const String& name) 
-        : IComponent(name), demoTimer(5000) {  // Change demo every 5 seconds
+    LEDTestComponent(const char* name) 
+        : demoTimer(5000) {  // Change demo every 5 seconds
         
         metadata.name = name;
         metadata.version = "1.0.0";

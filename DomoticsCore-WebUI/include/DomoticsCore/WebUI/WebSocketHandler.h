@@ -2,10 +2,8 @@
 
 #include <DomoticsCore/Platform_HAL.h>
 #include <ESPAsyncWebServer.h>
-#include <vector>
+#include <AsyncEventSource.h>
 #include <functional>
-#include <algorithm>
-#include <ArduinoJson.h>
 #include "DomoticsCore/Logger.h"
 #include "WebUIConfig.h"
 
@@ -15,201 +13,137 @@ namespace WebUI {
 
 /**
  * @class WebSocketHandler
- * @brief Manages WebSocket connections and real-time updates.
+ * @brief Manages real-time server→client communication via SSE or polling.
+ *
+ * Dual-mode, decided at runtime based on available heap (no #ifdef):
+ * - High heap (≥20KB, typical ESP32): SSE via AsyncEventSource for instant push.
+ * - Low heap (<20KB, typical ESP8266): Client polls GET /api/ui/updates every 2s.
+ *
+ * Client→server actions always use HTTP GET /api/ui/action (both modes).
  */
 class WebSocketHandler {
 public:
-    using ClientConnectedCallback = std::function<void(AsyncWebSocketClient*)>;
     using UIActionCallback = std::function<void(const String&, const String&, const String&)>;
 
+    static constexpr uint32_t SSE_HEAP_THRESHOLD = 20000;
+
 private:
-    AsyncWebSocket* webSocket = nullptr;
     WebUIConfig config;
     
+    // SSE source — only created when heap is sufficient
+    AsyncEventSource* sseSource = nullptr;
+    bool sseEnabled = false;
+    unsigned long lastSseBroadcast = 0;
+
     // Callbacks to WebUIComponent
-    ClientConnectedCallback onClientConnected;
     UIActionCallback onUIAction;
     std::function<void()> onForceUpdate;
     
-    // Connection management
-    std::vector<uint32_t> activeClientIds;
-    unsigned long lastConnectionCleanup = 0;
-    static const unsigned long CONNECTION_CLEANUP_INTERVAL = 5000; // 5 seconds - more aggressive cleanup
-    
-    // State tracking
-    unsigned long lastWebSocketUpdate = 0;
+    // Polling fallback state
+    volatile int pollingClients = 0;
+    unsigned long lastPollTime = 0;
 
 public:
     WebSocketHandler(const WebUIConfig& cfg) : config(cfg) {}
     
-    void setClientConnectedCallback(ClientConnectedCallback cb) { onClientConnected = cb; }
-    void setUIActionCallback(UIActionCallback cb) { onUIAction = cb; }
-    void setForceUpdateCallback(std::function<void()> cb) { onForceUpdate = cb; }
-
     ~WebSocketHandler() {
-        if (webSocket) {
-            delete webSocket;
-            webSocket = nullptr;
+        if (sseSource) {
+            sseSource->close();
+            delete sseSource;
+            sseSource = nullptr;
         }
     }
 
-    void begin(AsyncWebServer* server) {
-        if (config.enableWebSocket && server) {
-            webSocket = new AsyncWebSocket("/ws");
+    void setUIActionCallback(UIActionCallback cb) { onUIAction = cb; }
+    void setForceUpdateCallback(std::function<void()> cb) { onForceUpdate = cb; }
 
-            activeClientIds.reserve((size_t)config.maxWebSocketClients);
-            
-            webSocket->onEvent([this](AsyncWebSocket* server, AsyncWebSocketClient* client, 
-                                     AwsEventType type, void* arg, uint8_t* data, size_t len) {
-                handleWebSocketEvent(client, type, arg, data, len);
+    void begin(AsyncWebServer* server) {
+        if (!config.enableWebSocket || !server) return;
+
+        uint32_t heap = HAL::Platform::getFreeHeap();
+        if (heap >= SSE_HEAP_THRESHOLD) {
+            sseSource = new AsyncEventSource("/api/ui/events");
+            sseSource->onConnect([this](AsyncEventSourceClient* client) {
+                DLOG_I(LOG_WEB, "SSE client connected (id=%u, clients=%u)",
+                       (unsigned)client->lastId(), (unsigned)sseSource->count());
+                if (onForceUpdate) onForceUpdate();
             });
-            server->addHandler(webSocket);
-            
-            DLOG_I(LOG_WEB, "WebSocket configured: max %d clients", config.maxWebSocketClients);
+            server->addHandler(sseSource);
+            sseEnabled = true;
+            DLOG_I(LOG_WEB, "SSE mode enabled on /api/ui/events (heap=%u)", (unsigned)heap);
+        } else {
+            DLOG_I(LOG_WEB, "Polling mode (heap=%u < %u)", (unsigned)heap, (unsigned)SSE_HEAP_THRESHOLD);
         }
     }
 
     void loop() {
-        // Periodic connection cleanup
-        if (webSocket && HAL::Platform::getMillis() - lastConnectionCleanup >= CONNECTION_CLEANUP_INTERVAL) {
-            cleanupStaleConnections();
-            lastConnectionCleanup = HAL::Platform::getMillis();
-        }
-
-        if (webSocket) {
-            webSocket->cleanupClients();
+        // Mark polling clients as gone if no poll received for 10s
+        if (pollingClients > 0 &&
+            HAL::Platform::getMillis() - lastPollTime > 10000) {
+            pollingClients = 0;
         }
     }
 
+    // Called from /api/ui/updates handler to track active polling clients
+    void onPollRequest() {
+        pollingClients = 1;
+        lastPollTime = HAL::Platform::getMillis();
+        if (onForceUpdate) onForceUpdate();
+    }
+
+    bool isSSEEnabled() const { return sseEnabled; }
+
     int getClientCount() const {
-        return webSocket ? webSocket->count() : 0;
+        int count = pollingClients;
+        if (sseSource) count += (int)sseSource->count();
+        return count;
+    }
+
+    int getSSEClientCount() const {
+        return sseSource ? (int)sseSource->count() : 0;
     }
 
     void notifyWiFiNetworkChanged() {
-        if (webSocket && webSocket->count() > 0) {
-            String msg = "{\"type\":\"wifi_network_changed\"}";
-            webSocket->textAll(msg);
-            DLOG_I(LOG_WEB, "Notified %d clients about WiFi network change", webSocket->count());
+        if (sseSource) {
+            sseSource->send("{\"type\":\"wifi_network_changed\"}", "message", 0, 0);
         }
     }
 
-    // Close all WebSocket connections (call before network changes)
     void closeAllConnections() {
-        if (webSocket) {
-            int count = webSocket->count();
-            if (count > 0) {
-                DLOG_I(LOG_WEB, "Closing %d WebSocket connections before network change", count);
-                webSocket->closeAll(1001, "Network changing");
-                activeClientIds.clear();
-            }
-        }
+        pollingClients = 0;
+        if (sseSource) sseSource->close();
     }
 
     void broadcastSchemaChange(const String& componentName) {
-         if (webSocket && webSocket->count() > 0) {
-            String msg = String("{\"type\":\"schema_changed\",\"name\":\"") + componentName + "\"}";
-            if (msg.length() < 128) {
-                webSocket->textAll(msg);
-            }
+        if (sseSource && sseSource->count() > 0) {
+            sseSource->send("{\"type\":\"schema_changed\"}", "message", 0, 0);
         }
     }
     
     void broadcast(const String& message) {
-        if (webSocket) {
-            webSocket->textAll(message);
+        if (sseSource && sseSource->count() > 0) {
+            sseSource->send(message.c_str(), "message", 0, 0);
         }
     }
 
-    // Check if it's time to send periodic updates
+    void broadcast(const char* buffer, size_t len) {
+        if (sseSource && sseSource->count() > 0) {
+            sseSource->send(buffer, "message", 0, 0);
+        }
+    }
+
+    // Check if it's time to send periodic SSE updates
     bool shouldSendUpdates() {
-        if (config.enableWebSocket && webSocket &&
-            HAL::Platform::getMillis() - lastWebSocketUpdate >= (unsigned long)config.wsUpdateInterval) {
-            lastWebSocketUpdate = HAL::Platform::getMillis();
-            return true;
-        }
-        return false;
+        if (!sseSource || sseSource->count() == 0) return false;
+        unsigned long now = HAL::Platform::getMillis();
+        if (now - lastSseBroadcast < (unsigned long)config.wsUpdateInterval) return false;
+        lastSseBroadcast = now;
+        return true;
     }
 
-private:
-    void handleWebSocketEvent(AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len) {
-        if (type == WS_EVT_CONNECT) {
-            DLOG_I(LOG_WEB, "WS Client connected: #%u", client->id());
-            DLOG_D(LOG_WEB, "WS mem connect: heap=%u, max=%u", (unsigned)HAL::Platform::getFreeHeap(), (unsigned)HAL::Platform::getMaxAllocHeap());
-            if (activeClientIds.size() >= (size_t)config.maxWebSocketClients) {
-                DLOG_W(LOG_WEB, "Max clients reached, closing #%u", client->id());
-                client->close();
-                return;
-            }
-            activeClientIds.push_back(client->id());
-            
-            // Send initial data to new client
-            if (onClientConnected) onClientConnected(client);
-            if (onForceUpdate) onForceUpdate();
-        } else if (type == WS_EVT_DISCONNECT) {
-            DLOG_I(LOG_WEB, "WS Client disconnected: #%u", client->id());
-            auto it = std::find(activeClientIds.begin(), activeClientIds.end(), client->id());
-            if (it != activeClientIds.end()) {
-                activeClientIds.erase(it);
-            }
-            DLOG_D(LOG_WEB, "WS mem disconnect: heap=%u, max=%u", (unsigned)HAL::Platform::getFreeHeap(), (unsigned)HAL::Platform::getMaxAllocHeap());
-        } else if (type == WS_EVT_DATA) {
-            if (!arg || !data || len == 0 || len > 512) {
-                DLOG_W(LOG_WEB, "WS data rejected: len=%u", (unsigned)len);
-                return;
-            }
-            AwsFrameInfo* info = (AwsFrameInfo*)arg;
-            if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
-                // ESP8266 String doesn't have (char*, size_t) constructor - null-terminate manually
-                char buf[513];
-                size_t copyLen = len < 512 ? len : 512;
-                memcpy(buf, data, copyLen);
-                buf[copyLen] = '\0';
-                handleWebSocketMessage(String(buf));
-            }
-        } else if (type == WS_EVT_ERROR) {
-            DLOG_E(LOG_WEB, "WS Error client #%u", client->id());
-        }
-    }
-
-    void cleanupStaleConnections() {
-        if (!webSocket) return;
-        
-        size_t before = activeClientIds.size();
-        
-        // Remove IDs of clients that are no longer connected
-        activeClientIds.erase(
-            std::remove_if(activeClientIds.begin(), activeClientIds.end(),
-                [this](uint32_t id) {
-                    AsyncWebSocketClient* client = webSocket->client(id);
-                    return client == nullptr || client->status() != WS_CONNECTED;
-                }),
-            activeClientIds.end()
-        );
-        
-        size_t after = activeClientIds.size();
-        if (before != after) {
-            DLOG_D(LOG_WEB, "WS cleanup: removed %d stale, %d active", (int)(before - after), (int)after);
-        }
-    }
-    
-    void handleWebSocketMessage(const String& message) {
-        JsonDocument doc;
-        if (deserializeJson(doc, message)) {
-            DLOG_W(LOG_WEB, "WS JSON parse failed");
-            return;
-        }
-        
-        const char* type = doc["type"];
-        DLOG_D(LOG_WEB, "WS type: %s", type ? type : "null");
-        if (type && strcmp(type, "ui_action") == 0 && onUIAction) {
-            String contextId = doc["contextId"].as<String>();
-            String field = doc["field"].as<String>();
-            JsonVariant v = doc["value"];
-            String value = v.is<bool>() ? (v.as<bool>() ? "true" : "false") : v.as<String>();
-            // Mask sensitive fields (password) in logs
-            bool isSensitive = field.indexOf("password") >= 0 || field.indexOf("secret") >= 0 || field.indexOf("key") >= 0;
-            DLOG_D(LOG_WEB, "WS ui_action: ctx=%s, field=%s, value=%s", 
-                   contextId.c_str(), field.c_str(), isSensitive ? "***" : value.c_str());
+    // Expose UIActionCallback for POST handler setup in WebUI.h
+    void handleUIAction(const String& contextId, const String& field, const String& value) {
+        if (onUIAction) {
             onUIAction(contextId, field, value);
         }
     }

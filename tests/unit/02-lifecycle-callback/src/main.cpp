@@ -17,7 +17,7 @@ private:
     static int afterAllCounter;
     
 public:
-    LifecycleTestComponent(const String& name) : name_(name) {
+    LifecycleTestComponent(const char* name) : name_(name) {
         metadata.name = name;
         metadata.version = "1.0.0";
     }

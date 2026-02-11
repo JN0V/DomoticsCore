@@ -30,8 +30,8 @@ void tearDown(void) {
 void test_remoteconsole_component_creation_default(void) {
     auto console = std::make_unique<RemoteConsoleComponent>();
 
-    TEST_ASSERT_EQUAL_STRING("RemoteConsole", console->metadata.name.c_str());
-    TEST_ASSERT_EQUAL_STRING("1.4.0", console->metadata.version.c_str());
+    TEST_ASSERT_EQUAL_STRING("RemoteConsole", console->metadata.name);
+    TEST_ASSERT_EQUAL_STRING("1.4.0", console->metadata.version);
 }
 
 void test_remoteconsole_component_creation_with_config(void) {
@@ -42,7 +42,7 @@ void test_remoteconsole_component_creation_with_config(void) {
 
     auto console = std::make_unique<RemoteConsoleComponent>(config);
 
-    TEST_ASSERT_EQUAL_STRING("RemoteConsole", console->metadata.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("RemoteConsole", console->metadata.name);
 }
 
 // ============================================================================

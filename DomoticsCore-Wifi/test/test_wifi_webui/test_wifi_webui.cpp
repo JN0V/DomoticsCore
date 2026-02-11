@@ -74,9 +74,9 @@ void test_wifi_webui_builds_contexts(void) {
     bool hasWifiSettings = false;
     
     for (const auto& ctx : contexts) {
-        if (ctx.contextId == "wifi_status") hasWifiStatus = true;
-        if (ctx.contextId == "wifi_component") hasWifiComponent = true;
-        if (ctx.contextId == "wifi_settings") hasWifiSettings = true;
+        if (strcmp(ctx.getContextIdCStr(), "wifi_status") == 0) hasWifiStatus = true;
+        if (strcmp(ctx.getContextIdCStr(), "wifi_component") == 0) hasWifiComponent = true;
+        if (strcmp(ctx.getContextIdCStr(), "wifi_settings") == 0) hasWifiSettings = true;
     }
     
     TEST_ASSERT_TRUE_MESSAGE(hasWifiStatus, "wifi_status context missing - badge won't work");
@@ -89,7 +89,7 @@ void test_wifi_status_context_is_header_badge(void) {
     
     WebUIContext* statusCtx = nullptr;
     wifiWebUI->forEachContext([&statusCtx](const WebUIContext& ctx) {
-        if (ctx.contextId == "wifi_status") {
+        if (strcmp(ctx.getContextIdCStr(), "wifi_status") == 0) {
             statusCtx = new WebUIContext(ctx);
             return false; // stop iteration
         }

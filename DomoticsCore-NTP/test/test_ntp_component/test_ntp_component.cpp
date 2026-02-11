@@ -42,8 +42,8 @@ void test_ntp_events_constants_defined() {
 void test_ntp_component_creation_default() {
     NTPComponent ntp;
 
-    TEST_ASSERT_EQUAL_STRING("NTP", ntp.metadata.name.c_str());
-    TEST_ASSERT_EQUAL_STRING("DomoticsCore", ntp.metadata.author.c_str());
+    TEST_ASSERT_EQUAL_STRING("NTP", ntp.metadata.name);
+    TEST_ASSERT_EQUAL_STRING("DomoticsCore", ntp.metadata.author);
 }
 
 void test_ntp_component_creation_with_config() {
@@ -54,7 +54,7 @@ void test_ntp_component_creation_with_config() {
 
     NTPComponent ntp(config);
 
-    TEST_ASSERT_EQUAL_STRING("NTP", ntp.metadata.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("NTP", ntp.metadata.name);
 
     const NTPConfig& cfg = ntp.getConfig();
     TEST_ASSERT_EQUAL_STRING("CET-1CEST,M3.5.0,M10.5.0/3", cfg.timezone.c_str());

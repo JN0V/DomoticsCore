@@ -5,6 +5,7 @@
 #include <map>
 #include <queue>
 #include <algorithm>
+#include <cassert>
 #include <DomoticsCore/Platform_HAL.h>
 
 // Minimal core event enum kept here to avoid extra headers.
@@ -34,7 +35,9 @@ public:
     EventBus() : nextId(1) {}
 
     // Subscribe to an event type. Returns a subscription id.
+    // WARNING: Must not be called during poll() dispatch (single-threaded assumption).
     uint32_t subscribe(EventType type, Handler handler, void* owner = nullptr) {
+        assert(!dispatching_ && "Cannot subscribe during EventBus dispatch");
         if (!handler) return 0;
         uint32_t id = nextId++;
         subscriptions[type].push_back({id, owner, std::move(handler)});
@@ -43,7 +46,9 @@ public:
 
     // Subscribe to a topic string (e.g., "wifi.connected"). Returns a subscription id.
     // If replayLast is true and a sticky event exists for this topic, the handler is invoked immediately once.
+    // WARNING: Must not be called during poll() dispatch (single-threaded assumption).
     uint32_t subscribe(const String& topic, Handler handler, void* owner = nullptr, bool replayLast = false) {
+        assert(!dispatching_ && "Cannot subscribe during EventBus dispatch");
         if (!handler || topic.length() == 0) return 0;
         uint32_t id = nextId++;
         if (isWildcard(topic)) {
@@ -72,7 +77,9 @@ public:
     }
 
     // Unsubscribe by id
+    // WARNING: Must not be called during poll() dispatch (single-threaded assumption).
     void unsubscribe(uint32_t id) {
+        assert(!dispatching_ && "Cannot unsubscribe during EventBus dispatch");
         for (auto& kv : subscriptions) {
             auto& vec = kv.second;
             vec.erase(std::remove_if(vec.begin(), vec.end(), [id](const Subscription& s){ return s.id == id; }), vec.end());
@@ -84,7 +91,9 @@ public:
     }
 
     // Unsubscribe all belonging to a given owner pointer
+    // WARNING: Must not be called during poll() dispatch (single-threaded assumption).
     void unsubscribeOwner(void* owner) {
+        assert(!dispatching_ && "Cannot unsubscribeOwner during EventBus dispatch");
         if (!owner) return;
         for (auto& kv : subscriptions) {
             auto& vec = kv.second;
@@ -146,9 +155,12 @@ public:
         publish(topic);
     }
 
-    // Dispatch queued events; call from main loop
+    // Dispatch queued events; call from main loop.
+    // Single-threaded assumption: handlers must NOT call subscribe/unsubscribe
+    // during dispatch. The dispatching_ flag guards this in debug builds.
     void poll(size_t maxPerPoll = 8) {
         size_t processed = 0;
+        dispatching_ = true;
         while (!queue.empty() && processed < maxPerPoll) {
             QueuedEvent qe = std::move(queue.front());
             queue.pop();
@@ -161,7 +173,7 @@ public:
                 // Exact topic subscribers
                 auto itT = topicSubscriptions.find(qe.topic);
                 if (itT != topicSubscriptions.end()) {
-                    auto handlers = itT->second; // copy for safe iteration
+                    const auto& handlers = itT->second;
                     for (const auto& sub : handlers) {
                         if (sub.handler) sub.handler(payloadPtr);
                     }
@@ -169,7 +181,7 @@ public:
                 // Wildcard subscribers (prefix match e.g., "sensor.*")
                 for (const auto& kv : wildcardTopicSubscriptions) {
                     if (matchesWildcard(qe.topic, kv.first)) {
-                        auto handlers = kv.second; // copy for safe iteration
+                        const auto& handlers = kv.second;
                         for (const auto& sub : handlers) {
                             if (sub.handler) sub.handler(payloadPtr);
                         }
@@ -183,13 +195,14 @@ public:
             } else {
                 auto it = subscriptions.find(qe.type);
                 if (it != subscriptions.end()) {
-                    auto handlers = it->second; // copy for safe iteration
+                    const auto& handlers = it->second;
                     for (const auto& sub : handlers) {
                         if (sub.handler) sub.handler(payloadPtr);
                     }
                 }
             }
         }
+        dispatching_ = false;
     }
 
     // Optional: clear all
@@ -247,6 +260,7 @@ private:
     std::map<String, std::vector<uint8_t>> lastByTopic;
     // Pending counts per topic to prevent duplicate sticky replay
     std::map<String, int> pendingByTopic;
+    bool dispatching_ = false;
 };
 
 } // namespace Utils

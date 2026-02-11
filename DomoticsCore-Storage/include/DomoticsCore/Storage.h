@@ -84,6 +84,7 @@ private:
     std::vector<StorageKeyDef> registeredKeys;  // Keys registered by components
     bool isOpen;
     size_t entryCount;
+    String nameStr_;  // Holds dynamic name when not a string literal
     
 public:
     /**
@@ -96,13 +97,15 @@ public:
         // Initialize component metadata immediately for dependency resolution
         // Use componentName if provided, otherwise generate unique name for non-default namespaces
         if (!storageConfig.componentName.isEmpty()) {
-            metadata.name = storageConfig.componentName;
+            nameStr_ = storageConfig.componentName;
+            metadata.name = nameStr_.c_str();
         } else if (storageConfig.namespace_name != "domotics") {
-            metadata.name = "Storage_" + storageConfig.namespace_name;
+            nameStr_ = "Storage_" + storageConfig.namespace_name;
+            metadata.name = nameStr_.c_str();
         } else {
             metadata.name = "Storage";
         }
-        metadata.version = "1.4.0";
+        metadata.version = "1.4.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Key-value storage component for preferences and app data";
         metadata.category = "Storage";

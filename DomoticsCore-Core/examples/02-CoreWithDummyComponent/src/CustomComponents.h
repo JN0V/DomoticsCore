@@ -53,7 +53,7 @@ public:
           simulateWork(cfg.enableWork),
           dependencies(deps) {
         // Initialize component metadata in constructor for dependency resolution
-        metadata.name = componentName;
+        metadata.name = componentName.c_str();
         metadata.version = "1.0.0-test";
         metadata.author = "DomoticsCore Example";
         metadata.description = "Test component for demonstration";

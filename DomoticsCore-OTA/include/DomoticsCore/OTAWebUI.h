@@ -322,8 +322,7 @@ private:
 
         if (ota && ota->getConfig().enableWebUIUpload) {
             // Simple HTML upload page for demonstration
-            webui->registerApiRoute("/ota/upload", HTTP_GET, [this](AsyncWebServerRequest* request){
-                const char* html =
+            static const char OTA_UPLOAD_HTML[] PROGMEM =
                     "<!DOCTYPE html><html><head><meta charset='utf-8'><title>OTA Upload</title>"
                     "<meta name='viewport' content='width=device-width, initial-scale=1'>"
                     "<style>body{font-family:sans-serif;margin:2rem;} .card{max-width:480px;padding:1rem;border:1px solid #ccc;border-radius:8px;} button{padding:.5rem 1rem;} input{margin:.5rem 0;}</style>"
@@ -335,7 +334,8 @@ private:
                     "</form>"
                     "<p>After a successful upload, the device may reboot automatically.</p>"
                     "</div></body></html>";
-                request->send(200, "text/html", html);
+            webui->registerApiRoute("/ota/upload", HTTP_GET, [](AsyncWebServerRequest* request){
+                request->send(200, "text/html", OTA_UPLOAD_HTML);
             });
             webui->registerApiUploadRoute(
                 "/api/ota/upload",

@@ -19,21 +19,6 @@ class RemoteConsoleWebUI : public CachingWebUIProvider {
 private:
     RemoteConsoleComponent* console;
 
-    struct LogLevelOption {
-        const char* value;
-        const char* label;
-    };
-
-    static constexpr LogLevelOption LOG_LEVEL_OPTIONS[] = {
-        {"0", "NONE"},
-        {"1", "ERROR"},
-        {"2", "WARN"},
-        {"3", "INFO"},
-        {"4", "DEBUG"},
-        {"5", "VERBOSE"},
-    };
-    static constexpr size_t LOG_LEVEL_OPTIONS_COUNT = sizeof(LOG_LEVEL_OPTIONS) / sizeof(LOG_LEVEL_OPTIONS[0]);
-
     struct ConsoleUIState {
         bool active;
         uint16_t port;
@@ -54,14 +39,18 @@ public:
         if (!webui) return;
 
         webui->registerApiRoute("/api/console/loglevels", HTTP_GET, [](AsyncWebServerRequest* request) {
+            static const char* const VALUES[] = {"0", "1", "2", "3", "4", "5"};
+            static const char* const LABELS[] = {"NONE", "ERROR", "WARN", "INFO", "DEBUG", "VERBOSE"};
+            static constexpr size_t COUNT = 6;
+
             AsyncResponseStream* response = request->beginResponseStream("application/json");
             response->print("[");
-            for (size_t i = 0; i < LOG_LEVEL_OPTIONS_COUNT; ++i) {
+            for (size_t i = 0; i < COUNT; ++i) {
                 if (i > 0) response->print(",");
                 response->print("{\"value\":\"");
-                response->print(LOG_LEVEL_OPTIONS[i].value);
+                response->print(VALUES[i]);
                 response->print("\",\"label\":\"");
-                response->print(LOG_LEVEL_OPTIONS[i].label);
+                response->print(LABELS[i]);
                 response->print("\"}");
             }
             response->print("]");

@@ -191,26 +191,43 @@ inline void setupWebUIProviders(
     
     DLOG_I(LOG_WEBUI_SETUP, "Registering WebUI providers... (heap: %u)", HAL::getFreeHeap());
     
+    // Minimum heap to keep after each provider for HTTP serving.
+    // Browser sends 3+ parallel requests (HTML, CSS, JS, WS upgrade).
+    // AsyncWebServer needs ~1-2KB per concurrent connection.
+    // Value must exceed post-provider heap to avoid OOM on page load.
+    static constexpr uint32_t MIN_HEAP_PER_PROVIDER = 6500;
+    
 #if WEBUI_SETUP_HAS_STORAGE
     auto* storage = core.getComponent<Components::StorageComponent>("Storage");
 #endif
     
     // WiFi WebUI provider
 #if WEBUI_SETUP_HAS_WIFI_WEBUI
-    if (wifi) {
+    // Define save lambda in wider scope so both WifiComponent and WifiWebUI can use it.
+    // ALWAYS set on WifiComponent (needed for STA fallback auto-save to break boot loops).
+#if WEBUI_SETUP_HAS_STORAGE
+    std::function<void(const Components::WifiConfig&)> saveWifiConfig;
+    if (wifi && storage) {
+        saveWifiConfig = [storage](const Components::WifiConfig& cfg) {
+            DLOG_I(LOG_WEBUI_SETUP, "Saving WiFi config");
+            storage->putString("wifi_ssid", cfg.ssid);
+            storage->putString("wifi_pass", cfg.password);
+            storage->putBool("wifi_autocon", cfg.autoConnect);
+            storage->putBool("wifi_ap_en", cfg.enableAP);
+            storage->putString("wifi_ap_ssid", cfg.apSSID);
+            storage->putString("wifi_ap_pass", cfg.apPassword);
+        };
+        wifi->setConfigSaveCallback(saveWifiConfig);
+    }
+#endif
+    if (HAL::getFreeHeap() < MIN_HEAP_PER_PROVIDER) {
+        DLOG_W(LOG_WEBUI_SETUP, "Heap low (%u), skipping WiFi WebUI provider", HAL::getFreeHeap());
+    } else if (wifi) {
         providers.wifi = new Components::WebUI::WifiWebUI(wifi);
         
 #if WEBUI_SETUP_HAS_STORAGE
-        if (storage) {
-            providers.wifi->setConfigSaveCallback([storage](const Components::WifiConfig& cfg) {
-                DLOG_I(LOG_WEBUI_SETUP, "Saving WiFi config");
-                storage->putString("wifi_ssid", cfg.ssid);
-                storage->putString("wifi_pass", cfg.password);
-                storage->putBool("wifi_autocon", cfg.autoConnect);
-                storage->putBool("wifi_ap_en", cfg.enableAP);
-                storage->putString("wifi_ap_ssid", cfg.apSSID);
-                storage->putString("wifi_ap_pass", cfg.apPassword);
-            });
+        if (saveWifiConfig) {
+            providers.wifi->setConfigSaveCallback(saveWifiConfig);
         }
 #endif
         webuiComponent->registerProviderWithComponent(providers.wifi, wifi);
@@ -220,6 +237,10 @@ inline void setupWebUIProviders(
     
     // NTP WebUI provider
 #if WEBUI_SETUP_HAS_NTP_WEBUI
+    if (HAL::getFreeHeap() < MIN_HEAP_PER_PROVIDER) {
+        DLOG_W(LOG_WEBUI_SETUP, "Heap low (%u), skipping remaining providers", HAL::getFreeHeap());
+        return;
+    }
     auto* ntpComponent = core.getComponent<Components::NTPComponent>("NTP");
     if (ntpComponent) {
         // Register timezone options endpoint - streams options from flash
@@ -263,6 +284,10 @@ inline void setupWebUIProviders(
     
     // MQTT WebUI provider
 #if WEBUI_SETUP_HAS_MQTT_WEBUI
+    if (HAL::getFreeHeap() < MIN_HEAP_PER_PROVIDER) {
+        DLOG_W(LOG_WEBUI_SETUP, "Heap low (%u), skipping remaining providers", HAL::getFreeHeap());
+        return;
+    }
     auto* mqttComponent = core.getComponent<Components::MQTTComponent>("MQTT");
     if (mqttComponent) {
         providers.mqtt = new Components::WebUI::MQTTWebUI(mqttComponent);
@@ -287,6 +312,10 @@ inline void setupWebUIProviders(
     
     // OTA WebUI provider
 #if WEBUI_SETUP_HAS_OTA_WEBUI
+    if (HAL::getFreeHeap() < MIN_HEAP_PER_PROVIDER) {
+        DLOG_W(LOG_WEBUI_SETUP, "Heap low (%u), skipping remaining providers", HAL::getFreeHeap());
+        return;
+    }
     auto* otaComponent = core.getComponent<Components::OTAComponent>("OTA");
     if (otaComponent) {
         providers.ota = new Components::WebUI::OTAWebUI(otaComponent);
@@ -298,6 +327,10 @@ inline void setupWebUIProviders(
     
     // SystemInfo WebUI provider
 #if WEBUI_SETUP_HAS_SYSINFO_WEBUI
+    if (HAL::getFreeHeap() < MIN_HEAP_PER_PROVIDER) {
+        DLOG_W(LOG_WEBUI_SETUP, "Heap low (%u), skipping remaining providers", HAL::getFreeHeap());
+        return;
+    }
     auto* sysInfoComponent = core.getComponent<Components::SystemInfoComponent>("System Info");
     if (sysInfoComponent) {
         providers.sysInfo = new Components::WebUI::SystemInfoWebUI(sysInfoComponent);
@@ -321,6 +354,10 @@ inline void setupWebUIProviders(
     
     // RemoteConsole WebUI provider
 #if WEBUI_SETUP_HAS_CONSOLE_WEBUI
+    if (HAL::getFreeHeap() < MIN_HEAP_PER_PROVIDER) {
+        DLOG_W(LOG_WEBUI_SETUP, "Heap low (%u), skipping remaining providers", HAL::getFreeHeap());
+        return;
+    }
     if (console) {
         providers.console = new Components::WebUI::RemoteConsoleWebUI(console);
         webuiComponent->registerProviderWithComponent(providers.console, console);
@@ -331,6 +368,10 @@ inline void setupWebUIProviders(
     
     // HomeAssistant WebUI provider
 #if WEBUI_SETUP_HAS_HA_WEBUI
+    if (HAL::getFreeHeap() < MIN_HEAP_PER_PROVIDER) {
+        DLOG_W(LOG_WEBUI_SETUP, "Heap low (%u), skipping remaining providers", HAL::getFreeHeap());
+        return;
+    }
     auto* haComponent = core.getComponent<Components::HomeAssistant::HomeAssistantComponent>("HomeAssistant");
     if (haComponent) {
         providers.ha = new Components::WebUI::HomeAssistantWebUI(haComponent);
@@ -360,7 +401,7 @@ inline void setupWebUIProviders(
             storage->putString("webui_color", cfg.primaryColor);
             storage->putBool("webui_auth", cfg.enableAuth);
             storage->putString("webui_user", cfg.username);
-            if (cfg.password.length() > 0) {
+            if (strlen(cfg.password) > 0) {
                 storage->putString("webui_pass", cfg.password);
             }
         });

@@ -7,7 +7,7 @@ using namespace DomoticsCore::Components;
 
 class SimpleComponent : public IComponent {
 public:
-    SimpleComponent(const String& name) {
+    SimpleComponent(const char* name) {
         metadata.name = name;
         metadata.version = "1.0.0";
     }
@@ -53,7 +53,7 @@ void test_get_component_after_init(void) {
     testCore->begin();
     IComponent* comp = testCore->getComponent("MyComponent");
     TEST_ASSERT_NOT_NULL(comp);
-    TEST_ASSERT_EQUAL_STRING("MyComponent", comp->metadata.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("MyComponent", comp->metadata.name);
 }
 
 void test_remove_component(void) {

@@ -42,9 +42,9 @@ void test_ha_events_constants_defined() {
 void test_ha_component_creation_default() {
     HomeAssistantComponent ha;
 
-    TEST_ASSERT_EQUAL_STRING("HomeAssistant", ha.metadata.name.c_str());
-    TEST_ASSERT_EQUAL_STRING("DomoticsCore", ha.metadata.author.c_str());
-    TEST_ASSERT_EQUAL_STRING("1.4.0", ha.metadata.version.c_str());
+    TEST_ASSERT_EQUAL_STRING("HomeAssistant", ha.metadata.name);
+    TEST_ASSERT_EQUAL_STRING("DomoticsCore", ha.metadata.author);
+    TEST_ASSERT_EQUAL_STRING("1.4.0", ha.metadata.version);
 }
 
 void test_ha_component_creation_with_config() {
@@ -57,7 +57,7 @@ void test_ha_component_creation_with_config() {
 
     HomeAssistantComponent ha(config);
 
-    TEST_ASSERT_EQUAL_STRING("HomeAssistant", ha.metadata.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("HomeAssistant", ha.metadata.name);
 
     const HAConfig& cfg = ha.getConfig();
     TEST_ASSERT_EQUAL_STRING("test_node", cfg.nodeId.c_str());

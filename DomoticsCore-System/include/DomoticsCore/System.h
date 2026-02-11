@@ -129,17 +129,36 @@ public:
             return false;
         }
         
+        // Heap guard threshold for post-init steps
+        static constexpr uint32_t MIN_HEAP_POST_INIT = 3072;
+
         // 3. Load configurations from Storage
-        SystemHelpers::loadAllConfigs(core, config, wifi);
+        if (HAL::getFreeHeap() >= MIN_HEAP_POST_INIT) {
+            SystemHelpers::loadAllConfigs(core, config, wifi);
+        } else {
+            DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping config loading", (unsigned)HAL::getFreeHeap());
+        }
         
         // 4. Register WebUI providers
-        SystemHelpers::setupWebUIProviders(core, config, webUIProviders, wifi, console);
+        if (HAL::getFreeHeap() >= MIN_HEAP_POST_INIT) {
+            SystemHelpers::setupWebUIProviders(core, config, webUIProviders, wifi, console);
+        } else {
+            DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping WebUI providers", (unsigned)HAL::getFreeHeap());
+        }
         
         // 5. Setup event orchestration
-        setupEventOrchestration();
+        if (HAL::getFreeHeap() >= MIN_HEAP_POST_INIT) {
+            setupEventOrchestration();
+        } else {
+            DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping event orchestration", (unsigned)HAL::getFreeHeap());
+        }
         
         // 6. Initialize boot diagnostics persistence
-        initBootDiagnosticsPersistence();
+        if (HAL::getFreeHeap() >= MIN_HEAP_POST_INIT) {
+            initBootDiagnosticsPersistence();
+        } else {
+            DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping boot diagnostics", (unsigned)HAL::getFreeHeap());
+        }
         
         // 7. System Ready
         setState(SystemState::READY);
@@ -272,7 +291,7 @@ private:
         
         Components::WebUIConfig webuiConfig;
         webuiConfig.port = config.webUIPort;
-        webuiConfig.deviceName = config.deviceName;
+        webuiConfig.setDeviceName(config.deviceName.c_str());
         core.addComponent(std::make_unique<Components::WebUIComponent>(webuiConfig));
         DLOG_I(LOG_SYSTEM, "✓ WebUI component added (port %d)", config.webUIPort);
 #else

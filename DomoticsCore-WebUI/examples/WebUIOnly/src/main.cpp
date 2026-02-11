@@ -212,7 +212,7 @@ void setup() {
     if (webui) {
         DLOG_I(LOG_APP, "[APP] Registering Demo LED Controller provider factory");
         webui->registerProviderFactory("Demo LED Controller", [](IComponent* c) -> IWebUIProvider* {
-            DLOG_I(LOG_APP, "[APP] Creating LEDWebUI for component: %s", c ? c->metadata.name.c_str() : "null");
+            DLOG_I(LOG_APP, "[APP] Creating LEDWebUI for component: %s", c ? c->metadata.name : "null");
             return new LEDWebUI(static_cast<DemoLEDComponent*>(c));
         });
         webui->registerProviderFactory("system_info", [](IComponent* c) -> IWebUIProvider* {

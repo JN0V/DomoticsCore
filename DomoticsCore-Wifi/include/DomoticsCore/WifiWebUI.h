@@ -141,71 +141,35 @@ public:
             } else if (field == "wifi_enabled") {
                 bool enable = (value == "true" || value == "1" || value == "on");
                 
-                // Use Get → Override → Set pattern
-                Components::WifiConfig cfg = wifi->getConfig();
-                
                 if (enable) {
                     // Validate: cannot enable STA without SSID
                     if (pendingSsid.isEmpty()) {
                         DLOG_W(LOG_WIFI_WEBUI, "Cannot enable WiFi: no SSID configured");
-                        // Force UI refresh to revert toggle to actual state
                         staSettingsState.reset();
                         return "{\"success\":false,\"error\":\"SSID required\",\"refresh\":true}";
                     }
                     
-                    // Enabling: apply pending credentials and connect
-                    DLOG_I(LOG_WIFI_WEBUI, "Enabling WiFi with SSID='%s'", pendingSsid.c_str());
+                    // Lightweight path: set credentials directly on member vars
+                    // (avoids constructing intermediate WifiConfig with 6+ Strings at low heap)
+                    DLOG_I(LOG_WIFI_WEBUI, "Enabling WiFi with SSID='%s' (heap: %u)", pendingSsid.c_str(), (unsigned)HAL::Platform::getFreeHeap());
+                    wifi->setSTACredentials(pendingSsid, pendingPassword, true);
+                    wifi->scheduleUpdateWifiMode();
+                    wifi->scheduleConfigSave();
                     
-                    // Override config with new values
-                    cfg.ssid = pendingSsid;
-                    cfg.password = pendingPassword;
-                    cfg.autoConnect = true;
-                    
-                    // Apply config
-                    wifi->setConfig(cfg);
-                    wifi->updateWifiMode();
-                    
-                    // Invoke persistence callback if set (unified callback)
-                    if (onConfigChanged) {
-                        DLOG_I(LOG_WIFI_WEBUI, "Invoking config save callback");
-                        onConfigChanged(cfg);
-                    } else {
-                        DLOG_W(LOG_WIFI_WEBUI, "WARNING: No save callback set!");
-                    }
-                    
-                    // Note: WebSocket notification removed - clients will get updates via periodic refresh
-                    // Calling notifyWiFiNetworkChanged() during mode transition can crash ESP8266
-                    
-                    // Clear password for safety
                     pendingPassword = "";
-                    // Force next delta update for header badges and cards
-                    wifiStatusState.reset();
-                    apStatusState.reset();
-                    staComponentState.reset();
-                    staSettingsState.reset();
                 } else {
-                    // Disabling: just disable WiFi
+                    // Disabling: lightweight — just flip the flag
                     DLOG_I(LOG_WIFI_WEBUI, "Disabling WiFi");
-                    
-                    // Override config
-                    cfg.autoConnect = false;
-                    
-                    // Apply config
-                    wifi->setConfig(cfg);
-                    wifi->updateWifiMode();
-                    
-                    // Invoke persistence callback if set (unified callback)
-                    if (onConfigChanged) {
-                        DLOG_I(LOG_WIFI_WEBUI, "Invoking config save callback");
-                        onConfigChanged(cfg);
-                    }
-                    
-                    // Force next delta update for header badges and cards
-                    wifiStatusState.reset();
-                    apStatusState.reset();
-                    staComponentState.reset();
-                    staSettingsState.reset();
+                    wifi->setSTACredentials(wifi->getConfiguredSSID(), "", false);
+                    wifi->scheduleUpdateWifiMode();
+                    wifi->scheduleConfigSave();
                 }
+                
+                // Force next delta update for header badges and cards
+                wifiStatusState.reset();
+                apStatusState.reset();
+                staComponentState.reset();
+                staSettingsState.reset();
                 
                 return "{\"success\":true}";
             } else if (field == "scan_networks") {
@@ -237,14 +201,12 @@ public:
                     }
                 }
                 
-                // Apply config and update mode
+                // Apply config — deferred to next loop()
                 wifi->setConfig(cfg);
-                wifi->updateWifiMode();
+                wifi->scheduleUpdateWifiMode();
                 
-                // Invoke persistence callback if set
-                if (onConfigChanged) {
-                    onConfigChanged(cfg);
-                }
+                // Defer config save to loop()
+                wifi->scheduleConfigSave();
                 
                 // Force next delta update for header badges and cards
                 wifiStatusState.reset();
@@ -263,13 +225,10 @@ public:
                     Components::WifiConfig cfg = wifi->getConfig();
                     cfg.apSSID = newAp;
                     wifi->setConfig(cfg);
-                    wifi->updateWifiMode();
+                    wifi->scheduleUpdateWifiMode();
                     
-                    // Invoke persistence callback if set (unified callback)
-                    if (onConfigChanged) {
-                        DLOG_I(LOG_WIFI_WEBUI, "Invoking config save callback");
-                        onConfigChanged(cfg);
-                    }
+                    // Defer config save to loop()
+                    wifi->scheduleConfigSave();
                 } else {
                     // Store for when AP gets enabled later
                     pendingApSsid = newAp;

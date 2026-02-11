@@ -193,8 +193,10 @@ inline void loadWifiConfig(Core& core, const SystemConfig& config, Components::W
     
     if (!wifiConfig.ssid.isEmpty()) {
         wifi->setConfig(wifiConfig);
-        wifi->updateWifiMode();
-        DLOG_I(LOG_PERSISTENCE, "Loaded WiFi config: SSID=%s, AP=%d", 
+        // NOTE: Do NOT call updateWifiMode() here! This runs during System::begin()
+        // when heap is low and configSaveCallback_ is not yet set. The mode update
+        // is deferred to afterAllComponentsReady() which has heap guards and fallback logic.
+        DLOG_I(LOG_PERSISTENCE, "Loaded WiFi config: SSID=%s, AP=%d (mode update deferred)", 
                wifiConfig.ssid.c_str(), wifiConfig.enableAP);
     }
 #endif
@@ -213,15 +215,15 @@ inline void loadWebUIConfig(Core& core, const SystemConfig& config) {
     
     Components::WebUIConfig webuiConfig = webui->getConfig();
     
-    webuiConfig.theme = storage->getString("webui_theme", webuiConfig.theme);
-    webuiConfig.deviceName = storage->getString("device_name", webuiConfig.deviceName);
-    webuiConfig.primaryColor = storage->getString("webui_color", webuiConfig.primaryColor);
+    webuiConfig.setTheme(storage->getString("webui_theme", webuiConfig.getTheme()).c_str());
+    webuiConfig.setDeviceName(storage->getString("device_name", webuiConfig.getDeviceName()).c_str());
+    webuiConfig.setPrimaryColor(storage->getString("webui_color", webuiConfig.getPrimaryColor()).c_str());
     webuiConfig.enableAuth = storage->getBool("webui_auth", webuiConfig.enableAuth);
-    webuiConfig.username = storage->getString("webui_user", webuiConfig.username);
-    webuiConfig.password = storage->getString("webui_pass", webuiConfig.password);
+    webuiConfig.setUsername(storage->getString("webui_user", webuiConfig.getUsername()).c_str());
+    webuiConfig.setPassword(storage->getString("webui_pass", webuiConfig.getPassword()).c_str());
     
     webui->setConfig(webuiConfig);
-    DLOG_I(LOG_PERSISTENCE, "Loaded WebUI config: theme=%s", webuiConfig.theme.c_str());
+    DLOG_I(LOG_PERSISTENCE, "Loaded WebUI config: theme=%s", webuiConfig.theme);
 #endif
 }
 

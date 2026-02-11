@@ -15,7 +15,11 @@ namespace HAL {
 namespace WiFiImpl {
 
 inline void init() {
-    WiFi.mode(WIFI_OFF);
+    WiFi.persistent(false);       // Don't auto-save WiFi state to flash (we manage persistence)
+    WiFi.setAutoConnect(false);   // Don't auto-connect STA on boot (saves ~4KB heap)
+    WiFi.setAutoReconnect(false); // We handle reconnection ourselves
+    WiFi.disconnect(true);        // Clear any residual STA connection from previous boot
+    WiFi.mode(WIFI_OFF);          // Start clean — our code decides the mode
 }
 
 inline void setMode(WiFiHAL::Mode mode) {

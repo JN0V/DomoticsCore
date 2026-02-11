@@ -58,14 +58,14 @@ void test_wifi_events_constants_defined(void) {
 void test_wifi_component_creation_default(void) {
     auto wifi = std::make_unique<WifiComponent>();
 
-    TEST_ASSERT_EQUAL_STRING("Wifi", wifi->metadata.name.c_str());
-    TEST_ASSERT_EQUAL_STRING("1.4.0", wifi->metadata.version.c_str());
+    TEST_ASSERT_EQUAL_STRING("Wifi", wifi->metadata.name);
+    TEST_ASSERT_EQUAL_STRING("1.4.0", wifi->metadata.version);
 }
 
 void test_wifi_component_creation_with_credentials(void) {
     auto wifi = std::make_unique<WifiComponent>("TestSSID", "TestPassword");
 
-    TEST_ASSERT_EQUAL_STRING("Wifi", wifi->metadata.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("Wifi", wifi->metadata.name);
     TEST_ASSERT_EQUAL_STRING("TestSSID", wifi->getConfiguredSSID().c_str());
 }
 
@@ -210,7 +210,7 @@ void test_wifi_disconnect_reconnect(void) {
     wifiPtr->reconnect();
 
     // Component should still be valid
-    TEST_ASSERT_EQUAL_STRING("Wifi", wifiPtr->metadata.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("Wifi", wifiPtr->metadata.name);
 }
 
 void test_wifi_scan_async(void) {

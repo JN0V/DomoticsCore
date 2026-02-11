@@ -143,6 +143,24 @@
 #endif
 
 // ============================================================================
+// Cross-platform PROGMEM helpers
+// On ESP8266, .rodata is in DRAM — use PSTR/PROGMEM to move to Flash.
+// On ESP32 and other platforms, .rodata is already Flash-mapped — no-op.
+// Defined in platform HAL files; fallbacks here for non-ESP8266.
+// ============================================================================
+#ifndef DSNPRINTF_P
+    #define DSNPRINTF_P(buf, size, fmt, ...) \
+        snprintf(buf, size, fmt, ##__VA_ARGS__)
+#endif
+#ifndef DLOG_SNPRINTF
+    #define DLOG_SNPRINTF(buf, size, fmt, ...) \
+        snprintf(buf, size, fmt, ##__VA_ARGS__)
+#endif
+#ifndef DOMOTICS_DLOG_BUF_SIZE
+    #define DOMOTICS_DLOG_BUF_SIZE 256
+#endif
+
+// ============================================================================
 // Backward-Compatible API (delegates to Platform namespace)
 // ============================================================================
 

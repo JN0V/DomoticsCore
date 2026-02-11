@@ -21,6 +21,7 @@
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Logger.h"
 #include "DomoticsCore/Platform_HAL.h"  // For HAL::getFreeHeap()
+#include "DomoticsCore/MemoryManager.h" // For adaptive WS limits
 #include "DomoticsCore/WebUI_HAL.h"     // For WebUI buffer sizes
 #include "DomoticsCore/Generated/WebUIAssets.h"
 
@@ -55,6 +56,9 @@ private:
     // State
     bool forceNextUpdate = false; // force full contexts send on next tick (e.g., after WS reconnect)
 
+    // Shared WS send buffer (single-threaded, safe to share between sendWebSocketUpdate/sendWebSocketUpdates)
+    static char wsBuffer_[WEBUI_WS_BUFFER_SIZE];
+
     struct SchemaMemProbe {
         bool active = false;
         uint32_t seq = 0;
@@ -82,7 +86,7 @@ public:
         : config(cfg) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "WebUI";
-        metadata.version = "1.4.0";
+        metadata.version = "1.5.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Web dashboard and API component";
 
@@ -103,6 +107,17 @@ public:
      * @brief Initialize the AsyncWebServer, register websocket handler, and configure routes.
      */
     ComponentStatus begin() override {
+        // Adapt WS limits based on runtime memory profile
+        auto& memMgr = MemoryManager::instance();
+        int adaptiveMaxClients = memMgr.getMaxWsClients();
+        if (adaptiveMaxClients < config.maxWebSocketClients) {
+            DLOG_I(LOG_WEB, "Memory profile %s: WS clients %d -> %d",
+                   memMgr.getProfileName(), config.maxWebSocketClients, adaptiveMaxClients);
+            config.maxWebSocketClients = adaptiveMaxClients;
+            // Recreate WebSocketHandler with updated config
+            webSocket = std::unique_ptr<WebUI::WebSocketHandler>(new WebUI::WebSocketHandler(config));
+        }
+
         webServer->begin();
         webServer->setAuthHandler([this](AsyncWebServerRequest* request) {
             return authenticate(request);
@@ -111,10 +126,6 @@ public:
         if (config.enableWebSocket) {
             webSocket->begin(webServer->getServer());
             
-            // Restored: callbacks for initial data and UI actions
-            webSocket->setClientConnectedCallback([this](AsyncWebSocketClient* client) {
-                sendWebSocketUpdate(client);
-            });
             webSocket->setForceUpdateCallback([this]() {
                 forceNextUpdate = true;
             });
@@ -134,6 +145,15 @@ public:
      * @brief Pump periodic websocket updates and clean up disconnected clients.
      */
     void loop() override {
+        static unsigned long lastLoopLog = 0;
+        unsigned long now = HAL::Platform::getMillis();
+        if (now - lastLoopLog >= 10000) {
+            DLOG_D(LOG_WEB, "WebUI loop alive, heap=%u, wsClients=%d, sse=%s(%d)",
+                   (unsigned)HAL::Platform::getFreeHeap(), webSocket->getClientCount(),
+                   webSocket->isSSEEnabled() ? "on" : "off", webSocket->getSSEClientCount());
+            lastLoopLog = now;
+        }
+
         webSocket->loop();
 
         for (uint8_t i = 0; i < SCHEMA_PROBE_SLOTS; i++) {
@@ -223,7 +243,7 @@ public:
     void setConfig(const WebUIConfig& cfg) {
         config = cfg;
         DLOG_I(LOG_WEB, "Config updated: theme=%s, deviceName=%s", 
-               config.theme.c_str(), config.deviceName.c_str());
+               config.theme, config.deviceName);
     }
 
     void registerProviderFactory(const String& typeKey, std::function<IWebUIProvider*(IComponent*)> factory) {
@@ -345,16 +365,16 @@ public:
                 const String& value = valueIt->second;
                 
                 if (field == "theme") {
-                    config.theme = value;
+                    config.setTheme(value.c_str());
                 } else if (field == "primary_color") {
-                    config.primaryColor = value;
+                    config.setPrimaryColor(value.c_str());
                 } else if (field == "enable_auth") {
                     config.enableAuth = (value == "true" || value == "1");
                 } else if (field == "username") {
-                    config.username = value;
+                    config.setUsername(value.c_str());
                 } else if (field == "password") {
                     if (value.length() > 0) {
-                        config.password = value;
+                        config.setPassword(value.c_str());
                     }
                 } else {
                     return "{\"success\":false, \"error\":\"Unknown field\"}";
@@ -372,7 +392,7 @@ public:
 private:
     bool authenticate(AsyncWebServerRequest* request) {
         if (!config.enableAuth) return true;
-        return request->authenticate(config.username.c_str(), config.password.c_str());
+        return request->authenticate(config.username, config.password);
     }
 
     /**
@@ -413,6 +433,140 @@ private:
     }
     
     void setupApiRoutes() {
+        // Polling endpoint for real-time updates AND schema delivery
+        // Use ?schema=1 to get schema (avoids separate TCP connection that fails during TIME_WAIT)
+        webServer->registerRoute("/api/ui/updates", HTTP_GET, [this](AsyncWebServerRequest* request) {
+            if (config.enableAuth && !authenticate(request)) {
+                return request->requestAuthentication();
+            }
+            
+            // Check if client is requesting schema
+            if (request->hasParam("schema")) {
+                DLOG_I(LOG_WEB, "Schema via poll endpoint (heap: %u)", (unsigned)HAL::Platform::getFreeHeap());
+                std::shared_ptr<WebUI::ProviderRegistry::SchemaChunkState> state = registry->prepareSchemaGeneration();
+                AsyncWebServerResponse* response = request->beginChunkedResponse(
+                    "application/json",
+                    [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+                        size_t written = 0;
+                        if (!state || state->finished) return 0;
+                        if (!state->began) {
+                            if (maxLen < 1) return RESPONSE_TRY_AGAIN;
+                            buffer[written++] = '[';
+                            state->began = true;
+                        }
+                        while (written < maxLen && !state->finished) {
+                            if (state->serializingContext) {
+                                size_t n = state->serializer.write(buffer + written, maxLen - written);
+                                written += n;
+                                if (state->serializer.isComplete()) {
+                                    state->serializingContext = false;
+                                    state->needComma = true;
+                                    state->currentContextPtr = nullptr;
+                                } else if (n == 0) break;
+                                continue;
+                            }
+                            bool hasNext = false;
+                            while (state->providerIndex < state->providers.size()) {
+                                IWebUIProvider* provider = state->providers[state->providerIndex];
+                                if (!provider || !provider->isWebUIEnabled()) {
+                                    state->providerIndex++;
+                                    state->contextIndexInProvider = 0;
+                                    continue;
+                                }
+                                const WebUIContext* ctxPtr = provider->getContextAtRef(state->contextIndexInProvider);
+                                if (ctxPtr) {
+                                    state->currentContextPtr = ctxPtr;
+                                    state->contextIndexInProvider++;
+                                    hasNext = true;
+                                    break;
+                                }
+                                state->providerIndex++;
+                                state->contextIndexInProvider = 0;
+                            }
+                            if (!hasNext) {
+                                if (written < maxLen) buffer[written++] = ']';
+                                state->finished = true;
+                                std::vector<IWebUIProvider*>().swap(state->providers);
+                                return written;
+                            }
+                            if (!state->currentContextPtr || !state->currentContextPtr->getContextIdCStr()[0]) continue;
+                            if (state->needComma) {
+                                if (written < maxLen) {
+                                    buffer[written++] = ',';
+                                } else {
+                                    state->contextIndexInProvider--;
+                                    return written;
+                                }
+                            }
+                            state->serializer.begin(*state->currentContextPtr);
+                            state->serializingContext = true;
+                            size_t n = state->serializer.write(buffer + written, maxLen - written);
+                            written += n;
+                            if (state->serializer.isComplete()) {
+                                state->serializingContext = false;
+                                state->needComma = true;
+                                state->currentContextPtr = nullptr;
+                            } else if (n == 0) break;
+                        }
+                        // If nothing was written but serialization isn't done,
+                        // tell the server to retry instead of ending the response
+                        if (written == 0 && !state->finished) return RESPONSE_TRY_AGAIN;
+                        return written;
+                    });
+                addCorsHeaders(response);
+                response->addHeader("Connection", "close");
+                request->send(response);
+                return;
+            }
+            
+            // Normal polling update
+            webSocket->onPollRequest();
+            int len = buildUpdateJson(true);
+            if (len > 0) {
+                // Inject SSE hint into response so frontend can upgrade to SSE
+                if (webSocket->isSSEEnabled()) {
+                    if (len > 2 && wsBuffer_[len-1] == '}' && wsBuffer_[len-2] == '}') {
+                        int extra = snprintf(wsBuffer_ + len - 1, sizeof(wsBuffer_) - len + 1,
+                            ",\"_sse\":\"/api/ui/events\"}");
+                        if (extra > 0) len += extra - 1;
+                    }
+                }
+                AsyncWebServerResponse* response = request->beginResponse(200, "application/json", wsBuffer_);
+                addCorsHeaders(response);
+                response->addHeader("Connection", "close");
+                request->send(response);
+            } else {
+                request->send(503, "application/json", "{\"error\":\"buffer overflow\"}");
+            }
+        });
+
+        // GET endpoint for client→server UI actions — uses query params instead
+        // of POST body to avoid body-parser heap allocation (~500B) that crashes
+        // ESP8266 at <2.5KB free heap.
+        webServer->registerRoute("/api/ui/action", HTTP_GET, [this](AsyncWebServerRequest* request) {
+            if (config.enableAuth && !authenticate(request)) {
+                return request->requestAuthentication();
+            }
+            
+            String contextId, field, value;
+            if (request->hasParam("contextId")) {
+                contextId = request->getParam("contextId")->value();
+            }
+            if (request->hasParam("field")) {
+                field = request->getParam("field")->value();
+            }
+            if (request->hasParam("value")) {
+                value = request->getParam("value")->value();
+            }
+            
+            if (contextId.length() > 0 && field.length() > 0) {
+                String response = handleUIAction(contextId, field, value);
+                request->send(200, "application/json", response);
+            } else {
+                request->send(400, "application/json", "{\"error\":\"Missing contextId or field\"}");
+            }
+        });
+
         // System info API - optimized for ESP8266: use snprintf instead of String concatenation
         webServer->registerRoute("/api/system/info", HTTP_GET, [this](AsyncWebServerRequest* request) {
             char sysInfo[128];
@@ -504,7 +658,7 @@ private:
             WebUIContext foundContext;
             bool found = false;
             provider->forEachContext([&](const WebUIContext& ctx) {
-                if (ctx.contextId == contextId) {
+                if (strcmp(ctx.getContextIdCStr(), contextId.c_str()) == 0) {
                     foundContext = ctx;
                     found = true;
                     return false; // Stop iteration
@@ -622,7 +776,7 @@ private:
                             return written;
                         }
 
-                        if (!state->currentContextPtr || state->currentContextPtr->contextId.isEmpty()) continue;
+                        if (!state->currentContextPtr || !state->currentContextPtr->getContextIdCStr()[0]) continue;
 
                         if (state->needComma) {
                             if (written < maxLen) {
@@ -666,31 +820,31 @@ private:
     
     // Duplicated helper to keep compilation working until I move it to a shared util or ProviderRegistry
     void serializeContext(JsonObject& obj, const WebUIContext& context) {
-        obj["contextId"] = context.contextId;
-        obj["title"] = context.title;
-        obj["icon"] = context.icon;
+        obj["contextId"] = context.getContextIdCStr();
+        obj["title"] = context.getTitleCStr();
+        obj["icon"] = context.getIconCStr();
         obj["location"] = (int)context.location;
         obj["presentation"] = (int)context.presentation;
         obj["priority"] = context.priority;
-        obj["apiEndpoint"] = context.apiEndpoint;
+        obj["apiEndpoint"] = context.getApiEndpointCStr();
         obj["alwaysInteractive"] = context.alwaysInteractive;
         
-        if (!context.customHtml.isEmpty()) obj["customHtml"] = context.customHtml;
-        if (!context.customCss.isEmpty()) obj["customCss"] = context.customCss;
-        if (!context.customJs.isEmpty()) obj["customJs"] = context.customJs;
+        if (context.hasCustomHtml()) obj["customHtml"] = context.getCustomHtmlCStr();
+        if (context.hasCustomCss()) obj["customCss"] = context.getCustomCssCStr();
+        if (context.hasCustomJs()) obj["customJs"] = context.getCustomJsCStr();
 
         JsonArray fields = obj["fields"].to<JsonArray>();
         for (const auto& field : context.fields) {
             JsonObject fieldObj = fields.add<JsonObject>();
-            fieldObj["name"] = field.name;
-            fieldObj["label"] = field.label;
+            fieldObj["name"] = field.getNameCStr();
+            fieldObj["label"] = field.getLabelCStr();
             fieldObj["type"] = (int)field.type;
-            fieldObj["value"] = field.value;
-            fieldObj["unit"] = field.unit;
+            fieldObj["value"] = field.getValueCStr();
+            fieldObj["unit"] = field.getUnitCStr();
             fieldObj["readOnly"] = field.readOnly;
             fieldObj["minValue"] = field.minValue;
             fieldObj["maxValue"] = field.maxValue;
-            fieldObj["endpoint"] = field.endpoint;
+            fieldObj["endpoint"] = field.getEndpointCStr();
             if (!field.options.empty()) {
                 JsonArray options = fieldObj["options"].to<JsonArray>();
                 for (const auto& opt : field.options) options.add(opt);
@@ -702,123 +856,95 @@ private:
         }
     }
 
-    // Restored: send update to specific client on connect
-    // Optimized for ESP8266: use static buffer instead of String concatenation
-    void sendWebSocketUpdate(AsyncWebSocketClient* client) {
-        if (!client || client->status() != WS_CONNECTED) return;
-
-        // Reuse the same buffer as sendWebSocketUpdates to avoid extra heap allocation
-        static char buffer[WEBUI_WS_BUFFER_SIZE];
-        int pos = snprintf(buffer, sizeof(buffer),
-            "{\"system\":{\"uptime\":%u,\"heap\":%u,\"clients\":%d,\"device_name\":\"%s\"},\"contexts\":{",
-            (unsigned)HAL::Platform::getMillis(), (unsigned)HAL::Platform::getFreeHeap(), getWebSocketClients(), config.deviceName.c_str());
-
-        if (pos < 0 || pos >= (int)sizeof(buffer)) return;
-
-        int count = 0;
-        for (const auto& p : registry->getContextProviders()) {
-            if (pos > (int)sizeof(buffer) - 512) break;
-
-            String data = p.second->getWebUIData(p.first);
-            if (data.isEmpty() || data == "{}") continue;
-
-            int needed = p.first.length() + data.length() + 5;
-            if (pos + needed >= (int)sizeof(buffer) - 10) break;
-
-            if (count++ > 0) buffer[pos++] = ',';
-            int written = snprintf(buffer + pos, sizeof(buffer) - pos,
-                "\"%s\":%s", p.first.c_str(), data.c_str());
-            if (written > 0) pos += written;
-        }
-
-        if (pos < (int)sizeof(buffer) - 3) {
-            buffer[pos++] = '}';
-            buffer[pos++] = '}';
-            buffer[pos] = '\0';
-            if (client->canSend()) client->text(buffer);
-        }
-    }
+    // In polling mode, initial state is served via GET /api/ui/updates
     
-    // Handle UI action from WebSocket
-    void handleUIAction(const String& contextId, const String& field, const String& value) {
+    // Handle UI action — returns provider's JSON response (may contain errors)
+    String handleUIAction(const String& contextId, const String& field, const String& value) {
         IWebUIProvider* provider = registry->getProviderForContext(contextId);
         if (provider) {
             std::map<String, String> params;
             params["field"] = field;
             params["value"] = value;
-            provider->handleWebUIRequest(contextId, "/", "POST", params);
+            String result = provider->handleWebUIRequest(contextId, "/", "POST", params);
             forceNextUpdate = true;
+            return result;
         }
+        return "{\"success\":false,\"error\":\"Unknown context\"}";
     }
 
-    void sendWebSocketUpdates() {
-        // Use static buffer to avoid heap fragmentation on long-running devices
-        // Size is platform-specific: ESP32=8KB, ESP8266=2KB, Native=4KB
-        static char buffer[WEBUI_WS_BUFFER_SIZE];
-        int pos = 0;
-        
-        // Write system info header
-        pos = snprintf(buffer, sizeof(buffer),
+    // Build JSON update into wsBuffer_. Returns length, or 0 on failure.
+    // forceFull=true sends all contexts (for polling), false uses delta check (for SSE broadcast).
+    int buildUpdateJson(bool forceFull) {
+        char* buffer = wsBuffer_;
+        const size_t bufSize = sizeof(wsBuffer_);
+        int pos = DSNPRINTF_P(buffer, bufSize,
             "{\"system\":{\"uptime\":%u,\"heap\":%u,\"clients\":%d,\"device_name\":\"%s\"},\"contexts\":{",
-            (unsigned)HAL::Platform::getMillis(), (unsigned)HAL::Platform::getFreeHeap(), getWebSocketClients(), config.deviceName.c_str());
+            (unsigned)HAL::Platform::getMillis(), (unsigned)HAL::Platform::getFreeHeap(), getWebSocketClients(), config.deviceName);
         
-        if (pos < 0 || pos >= (int)sizeof(buffer)) {
-            DLOG_E(LOG_WEB, "WS buffer overflow in header");
-            return;
-        }
+        if (pos < 0 || pos >= (int)bufSize) return 0;
         
         int contextCount = 0;
         const auto& contextProviders = registry->getContextProviders();
         
         for (const auto& pair : contextProviders) {
-            // Leave room for context data + closing braces
-            if (pos > (int)sizeof(buffer) - 512) {
-                DLOG_W(LOG_WEB, "WS buffer nearly full, truncating contexts");
-                break;
-            }
+            if (pos > (int)bufSize - 512) break;
             
             const String& contextId = pair.first;
             IWebUIProvider* provider = pair.second;
             
-            // Delta check - skip unchanged data
-            if (!forceNextUpdate && !provider->hasDataChanged(contextId)) continue;
+            // Delta check - skip unchanged data (only for SSE broadcast, not polling)
+            if (!forceFull && !forceNextUpdate && !provider->hasDataChanged(contextId)) continue;
             
             String contextData = provider->getWebUIData(contextId);
             if (contextData.isEmpty() || contextData == "{}") continue;
             
-            // Calculate space needed: "contextId":data,
             int needed = contextId.length() + contextData.length() + 5;
-            if (pos + needed >= (int)sizeof(buffer) - 10) {
-                DLOG_W(LOG_WEB, "WS buffer full, skipping remaining contexts");
-                break;
-            }
+            if (pos + needed >= (int)bufSize - 10) break;
             
-            // Add comma separator if not first context
-            if (contextCount > 0) {
-                buffer[pos++] = ',';
-            }
+            if (contextCount > 0) buffer[pos++] = ',';
             
-            // Write context to buffer
-            int written = snprintf(buffer + pos, sizeof(buffer) - pos,
+            int written = DSNPRINTF_P(buffer + pos, bufSize - pos,
                 "\"%s\":%s", contextId.c_str(), contextData.c_str());
             
-            if (written > 0 && pos + written < (int)sizeof(buffer)) {
+            if (written > 0 && pos + written < (int)bufSize) {
                 pos += written;
                 contextCount++;
             }
         }
         
-        // Close JSON object
-        if (pos < (int)sizeof(buffer) - 3) {
+        if (pos < (int)bufSize - 3) {
             buffer[pos++] = '}';
             buffer[pos++] = '}';
             buffer[pos] = '\0';
-            
-            webSocket->broadcast(String(buffer));
+            return pos;
+        }
+        return 0;
+    }
+
+    void sendWebSocketUpdates() {
+        // Skip entirely when no clients — saves building the JSON buffer
+        if (webSocket->getClientCount() == 0) {
+            forceNextUpdate = false;
+            return;
+        }
+
+        // Skip when heap is critically low
+        if (HAL::Platform::getFreeHeap() < 2000) {
+            DLOG_W(LOG_WEB, "SSE broadcast skipped: heap=%u", (unsigned)HAL::Platform::getFreeHeap());
+            return;
+        }
+
+        int len = buildUpdateJson(false);
+        if (len > 0) {
+            DLOG_W(LOG_WEB, "SSE broadcast: %d bytes, clients=%d", len, webSocket->getClientCount());
+            webSocket->broadcast(wsBuffer_, len);
             forceNextUpdate = false;
         }
     }
 };
+
+// Static member definition (single shared WS buffer — saves 2KB BSS vs two separate buffers)
+char WebUIComponent::wsBuffer_[WEBUI_WS_BUFFER_SIZE];
 
 } // namespace Components
 } // namespace DomoticsCore

@@ -13,7 +13,7 @@ private:
     bool foundOptional = false;
     
 public:
-    ComponentWithOptionalDeps(const String& name) : name_(name) {
+    ComponentWithOptionalDeps(const char* name) : name_(name) {
         metadata.name = name;
         metadata.version = "1.0.0";
     }
@@ -65,7 +65,7 @@ private:
     String name_;
     
 public:
-    SimpleComponent(const String& name) : name_(name) {
+    SimpleComponent(const char* name) : name_(name) {
         metadata.name = name;
         metadata.version = "1.0.0";
     }

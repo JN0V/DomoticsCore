@@ -43,47 +43,47 @@ private:
     }
 };
 
-// Unified logging macros using Arduino ESP32 logging
-// Format: [timestamp] [LEVEL] [COMPONENT] message
-// Timestamp is handled automatically by Arduino logging (millis before NTP, time after NTP)
-// Each component declares its own tag string
+// Unified logging macros — platform-agnostic
+// DLOG_SNPRINTF and DOMOTICS_DLOG_BUF_SIZE are defined by HAL:
+//   ESP8266: PROGMEM format strings + 128-byte buffer (saves ~11KB DRAM)
+//   ESP32/Other: standard snprintf + 256-byte buffer
 
 #define DLOG_E(tag, format, ...) \
     do { \
-        char _log_buf[256]; \
-        snprintf(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
+        char _log_buf[DOMOTICS_DLOG_BUF_SIZE]; \
+        DLOG_SNPRINTF(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
         log_e("[%s] %s", tag, _log_buf); \
         LoggerCallbacks::broadcast(LOG_LEVEL_ERROR, tag, _log_buf); \
     } while(0)
 
 #define DLOG_W(tag, format, ...) \
     do { \
-        char _log_buf[256]; \
-        snprintf(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
+        char _log_buf[DOMOTICS_DLOG_BUF_SIZE]; \
+        DLOG_SNPRINTF(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
         log_w("[%s] %s", tag, _log_buf); \
         LoggerCallbacks::broadcast(LOG_LEVEL_WARN, tag, _log_buf); \
     } while(0)
 
 #define DLOG_I(tag, format, ...) \
     do { \
-        char _log_buf[256]; \
-        snprintf(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
+        char _log_buf[DOMOTICS_DLOG_BUF_SIZE]; \
+        DLOG_SNPRINTF(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
         log_i("[%s] %s", tag, _log_buf); \
         LoggerCallbacks::broadcast(LOG_LEVEL_INFO, tag, _log_buf); \
     } while(0)
 
 #define DLOG_D(tag, format, ...) \
     do { \
-        char _log_buf[256]; \
-        snprintf(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
+        char _log_buf[DOMOTICS_DLOG_BUF_SIZE]; \
+        DLOG_SNPRINTF(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
         log_d("[%s] %s", tag, _log_buf); \
         LoggerCallbacks::broadcast(LOG_LEVEL_DEBUG, tag, _log_buf); \
     } while(0)
 
 #define DLOG_V(tag, format, ...) \
     do { \
-        char _log_buf[256]; \
-        snprintf(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
+        char _log_buf[DOMOTICS_DLOG_BUF_SIZE]; \
+        DLOG_SNPRINTF(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
         log_v("[%s] %s", tag, _log_buf); \
         LoggerCallbacks::broadcast(LOG_LEVEL_VERBOSE, tag, _log_buf); \
     } while(0)

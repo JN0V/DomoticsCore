@@ -6,6 +6,7 @@
 #include "WebUIConfig.h"
 #include "DomoticsCore/Generated/WebUIAssets.h"
 #include "DomoticsCore/Logger.h"
+#include "DomoticsCore/MemoryManager.h"
 #include "WebResponse_HAL.h"
 
 namespace DomoticsCore {
@@ -72,12 +73,41 @@ public:
     void setupStaticRoutes() {
         if (!server) return;
 
-        // Serve main HTML page
+        // Root handler: runtime heap check decides combined vs multi-file mode.
+        // Combined mode (inline CSS+JS) avoids concurrent connections that
+        // exhaust heap on memory-constrained devices (e.g. AP+STA ~3KB free).
+        // Uses chunked response to stream the PROGMEM payload safely.
         server->on("/", HTTP_GET, [this](AsyncWebServerRequest* request) {
             if (config.enableAuth && authHandler && !authHandler(request)) {
                 return request->requestAuthentication();
             }
-            
+
+            if (HAL::getFreeHeap() < 1200) {
+                request->send(503, "text/plain", "Low memory");
+                return;
+            }
+
+            if (!config.useFileSystem && MemoryManager::instance().isLowMemory()) {
+                DLOG_I("WEB", "GET / combined %u bytes (heap: %u)",
+                       (unsigned)WEBUI_COMBINED_GZ_LEN, (unsigned)HAL::getFreeHeap());
+
+                auto* response = request->beginChunkedResponse(
+                    "text/html",
+                    [offset = (size_t)0](uint8_t* buffer, size_t maxLen, size_t) mutable -> size_t {
+                        if (offset >= WEBUI_COMBINED_GZ_LEN) return 0; // done
+                        size_t remaining = WEBUI_COMBINED_GZ_LEN - offset;
+                        size_t toSend = (remaining < maxLen) ? remaining : maxLen;
+                        memcpy_P(buffer, WEBUI_COMBINED_GZ + offset, toSend);
+                        offset += toSend;
+                        return toSend;
+                    });
+                response->addHeader("Content-Encoding", "gzip");
+                response->addHeader("Cache-Control", "public, max-age=3600");
+                response->addHeader("Connection", "close");
+                request->send(response);
+                return;
+            }
+
             if (config.useFileSystem) {
                 serveFromFileSystem(request, "/webui/index.html", "text/html");
             } else {
@@ -85,7 +115,7 @@ public:
             }
         });
         
-        // Serve CSS
+        // Serve CSS (multi-file mode — skipped when combined mode is active)
         server->on("/style.css", HTTP_GET, [this](AsyncWebServerRequest* request) {
             if (config.useFileSystem) {
                 serveFromFileSystem(request, "/webui/style.css", "text/css");
@@ -94,7 +124,7 @@ public:
             }
         });
         
-        // Serve JavaScript
+        // Serve JavaScript (multi-file mode — skipped when combined mode is active)
         server->on("/app.js", HTTP_GET, [this](AsyncWebServerRequest* request) {
             if (config.useFileSystem) {
                 serveFromFileSystem(request, "/webui/app.js", "application/javascript");

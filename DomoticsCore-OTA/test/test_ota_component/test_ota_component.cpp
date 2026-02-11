@@ -61,8 +61,8 @@ void test_ota_events_namespace() {
 void test_ota_component_creation_default() {
     OTAComponent ota;
 
-    TEST_ASSERT_EQUAL_STRING("OTA", ota.metadata.name.c_str());
-    TEST_ASSERT_EQUAL_STRING("DomoticsCore", ota.metadata.author.c_str());
+    TEST_ASSERT_EQUAL_STRING("OTA", ota.metadata.name);
+    TEST_ASSERT_EQUAL_STRING("DomoticsCore", ota.metadata.author);
 }
 
 void test_ota_component_creation_with_config() {
@@ -73,7 +73,7 @@ void test_ota_component_creation_with_config() {
 
     OTAComponent ota(config);
 
-    TEST_ASSERT_EQUAL_STRING("OTA", ota.metadata.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("OTA", ota.metadata.name);
 
     const OTAConfig& cfg = ota.getConfig();
     TEST_ASSERT_EQUAL_STRING("https://example.com/firmware.bin", cfg.updateUrl.c_str());

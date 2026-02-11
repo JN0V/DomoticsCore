@@ -10,18 +10,17 @@ using namespace DomoticsCore::Components;
 Core core;
 
 // --- Test Provider ---
-class TestProvider : public IWebUIProvider {
-public:
-    String getWebUIName() const override { return "TestProvider"; }
-    String getWebUIVersion() const override { return "1.0.0"; }
-    
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> contexts;
+class TestProvider : public CachingWebUIProvider {
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
         // Context 1: Status
         contexts.push_back(WebUIContext::statusBadge("tp_status", "Test Status", "icon-test")
             .withField(WebUIField("counter", "Counter", WebUIFieldType::Display, "0")));
-        return contexts;
     }
+
+public:
+    String getWebUIName() const override { return "TestProvider"; }
+    String getWebUIVersion() const override { return "1.0.0"; }
     
     String getWebUIData(const String& contextId) override {
         if (contextId == "tp_status") {
@@ -77,11 +76,11 @@ void runTests() {
     DLOG_I("TEST", "✅ WebUI Component started without crash");
     
     // 4. Test Context Retrieval
-    auto contexts = webui->getWebUIContexts();
     bool foundSettings = false;
-    for(const auto& ctx : contexts) {
-        if(ctx.contextId == "webui_settings") foundSettings = true;
-    }
+    webui->forEachContext([&foundSettings](const WebUIContext& ctx) {
+        if(strcmp(ctx.getContextIdCStr(), "webui_settings") == 0) foundSettings = true;
+        return true;
+    });
     
     if(foundSettings) {
         DLOG_I("TEST", "✅ WebUI internal provider (settings) working");

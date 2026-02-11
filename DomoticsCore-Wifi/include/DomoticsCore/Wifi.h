@@ -75,6 +75,20 @@ private:
     bool shouldConnect;
     bool isConnecting;
     unsigned long connectionStartTime;
+    bool pendingModeUpdate_ = false;  // Deferred updateWifiMode() for low-heap devices
+    bool pendingConfigSave_ = false;   // Deferred config save — avoids NVS writes during HTTP handler (OOM)
+    
+    // STA-only fallback: when heap too low for AP+STA, temporarily drop AP for STA attempt.
+    // If STA fails within timeout, AP is re-enabled and wifiEnabled set to false.
+    Utils::NonBlockingDelay staFallbackTimer_;  // §X: use NonBlockingDelay, not raw millis
+    
+    // Reboot-to-STA: when heap too low for live STA switch (browser connected via AP),
+    // save config and reboot. On restart, heap is higher and STA can connect.
+    bool pendingReboot_ = false;
+    Utils::NonBlockingDelay rebootTimer_;  // §X: NonBlockingDelay for deferred reboot
+    
+    // Config save callback (set by SystemWebUISetup for persistence)
+    std::function<void(const WifiConfig&)> configSaveCallback_;
     
     // New API state
     bool wifiEnabled;
@@ -96,10 +110,14 @@ public:
         : ssid(ssid), password(password), 
           reconnectTimer(5000), statusTimer(30000), connectionTimer(100),
           shouldConnect(true), isConnecting(false), connectionStartTime(0),
+          staFallbackTimer_(30000),
+          rebootTimer_(1500),
           wifiEnabled(true), apEnabled(false) {
+        staFallbackTimer_.disable();  // Only enabled during STA fallback
+        rebootTimer_.disable();       // Only enabled when reboot-to-STA is pending
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "Wifi";
-        metadata.version = "1.4.0";
+        metadata.version = "1.4.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Wifi connectivity management component";
     }
@@ -142,14 +160,93 @@ public:
      * Called after all components ready - connect to WiFi if credentials were set late
      */
     void afterAllComponentsReady() override {
-        // If credentials were set via setConfig() but not connected yet
-        if (!ssid.isEmpty() && !isSTAConnected() && wifiEnabled) {
-            DLOG_I(LOG_WIFI, "Connecting to WiFi with late-configured credentials...");
-            connectToWifi();
+        // WiFi mode changes are handled via deferred mechanism:
+        // setConfig() sets pendingModeUpdate_ = true → loop() executes updateWifiMode()
+        // This ensures mode changes run AFTER all setup (callbacks, providers) is complete.
+        if (pendingModeUpdate_) {
+            DLOG_I(LOG_WIFI, "WiFi mode update pending — will execute in loop() (heap: %u)", (unsigned)HAL::Platform::getFreeHeap());
         }
     }
     
     void loop() override {
+        // Reboot-to-STA: deferred reboot after HTTP response completes
+        if (pendingReboot_ && rebootTimer_.isEnabled() && rebootTimer_.isReady()) {
+            DLOG_I(LOG_WIFI, "Rebooting to apply WiFi settings (STA needs more heap)...");
+            HAL::Platform::restart();
+        }
+        
+        // Deferred mode update: runs after HTTP response is sent and TCP freed,
+        // giving ~500-1000B more heap than during request handling.
+        if (pendingModeUpdate_) {
+            pendingModeUpdate_ = false;
+            DLOG_I(LOG_WIFI, "Executing deferred WiFi mode update (heap: %u)", (unsigned)HAL::Platform::getFreeHeap());
+            updateWifiMode();
+        }
+        
+        // Deferred config save: NVS writes deferred from HTTP handler to avoid OOM.
+        // Runs after HTTP response sent → TCP buffers freed → more heap available.
+        if (pendingConfigSave_ && configSaveCallback_) {
+            pendingConfigSave_ = false;
+            WifiConfig cfg = getConfig();
+            configSaveCallback_(cfg);
+            DLOG_I(LOG_WIFI, "Deferred config save complete (heap: %u)", (unsigned)HAL::Platform::getFreeHeap());
+        }
+        
+        // STA fallback timer: check if STA connected or timed out (§X: NonBlockingDelay)
+        if (staFallbackTimer_.isEnabled()) {
+            if (HAL::WiFiHAL::isConnected()) {
+                // STA connected — restart AP on STA's channel for AP+STA coexistence
+                staFallbackTimer_.disable();
+                isConnecting = false;
+                setStatus(ComponentStatus::Success);
+                DLOG_I(LOG_WIFI, "STA connected — IP: %s", HAL::WiFiHAL::getLocalIP().c_str());
+                
+                // Restart AP in AP+STA mode if heap can support AP overhead + HTTP serving.
+                // AP costs ~2.5KB; HTTP needs ~4KB minimum (TCP + response buffers).
+                // On memory-constrained devices, stay STA-only to keep WebUI functional.
+                if (apEnabled) {
+                    uint32_t heapNow = HAL::Platform::getFreeHeap();
+                    const uint32_t apPlusHttpMin = 6500; // 2.5KB AP overhead + 4KB HTTP minimum
+                    if (heapNow > apPlusHttpMin) {
+                        HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::StationAndAP);
+                        HAL::WiFiHAL::startAP(apSSID_.c_str(), apPassword_.isEmpty() ? nullptr : apPassword_.c_str());
+                        DLOG_I(LOG_WIFI, "AP restarted in AP+STA mode: %s (IP: %s)", apSSID_.c_str(), HAL::WiFiHAL::getAPIP().c_str());
+                        emit(WifiEvents::EVENT_AP_ENABLED, true);
+                    } else {
+                        DLOG_W(LOG_WIFI, "Staying STA-only — heap %u too low for AP+STA+HTTP (need %u)", (unsigned)heapNow, (unsigned)apPlusHttpMin);
+                    }
+                }
+                
+                emit(WifiEvents::EVENT_STA_CONNECTED, true);
+                emit(WifiEvents::EVENT_NETWORK_READY, HAL::WiFiHAL::getLocalIP());
+            } else if (staFallbackTimer_.isReady()) {
+                // Timeout — restore AP, disable STA, save config to prevent boot loop
+                staFallbackTimer_.disable();
+                shouldConnect = false;
+                isConnecting = false;
+                wifiEnabled = false;
+                
+                HAL::WiFiHAL::disconnect();
+                HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::AccessPoint);
+                HAL::WiFiHAL::startAP(apSSID_.c_str(), apPassword_.isEmpty() ? nullptr : apPassword_.c_str());
+                DLOG_W(LOG_WIFI, "STA timeout — AP restored: %s (IP: %s)", apSSID_.c_str(), HAL::WiFiHAL::getAPIP().c_str());
+                emit(WifiEvents::EVENT_AP_ENABLED, true);
+                emit(WifiEvents::EVENT_NETWORK_READY, HAL::WiFiHAL::getAPIP());
+                
+                if (configSaveCallback_) {
+                    WifiConfig cfg;
+                    cfg.ssid = ssid;
+                    cfg.password = password;
+                    cfg.autoConnect = false;
+                    cfg.enableAP = true;
+                    cfg.apSSID = apSSID_;
+                    cfg.apPassword = apPassword_;
+                    configSaveCallback_(cfg);
+                    DLOG_I(LOG_WIFI, "Config saved with autoConnect=false (prevents boot loop)");
+                }
+            }
+        }
+        
         // Skip Wifi connection logic if in AP mode (empty SSID)
         if (ssid.isEmpty()) {
             return; // AP-only mode handled; flags set in connectToWifi()
@@ -520,54 +617,177 @@ public:
         DLOG_I(LOG_WIFI, "Config updated: SSID=%s, autoConnect=%d, AP=%s (enabled=%d)", 
                ssid.c_str(), wifiEnabled, apSSID_.c_str(), apEnabled);
         
-        // Note: Caller should call updateWifiMode() after setConfig() to apply changes
+        // Schedule deferred mode update — runs in next loop() iteration,
+        // after all setup (callbacks, providers) is complete.
+        if (wifiEnabled || apEnabled) {
+            pendingModeUpdate_ = true;
+        }
+    }
+    
+    // Set config save callback for persistence (called during STA fallback)
+    void setConfigSaveCallback(std::function<void(const WifiConfig&)> callback) {
+        configSaveCallback_ = callback;
+    }
+    
+    
+    // Schedule deferred mode update — runs in next loop() iteration
+    // after HTTP response is sent and TCP buffers freed.
+    void scheduleUpdateWifiMode() {
+        pendingModeUpdate_ = true;
+        DLOG_I(LOG_WIFI, "WiFi mode update scheduled for next loop (heap: %u)", (unsigned)HAL::Platform::getFreeHeap());
+    }
+    
+    // Schedule deferred config save — NVS writes deferred from HTTP handler to loop()
+    // to avoid OOM when heap is critical during request handling.
+    void scheduleConfigSave() {
+        pendingConfigSave_ = true;
+    }
+    
+    // Lightweight STA credential setter — avoids constructing intermediate WifiConfig
+    // (which allocates 6+ Strings) during HTTP handler when heap is critical.
+    // Use instead of getConfig()/setConfig() pattern in low-heap paths.
+    void setSTACredentials(const String& newSsid, const String& newPassword, bool enable) {
+        ssid = newSsid;
+        password = newPassword;
+        shouldConnect = enable;
+        wifiEnabled = enable;
+        DLOG_I(LOG_WIFI, "STA credentials set: SSID='%s', enabled=%d (heap: %u)",
+               ssid.c_str(), enable, (unsigned)HAL::Platform::getFreeHeap());
     }
     
     // Update Wifi mode based on enabled features
     bool updateWifiMode() {
+        // Guard: wifiEnabled with empty SSID is invalid (partial config from crash).
+        // Disable STA to prevent useless connection attempts.
+        if (wifiEnabled && ssid.isEmpty()) {
+            DLOG_W(LOG_WIFI, "wifiEnabled=true but SSID empty — disabling STA (stale config)");
+            wifiEnabled = false;
+            shouldConnect = false;
+        }
+        
         DLOG_I(LOG_WIFI, "Updating Wifi mode - Wifi: %s, AP: %s", 
                wifiEnabled ? "enabled" : "disabled", 
                apEnabled ? "enabled" : "disabled");
         
-        if (wifiEnabled && apEnabled) {
-            // Both Wifi and AP requested - use STA+AP mode
-            DLOG_I(LOG_WIFI, "Enabling STA+AP mode");
-            HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::StationAndAP);
-            HAL::Platform::delayMs(100);
-            
-            // Start AP
-            bool apSuccess = HAL::WiFiHAL::startAP(apSSID_.c_str(), apPassword_.isEmpty() ? nullptr : apPassword_.c_str());
-            
-            if (apSuccess) {
-                DLOG_I(LOG_WIFI, "AP started: %s (IP: %s)", apSSID_.c_str(), HAL::WiFiHAL::getAPIP().c_str());
-                emit(WifiEvents::EVENT_AP_ENABLED, true);
-                emit(WifiEvents::EVENT_NETWORK_READY, HAL::WiFiHAL::getAPIP());
+        // Ultra-low heap guard: if heap is critically low, ANY WiFi SDK call
+        // may crash. Disable STA and save config to break boot loops.
+        if (wifiEnabled) {
+            uint32_t heapNow = HAL::Platform::getFreeHeap();
+            if (heapNow < 2000) {
+                DLOG_W(LOG_WIFI, "CRITICAL: heap only %u — disabling WiFi STA to prevent crash", (unsigned)heapNow);
+                wifiEnabled = false;
+                shouldConnect = false;
+                if (configSaveCallback_) {
+                    WifiConfig cfg;
+                    cfg.ssid = ssid;
+                    cfg.password = password;
+                    cfg.autoConnect = false;
+                    cfg.enableAP = apEnabled;
+                    cfg.apSSID = apSSID_;
+                    cfg.apPassword = apPassword_;
+                    configSaveCallback_(cfg);
+                    DLOG_I(LOG_WIFI, "Config saved with autoConnect=false (heap guard)");
+                }
+                return false;
             }
-
-            // Enable station connection attempts
+        }
+        
+        if (wifiEnabled && apEnabled) {
+            uint32_t freeHeap = HAL::Platform::getFreeHeap();
+            
+            if (freeHeap < 3500) {
+                // Not enough heap for simultaneous AP+STA (ESP8266 needs ~3.5KB+).
+                if (HAL::WiFiHAL::getAPStationCount() > 0) {
+                    // Runtime: browser connected via AP — heap too low for WiFi.begin().
+                    // Config save already scheduled via pendingConfigSave_ in loop()
+                    // (runs before reboot timer fires). No NVS writes here to avoid OOM.
+                    DLOG_W(LOG_WIFI, "AP client connected, heap too low (%u) — rebooting to apply WiFi settings", (unsigned)freeHeap);
+                    pendingReboot_ = true;
+                    rebootTimer_.reset();
+                    rebootTimer_.enable();
+                    return true;
+                }
+                // Boot time: no AP clients — try STA-only with AP fallback.
+                // Stop AP to free ~1.5KB, then attempt STA for 30s.
+                // If STA fails, AP is re-enabled and autoConnect saved as false.
+                DLOG_W(LOG_WIFI, "Heap low for AP+STA (%u) — trying STA-only with AP fallback (30s)", (unsigned)freeHeap);
+                HAL::WiFiHAL::stopAP();
+                emit(WifiEvents::EVENT_AP_ENABLED, false);
+                HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
+                
+                shouldConnect = true;
+                reconnectTimer.reset();
+                
+                // Activate fallback timer (§X: NonBlockingDelay)
+                staFallbackTimer_.reset();
+                staFallbackTimer_.enable();
+                return true;
+            }
+            
+            // Sufficient heap: direct simultaneous AP+STA (no AP disruption).
+            // Dual-radio platforms (ESP32) can run AP and STA on different channels.
+            if (freeHeap >= 10000) {
+                DLOG_I(LOG_WIFI, "Enabling STA+AP mode (heap: %u)", (unsigned)freeHeap);
+                HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::StationAndAP);
+                HAL::Platform::yield();
+                
+                bool apSuccess = HAL::WiFiHAL::startAP(apSSID_.c_str(), apPassword_.isEmpty() ? nullptr : apPassword_.c_str());
+                if (apSuccess) {
+                    DLOG_I(LOG_WIFI, "AP started: %s (IP: %s)", apSSID_.c_str(), HAL::WiFiHAL::getAPIP().c_str());
+                    emit(WifiEvents::EVENT_AP_ENABLED, true);
+                    emit(WifiEvents::EVENT_NETWORK_READY, HAL::WiFiHAL::getAPIP());
+                }
+                
+                shouldConnect = true;
+                reconnectTimer.reset();
+                return apSuccess;
+            }
+            
+            // Constrained heap (3.5–10KB): single-radio channel sync.
+            // AP and STA share one channel — stop AP first so STA can connect
+            // to the router's channel, then restart AP locked to that channel
+            // via the fallback success handler in loop().
+            DLOG_I(LOG_WIFI, "Stopping AP for STA connection (heap: %u, channel sync)", (unsigned)freeHeap);
+            HAL::WiFiHAL::stopAP();
+            emit(WifiEvents::EVENT_AP_ENABLED, false);
+            HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
+            
             shouldConnect = true;
             reconnectTimer.reset();
             
-            return apSuccess;
+            // Activate fallback timer (§X: NonBlockingDelay)
+            staFallbackTimer_.reset();
+            staFallbackTimer_.enable();
+            return true;
         } else if (wifiEnabled && !apEnabled) {
             // Only Wifi requested - use STA mode
             DLOG_I(LOG_WIFI, "Enabling station mode only");
             HAL::WiFiHAL::stopAP();
             emit(WifiEvents::EVENT_AP_ENABLED, false);
-            HAL::Platform::delayMs(100);
+            HAL::Platform::yield();  // §X: non-blocking yield for WiFi stack
             HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
-            HAL::Platform::delayMs(100);
+            HAL::Platform::yield();
             shouldConnect = true;
             reconnectTimer.reset();
             return true;
         } else if (!wifiEnabled && apEnabled) {
             // Only AP requested - use AP mode
-            DLOG_I(LOG_WIFI, "Enabling AP mode only");
             shouldConnect = false;
             isConnecting = false;
+            
+            // Skip restart if AP is already running with correct SSID
+            // (begin() already started it — restarting would cause brief AP dropout)
+            if (HAL::WiFiHAL::getMode() == HAL::WiFiHAL::Mode::AccessPoint &&
+                HAL::WiFiHAL::getAPSSID() == apSSID_) {
+                DLOG_I(LOG_WIFI, "AP already active: %s (IP: %s) — no restart needed",
+                       apSSID_.c_str(), HAL::WiFiHAL::getAPIP().c_str());
+                return true;
+            }
+            
+            DLOG_I(LOG_WIFI, "Enabling AP mode only");
             HAL::WiFiHAL::disconnect();
             HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::AccessPoint);
-            HAL::Platform::delayMs(100);
+            HAL::Platform::yield();  // §X: non-blocking yield for WiFi stack
             
             bool success = HAL::WiFiHAL::startAP(apSSID_.c_str(), apPassword_.isEmpty() ? nullptr : apPassword_.c_str());
             
@@ -623,7 +843,15 @@ private:
     void startConnection() {
         if (isConnecting) return; // Already connecting
         
-        DLOG_I(LOG_WIFI, "Connecting to Wifi: %s", ssid.c_str());
+        // Heap guard: WiFi.begin() + WPA handshake needs ~1.5-2KB.
+        // Checked here (not in HTTP handler) because HTTP buffers are freed by now.
+        uint32_t freeHeap = HAL::Platform::getFreeHeap();
+        if (freeHeap < 2500) {
+            DLOG_W(LOG_WIFI, "Deferring WiFi connect: heap too low (%u bytes, need 2500+)", (unsigned)freeHeap);
+            return; // Will retry on next reconnectTimer tick
+        }
+        
+        DLOG_I(LOG_WIFI, "Connecting to Wifi: %s (heap: %u)", ssid.c_str(), (unsigned)freeHeap);
         HAL::WiFiHAL::connect(ssid.c_str(), password.c_str());
         
         isConnecting = true;

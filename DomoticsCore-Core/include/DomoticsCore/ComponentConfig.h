@@ -83,15 +83,15 @@ struct ConfigParam {
  * Component metadata information
  */
 struct ComponentMetadata {
-    String name;
-    String version;
-    String author;
-    String description;
-    String category;
+    const char* name = "";
+    const char* version = "1.0.0";
+    const char* author = "";
+    const char* description = "";
+    const char* category = "";
     std::vector<String> tags;
     
-    ComponentMetadata(const String& n = "", const String& v = "1.0.0", 
-                     const String& a = "", const String& d = "")
+    ComponentMetadata(const char* n = "", const char* v = "1.0.0", 
+                     const char* a = "", const char* d = "")
         : name(n), version(v), author(a), description(d) {}
 };
 

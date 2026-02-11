@@ -50,8 +50,8 @@ void test_mqtt_events_constants_defined() {
 void test_mqtt_component_creation_default() {
     MQTTComponent mqtt;
 
-    TEST_ASSERT_EQUAL_STRING("MQTT", mqtt.metadata.name.c_str());
-    TEST_ASSERT_EQUAL_STRING("DomoticsCore", mqtt.metadata.author.c_str());
+    TEST_ASSERT_EQUAL_STRING("MQTT", mqtt.metadata.name);
+    TEST_ASSERT_EQUAL_STRING("DomoticsCore", mqtt.metadata.author);
 }
 
 void test_mqtt_component_creation_with_config() {
@@ -62,7 +62,7 @@ void test_mqtt_component_creation_with_config() {
 
     MQTTComponent mqtt(config);
 
-    TEST_ASSERT_EQUAL_STRING("MQTT", mqtt.metadata.name.c_str());
+    TEST_ASSERT_EQUAL_STRING("MQTT", mqtt.metadata.name);
 
     const MQTTConfig& cfg = mqtt.getConfig();
     TEST_ASSERT_EQUAL_STRING("test.mosquitto.org", cfg.broker.c_str());

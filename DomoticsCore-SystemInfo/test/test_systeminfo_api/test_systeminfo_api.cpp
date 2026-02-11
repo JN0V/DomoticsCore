@@ -30,8 +30,8 @@ void tearDown(void) {
 void test_systeminfo_creation_default(void) {
     SystemInfoComponent sysinfo;
 
-    TEST_ASSERT_EQUAL_STRING("System Info", sysinfo.metadata.name.c_str());
-    TEST_ASSERT_EQUAL_STRING("1.4.0", sysinfo.metadata.version.c_str());
+    TEST_ASSERT_EQUAL_STRING("System Info", sysinfo.metadata.name);
+    TEST_ASSERT_EQUAL_STRING("1.4.0", sysinfo.metadata.version);
     TEST_ASSERT_EQUAL_STRING("system_info", sysinfo.getTypeKey());
 }
 

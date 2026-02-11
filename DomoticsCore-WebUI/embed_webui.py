@@ -9,6 +9,47 @@ Import("env")
 # Minification functions (no external dependencies)
 # ============================================================================
 
+def _regex_outside_strings(text: str, pattern: str, replacement: str) -> str:
+    """Apply regex substitution only outside JS string literals ('...', "...", `...`).
+    
+    Prevents regex passes from corrupting string contents, e.g. the keyword-restore
+    regex turning 'function' into 'function ' by matching the keyword inside a string.
+    """
+    result = []
+    i = 0
+    in_string = None
+    segment_start = 0
+    
+    while i < len(text):
+        c = text[i]
+        if in_string:
+            if c == '\\' and i + 1 < len(text):
+                i += 2
+                continue
+            if c == in_string:
+                in_string = None
+                result.append(text[segment_start:i + 1])
+                segment_start = i + 1
+            i += 1
+        else:
+            if c in '"\'`':
+                segment = text[segment_start:i]
+                result.append(re.sub(pattern, replacement, segment))
+                segment_start = i
+                in_string = c
+                i += 1
+            else:
+                i += 1
+    
+    remaining = text[segment_start:]
+    if in_string:
+        result.append(remaining)
+    else:
+        result.append(re.sub(pattern, replacement, remaining))
+    
+    return ''.join(result)
+
+
 def minify_js(content: str) -> str:
     """
     Simple JS minification without external dependencies.
@@ -88,10 +129,11 @@ def minify_js(content: str) -> str:
     
     text = ''.join(result)
     
-    # Additional cleanup passes
-    text = re.sub(r'\s*([{}\[\];:,<>=+\-*/%&|^!?()])\s*', r'\1', text)
+    # Additional cleanup passes - MUST be string-aware to avoid corrupting
+    # string literals (e.g. 'function' was broken to 'function ' by keyword restore)
+    text = _regex_outside_strings(text, r'\s*([{}\[\];:,<>=+\-*/%&|^!?()])\s*', r'\1')
     # Restore space after keywords
-    text = re.sub(r'\b(return|typeof|new|delete|throw|in|of|const|let|var|if|else|for|while|do|switch|case|break|continue|function|class|extends|async|await|yield|import|export|from|default)\b([^\s\w])', r'\1 \2', text)
+    text = _regex_outside_strings(text, r'\b(return|typeof|new|delete|throw|in|of|const|let|var|if|else|for|while|do|switch|case|break|continue|function|class|extends|async|await|yield|import|export|from|default)\b([^\s\w])', r'\1 \2')
     text = re.sub(r'\n+', '\n', text)
     return text.strip()
 
@@ -317,15 +359,34 @@ def process_asset(filename: str, src_dir: Path) -> tuple:
     minified_size = len(minified_bytes)
     gzipped = gzip.compress(minified_bytes, compresslevel=9)
     
-    return original_size, minified_size, gzipped
+    return original_size, minified_size, gzipped, minified_bytes
 
 # Process all assets
 processed_assets = {}
 for filename, sym in assets:
-    original_size, minified_size, gzipped = process_asset(filename, src_dir)
-    processed_assets[filename] = (sym, original_size, minified_size, gzipped)
+    original_size, minified_size, gzipped, minified_bytes = process_asset(filename, src_dir)
+    processed_assets[filename] = (sym, original_size, minified_size, gzipped, minified_bytes)
     reduction = 100 * (1 - minified_size / original_size) if original_size > 0 else 0
     print(f"[WebUI] {filename}: {original_size} -> {minified_size} bytes ({reduction:.1f}% minified) -> {len(gzipped)} bytes gzipped")
+
+# Generate combined asset (HTML with inline CSS + JS) for memory-constrained devices.
+# A single HTTP request avoids concurrent connections that exhaust heap on ESP8266.
+html_minified = processed_assets["index.html"][4].decode('utf-8')
+css_minified = processed_assets["style.css"][4].decode('utf-8')
+js_minified = processed_assets["app.js"][4].decode('utf-8')
+
+combined_html = html_minified.replace(
+    '<link rel="stylesheet" href="./style.css">',
+    f'<style>{css_minified}</style>'
+)
+combined_html = combined_html.replace(
+    '<script src="./app.js"></script>',
+    f'<script>{js_minified}</script>'
+)
+
+combined_bytes = combined_html.encode('utf-8')
+combined_gzipped = gzip.compress(combined_bytes, compresslevel=9)
+print(f"[WebUI] combined: {len(combined_bytes)} bytes -> {len(combined_gzipped)} bytes gzipped (single-request mode)")
 
 header_lines = [
     "#pragma once",
@@ -336,23 +397,34 @@ header_lines = [
 
 # Generate header declarations
 for filename, sym in assets:
-    sym, original_size, minified_size, gzipped = processed_assets[filename]
+    sym, original_size, minified_size, gzipped, _ = processed_assets[filename]
     header_lines.append("")
     header_lines.append(f"// {filename}: original {original_size} -> minified {minified_size} -> gzip {len(gzipped)} bytes")
     header_lines.append(f"extern const uint8_t {sym}[] PROGMEM;")
     header_lines.append(f"extern const size_t {sym}_LEN;")
+
+header_lines.append("")
+header_lines.append(f"// Combined HTML+CSS+JS for single-request serving: {len(combined_bytes)} -> {len(combined_gzipped)} bytes gzipped")
+header_lines.append(f"extern const uint8_t WEBUI_COMBINED_GZ[] PROGMEM;")
+header_lines.append(f"extern const size_t WEBUI_COMBINED_GZ_LEN;")
 
 # Append definitions
 header_lines.append("")
 header_lines.append("// Definitions")
 
 for filename, sym in assets:
-    sym, original_size, minified_size, gzipped = processed_assets[filename]
+    sym, original_size, minified_size, gzipped, _ = processed_assets[filename]
     header_lines.append("")
     header_lines.append(f"const uint8_t {sym}[] PROGMEM = {{")
     header_lines.append(f"        {to_c_array(gzipped)}")
     header_lines.append("};")
     header_lines.append(f"const size_t {sym}_LEN = sizeof({sym});")
+
+header_lines.append("")
+header_lines.append(f"const uint8_t WEBUI_COMBINED_GZ[] PROGMEM = {{")
+header_lines.append(f"        {to_c_array(combined_gzipped)}")
+header_lines.append("};")
+header_lines.append(f"const size_t WEBUI_COMBINED_GZ_LEN = sizeof(WEBUI_COMBINED_GZ);")
 
 out_text = "\n".join(header_lines) + "\n"
 for header_path in out_header_paths:

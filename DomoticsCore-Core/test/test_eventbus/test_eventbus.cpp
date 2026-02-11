@@ -184,6 +184,32 @@ void test_backpressure(void) {
     }
 }
 
+void test_publish_during_dispatch_safe(void) {
+    // Verify that publishing during dispatch (allowed) works correctly
+    // with const auto& iteration (no vector copy).
+    // subscribe/unsubscribe during dispatch would trigger assert in debug builds.
+    int firstReceived = 0;
+    int secondReceived = 0;
+
+    testBus->subscribe(String("event/a"), [&](const void* payload) {
+        firstReceived++;
+        // Publishing during dispatch is allowed (enqueues for next poll)
+        testBus->publish(String("event/b"), 99);
+    }, nullptr);
+
+    testBus->subscribe(String("event/b"), [&](const void* payload) {
+        if (payload) secondReceived = *static_cast<const int*>(payload);
+    }, nullptr);
+
+    int val = 1;
+    testBus->publish(String("event/a"), val);
+    testBus->poll();  // dispatches event/a, handler enqueues event/b, then drains event/b too
+
+    TEST_ASSERT_EQUAL(1, firstReceived);
+    // event/b is processed in same poll() cycle (queue drains continuously)
+    TEST_ASSERT_EQUAL(99, secondReceived);
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
     
@@ -196,6 +222,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_message_order);
     RUN_TEST(test_unsubscribe_owner);
     RUN_TEST(test_backpressure);
+    RUN_TEST(test_publish_during_dispatch_safe);
     
     return UNITY_END();
 }

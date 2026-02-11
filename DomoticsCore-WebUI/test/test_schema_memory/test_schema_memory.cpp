@@ -18,16 +18,10 @@ using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 using namespace DomoticsCore::Components::WebUI;
 
-// Test provider that simulates real provider behavior
-// Creates fresh contexts each call (the problematic pattern)
-class LeakyTestProvider : public IWebUIProvider {
-public:
-    String getWebUIName() const override { return "LeakyTest"; }
-    String getWebUIVersion() const override { return "1.0.0"; }
-
-    std::vector<WebUIContext> getWebUIContexts() override {
-        std::vector<WebUIContext> contexts;
-
+// Test provider using CachingWebUIProvider (builds once, caches)
+class LeakyTestProvider : public CachingWebUIProvider {
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
         // Dashboard context with custom HTML (simulates NTPWebUI, WiFiWebUI, etc.)
         contexts.push_back(WebUIContext::dashboard("test_dashboard", "Test Dashboard", "dc-test")
             .withField(WebUIField("field1", "Field 1", WebUIFieldType::Text, "value1"))
@@ -45,9 +39,11 @@ public:
         // Status badge
         contexts.push_back(WebUIContext::statusBadge("test_status", "Status", "dc-info")
             .withField(WebUIField("state", "State", WebUIFieldType::Status, "OK")));
-
-        return contexts;
     }
+
+public:
+    String getWebUIName() const override { return "LeakyTest"; }
+    String getWebUIVersion() const override { return "1.0.0"; }
 
     String handleWebUIRequest(const String& contextId, const String& endpoint,
                               const String& method, const std::map<String, String>& params) override {
@@ -59,57 +55,29 @@ public:
     }
 };
 
-// Cached provider - stores contexts once, no re-allocation
-class CachedTestProvider : public IWebUIProvider {
-private:
-    std::vector<WebUIContext> cachedContexts;
-    bool cached = false;
-
-    void ensureCached() {
-        if (cached) return;
-
-        cachedContexts.push_back(WebUIContext::dashboard("cached_dashboard", "Cached Dashboard", "dc-test")
+// Cached provider using CachingWebUIProvider base
+class CachedTestProvider : public CachingWebUIProvider {
+protected:
+    void buildContexts(std::vector<WebUIContext>& contexts) override {
+        contexts.push_back(WebUIContext::dashboard("cached_dashboard", "Cached Dashboard", "dc-test")
             .withField(WebUIField("field1", "Field 1", WebUIFieldType::Text, "value1"))
             .withField(WebUIField("field2", "Field 2", WebUIFieldType::Number, "42"))
             .withCustomHtml("<div class=\"test-container\"><span>Custom HTML content here</span></div>")
             .withCustomCss(".test-container { padding: 1rem; background: #f0f0f0; }")
             .withRealTime(1000));
 
-        cachedContexts.push_back(WebUIContext::settings("cached_settings", "Cached Settings")
+        contexts.push_back(WebUIContext::settings("cached_settings", "Cached Settings")
             .withField(WebUIField("enabled", "Enabled", WebUIFieldType::Boolean, "true"))
             .withField(WebUIField("name", "Name", WebUIFieldType::Text, "Test Device"))
             .withField(WebUIField("interval", "Interval", WebUIFieldType::Number, "5000", "ms")));
 
-        cachedContexts.push_back(WebUIContext::statusBadge("cached_status", "Status", "dc-info")
+        contexts.push_back(WebUIContext::statusBadge("cached_status", "Status", "dc-info")
             .withField(WebUIField("state", "State", WebUIFieldType::Status, "OK")));
-
-        cached = true;
     }
 
 public:
     String getWebUIName() const override { return "CachedTest"; }
     String getWebUIVersion() const override { return "1.0.0"; }
-
-    std::vector<WebUIContext> getWebUIContexts() override {
-        ensureCached();
-        return cachedContexts;  // Returns copy, but from cached data
-    }
-
-    // Memory-efficient: return count without creating vector
-    size_t getContextCount() override {
-        ensureCached();
-        return cachedContexts.size();
-    }
-
-    // Memory-efficient: copy from cached storage
-    bool getContextAt(size_t index, WebUIContext& outContext) override {
-        ensureCached();
-        if (index < cachedContexts.size()) {
-            outContext = cachedContexts[index];
-            return true;
-        }
-        return false;
-    }
 
     String handleWebUIRequest(const String& contextId, const String& endpoint,
                               const String& method, const std::map<String, String>& params) override {

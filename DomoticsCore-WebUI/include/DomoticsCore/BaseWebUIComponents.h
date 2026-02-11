@@ -28,9 +28,9 @@ public:
                                       const String& color = "#007acc", const String& unit = "%") {
         return WebUIContext::dashboard(contextId, title, "dc-chart")
             .withField(WebUIField(contextId + "_data", title + " Data", WebUIFieldType::Chart))
-            .withCustomHtml(generateChartHtml(title, canvasId, valueId, unit))
+            .withCustomHtmlDynamic(generateChartHtml(title, canvasId, valueId, unit))
             .withCustomCss(generateChartCss())
-            .withCustomJs(generateChartJs(canvasId, color, valueId, contextId));
+            .withCustomJsDynamic(generateChartJs(canvasId, color, valueId, contextId));
     }
 
 private:
@@ -56,8 +56,8 @@ private:
     /**
      * @brief Provide scoped CSS styles for the chart card.
      */
-    static String generateChartCss() {
-        return R"(
+    static const char* generateChartCss() {
+        static const char css[] PROGMEM = R"(
             .system-chart {
                 position: relative;
                 display: flex;
@@ -86,6 +86,7 @@ private:
                 color: var(--text-secondary);
             }
         )";
+        return css;
     }
 
     /**

@@ -24,12 +24,11 @@ namespace Components {
  * Allows declaring both required and optional dependencies
  */
 struct Dependency {
-    String name;           // Component name
-    bool required = true;  // If false, component will init even if dependency missing
+    const char* name = "";  // Component name (must be string literal)
+    bool required = true;   // If false, component will init even if dependency missing
     
-    // Implicit conversion from String for backward compatibility
-    Dependency(const String& n) : name(n), required(true) {}
-    Dependency(const String& n, bool req) : name(n), required(req) {}
+    Dependency(const char* n) : name(n), required(true) {}
+    Dependency(const char* n, bool req) : name(n), required(req) {}
 };
 
 /**

@@ -15,7 +15,7 @@
  * Smaller buffer to fit in limited RAM - will truncate if too many contexts
  */
 #ifndef WEBUI_WS_BUFFER_SIZE
-#define WEBUI_WS_BUFFER_SIZE 2048
+#define WEBUI_WS_BUFFER_SIZE 1024
 #endif
 
 /**

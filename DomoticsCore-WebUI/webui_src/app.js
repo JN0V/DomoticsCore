@@ -1,7 +1,7 @@
 class DomoticsApp {
     constructor() {
-        this.ws = null;
-        this.wsReconnectInterval = null;
+        this.pollInterval = null;
+        this.sseSource = null;
         this.uiSchema = [];
         this.isEditingDeviceName = false;
         this.editingContexts = new Set();
@@ -18,24 +18,28 @@ class DomoticsApp {
     }
 
     async init() {
+        console.log('[DC] init start, readyState=' + document.readyState);
         this.setupEventListeners();
-        // Load schema FIRST, before WebSocket to avoid race condition
-        await this.loadUISchema();
-        // Apply initial theme from schema if available
-        this.applyThemeFromSchema();
-        this.renderUI();
-        // Setup WebSocket AFTER schema is loaded
-        this.setupWebSocket();
+        // On memory-constrained devices (ESP8266), wait for page to fully load
+        // before making any requests to avoid concurrent TCP connections.
+        if (document.readyState !== 'complete') {
+            await new Promise(resolve => window.addEventListener('load', resolve));
+        }
+        // Start polling immediately — schema is fetched through the poll endpoint
+        // (?schema=1) to avoid a separate TCP connection that would fail during
+        // the ~50s TIME_WAIT after the 14KB HTML response on ESP8266.
+        console.log('[DC] load done, starting polling (schema via poll endpoint)');
+        this.startPolling();
     }
 
     async loadUISchema() {
         try {
-            const response = await fetch(`/api/ui/schema?t=${Date.now()}`);
+            // Fetch schema through the polling endpoint to reuse the same TCP connection
+            const response = await fetch(`/api/ui/updates?schema=1&t=${Date.now()}`);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             this.uiSchema = await response.json();
-            console.log('UI Schema loaded:', this.uiSchema);
             
             // Apply theme and primary color from webui_settings
             const webuiSettings = this.uiSchema.find(ctx => ctx.contextId === 'webui_settings');
@@ -193,7 +197,7 @@ class DomoticsApp {
             if (ctx.customHtml) {
                 indicator.innerHTML = ctx.customHtml;
             } else {
-                indicator.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><use href="#dc-components"/></svg>`;
+                this._setBadgeIcon(indicator, ctx.icon || 'dc-components');
             }
             container.appendChild(indicator);
         });
@@ -455,65 +459,92 @@ class DomoticsApp {
         }
     }
 
-    setupWebSocket() {
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const wsUrl = `${protocol}://${window.location.host}/ws`;
-        this.ws = new WebSocket(wsUrl);
+    startPolling() {
+        if (this.pollInterval) return;
+        console.log('[DC] Polling started (2s interval)');
+        this.pollInterval = setInterval(async () => {
+            try {
+                // If schema not loaded yet, fetch it first via the same endpoint
+                if (this.uiSchema.length === 0) {
+                    console.log('[DC] Loading schema via poll endpoint...');
+                    await this.loadUISchema();
+                    if (this.uiSchema.length > 0) {
+                        try {
+                            this.applyThemeFromSchema();
+                            this.renderUI();
+                        } catch(e) {
+                            console.error('renderUI failed:', e);
+                        }
+                    }
+                    return; // Skip normal poll this tick, schema response is enough
+                }
+                // If SSE is active, no need to poll for updates
+                if (this.sseSource) return;
+                const resp = await fetch('/api/ui/updates');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    // Check for SSE upgrade hint from server
+                    if (data._sse && !this.sseSource) {
+                        this.connectSSE(data._sse);
+                    }
+                    this.handleWebSocketMessage(data);
+                }
+            } catch (e) {
+                // Network error, retry next interval
+            }
+        }, 2000);
+    }
 
-        this.ws.onopen = () => {
-            console.log('WebSocket connected');
-            this.clearReconnectInterval();
-            // Schema already loaded in init() - no need to reload on connect
-            // This avoids memory leaks on ESP8266 from repeated schema fetches
-        };
+    stopPolling() {
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+            console.log('[DC] Polling stopped');
+        }
+    }
 
-        this.ws.onmessage = event => {
+    connectSSE(url) {
+        if (this.sseSource) return;
+        console.log('[DC] Connecting SSE to', url);
+        const es = new EventSource(url);
+        es.addEventListener('message', (event) => {
             try {
                 const data = JSON.parse(event.data);
                 this.handleWebSocketMessage(data);
             } catch (e) {
-                console.error('Failed to parse WebSocket message:', e);
+                console.error('[DC] SSE parse error:', e);
             }
-        };
-
-        this.ws.onclose = () => {
-            console.warn('WebSocket disconnected');
-            this.scheduleReconnect();
-        };
-
-        this.ws.onerror = error => {
-            console.error('WebSocket error:', error);
-        };
+        });
+        es.addEventListener('open', () => {
+            console.log('[DC] SSE connected — stopping polling');
+            this.sseSource = es;
+            // Keep pollInterval alive but it will skip updates (sseSource check)
+        });
+        es.addEventListener('error', () => {
+            if (es.readyState === EventSource.CLOSED) {
+                console.log('[DC] SSE closed — falling back to polling');
+                this.sseSource = null;
+                es.close();
+            }
+        });
     }
 
-    scheduleReconnect() {
-        if (this.wsReconnectInterval) return;
-        this.wsReconnectInterval = setInterval(() => {
-            if (this.ws && this.ws.readyState === WebSocket.CLOSED) {
-                this.setupWebSocket();
-            }
-        }, 5000);
-    }
-
-    clearReconnectInterval() {
-        if (this.wsReconnectInterval) {
-            clearInterval(this.wsReconnectInterval);
-            this.wsReconnectInterval = null;
+    stopSSE() {
+        if (this.sseSource) {
+            this.sseSource.close();
+            this.sseSource = null;
+            console.log('[DC] SSE stopped');
         }
     }
 
     handleWebSocketMessage(data) {
         // WiFi network change: force immediate reconnect (e.g., AP -> STA switch)
         if (data && data.type === 'wifi_network_changed') {
-            console.log('WiFi network changed - forcing WebSocket reconnect...');
-            // Close current connection and reconnect immediately
-            if (this.ws) {
-                this.ws.close();
-            }
-            // Schedule immediate reconnect instead of waiting for timeout
+            console.log('[DC] WiFi network changed - restarting polling...');
+            this.stopPolling();
             setTimeout(() => {
-                this.setupWebSocket();
-            }, 1000);  // 1 second delay to allow network to stabilize
+                this.startPolling();
+            }, 1000);
             return;
         }
         
@@ -690,11 +721,12 @@ class DomoticsApp {
             indicator = document.createElement('span');
             indicator.className = 'status-indicator';
             indicator.dataset.contextId = contextId;
-            // Use custom HTML if provided, otherwise use generic icon
+            // Use custom HTML if provided, otherwise clone icon from SVG sprite
             if (contextSchema.customHtml) {
                 indicator.innerHTML = contextSchema.customHtml;
             } else {
-                indicator.innerHTML = `<svg class="icon" viewBox="0 0 24 24"><use href="#dc-components"/></svg>`; // Generic icon
+                const iconId = data.icon || contextSchema.icon || 'dc-components';
+                this._setBadgeIcon(indicator, iconId);
             }
             indicator.addEventListener('click', () => {
                 // Find the settings context for this provider
@@ -721,17 +753,20 @@ class DomoticsApp {
         
         // Dynamic icon switching: backend can provide "icon" field to change the badge icon
         if (data.icon) {
-            const svg = indicator.querySelector('svg');
-            if (svg) {
-                const use = svg.querySelector('use');
-                if (use) use.setAttribute('href', '#' + data.icon);
-            }
+            this._setBadgeIcon(indicator, data.icon);
         }
         
         // Tooltip: use "tooltip" field if provided, otherwise show state
         indicator.title = data.tooltip || `${state || 'unknown'}`;
     }
     
+    _setBadgeIcon(indicator, iconId) {
+        const sym = document.getElementById(iconId);
+        const vb = sym ? (sym.getAttribute('viewBox') || '0 0 24 24') : '0 0 24 24';
+        const inner = sym ? sym.innerHTML : '<use href="#' + iconId + '"/>';
+        indicator.innerHTML = '<svg class="icon" viewBox="' + vb + '">' + inner + '</svg>';
+    }
+
     formatValue(value) {
         if (typeof value === 'boolean') return value ? 'On' : 'Off';
         if (typeof value === 'number' && value > 1_000_000) return (value / 1_000_000).toFixed(1) + 'M';
@@ -953,7 +988,7 @@ class DomoticsApp {
 
             const eventType = (field.type === this.WebUIFieldType.Slider) ? 'input' : (field.type === this.WebUIFieldType.Button ? 'click' : 'change');
 
-            el.addEventListener(eventType, (e) => {
+            el.addEventListener(eventType, async (e) => {
                 // Ignore programmatically dispatched events to prevent feedback loops
                 if (!e.isTrusted) return;
                 let value;
@@ -966,7 +1001,10 @@ class DomoticsApp {
                     this.bufferFieldChange(card, field.name, value);
                     return;
                 }
-                this.sendUICommand(context.contextId, field.name, value);
+                // Pause polling to free heap for POST on ESP8266
+                this.stopPolling();
+                await new Promise(r => setTimeout(r, 600));
+                await this.sendUICommand(context.contextId, field.name, value);
                 // Apply theme and primary color immediately on client side when changed from settings
                 if (context.contextId === 'webui_settings') {
                     if (field.name === 'theme') {
@@ -975,6 +1013,8 @@ class DomoticsApp {
                         this.applyPrimaryColor(value);
                     }
                 }
+                await new Promise(r => setTimeout(r, 400));
+                this.startPolling();
             });
         });
     }
@@ -1007,8 +1047,24 @@ class DomoticsApp {
         const applySave = async () => {
             const pending = card.dataset.pending ? JSON.parse(card.dataset.pending) : {};
             const entries = Object.entries(pending);
+            // Sort: send boolean/toggle fields LAST so text fields (ssid, password)
+            // are applied before the toggle triggers server-side actions (e.g. wifi_enabled)
+            const fieldTypes = {};
+            if (Array.isArray(context.fields)) {
+                context.fields.forEach(f => { fieldTypes[f.name] = f.type; });
+            }
+            entries.sort((a, b) => {
+                const aIsBool = (fieldTypes[a[0]] === this.WebUIFieldType.Boolean) ? 1 : 0;
+                const bIsBool = (fieldTypes[b[0]] === this.WebUIFieldType.Boolean) ? 1 : 0;
+                return aIsBool - bIsBool;
+            });
+            // Stop polling to free TCP/heap for requests (ESP8266 has ~3KB free)
+            this.stopPolling();
+            await new Promise(r => setTimeout(r, 600));
             for (const [fieldName, value] of entries) {
-                this.sendUICommand(context.contextId, fieldName, value);
+                await this.sendUICommand(context.contextId, fieldName, value);
+                // Delay between requests to let ESP8266 reclaim TCP memory
+                await new Promise(r => setTimeout(r, 400));
                 if (context.contextId === 'webui_settings') {
                     if (fieldName === 'theme') {
                         this.applyTheme(value);
@@ -1019,6 +1075,8 @@ class DomoticsApp {
             }
             card.dataset.pending = '{}';
             exitEdit();
+            // Resume polling after save completes
+            this.startPolling();
         };
 
         const exitEdit = () => {
@@ -1143,18 +1201,26 @@ class DomoticsApp {
         });
     }
 
-    sendUICommand(contextId, fieldName, value) {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            const command = {
-                type: 'ui_action',
-                contextId: contextId,
-                field: fieldName,
-                value: value
-            };
-            this.ws.send(JSON.stringify(command));
-        } else {
-            console.warn('WebSocket not connected. UI command not sent.');
+    async sendUICommand(contextId, fieldName, value) {
+        const params = new URLSearchParams({
+            contextId: contextId,
+            field: fieldName,
+            value: String(value)
+        });
+        try {
+            const resp = await fetch('/api/ui/action?' + params.toString());
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.error) {
+                    console.warn('UI command error:', data.error);
+                    alert(data.error);
+                }
+                return data;
+            }
+        } catch(err) {
+            console.error('UI command failed:', err);
         }
+        return null;
     }
 
     updateChart(fieldId, value, unit) {

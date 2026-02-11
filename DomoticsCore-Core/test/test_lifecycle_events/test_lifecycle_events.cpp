@@ -8,7 +8,7 @@ using namespace DomoticsCore::Components;
 
 class LifecycleTestComponent : public IComponent {
 public:
-    LifecycleTestComponent(const String& name) {
+    LifecycleTestComponent(const char* name) {
         metadata.name = name;
         metadata.version = "1.0.0";
     }
@@ -23,7 +23,7 @@ public:
         return ComponentStatus::Success; 
     }
     std::vector<Dependency> getDependencies() const override { return deps; }
-    void addDependency(const String& name) { deps.push_back(Dependency{name, true}); }
+    void addDependency(const char* name) { deps.push_back(Dependency{name, true}); }
     void afterAllComponentsReady() override { afterReadyCalled = true; }
     
     bool beginCalled = false;
@@ -38,7 +38,7 @@ std::vector<String> shutdownOrder;
 
 class ShutdownTracker : public IComponent {
 public:
-    ShutdownTracker(const String& name) {
+    ShutdownTracker(const char* name) {
         metadata.name = name;
         metadata.version = "1.0.0";
     }
@@ -49,7 +49,7 @@ public:
         return ComponentStatus::Success; 
     }
     std::vector<Dependency> getDependencies() const override { return deps; }
-    void addDependency(const String& name) { deps.push_back(Dependency{name, true}); }
+    void addDependency(const char* name) { deps.push_back(Dependency{name, true}); }
 private:
     std::vector<Dependency> deps;
 };
@@ -138,10 +138,10 @@ void test_event_component_ready_published(void) {
     auto comp = std::make_unique<LifecycleTestComponent>("EventTestComp");
     testCore->addComponent(std::move(comp));
 
-    // Subscribe to component ready event
+    // Subscribe to component ready event (payload is const char* pointer)
     testCore->getEventBus().subscribe(Events::EVENT_COMPONENT_READY, [](const void* payload) {
-        const String* name = static_cast<const String*>(payload);
-        if (name) receivedComponentNames.push_back(*name);
+        const char* const* namePtr = static_cast<const char* const*>(payload);
+        if (namePtr && *namePtr) receivedComponentNames.push_back(*namePtr);
     });
 
     testCore->begin();
