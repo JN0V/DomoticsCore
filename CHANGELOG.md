@@ -5,6 +5,62 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-02-11
+
+### New Features
+
+- **ESP32-C3 full support**: USB CDC serial, platform detection, all components validated
+- **MemoryManager**: Device-agnostic memory adaptation for ESP32/ESP8266/native platforms
+- **HeapTracker**: Memory leak detection infrastructure for native and hardware testing
+- **WebUI SSE dual-mode**: Server-Sent Events transport alongside WebSocket
+- **RemoteConsole WebUI**: Web-based console configuration (port, log level controls)
+- **Filesystem HAL**: Unified filesystem abstraction (SPIFFS/LittleFS) across platforms
+- **Chart field type**: Native canvas-based real-time charts in WebUI frontend
+
+### ESP8266 Support
+
+- Full HAL abstractions for WiFi, Storage (LittleFS), NTP, SystemInfo, LED, MQTT, OTA, RemoteConsole
+- WebUI optimized for ~80KB RAM constraint
+- Memory leak tests for ESP8266 heap validation
+- WiFi mode icons and STA activation fixes
+
+### Bug Fixes
+
+- **RemoteConsole**: Replace `std::deque` with circular buffer to prevent memory leak
+- **WebUI**: Fix timezone dropdown, rate limiting, password masking
+- **WebUI**: Fix memory leaks with zero-copy `getContextAtRef` schema generation
+- **WebUI**: Optimize memory with `const char*` fields and schema caching
+- **Platform_HAL**: Fix `DOMOTICS_LOG_BUFFER_SIZE` default after platform includes
+- **MQTT**: Refactor event structures to use fixed-size buffers for safe EventBus memcpy
+
+### Refactoring
+
+- **SystemInfo**: Merge static info into `system_info` context, optimize `getWebUIData()`
+- **NTP**: Merge dashboard context into header info, reduce to 2 contexts
+- **Events**: Split component events into dedicated headers per module
+- **HAL**: Extract common Arduino utilities to `Platform_Arduino.h`
+- **Examples**: Remove `ARDUINOJSON_ENABLE_PROGMEM=0` flag, replace `Arduino.h` with HAL abstractions
+
+### Component Versions
+
+| Component | Version |
+|-----------|---------|
+| **DomoticsCore** (root) | 1.6.0 |
+| **DomoticsCore-Core** | 1.5.0 |
+| **DomoticsCore-WebUI** | 1.5.0 |
+| **DomoticsCore-Wifi** | 1.4.1 |
+| **DomoticsCore-System** | 1.4.1 |
+| **DomoticsCore-Storage** | 1.4.1 |
+| **DomoticsCore-RemoteConsole** | 1.4.1 |
+| **DomoticsCore-OTA** | 1.4.1 |
+| **DomoticsCore-MQTT** | 1.4.0 |
+| **DomoticsCore-HomeAssistant** | 1.4.0 |
+| **DomoticsCore-SystemInfo** | 1.4.0 |
+| **DomoticsCore-NTP** | 1.3.0 |
+| **DomoticsCore-LED** | 1.3.0 |
+
+---
+
 ## [1.5.0] - 2025-12-18
 
 ### 🔧 Bug Fixes

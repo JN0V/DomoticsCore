@@ -1,12 +1,12 @@
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.5.0)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.6.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32%20|%20ESP32--C3%20|%20ESP8266-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 1.5.0 Released!** EventBus cleanup fix, isolated unit tests (37 tests), mock infrastructure, spec-kit integration. See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
+> **🎉 Version 1.6.0 Released!** Full ESP32-C3 support, MemoryManager, HeapTracker, SSE dual-mode WebUI, RemoteConsole WebUI, ESP8266 optimizations, memory leak fixes. See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
 
 ## ✨ What Makes DomoticsCore Different
 
@@ -141,7 +141,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps =
-    jn0v/DomoticsCore@^1.5.0
+    jn0v/DomoticsCore@^1.6.0
 ```
 
 ### PlatformIO (GitHub)
@@ -155,7 +155,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps =
-    https://github.com/JN0V/DomoticsCore.git#v1.5.0
+    https://github.com/JN0V/DomoticsCore.git#v1.6.0
 ```
 
 ### Specific Components Only

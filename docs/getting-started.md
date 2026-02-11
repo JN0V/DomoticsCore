@@ -16,7 +16,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps =
-    jn0v/DomoticsCore@^1.5.0
+    jn0v/DomoticsCore@^1.6.0
 ```
 
 **Step 2: Write your code**
@@ -68,7 +68,7 @@ framework = arduino
 board_build.partitions = min_spiffs.csv
 
 lib_deps =
-    https://github.com/JN0V/DomoticsCore.git#v1.5.0
+    https://github.com/JN0V/DomoticsCore.git#v1.6.0
 ```
 
 ### ESP32-C3 Configuration
@@ -80,7 +80,7 @@ board = esp32-c3-devkitm-1
 framework = arduino
 
 lib_deps =
-    jn0v/DomoticsCore@^1.5.0
+    jn0v/DomoticsCore@^1.6.0
 ```
 
 ESP32-C3 is fully supported with USB CDC serial.

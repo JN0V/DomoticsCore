@@ -288,7 +288,7 @@ Each component library:
 
 ## Version Information
 
-**DomoticsCore Version:** 1.5.0
+**DomoticsCore Version:** 1.6.0
 **Documentation Last Updated:** 2026-02-11
 
 ---
