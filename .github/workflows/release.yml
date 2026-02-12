@@ -47,7 +47,7 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" \
             --title "DomoticsCore ${{ github.ref_name }}" \
-            --notes-file /tmp/release_notes.md
+            --notes-file /tmp/release_notes.md || echo "Release already exists, skipping"
 
       - name: Publish to PlatformIO Registry
         env:
