@@ -99,13 +99,10 @@ public:
         if (!storageConfig.componentName.isEmpty()) {
             nameStr_ = storageConfig.componentName;
             metadata.name = nameStr_.c_str();
-        } else if (storageConfig.namespace_name != "domotics") {
-            nameStr_ = "Storage_" + storageConfig.namespace_name;
-            metadata.name = nameStr_.c_str();
         } else {
             metadata.name = "Storage";
         }
-        metadata.version = "1.4.1";
+        metadata.version = "1.4.2";
         metadata.author = "DomoticsCore";
         metadata.description = "Key-value storage component for preferences and app data";
         metadata.category = "Storage";

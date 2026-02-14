@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-Storage",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "DomoticsCore Storage component for ESP32/ESP8266 persistent storage",
   "keywords": ["esp32", "esp8266", "domotics", "storage", "nvs", "littlefs"],
   "repository": {"type": "git", "url": "https://github.com/JN0V/DomoticsCore.git"},
