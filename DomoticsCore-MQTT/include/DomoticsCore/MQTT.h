@@ -109,11 +109,11 @@ struct MQTTConfig {
     uint32_t maxReconnectDelay = 30000;     ///< Maximum reconnection delay (ms)
     
     // Publishing
-    uint16_t maxQueueSize = 100;            ///< Max queued messages when offline
-    uint8_t publishRateLimit = 10;          ///< Max messages per second (0 = unlimited)
-    
+    uint16_t maxQueueSize = 100;            ///< Max queued messages when offline @warning Not enforced at runtime
+    uint8_t publishRateLimit = 10;          ///< Max messages per second (0 = unlimited) @warning Not enforced at runtime
+
     // Subscriptions
-    uint8_t maxSubscriptions = 50;          ///< Maximum number of subscriptions
+    uint8_t maxSubscriptions = 50;          ///< Maximum number of subscriptions @warning Not enforced at runtime
     bool resubscribeOnConnect = true;       ///< Re-subscribe after reconnection
     
     // Timeouts
@@ -171,14 +171,14 @@ struct MQTTStatistics {
  * cfg.broker = "mqtt.example.com";
  * cfg.username = "user";
  * cfg.password = "pass";
- * 
+ *
  * auto mqtt = std::make_unique<MQTTComponent>(cfg);
+ * auto* mqttPtr = mqtt.get();
  * core.addComponent(std::move(mqtt));
- * 
- * auto* mqttPtr = core.getComponent<MQTTComponent>("MQTT");
+ *
  * mqttPtr->subscribe("home/sensors/#", 1);
- * mqttPtr->onMessage("home/sensors/+/temperature", [](const String& topic, const String& payload) {
- *     DLOG_I(LOG_APP, "[App] Temperature: %s", payload.c_str());
+ * mqttPtr->on<MQTTMessageEvent>("mqtt/message", [](const MQTTMessageEvent& ev) {
+ *     DLOG_I("APP", "Received on %s: %s", ev.topic, ev.payload);
  * });
  * ```
  */
@@ -371,6 +371,8 @@ public:
      * @param topic Topic string
      * @param allowWildcards Allow + and # wildcards
      * @return true if valid
+     * @warning Declared but NOT yet implemented. Calling this will cause a linker error.
+     *          See topicMatches() for a working alternative for wildcard matching.
      */
     static bool isValidTopic(const String& topic, bool allowWildcards = false);
     

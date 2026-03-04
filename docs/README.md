@@ -2,117 +2,130 @@
 
 ## Overview
 
-Welcome to the DomoticsCore documentation. This directory contains comprehensive guides for developing with the DomoticsCore modular component framework for ESP32, ESP32-C3, and ESP8266.
+Welcome to the DomoticsCore documentation. DomoticsCore is a modular, production-ready IoT framework for ESP32, ESP32-C3, and ESP8266 microcontrollers. It provides a component-based architecture where each feature (WiFi, MQTT, OTA, Web UI, etc.) is an independent, self-contained module.
+
+> **All development MUST comply with the [DomoticsCore Constitution](../.specify/memory/constitution.md).** Read it before making any code change.
+
+---
+
+## Quick Navigation
+
+| What you need | Where to go |
+|---------------|-------------|
+| First time? | [Getting Started Guide](getting-started.md) |
+| Understand the design | [Architecture Guide](architecture.md) |
+| AI agent context | [Project Context](project-context.md) |
+| Full technical reference | [Technical Reference](technical-reference.md) |
+| Specific component | [Component Documentation](#component-documentation) below |
+| Create a component | [Custom Components Guide](guides/custom-components.md) |
+| Add a web interface | [WebUI Developer Guide](guides/webui-developer.md) |
 
 ---
 
 ## Documentation Index
 
-### **Getting Started**
-- **[Getting Started Guide](getting-started.md)** - Complete tutorial from installation to first project
-- **[Architecture Guide](architecture.md)** - Framework design, patterns, and best practices
+### Global Documentation
 
-### **Architecture**
-- **[HAL Architecture](architecture/hal-architecture.md)** - Hardware Abstraction Layer routing pattern
-- **[Component Lifecycle](architecture/component-lifecycle.md)** - Lifecycle states and methods
-- **[EventBus Patterns](architecture/eventbus-patterns.md)** - Publish/subscribe and sticky events
-- **[Component Configuration](architecture/component-configuration-pattern.md)** - Configuration patterns
+| Document | Description |
+|----------|-------------|
+| [Project Context](project-context.md) | AI-agent context for the whole project |
+| [Technical Reference](technical-reference.md) | Cross-cutting technical reference |
+| [Getting Started](getting-started.md) | Tutorial from installation to first project |
+| [Architecture Guide](architecture.md) | Framework design, patterns, and best practices |
 
-### **Developer Guides**
-- **[Custom Components](guides/custom-components.md)** - Creating your own components
-- **[WebUI Development](guides/webui-developer.md)** - Adding web interfaces to components
-- **[WebUI State Tracking](guides/webui-state-tracking.md)** - Efficient state management with LazyState
+### Architecture Guides
 
-### **Reference Documentation**
-- **[EventBus Architecture](reference/eventbus-architecture.md)** - Complete EventBus API and patterns
+- [HAL Architecture](architecture/hal-architecture.md) — Hardware Abstraction Layer routing pattern
+- [Component Lifecycle](architecture/component-lifecycle.md) — Lifecycle states and methods
+- [EventBus Patterns](architecture/eventbus-patterns.md) — Publish/subscribe and sticky events
+- [Component Configuration](architecture/component-configuration-pattern.md) — Configuration patterns
 
-### **Reliability**
-- **[Storage & Boot Diagnostics](reliability/storage-verbosity-and-boot-diagnostics.md)** - Persistent boot diagnostics and storage verbosity
+### Developer Guides
+
+- [Custom Components](guides/custom-components.md) — Creating your own components
+- [WebUI Development](guides/webui-developer.md) — Adding web interfaces to components
+- [WebUI State Tracking](guides/webui-state-tracking.md) — Efficient state management with LazyState
+
+### Reference
+
+- [EventBus Architecture](reference/eventbus-architecture.md) — Complete EventBus API and patterns
+
+### Reliability
+
+- [Storage & Boot Diagnostics](reliability/storage-verbosity-and-boot-diagnostics.md) — Persistent boot diagnostics
 
 ---
 
 ## Component Documentation
 
-Each component library contains its own documentation:
+Each component has 3 documentation files in `docs/components/{name}/`:
+- **README.md** — Lightweight overview, quick start, what it does
+- **technical-reference.md** — Full API reference, configuration, internals
+- **project-context.md** — AI-agent context for working on this component
 
-### **Core** (`DomoticsCore-Core/`)
-- `README.md` - Framework, registry, EventBus, MemoryManager, HeapTracker
-- `LOGGING.md` - Comprehensive logging guide
-- `examples/` - CoreOnly, DummyComponent, EventBus basics and coordinators
+### Core (`DomoticsCore-Core/`)
+> Component registry, lifecycle management, EventBus, logging, timers, memory management
 
-### **System** (`DomoticsCore-System/`)
-- `README.md` - System component integration guide
-- `examples/Minimal/` - Minimal system setup
-- `examples/Standard/` - Standard system setup
-- `examples/FullStack/` - Full-featured system
+- [Overview](components/core/README.md) | [Technical Reference](components/core/technical-reference.md) | [Project Context](components/core/project-context.md)
+- Source docs: [README](../DomoticsCore-Core/README.md), [Logging Guide](../DomoticsCore-Core/LOGGING.md)
 
-### **WiFi** (`DomoticsCore-Wifi/`)
-- `README.md` - WiFi component overview and API
-- `examples/BasicWifi/` - Simple WiFi connection example
-- `examples/WifiWithWebUI/` - WiFi with web interface
+### WiFi (`DomoticsCore-Wifi/`)
+> Non-blocking WiFi STA/AP management with async scanning
 
-### **WebUI** (`DomoticsCore-WebUI/`)
-- `README.md` - Web interface with WebSocket + SSE dual-mode
-- `examples/HeadlessAPI/` - API-only mode without web frontend
-- `examples/WebUIOnly/` - Standalone web interface
+- [Overview](components/wifi/README.md) | [Technical Reference](components/wifi/technical-reference.md) | [Project Context](components/wifi/project-context.md)
 
-### **MQTT** (`DomoticsCore-MQTT/`)
-- `README.md` - MQTT client API and usage
-- `SPECIFICATIONS.md` - Detailed MQTT implementation specs
-- `STATE_MACHINE.md` - MQTT state machine diagram
-- `examples/BasicMQTT/`, `MQTTWithWebUI/`, `MQTTWifiWithWebUI/`
+### WebUI (`DomoticsCore-WebUI/`)
+> Web interface with WebSocket real-time updates, REST API, provider pattern
 
-### **NTP** (`DomoticsCore-NTP/`)
-- `README.md` - NTP time synchronization API
-- `SPECIFICATIONS.md` - Detailed NTP implementation specs
-- `examples/BasicNTP/`, `NTPWithWebUI/`
+- [Overview](components/webui/README.md) | [Technical Reference](components/webui/technical-reference.md) | [Project Context](components/webui/project-context.md)
 
-### **HomeAssistant** (`DomoticsCore-HomeAssistant/`)
-- `README.md` - Home Assistant MQTT Discovery integration
-- `SPECIFICATIONS.md` - HA integration specs
-- `examples/BasicHA/`, `HAWithWebUI/`
+### MQTT (`DomoticsCore-MQTT/`)
+> MQTT client with QoS, auto-reconnection, message queuing, wildcards
 
-### **OTA** (`DomoticsCore-OTA/`)
-- `README.md` - Over-the-air firmware updates
-- `examples/BasicOTA/`, `OTAWithWebUI/`
+- [Overview](components/mqtt/README.md) | [Technical Reference](components/mqtt/technical-reference.md) | [Project Context](components/mqtt/project-context.md)
+- Source docs: [Specifications](../DomoticsCore-MQTT/SPECIFICATIONS.md), [State Machine](../DomoticsCore-MQTT/STATE_MACHINE.md)
 
-### **Storage** (`DomoticsCore-Storage/`)
-- `README.md` - NVS / LittleFS persistent data
-- `examples/BasicStorage/`, `NamespaceDemo/`, `StorageWithWebUI/`
+### Home Assistant (`DomoticsCore-HomeAssistant/`)
+> MQTT Discovery integration with automatic entity registration
 
-### **LED** (`DomoticsCore-LED/`)
-- `README.md` - Visual status indicators with 6 effects
-- `examples/BasicLED/`, `LEDWithWebUI/`
+- [Overview](components/home-assistant/README.md) | [Technical Reference](components/home-assistant/technical-reference.md) | [Project Context](components/home-assistant/project-context.md)
+- Source docs: [Specifications](../DomoticsCore-HomeAssistant/SPECIFICATIONS.md)
 
-### **RemoteConsole** (`DomoticsCore-RemoteConsole/`)
-- `README.md` - Telnet debugging console with WebUI integration
-- `examples/BasicRemoteConsole/`, `RemoteConsoleWithWebUI/`
+### NTP (`DomoticsCore-NTP/`)
+> Network time synchronization with timezone and DST support
 
-### **SystemInfo** (`DomoticsCore-SystemInfo/`)
-- `README.md` - System metrics and boot diagnostics
-- `examples/BasicSystemInfo/`, `SystemInfoWithWebUI/`
+- [Overview](components/ntp/README.md) | [Technical Reference](components/ntp/technical-reference.md) | [Project Context](components/ntp/project-context.md)
+- Source docs: [Specifications](../DomoticsCore-NTP/SPECIFICATIONS.md)
 
----
+### OTA (`DomoticsCore-OTA/`)
+> Over-the-air firmware updates with HTTPS, manifest, and progress tracking
 
-## Getting Started
+- [Overview](components/ota/README.md) | [Technical Reference](components/ota/technical-reference.md) | [Project Context](components/ota/project-context.md)
 
-### **New to DomoticsCore?**
+### Storage (`DomoticsCore-Storage/`)
+> Persistent key-value storage with namespace isolation (NVS / LittleFS)
 
-1. **Start with a component README** - Each component has its own README with quick start instructions
-2. **Try the examples** - Run example applications to see components in action
-3. **Read the WebUI Developer Guide** - Learn how to add web interfaces to your components
+- [Overview](components/storage/README.md) | [Technical Reference](components/storage/technical-reference.md) | [Project Context](components/storage/project-context.md)
 
-### **Creating a New Component?**
+### LED (`DomoticsCore-LED/`)
+> Visual status indicators with 6 effects (Blink, Fade, Pulse, Rainbow, Breathing, Solid)
 
-1. **Review existing components** - Look at `DomoticsCore-Wifi` or `DomoticsCore-NTP` for structure
-2. **Follow the component pattern** - Implement `IComponent` interface
-3. **Add WebUI (optional)** - Follow the **[WebUI Developer Guide](guides/webui-developer.md)**
+- [Overview](components/led/README.md) | [Technical Reference](components/led/technical-reference.md) | [Project Context](components/led/project-context.md)
 
-### **Adding Web Interface to Existing Component?**
+### RemoteConsole (`DomoticsCore-RemoteConsole/`)
+> Telnet debugging console with log streaming, ANSI colors, custom commands
 
-1. **Read [WebUI Developer Guide](guides/webui-developer.md)** - Complete step-by-step guide
-2. **Check [WebUI State Tracking](guides/webui-state-tracking.md)** - For LazyState quick reference
-3. **Study WifiWebUI.h or NTPWebUI.h** - Real-world reference implementations
+- [Overview](components/remote-console/README.md) | [Technical Reference](components/remote-console/technical-reference.md) | [Project Context](components/remote-console/project-context.md)
+
+### SystemInfo (`DomoticsCore-SystemInfo/`)
+> System metrics: heap, uptime, CPU frequency, chip model, boot diagnostics
+
+- [Overview](components/system-info/README.md) | [Technical Reference](components/system-info/technical-reference.md) | [Project Context](components/system-info/project-context.md)
+
+### System (`DomoticsCore-System/`)
+> Meta-orchestrator that assembles all components into a ready-to-use system
+
+- [Overview](components/system/README.md) | [Technical Reference](components/system/technical-reference.md) | [Project Context](components/system/project-context.md)
 
 ---
 
@@ -123,7 +136,7 @@ DomoticsCore Framework
 ├── Core                      # Component registry, lifecycle, MemoryManager
 ├── Components
 │   ├── WiFi                 # Network connectivity
-│   ├── WebUI                # Web interface (WebSocket + SSE)
+│   ├── WebUI                # Web interface (WebSocket + REST API)
 │   ├── NTP                  # Time synchronization
 │   ├── MQTT                 # MQTT client
 │   ├── HomeAssistant        # HA integration
@@ -139,7 +152,7 @@ DomoticsCore Framework
 │   ├── Wifi_HAL.h           # Unified WiFi interface
 │   ├── Storage_HAL.h        # Key-value storage abstraction
 │   ├── NTP_HAL.h            # Time synchronization
-│   └── SystemInfo_HAL.h     # System metrics
+│   └── Update_HAL.h         # OTA update abstraction
 │
 ├── Testing                  # Test infrastructure
 │   └── HeapTracker          # Memory leak detection (native + hardware)
@@ -147,97 +160,59 @@ DomoticsCore Framework
 └── Utils                    # Utilities (Timer, Logger, EventBus, etc.)
 ```
 
----
+### Dependency Graph
 
-## Component Development Workflow
+```
+Core (foundation - no dependencies)
+  ├── LED, Storage, SystemInfo, RemoteConsole, NTP, OTA
+  ├── Wifi
+  │   └── MQTT
+  │       └── HomeAssistant
+  └── WebUI (*WebUI providers for each component)
 
-1. **Define your component class** - Implement `IComponent` interface
-2. **Add configuration** - Define config struct for your component
-3. **Implement lifecycle methods** - `begin()`, `loop()`, `shutdown()`
-4. **Create WebUI provider (optional)** - Implement `IWebUIProvider` for web interface
-5. **Write examples** - Demonstrate component usage
-6. **Document** - Add README and inline documentation
-
----
-
-## Key Concepts
-
-### **Components**
-Self-contained modules that provide specific functionality (WiFi, MQTT, etc.)
-
-### **Component Registry**
-Manages component lifecycle, dependency resolution, and initialization order
-
-### **WebUI Providers**
-Define how components appear in the web interface (dashboards, settings, status)
-
-### **LazyState**
-Helper for efficient state tracking in WebUI providers to optimize WebSocket updates
-
-### **Contexts**
-Different UI locations where component data can appear (Dashboard, Settings, Status badges)
-
-### **MemoryManager**
-Device-agnostic memory adaptation for different platforms (ESP32 vs ESP8266)
-
-### **HeapTracker**
-Memory leak detection tool for testing on native platform and hardware
-
----
-
-## Common Patterns
-
-### **Creating a Simple Component**
-
-```cpp
-class MyComponent : public IComponent {
-public:
-    ComponentStatus begin() override {
-        // Initialize
-        return ComponentStatus::Success;
-    }
-
-    void loop() override {
-        // Main logic
-    }
-
-    ComponentStatus shutdown() override {
-        // Cleanup
-        return ComponentStatus::Success;
-    }
-};
+System (meta-orchestrator - depends on all)
 ```
 
-### **Adding to Application**
+---
 
-```cpp
-void setup() {
-    Core core;
+## Documentation Structure
 
-    // Add components
-    core.addComponent(std::make_unique<MyComponent>());
-
-    // Initialize all components
-    core.begin();
-}
-
-void loop() {
-    core.loop();
-}
 ```
-
-### **Adding WebUI**
-
-```cpp
-// 1. Create WebUI provider
-class MyComponentWebUI : public IWebUIProvider {
-    // Implement interface methods
-};
-
-// 2. Register after initialization
-auto* webui = core.getComponent<WebUIComponent>("WebUI");
-auto* mycomp = core.getComponent<MyComponent>("MyComponent");
-webui->registerProviderWithComponent(new MyComponentWebUI(mycomp), mycomp);
+docs/
+├── README.md                              # This file - documentation index
+├── project-context.md                     # Global AI-agent context
+├── technical-reference.md                 # Global technical reference
+├── getting-started.md                     # Complete tutorial
+├── architecture.md                        # Framework design
+├── architecture/
+│   ├── hal-architecture.md                # HAL routing pattern
+│   ├── component-lifecycle.md             # Component lifecycle states
+│   ├── eventbus-patterns.md               # EventBus patterns
+│   └── component-configuration-pattern.md # Config patterns
+├── guides/
+│   ├── custom-components.md               # Component development
+│   ├── webui-developer.md                 # WebUI integration
+│   └── webui-state-tracking.md            # State management
+├── reference/
+│   └── eventbus-architecture.md           # EventBus API reference
+├── reliability/
+│   └── storage-verbosity-and-boot-diagnostics.md
+└── components/                            # Per-component documentation
+    ├── core/
+    │   ├── README.md                      # Overview
+    │   ├── technical-reference.md         # Full API
+    │   └── project-context.md             # AI context
+    ├── wifi/
+    ├── webui/
+    ├── mqtt/
+    ├── home-assistant/
+    ├── ntp/
+    ├── ota/
+    ├── storage/
+    ├── led/
+    ├── remote-console/
+    ├── system-info/
+    └── system/
 ```
 
 ---
@@ -247,52 +222,12 @@ webui->registerProviderWithComponent(new MyComponentWebUI(mycomp), mycomp);
 - **Main Repository**: [GitHub](https://github.com/JN0V/DomoticsCore)
 - **Issues**: [GitHub Issues](https://github.com/JN0V/DomoticsCore/issues)
 - **PlatformIO Registry**: [jn0v/DomoticsCore](https://registry.platformio.org/libraries/jn0v/DomoticsCore)
-- **Examples**: See `examples/` directory in each component library
 - **Changelog**: [CHANGELOG.md](../CHANGELOG.md)
+- **Constitution**: [.specify/memory/constitution.md](../.specify/memory/constitution.md)
+- **Code Remediation Roadmap**: [CODE-ROADMAP.md](CODE-ROADMAP.md)
 
 ---
 
-## Documentation Structure
+**DomoticsCore Version:** 1.7.0 | **Documentation Last Updated:** 2026-03-04
 
-```
-docs/
-├── README.md                          # This file - documentation index
-├── getting-started.md                 # Complete tutorial
-├── architecture.md                    # Framework design
-├── architecture/
-│   ├── hal-architecture.md            # HAL routing pattern
-│   ├── component-lifecycle.md         # Component lifecycle states
-│   ├── eventbus-patterns.md           # EventBus patterns
-│   └── component-configuration-pattern.md  # Config patterns
-├── guides/
-│   ├── custom-components.md           # Component development
-│   ├── webui-developer.md             # WebUI integration
-│   └── webui-state-tracking.md        # State management
-├── reference/
-│   └── eventbus-architecture.md       # EventBus API reference
-└── reliability/
-    └── storage-verbosity-and-boot-diagnostics.md  # Boot diagnostics
-
-Each component library:
-└── DomoticsCore-{Component}/
-    ├── README.md                      # Component overview and API
-    ├── include/                       # Header files
-    ├── src/                           # Implementation (if needed)
-    └── examples/                      # Example applications
-        └── {ExampleName}/
-            ├── src/main.cpp           # Example code
-            └── platformio.ini         # Build configuration
-```
-
----
-
-## Version Information
-
-**DomoticsCore Version:** 1.6.0
-**Documentation Last Updated:** 2026-02-11
-
----
-
-## License
-
-See main repository LICENSE file for licensing information.
+**License:** See main repository [LICENSE](../LICENSE) file.
