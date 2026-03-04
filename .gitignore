@@ -63,3 +63,16 @@ Roadmap.md
 
 # Claude
 .claude/commands/*
+
+# Release archives
+*.tar.gz
+
+# BMAD tooling
+_bmad/
+_bmad-output/
+
+# Windsurf IDE
+.windsurf/
+
+# Specs (local working docs)
+specs/
