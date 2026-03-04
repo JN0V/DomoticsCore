@@ -241,9 +241,14 @@ void test_mqtt_begin_without_broker() {
 
     MQTTComponent mqtt(config);
 
-    // Should return success but be disabled when no broker configured
+    // Should return success but be inactive when no broker configured
     ComponentStatus status = mqtt.begin();
     TEST_ASSERT_EQUAL(ComponentStatus::Success, status);
+
+    // Fix #3: enabled must NOT be mutated by begin() when broker is empty
+    TEST_ASSERT_TRUE(mqtt.getConfig().enabled);
+
+    mqtt.shutdown();
 }
 
 void test_mqtt_begin_with_broker() {
@@ -420,11 +425,226 @@ void test_mqtt_multiple_config_changes() {
 }
 
 // ============================================================================
+// config.enabled Bug Tests (P0)
+// ============================================================================
+
+void test_mqtt_loop_processes_when_connected_and_disabled() {
+    // Fix #1: loop() must call mqttClient->loop() when connected, even if enabled=false
+    MQTTConfig config;
+    config.broker = "test.broker.com";
+    config.port = 1883;
+    config.enabled = false;
+    config.autoReconnect = false;
+
+    MQTTComponent mqtt(config);
+    mqtt.begin();
+
+    // Simulate WiFi + MQTT connected
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+
+    TEST_ASSERT_TRUE(mqtt.isConnected());
+    TEST_ASSERT_FALSE(mqtt.getConfig().enabled);
+
+    uint32_t countBefore = mqtt.debugLoopCount();
+    mqtt.loop();
+    TEST_ASSERT_GREATER_THAN(countBefore, mqtt.debugLoopCount());
+
+    mqtt.shutdown();
+}
+
+void test_mqtt_setconfig_preserves_enabled_when_connected() {
+    // Fix #2: setConfig() must not clear enabled when connected
+    MQTTConfig config;
+    config.broker = "test.broker.com";
+    config.port = 1883;
+    config.enabled = true;
+    config.autoReconnect = false;
+
+    MQTTComponent mqtt(config);
+    mqtt.begin();
+
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+    TEST_ASSERT_TRUE(mqtt.isConnected());
+
+    // Reload config with enabled=false (simulates flash reload)
+    MQTTConfig reloadCfg;
+    reloadCfg.broker = "test.broker.com";
+    reloadCfg.port = 1883;
+    reloadCfg.enabled = false;
+    reloadCfg.autoReconnect = false;
+    mqtt.setConfig(reloadCfg);
+
+    TEST_ASSERT_TRUE(mqtt.getConfig().enabled);
+
+    mqtt.shutdown();
+}
+
+void test_mqtt_begin_empty_broker_does_not_clear_enabled() {
+    // Fix #3: begin() with empty broker must not set enabled=false
+    MQTTConfig config;
+    config.broker = "";
+    config.enabled = true;
+
+    MQTTComponent mqtt(config);
+    mqtt.begin();
+
+    TEST_ASSERT_TRUE(mqtt.getConfig().enabled);
+
+    mqtt.shutdown();
+}
+
+void test_mqtt_full_lifecycle_empty_to_configured() {
+    // All 3 fixes: empty broker -> configure -> connect -> loop
+    MQTTConfig config;
+    config.broker = "";
+    config.enabled = true;
+    config.autoReconnect = false;
+
+    MQTTComponent mqtt(config);
+    mqtt.begin();
+
+    // Phase 1: enabled preserved after empty broker begin()
+    TEST_ASSERT_TRUE(mqtt.getConfig().enabled);
+
+    // Phase 2: configure broker via setConfig
+    MQTTConfig newCfg;
+    newCfg.broker = "test.broker.com";
+    newCfg.port = 1883;
+    newCfg.enabled = true;
+    newCfg.autoReconnect = false;
+    mqtt.setConfig(newCfg);
+
+    // Phase 3: connect
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+    TEST_ASSERT_TRUE(mqtt.isConnected());
+
+    // Phase 4: loop processes messages
+    uint32_t countBefore = mqtt.debugLoopCount();
+    mqtt.loop();
+    TEST_ASSERT_GREATER_THAN(countBefore, mqtt.debugLoopCount());
+
+    mqtt.shutdown();
+}
+
+void test_mqtt_config_reload_preserves_active_connection() {
+    // Fix #1 + #2: config reload during active connection
+    MQTTConfig config;
+    config.broker = "test.broker.com";
+    config.port = 1883;
+    config.enabled = true;
+    config.autoReconnect = false;
+
+    MQTTComponent mqtt(config);
+    mqtt.begin();
+
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+    TEST_ASSERT_TRUE(mqtt.isConnected());
+
+    // Reload with enabled=false
+    MQTTConfig reloadCfg;
+    reloadCfg.broker = "test.broker.com";
+    reloadCfg.port = 1883;
+    reloadCfg.enabled = false;
+    reloadCfg.autoReconnect = false;
+    mqtt.setConfig(reloadCfg);
+
+    // Fix #2: enabled preserved
+    TEST_ASSERT_TRUE(mqtt.getConfig().enabled);
+
+    // Fix #1: loop still processes
+    uint32_t countBefore = mqtt.debugLoopCount();
+    mqtt.loop();
+    TEST_ASSERT_GREATER_THAN(countBefore, mqtt.debugLoopCount());
+
+    mqtt.shutdown();
+}
+
+// ============================================================================
+// config.enabled Bug Tests (P1)
+// ============================================================================
+
+void test_mqtt_reconnect_blocked_when_disabled() {
+    // Reconnection must not fire when enabled=false, even with WiFi available
+    MQTTConfig config;
+    config.broker = "test.broker.com";
+    config.port = 1883;
+    config.enabled = false;
+    config.autoReconnect = true;
+    config.reconnectDelay = 0;  // Eliminate timer as a variable
+
+    MQTTComponent mqtt(config);
+    mqtt.begin();
+
+    // WiFi is available — only the enabled check should block reconnection
+    HAL::WiFiImpl::setConnectedForTest(true);
+
+    for (int i = 0; i < 10; i++) {
+        mqtt.loop();
+    }
+
+    TEST_ASSERT_FALSE(mqtt.isConnected());
+    TEST_ASSERT_EQUAL_UINT32(0, mqtt.getStatistics().reconnectCount);
+
+    mqtt.shutdown();
+}
+
+void test_mqtt_setconfig_does_not_preserve_when_disconnected() {
+    // Fix #2 edge: preservation only when Connected, not when Disconnected
+    MQTTConfig config;
+    config.broker = "test.broker.com";
+    config.port = 1883;
+    config.enabled = true;
+    config.autoReconnect = false;
+
+    MQTTComponent mqtt(config);
+    // NOT connected — state is Disconnected
+
+    MQTTConfig newCfg;
+    newCfg.broker = "test.broker.com";
+    newCfg.port = 1883;
+    newCfg.enabled = false;
+    newCfg.autoReconnect = false;
+    mqtt.setConfig(newCfg);
+
+    TEST_ASSERT_FALSE(mqtt.getConfig().enabled);
+}
+
+void test_mqtt_loop_empty_broker_early_return() {
+    // loop() with empty broker must not crash
+    MQTTConfig config;
+    config.broker = "test.broker.com";
+    config.port = 1883;
+    config.enabled = true;
+    config.autoReconnect = false;
+
+    MQTTComponent mqtt(config);
+    mqtt.begin();
+
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+    TEST_ASSERT_TRUE(mqtt.isConnected());
+
+    // Clear broker while connected
+    mqtt.setBroker("", 0);
+    mqtt.loop();  // Must not crash
+
+    // isConnected() may still return true (stale state)
+    // The key assertion is no crash
+    mqtt.shutdown();
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
 void setUp() {}
-void tearDown() {}
+void tearDown() {
+    HAL::WiFiImpl::setConnectedForTest(false);
+}
 
 int main() {
     UNITY_BEGIN();
@@ -475,6 +695,18 @@ int main() {
     RUN_TEST(test_mqtt_invalid_port_zero);
     RUN_TEST(test_mqtt_component_no_dependencies);
     RUN_TEST(test_mqtt_multiple_config_changes);
+
+    // config.enabled bug tests (P0)
+    RUN_TEST(test_mqtt_loop_processes_when_connected_and_disabled);
+    RUN_TEST(test_mqtt_setconfig_preserves_enabled_when_connected);
+    RUN_TEST(test_mqtt_begin_empty_broker_does_not_clear_enabled);
+    RUN_TEST(test_mqtt_full_lifecycle_empty_to_configured);
+    RUN_TEST(test_mqtt_config_reload_preserves_active_connection);
+
+    // config.enabled bug tests (P1)
+    RUN_TEST(test_mqtt_reconnect_blocked_when_disabled);
+    RUN_TEST(test_mqtt_setconfig_does_not_preserve_when_disconnected);
+    RUN_TEST(test_mqtt_loop_empty_broker_early_return);
 
     return UNITY_END();
 }

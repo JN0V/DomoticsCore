@@ -232,6 +232,11 @@ public:
     bool isConnected() const {
         return mqttClient && mqttClient->connected() && state == MQTTState::Connected;
     }
+
+    /** @brief Debug: get loop() call count from underlying client */
+    uint32_t debugLoopCount() const {
+        return mqttClient ? mqttClient->getLoopCallCount() : 0;
+    }
     
     /**
      * @brief Get current connection state

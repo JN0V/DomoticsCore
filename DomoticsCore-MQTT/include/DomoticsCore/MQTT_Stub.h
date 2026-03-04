@@ -48,6 +48,7 @@ private:
     uint32_t publishCount = 0;
     uint32_t subscribeCount = 0;
     uint32_t unsubscribeCount = 0;
+    uint32_t loopCallCount = 0;
 
 public:
     MQTTClientImpl(bool useTLS = false) {
@@ -89,7 +90,7 @@ public:
     }
 
     bool loop() override {
-        // In stub, loop just returns connection status
+        loopCallCount++;
         return isConnected;
     }
 
@@ -171,6 +172,7 @@ public:
     }
 
     // Test helper methods (not part of public interface)
+    uint32_t getLoopCallCount() const override { return loopCallCount; }
     uint32_t getPublishCount() const { return publishCount; }
     uint32_t getSubscribeCount() const { return subscribeCount; }
     uint32_t getUnsubscribeCount() const { return unsubscribeCount; }

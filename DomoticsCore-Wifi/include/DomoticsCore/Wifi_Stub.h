@@ -12,6 +12,9 @@ namespace DomoticsCore {
 namespace HAL {
 namespace WiFiImpl {
 
+inline bool stubbedConnected = false;
+inline void setConnectedForTest(bool connected) { stubbedConnected = connected; }
+
 inline void init() {}
 inline void setMode(WiFiHAL::Mode) {}
 inline void connect(const char*, const char*) {}
@@ -19,7 +22,7 @@ inline void disconnect() {}
 inline bool startAP(const char*, const char*) { return false; }
 inline void stopAP() {}
 inline WiFiHAL::Status getStatus() { return WiFiHAL::Status::NotSupported; }
-inline bool isConnected() { return false; }
+inline bool isConnected() { return stubbedConnected; }
 inline String getLocalIP() { return "0.0.0.0"; }
 inline String getAPIP() { return "0.0.0.0"; }
 inline String getSSID() { return ""; }

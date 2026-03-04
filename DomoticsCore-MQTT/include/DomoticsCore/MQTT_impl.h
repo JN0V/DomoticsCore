@@ -31,7 +31,7 @@ inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
 
     // Initialize metadata
     metadata.name = "MQTT";
-    metadata.version = "1.4.0";
+    metadata.version = "1.4.1";
     metadata.author = "DomoticsCore";
     metadata.description = "MQTT client with auto-reconnection";
 }
@@ -69,10 +69,9 @@ inline ComponentStatus MQTTComponent::begin() {
     
     // Config is loaded by SystemPersistence via setConfig()
     
-    // Auto-disable if no broker configured (similar to WiFi auto-switching to AP)
+    // Early return if no broker configured - MQTT stays inactive until configured
     if (config.broker.isEmpty()) {
-        config.enabled = false;
-        DLOG_W(LOG_MQTT, "No broker configured - component disabled");
+        DLOG_I(LOG_MQTT, "No broker configured - MQTT inactive until configured");
         return ComponentStatus::Success;  // Success but inactive
     }
     
@@ -99,13 +98,16 @@ inline ComponentStatus MQTTComponent::begin() {
 }
 
 inline void MQTTComponent::loop() {
-    if (!config.enabled || config.broker.isEmpty()) return;
+    if (config.broker.isEmpty()) return;
 
     if (isConnected()) {
+        // Always process an active connection even if config.enabled was
+        // cleared after connection (e.g. by a config reload from flash).
         mqttClient->loop();
         updateStatistics();
         processMessageQueue();
-    } else if (config.autoReconnect) {
+    } else if (config.enabled && config.autoReconnect) {
+        // Only attempt reconnection when explicitly enabled
         handleReconnection();
     }
 }
@@ -315,7 +317,14 @@ inline std::vector<String> MQTTComponent::getActiveSubscriptions() const {
 
 // Configuration
 inline void MQTTComponent::setConfig(const MQTTConfig& cfg) {
+    // Preserve enabled flag if we already have an active connection.
+    // A config reload from flash must not silently disable message processing.
+    bool preserveEnabled = (state == MQTTState::Connected && !cfg.enabled);
     config = cfg;
+    if (preserveEnabled) {
+        DLOG_W(LOG_MQTT, "setConfig: preserving enabled=true for active connection");
+        config.enabled = true;
+    }
     // Ensure PubSubClient stores a valid pointer to the current broker string.
     // PubSubClient retains the const char* pointer passed to setServer without copying,
     // so if our String storage changes, the old pointer becomes invalid.

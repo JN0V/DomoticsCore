@@ -130,6 +130,12 @@ public:
      * @return true if connected
      */
     virtual bool connected() = 0;
+
+    /**
+     * @brief Get number of loop() calls (debug/testing)
+     * @return Call count, or 0 if not tracked by this implementation
+     */
+    virtual uint32_t getLoopCallCount() const { return 0; }
 };
 
 } // namespace MQTT
