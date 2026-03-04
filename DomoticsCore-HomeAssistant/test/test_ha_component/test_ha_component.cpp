@@ -44,7 +44,7 @@ void test_ha_component_creation_default() {
 
     TEST_ASSERT_EQUAL_STRING("HomeAssistant", ha.metadata.name);
     TEST_ASSERT_EQUAL_STRING("DomoticsCore", ha.metadata.author);
-    TEST_ASSERT_EQUAL_STRING("1.4.0", ha.metadata.version);
+    TEST_ASSERT_EQUAL_STRING("1.5.0", ha.metadata.version);
 }
 
 void test_ha_component_creation_with_config() {
@@ -451,6 +451,245 @@ void test_ha_special_characters_in_node_id() {
 }
 
 // ============================================================================
+// HASwitch autoPublishState - Unit Tests (Task 3)
+// ============================================================================
+
+void test_switch_auto_publish_default_true() {
+    HASwitch sw("test", "Test Switch");
+    TEST_ASSERT_TRUE(sw.autoPublishState);
+}
+
+void test_switch_auto_publish_set_false() {
+    HASwitch sw("test", "Test Switch");
+    sw.autoPublishState = false;
+    TEST_ASSERT_FALSE(sw.autoPublishState);
+}
+
+void test_switch_handle_command_calls_callback() {
+    bool callbackCalled = false;
+    bool lastState = false;
+
+    HASwitch sw("test", "Test Switch", [&](bool state) {
+        callbackCalled = true;
+        lastState = state;
+    });
+
+    sw.handleCommand("ON");
+    TEST_ASSERT_TRUE(callbackCalled);
+    TEST_ASSERT_TRUE(lastState);
+
+    callbackCalled = false;
+    sw.handleCommand("OFF");
+    TEST_ASSERT_TRUE(callbackCalled);
+    TEST_ASSERT_FALSE(lastState);
+}
+
+void test_switch_handle_command_no_callback_no_crash() {
+    HASwitch sw("test", "Test Switch", nullptr);
+    // Should not crash
+    sw.handleCommand("ON");
+    sw.handleCommand("OFF");
+    TEST_ASSERT_TRUE(true);  // If we get here, no crash
+}
+
+// ============================================================================
+// HASwitch autoPublishState - Integration Tests (Task 4)
+// ============================================================================
+
+// Helper: emit mqtt/connected and drain the event queue
+static void simulateMqttConnect(Core& core) {
+    core.emit<bool>(DomoticsCore::MQTTEvents::EVENT_CONNECTED, true);
+    // Drain all queued events (connect -> availability -> discovery -> subscribe)
+    for (int i = 0; i < 5; i++) core.loop();
+}
+
+// Helper: emit mqtt/message to simulate a switch command and drain
+static void simulateSwitchCommand(Core& core, const char* nodeId,
+                                   const char* entityId, const char* payload) {
+    MQTTMessageEvent msg{};
+    String topic = String("homeassistant/switch/") + nodeId + "/" + entityId + "/set";
+    strncpy(msg.topic, topic.c_str(), MQTT_EVENT_TOPIC_SIZE - 1);
+    msg.topic[MQTT_EVENT_TOPIC_SIZE - 1] = '\0';
+    strncpy(msg.payload, payload, MQTT_EVENT_PAYLOAD_SIZE - 1);
+    msg.payload[MQTT_EVENT_PAYLOAD_SIZE - 1] = '\0';
+    core.emit<MQTTMessageEvent>(DomoticsCore::MQTTEvents::EVENT_MESSAGE, msg);
+    // Drain: message -> handleCommand -> possible publishState
+    for (int i = 0; i < 5; i++) core.loop();
+}
+
+void test_switch_command_auto_publishes_state() {
+    // AC 1: Default switch auto-publishes state after command
+    Core core;
+    HAConfig config;
+    config.nodeId = "test_node";
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSwitch("sw1", "Switch 1", [](bool) {});
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    // Subscribe to publish events
+    bool statePublished = false;
+    String capturedPayload;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            String topic(ev.topic);
+            if (topic.indexOf("/state") >= 0) {
+                statePublished = true;
+                capturedPayload = ev.payload;
+            }
+        });
+
+    // Connect MQTT (drains availability + discovery noise)
+    simulateMqttConnect(core);
+    statePublished = false;  // Reset after connect noise
+
+    // Send switch command
+    simulateSwitchCommand(core, "test_node", "sw1", "ON");
+
+    TEST_ASSERT_TRUE(statePublished);
+    TEST_ASSERT_EQUAL_STRING("ON", capturedPayload.c_str());
+
+    core.shutdown();
+}
+
+void test_switch_command_no_auto_publish_when_disabled() {
+    // AC 2: autoPublishState=false -> no auto-publish (RED until Phase 3 fix)
+    Core core;
+    HAConfig config;
+    config.nodeId = "test_node";
+
+    bool callbackCalled = false;
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSwitch("sw1", "Switch 1", [&](bool) { callbackCalled = true; },
+                  "", false);  // autoPublishState = false
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    // Subscribe before connect
+    bool statePublished = false;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            String topic(ev.topic);
+            if (topic.indexOf("/state") >= 0) {
+                statePublished = true;
+            }
+        });
+
+    simulateMqttConnect(core);
+    statePublished = false;  // Reset after connect noise
+
+    simulateSwitchCommand(core, "test_node", "sw1", "ON");
+
+    TEST_ASSERT_TRUE(callbackCalled);
+    TEST_ASSERT_FALSE(statePublished);  // Should NOT auto-publish
+
+    core.shutdown();
+}
+
+void test_switch_optimistic_overrides_auto_publish() {
+    // AC 4: optimistic=true suppresses auto-publish regardless of autoPublishState
+    Core core;
+    HAConfig config;
+    config.nodeId = "test_node";
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSwitch("sw1", "Switch 1", [](bool) {},
+                  "", true, true);  // autoPublishState=true, optimistic=true
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    bool statePublished = false;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            String topic(ev.topic);
+            if (topic.indexOf("/state") >= 0) {
+                statePublished = true;
+            }
+        });
+
+    simulateMqttConnect(core);
+    statePublished = false;
+
+    simulateSwitchCommand(core, "test_node", "sw1", "ON");
+
+    TEST_ASSERT_FALSE(statePublished);  // Optimistic suppresses publish
+
+    core.shutdown();
+}
+
+void test_switch_manual_publish_after_auto_disabled() {
+    // AC 3: Manual publishState() works even when autoPublishState=false
+    Core core;
+    HAConfig config;
+    config.nodeId = "test_node";
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addSwitch("sw1", "Switch 1", [](bool) {},
+                  "", false);  // autoPublishState = false
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    bool statePublished = false;
+    String capturedPayload;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            String topic(ev.topic);
+            if (topic.indexOf("/state") >= 0) {
+                statePublished = true;
+                capturedPayload = ev.payload;
+            }
+        });
+
+    simulateMqttConnect(core);
+    statePublished = false;
+
+    // Command arrives, no auto-publish
+    simulateSwitchCommand(core, "test_node", "sw1", "ON");
+    TEST_ASSERT_FALSE(statePublished);
+
+    // Consumer manually publishes state
+    haPtr->publishState("sw1", true);
+    for (int i = 0; i < 5; i++) core.loop();  // Drain
+    TEST_ASSERT_TRUE(statePublished);
+    TEST_ASSERT_EQUAL_STRING("ON", capturedPayload.c_str());
+
+    core.shutdown();
+}
+
+void test_switch_optimistic_true_auto_publish_false() {
+    // Interaction matrix: optimistic=true, autoPublishState=false -> no publish
+    Core core;
+    HAConfig config;
+    config.nodeId = "test_node";
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSwitch("sw1", "Switch 1", [](bool) {},
+                  "", false, true);  // autoPublishState=false, optimistic=true
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    bool statePublished = false;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            String topic(ev.topic);
+            if (topic.indexOf("/state") >= 0) {
+                statePublished = true;
+            }
+        });
+
+    simulateMqttConnect(core);
+    statePublished = false;
+
+    simulateSwitchCommand(core, "test_node", "sw1", "ON");
+
+    TEST_ASSERT_FALSE(statePublished);  // Both flags suppress publish
+
+    core.shutdown();
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -520,6 +759,19 @@ int main() {
     RUN_TEST(test_ha_component_no_dependencies);
     RUN_TEST(test_ha_empty_config_fields);
     RUN_TEST(test_ha_special_characters_in_node_id);
+
+    // HASwitch autoPublishState - Unit tests
+    RUN_TEST(test_switch_auto_publish_default_true);
+    RUN_TEST(test_switch_auto_publish_set_false);
+    RUN_TEST(test_switch_handle_command_calls_callback);
+    RUN_TEST(test_switch_handle_command_no_callback_no_crash);
+
+    // HASwitch autoPublishState - Integration tests
+    RUN_TEST(test_switch_command_auto_publishes_state);
+    RUN_TEST(test_switch_command_no_auto_publish_when_disabled);
+    RUN_TEST(test_switch_optimistic_overrides_auto_publish);
+    RUN_TEST(test_switch_manual_publish_after_auto_disabled);
+    RUN_TEST(test_switch_optimistic_true_auto_publish_false);
 
     return UNITY_END();
 }

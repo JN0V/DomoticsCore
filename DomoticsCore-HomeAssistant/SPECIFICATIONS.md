@@ -99,7 +99,8 @@ public:
     void addBinarySensor(const String& id, const String& name, 
                          const String& deviceClass = "", const String& icon = "");
     void addSwitch(const String& id, const String& name,
-                   std::function<void(bool)> commandCallback, const String& icon = "");
+                   std::function<void(bool)> commandCallback, const String& icon = "",
+                   bool autoPublishState = true, bool optimistic = false);
     void addLight(const String& id, const String& name, 
                   std::function<void(bool, uint8_t)> commandCallback);
     void addButton(const String& id, const String& name,
@@ -268,6 +269,11 @@ haPtr->addSwitch("relay1", "Relay 1", [](bool state) {
 
 // Publish initial state
 haPtr->publishState("relay1", digitalRead(RELAY_PIN) == HIGH);
+
+// Switch with manual state control (autoPublishState disabled)
+haPtr->addSwitch("alarm", "Alarm System", [](bool state) {
+    // Validate before applying - publishState() must be called manually
+}, "", false);  // autoPublishState = false
 ```
 
 ### 5.3 LED as Light

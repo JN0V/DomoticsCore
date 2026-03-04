@@ -23,6 +23,7 @@ public:
     String payloadOn = "ON";
     String payloadOff = "OFF";
     bool optimistic = false;    // If true, HA assumes state changes immediately
+    bool autoPublishState = true;  // If true, handleCommand() auto-publishes state back to HA
     std::function<void(bool)> commandCallback;
     
     void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,

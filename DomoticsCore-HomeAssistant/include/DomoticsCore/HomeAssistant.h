@@ -69,7 +69,7 @@ public:
         : config(config) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "HomeAssistant";
-        metadata.version = "1.4.0";
+        metadata.version = "1.5.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
         if (this->config.availabilityTopic.isEmpty()) {
@@ -173,8 +173,11 @@ public:
      * @brief Add a switch entity
      */
     void addSwitch(const String& id, const String& name,
-                   std::function<void(bool)> commandCallback, const String& icon = "") {
+                   std::function<void(bool)> commandCallback, const String& icon = "",
+                   bool autoPublishState = true, bool optimistic = false) {
         auto sw = std::make_unique<HASwitch>(id, name, commandCallback, icon);
+        sw->autoPublishState = autoPublishState;
+        sw->optimistic = optimistic;
         entities.push_back(std::move(sw));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added switch: %s", id.c_str());
@@ -541,7 +544,7 @@ private:
             
             // Auto-publish state after command execution
             // This ensures HA immediately sees the state change
-            if (!sw->optimistic) {
+            if (!sw->optimistic && sw->autoPublishState) {
                 publishState(entityId, payload);
                 DLOG_D(LOG_HA, "Auto-published switch state: %s = %s", entityId.c_str(), payload.c_str());
             }
