@@ -56,7 +56,7 @@ public:
      * @brief Handle button press from Home Assistant
      * @param payload Command payload
      */
-    void handleCommand(const String& payload) {
+    void handleCommand(const String& payload) override {
         if (pressCallback && payload == payloadPress) {
             pressCallback();
         }

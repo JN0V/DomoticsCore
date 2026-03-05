@@ -114,11 +114,11 @@ These are functional bugs or inconsistencies found while reviewing documentation
 - **Problem**: `getSystemStatus()` calls `millis()` directly instead of `HAL::Platform::getMillis()`. Violates constitution IX (HAL isolation).
 - **Fix**: Replace `millis()` with `HAL::Platform::getMillis()`.
 
-### M19 — HomeAssistant: addBinarySensor() missing event
+### M19 — HomeAssistant: inconsistent `ha/entity_added` event emission
 
 - **File**: `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h`
-- **Problem**: `addBinarySensor()` does not emit `ha/entity_added`, while `addSensor()`, `addSwitch()`, `addLight()`, and `addButton()` do.
-- **Fix**: Add `emit<String>(HAEvents::EVENT_ENTITY_ADDED, entityId)` to `addBinarySensor()`.
+- **Problem**: Only `addSensor()` emits `ha/entity_added`. The 5 other registration methods (`addBinarySensor()`, `addSwitch()`, `addLight()`, `addButton()`, `addAlarmControlPanel()`) do not emit it.
+- **Fix**: Either add `emit<String>(HAEvents::EVENT_ENTITY_ADDED, id)` to all `addXxx()` methods for consistency, or remove it from `addSensor()` if the event is unused.
 
 ---
 
@@ -239,6 +239,25 @@ Each of these is a decision point: **implement** the feature or **remove** the d
 
 ---
 
+## Priority 7: Progressive Refactoring (Constitution VIII)
+
+### R24 — HomeAssistant: `handleCommand()` virtual override in existing entities
+
+- **Files**: `HASwitch.h`, `HALight.h`, `HAButton.h`
+- **Problem**: `HAEntity` now declares `virtual void handleCommand(const String&)` (added for `HAAlarmControlPanel`), but the 3 existing entities still have non-virtual `handleCommand()` that **shadows** the base virtual. Calling `handleCommand()` via `HAEntity*` on switch/light/button invokes the empty base, not the derived method. Existing routing uses `static_cast` so behavior is unchanged today, but this is a maintenance trap.
+- **Fix**: Add `override` keyword to `handleCommand()` in `HASwitch`, `HALight`, `HAButton` (already done — see current diff). Then progressively replace `static_cast` routing with virtual dispatch in `HomeAssistantComponent::handleCommand()`.
+- **Inline TODO**: `HAEntity.h:84`
+- **Note**: The `override` keyword was already added in the current changeset. The remaining work is replacing `static_cast` routing with `entity->handleCommand(payload)` for all entity types, which would allow removing the `if/else` component string matching entirely.
+
+### R25 — HomeAssistant: `AlarmFeature` enum → `enum class`
+
+- **File**: `DomoticsCore-HomeAssistant/include/DomoticsCore/HAAlarmControlPanel.h`
+- **Problem**: `enum AlarmFeature : uint8_t` is unscoped — leaks `ArmHome`, `ArmAway`, `Trigger`, etc. into the `HomeAssistant` namespace. `Trigger` is a particularly dangerous name to pollute.
+- **Fix**: Change to `enum class AlarmFeature : uint8_t`, add `constexpr` bitwise operator overloads (`|`, `&`) returning `uint8_t`, and add `static_cast<uint8_t>(AlarmFeature::ArmAway)` in the `addAlarmControlPanel()` default parameter.
+- **Trade-off**: Improves type safety but adds verbosity at call sites. Consistent with modern C++ but less common in Arduino ecosystem.
+
+---
+
 ## Tracking
 
 | Priority | Items | Constitution | Status |
@@ -249,6 +268,179 @@ Each of these is a decision point: **implement** the feature or **remove** the d
 | 4. File Splits | R11-R13 | VII (800 lines) | TODO |
 | 5. Dead Code | R17-R23 | IV (YAGNI) | TODO |
 | 6. Anti-Patterns | R14-R16 | XIII | Document exceptions |
+| 7. Progressive Refactoring | R24-R25 | VIII, XIII | R24 partial (override added), R25 TODO |
+
+---
+
+## Priority 8: Architecture — EventBus Command Emission (Constitution VI)
+
+> **Architectural debt affecting ALL HA entity types.** This is a cross-cutting concern, not an entity-specific change.
+
+### R26 — HomeAssistant: emit `ha/command` EventBus event on incoming HA commands
+
+- **Files impacted**: `HomeAssistant.h`, `HAEvents.h`, all consumer code
+- **Current architecture**: When HA sends a command (e.g., `ARM_AWAY`, `ON`, button press), `HomeAssistantComponent::handleCommand()` routes it by component type string matching (`if (entity->component == "switch") ... else if ...`) and invokes a `std::function` callback stored in each entity. Consumers receive commands via closures passed at `addXxx()` time.
+- **Problem**: This violates Constitution VI (EventBus Architecture) — components should communicate via EventBus events, not direct callbacks. The callback pattern:
+  1. **Tight coupling** — consumer code must live in the same compilation unit as the `addXxx()` call (typically `main.cpp`), preventing true component separation.
+  2. **No observability** — no other component can observe or react to HA commands (logging, analytics, inter-component coordination).
+  3. **Inconsistency** — state publishing goes through EventBus (`mqtt/publish`), but command reception does not. The data flow is asymmetric.
+  4. **Prevents component-level testing** — consumers cannot be tested in isolation because their logic is embedded in lambdas.
+
+#### What needs to be done
+
+##### 1. Define `HACommandEvent` struct in `HAEvents.h`
+
+```cpp
+struct HACommandEvent {
+    char entityId[64];       // Entity that received the command
+    char component[32];      // Entity component type ("switch", "alarm_control_panel", etc.)
+    char command[128];       // Command payload (e.g., "ON", "ARM_AWAY", JSON for lights)
+    char code[32];           // Optional PIN code (alarm_control_panel only, empty otherwise)
+};
+```
+
+Total struct size: **~256 bytes** (fixed-size, zero heap allocation).
+
+##### 2. Add event constant in `HAEvents.h`
+
+```cpp
+static constexpr const char* EVENT_COMMAND = "ha/command";
+```
+
+##### 3. Modify `HomeAssistantComponent::handleCommand()` in `HomeAssistant.h`
+
+After the existing callback invocation (or replacing it), emit the event:
+
+```cpp
+HACommandEvent ev{};
+strncpy(ev.entityId, entityId.c_str(), sizeof(ev.entityId) - 1);
+strncpy(ev.component, entity->component.c_str(), sizeof(ev.component) - 1);
+strncpy(ev.command, payload.c_str(), sizeof(ev.command) - 1);
+// ev.code populated only for alarm_control_panel
+emit(HAEvents::EVENT_COMMAND, ev);
+```
+
+##### 4. Decide on callback deprecation strategy
+
+Two options:
+
+- **Option A — Dual mode (recommended for v1.x)**: Keep existing callbacks AND emit the event. Consumers can use either mechanism. Callbacks deprecated in v2.0. Zero breaking change.
+- **Option B — Replace**: Remove callback parameters from `addXxx()` methods. All consumers subscribe to `ha/command` via EventBus. Breaking change requiring major version bump.
+
+##### 5. Update all entity types
+
+This affects ALL controllable entities, not just `alarm_control_panel`:
+
+| Entity | Current callback | EventBus equivalent |
+|--------|-----------------|---------------------|
+| `HASwitch` | `std::function<void(bool)>` | `ev.command = "ON"/"OFF"` |
+| `HALight` | `std::function<void(bool, uint8_t)>` | `ev.command = JSON payload` |
+| `HAButton` | `std::function<void()>` | `ev.command = "PRESS"` |
+| `HAAlarmControlPanel` | `std::function<void(const String&, const String&)>` | `ev.command = "ARM_AWAY"`, `ev.code = "1234"` |
+
+##### 6. Update examples and tests
+
+- `BasicHA/src/main.cpp`: Add EventBus subscription example alongside existing callback usage.
+- New test: Verify `ha/command` event is emitted with correct fields for each entity type.
+- New test: Verify dual-mode (callback + event) both fire.
+
+##### 7. Simplify `handleCommand()` routing
+
+Once all entities use virtual `handleCommand()` (see R24), the `if/else` component string matching can be replaced with a single `entity->handleCommand(payload)` call. The EventBus emission becomes component-type-agnostic — every command emits `ha/command` regardless of entity type.
+
+#### Dependencies
+
+- **R24** (virtual dispatch) should be completed first — it simplifies the handleCommand routing that this change modifies.
+- **M19** (inconsistent `ha/entity_added` emission) — fix alongside this to ensure all EventBus emissions are consistent.
+
+#### Risks
+
+- **Memory impact on ESP8266** — See analysis below (R26-ANALYSIS).
+- **Behavioral change if consumers rely on callback ordering** — Dual mode mitigates this.
+- **Light JSON commands may exceed 128-byte `command` field** — Complex light payloads with color/effect may need a larger buffer or a separate `ha/command/light` event.
+
+### R26-ANALYSIS — Memory & Heap Impact Assessment
+
+> **Conclusion: LOW RISK on ESP8266 if implemented with fixed-size struct and Option A (dual mode).**
+
+#### Current memory baseline per command
+
+When an HA command arrives today, the flow is:
+
+1. PubSubClient receives MQTT packet → copies into internal buffer (**768 bytes on ESP8266**, 2048 on ESP32)
+2. MQTT component creates `MQTTMessageEvent` (~**828 bytes**) → emitted to EventBus queue
+3. EventBus copies the event data into `QueuedEvent::data` (`std::vector<uint8_t>`) → **828 bytes** heap allocation
+4. EventBus dispatches → `HomeAssistantComponent::handleCommand()` processes synchronously
+5. Callback invokes consumer lambda → **0 bytes** additional heap
+
+**Current cost per command: ~828 bytes** transient in EventBus queue (freed after dispatch).
+
+#### Proposed additional cost per command
+
+Adding `HACommandEvent` emission means:
+
+6. `HACommandEvent` created on stack → **256 bytes** stack (not heap)
+7. EventBus copies into `QueuedEvent::data` → **~256 bytes** heap allocation
+8. EventBus dispatches → consumer handler processes → freed
+
+**Additional cost: +256 bytes** transient in EventBus queue.
+
+#### Worst-case analysis on ESP8266
+
+| Parameter | Value |
+|-----------|-------|
+| ESP8266 total RAM | 80 KB |
+| Typical free heap after WiFi + MQTT + framework | ~35-40 KB |
+| MemoryManager MINIMAL profile threshold | 8 KB |
+| MemoryManager CRITICAL threshold | 4 KB |
+| EventBus max queue size | 32 events |
+| `MQTTMessageEvent` size | 828 bytes |
+| `HACommandEvent` size | 256 bytes |
+
+**Scenario: burst of N simultaneous commands**
+
+| N commands in queue | Current heap usage | Proposed heap usage | Delta |
+|--------------------:|-------------------:|--------------------:|------:|
+| 1 | 828 B | 1,084 B | +256 B |
+| 4 | 3,312 B | 4,336 B | +1,024 B |
+| 8 (max per poll) | 6,624 B | 8,672 B | +2,048 B |
+| 32 (theoretical max) | 26,496 B | 34,688 B | +8,192 B |
+
+**Realistic scenario**: HA commands are user-initiated (button presses, automations). Typical frequency: 1-5 commands per second maximum. With `maxPerPoll = 8` events processed per `loop()` cycle, the queue rarely exceeds 2-3 events. The +256 to +768 bytes transient cost is **negligible** relative to the 35-40 KB free heap.
+
+**Pathological scenario**: 32 commands queued simultaneously is unrealistic for HA interactions but could happen if a buggy automation sends a burst. Even then, +8 KB on top of the existing 26 KB usage stays within the ~35 KB available heap. The MemoryManager would transition from FULL to STANDARD profile but not reach CRITICAL.
+
+#### Fragmentation risk
+
+The `HACommandEvent` struct uses **fixed-size char arrays** (no `String`, no heap allocation inside the struct). The EventBus copies it via `std::vector<uint8_t>::assign()` which allocates a single contiguous block of 256 bytes. This is:
+
+- **Better** than String-based approaches (multiple small allocations)
+- **Same pattern** as existing `MQTTMessageEvent` (already proven stable)
+- **Freed immediately** after dispatch (no long-lived allocation)
+
+Fragmentation impact: **NONE** beyond what already exists from `MQTTMessageEvent` handling.
+
+#### Recommendation
+
+- **Proceed with implementation** using fixed-size `HACommandEvent` (256 bytes).
+- Use **Option A (dual mode)** — callbacks remain functional, EventBus emission added alongside. This avoids breaking changes and adds zero risk to existing consumers.
+- Consider reducing `command` field to 64 bytes on ESP8266 builds if light JSON payloads exceed 128 bytes (use `#ifdef` or a compile-time constant in the event struct — though this conflicts with Constitution IX HAL isolation; alternative: truncate with warning log).
+- Monitor with `MemoryManager::getCurrentFreeHeap()` during integration testing on real ESP8266 hardware.
+
+---
+
+## Tracking
+
+| Priority | Items | Constitution | Status |
+|----------|-------|-------------|--------|
+| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | TODO |
+| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | TODO |
+| 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | TODO |
+| 4. File Splits | R11-R13 | VII (800 lines) | TODO |
+| 5. Dead Code | R17-R23 | IV (YAGNI) | TODO |
+| 6. Anti-Patterns | R14-R16 | XIII | Document exceptions |
+| 7. Progressive Refactoring | R24-R25 | VIII, XIII | R24 partial (override added), R25 TODO |
+| 8. EventBus Commands | R26 | VI (EventBus Architecture) | TODO — Impact analysis: LOW RISK |
 
 ---
 

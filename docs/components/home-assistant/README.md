@@ -28,6 +28,7 @@ The component is **header-only** and communicates with the MQTT component exclus
 | **Switch** | `switch` | Bidirectional | Relay, socket, fan |
 | **Light** | `light` | Bidirectional | LED strip, dimmer (with brightness) |
 | **Button** | `button` | HA to device | Restart, calibrate, trigger actions |
+| **AlarmControlPanel** | `alarm_control_panel` | Bidirectional | Alarm system with arm/disarm modes, PIN code, keypad |
 
 ## Dependencies
 
@@ -73,6 +74,15 @@ void setup() {
     });
     haPtr->addButton("restart", "Restart", []() { ESP.restart(); }, "mdi:restart");
 
+    // 4. Add alarm panel with PIN code and multiple arm modes
+    haPtr->addAlarmControlPanel("alarm", "Home Alarm",
+        [](const String& command, const String& code) {
+            // Handle arm/disarm commands with optional PIN code
+        },
+        "mdi:shield-home",
+        AlarmFeature::ArmAway | AlarmFeature::ArmHome | AlarmFeature::Trigger,
+        "1234", false, true, false);  // code, codeArmRequired, codeDisarmRequired, codeTriggerRequired
+
     core.addComponent(std::move(ha));
     core.begin();
 }
@@ -84,6 +94,8 @@ void loop() {
     if (haPtr->isReady()) {
         haPtr->publishState("temperature", 22.5f);
         haPtr->publishState("motion", true);
+        // Alarm state is consumer-managed:
+        // haPtr->publishState("alarm", AlarmPanelState::ArmedAway);
     }
 }
 ```
@@ -109,5 +121,6 @@ homeassistant/{nodeId}/availability                        # Online/offline
 
 - [Technical Reference](./technical-reference.md) -- Full API documentation, MQTT topic details, and payload formats.
 - [Project Context](./project-context.md) -- AI context file with class inventory, dependencies, and conventions.
+- [Alarm Control Panel Deep-Dive](../../deep-dive-ha-alarm-control-panel.md) -- Exhaustive analysis of the alarm panel implementation.
 - [Component Source](../../../DomoticsCore-HomeAssistant/) -- Header files and examples.
 - [DomoticsCore Constitution](../../../.specify/memory/constitution.md) -- Governing development principles.

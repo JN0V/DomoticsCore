@@ -2,7 +2,7 @@
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**
 
-This document provides the complete API surface, MQTT topic conventions, payload formats, and internal architecture of the DomoticsCore-HomeAssistant component (v1.5.0).
+This document provides the complete API surface, MQTT topic conventions, payload formats, and internal architecture of the DomoticsCore-HomeAssistant component (v1.6.0).
 
 ---
 
@@ -16,14 +16,15 @@ This document provides the complete API surface, MQTT topic conventions, payload
 6. [HASwitch](#haswitch)
 7. [HALight](#halight)
 8. [HAButton](#habutton)
-9. [HAEvents](#haevents)
-10. [HAStatistics](#hastatistics)
-11. [HomeAssistantWebUI](#homeassistantwebui)
-12. [MQTT Topic Structure](#mqtt-topic-structure)
-13. [Discovery Payloads](#discovery-payloads)
-14. [Device Registry](#device-registry)
-15. [Command Handling](#command-handling)
-16. [Availability](#availability)
+9. [HAAlarmControlPanel](#haalarmcontrolpanel)
+10. [HAEvents](#haevents)
+11. [HAStatistics](#hastatistics)
+12. [HomeAssistantWebUI](#homeassistantwebui)
+13. [MQTT Topic Structure](#mqtt-topic-structure)
+14. [Discovery Payloads](#discovery-payloads)
+15. [Device Registry](#device-registry)
+16. [Command Handling](#command-handling)
+17. [Availability](#availability)
 
 ---
 
@@ -79,7 +80,7 @@ HomeAssistantComponent(const HAConfig& config = HAConfig());
 
 Sets component metadata:
 - `name`: `"HomeAssistant"`
-- `version`: `"1.5.0"`
+- `version`: `"1.6.0"`
 - Auto-generates `availabilityTopic` if not provided.
 
 ### IComponent Lifecycle
@@ -152,6 +153,37 @@ void addButton(const String& id, const String& name,
 ```
 
 Registers a trigger-only button entity. The callback fires when the user presses the button in HA.
+
+#### addAlarmControlPanel
+
+```cpp
+void addAlarmControlPanel(
+    const String& id, const String& name,
+    const std::function<void(const String& command, const String& code)>& commandCallback,
+    const String& icon = "mdi:shield-home",
+    uint8_t features = AlarmFeature::ArmAway,
+    const String& code = "",
+    bool codeArmRequired = false,
+    bool codeDisarmRequired = false,
+    bool codeTriggerRequired = false);
+```
+
+Registers a native Home Assistant alarm control panel entity. Renders as the alarm panel Lovelace card with keypad and color-coded status.
+
+| Parameter | Description |
+|-----------|-------------|
+| `commandCallback` | Called with `(command, code)` when HA sends an arm/disarm/trigger command. Command is one of `AlarmPanelCommand::*`. Code is the raw PIN entered by the user (empty if not provided). **The library does not validate the code — the consumer must.** |
+| `features` | Bitmask of `AlarmFeature` flags defining which arm modes are available in the HA UI. |
+| `code` | PIN code included in discovery so HA's frontend shows a keypad. The library does NOT validate entered codes — it passes them through to the callback. |
+| `codeArmRequired` | If true, HA's frontend requires code entry for arm operations. |
+| `codeDisarmRequired` | If true, HA's frontend requires code entry for disarm. |
+| `codeTriggerRequired` | If true, HA's frontend requires code entry for trigger. |
+
+> **Important — Library vs Consumer boundary:** The alarm panel entity is a thin MQTT plumbing layer. The library handles discovery, command parsing, and topic management. **All business logic is the consumer's responsibility:**
+> - **Code validation** — The library passes the raw code to the callback; the consumer must verify it.
+> - **State transitions** — The library has no state machine; the consumer calls `publishState()` with the appropriate `AlarmPanelState::*` value.
+> - **Command validation** — The library does not check if a command matches the configured `supportedFeatures`.
+> - **Timing** — Arming delays, entry delays, trigger durations are entirely consumer logic.
 
 ### State Publishing Methods
 
@@ -448,6 +480,87 @@ Invokes `pressCallback()` only if `payload == payloadPress`.
 
 ---
 
+## HAAlarmControlPanel
+
+Native Home Assistant alarm control panel with multiple arm modes, intermediate states, and optional PIN code passthrough.
+
+**Header:** `DomoticsCore/HAAlarmControlPanel.h`
+**HA Component:** `alarm_control_panel`
+
+### AlarmFeature Flags
+
+Bitmask enum (`uint8_t`) defining supported arm modes:
+
+| Flag | Value | Description |
+|------|-------|-------------|
+| `ArmHome` | `0x01` | Arm home mode |
+| `ArmAway` | `0x02` | Arm away mode (default) |
+| `ArmNight` | `0x04` | Arm night mode |
+| `ArmVacation` | `0x08` | Arm vacation mode |
+| `ArmCustomBypass` | `0x10` | Arm custom bypass mode |
+| `Trigger` | `0x20` | Manual trigger capability |
+
+Combine with bitwise OR: `AlarmFeature::ArmAway | AlarmFeature::ArmHome | AlarmFeature::Trigger`
+
+### AlarmPanelState Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `Disarmed` | `"disarmed"` | System disarmed |
+| `Arming` | `"arming"` | Arming in progress (exit delay) |
+| `ArmedHome` | `"armed_home"` | Armed in home mode |
+| `ArmedAway` | `"armed_away"` | Armed in away mode |
+| `ArmedNight` | `"armed_night"` | Armed in night mode |
+| `ArmedVacation` | `"armed_vacation"` | Armed in vacation mode |
+| `ArmedCustomBypass` | `"armed_custom_bypass"` | Armed with custom bypass |
+| `Pending` | `"pending"` | Entry delay active |
+| `Triggered` | `"triggered"` | Alarm triggered |
+| `Disarming` | `"disarming"` | Consumer convenience; not triggered by HA commands |
+
+### AlarmPanelCommand Constants
+
+| Constant | Value |
+|----------|-------|
+| `ARM_HOME` | `"ARM_HOME"` |
+| `ARM_AWAY` | `"ARM_AWAY"` |
+| `ARM_NIGHT` | `"ARM_NIGHT"` |
+| `ARM_VACATION` | `"ARM_VACATION"` |
+| `ARM_CUSTOM_BYPASS` | `"ARM_CUSTOM_BYPASS"` |
+| `DISARM` | `"DISARM"` |
+| `TRIGGER` | `"TRIGGER"` |
+
+### Additional Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `code` | `String` | `""` | PIN code sent to HA frontend for keypad display; the library does NOT validate it — passthrough only |
+| `supportedFeatures` | `uint8_t` | `ArmAway` | Bitmask of supported arm modes |
+| `codeArmRequired` | `bool` | `false` | Require code for arm operations |
+| `codeDisarmRequired` | `bool` | `false` | Require code for disarm |
+| `codeTriggerRequired` | `bool` | `false` | Require code for trigger |
+| `commandCallback` | `std::function<void(const String&, const String&)>` | -- | Called with `(command, code)` |
+
+### Discovery Fields Added
+
+- `command_topic`
+- When code configuration is active (any of `code`, `codeArmRequired`, `codeDisarmRequired`, `codeTriggerRequired` is set):
+  - `code` (if non-empty)
+  - `code_arm_required`, `code_disarm_required`, `code_trigger_required`
+  - `command_template`: `{{ action }}{% if code %} {{ code }}{% endif %}`
+- Payload constants per supported feature: `payload_arm_home`, `payload_arm_away`, `payload_arm_night`, `payload_arm_vacation`, `payload_arm_custom_bypass`, `payload_trigger`
+- `payload_disarm` (always present)
+- `supported_features` JSON array built from bitmask
+
+### Command Handling
+
+```cpp
+void handleCommand(const String& payload) override;
+```
+
+Parses payloads in `"COMMAND"` or `"COMMAND CODE"` format. Trims whitespace. Calls `commandCallback(command, code)` where `code` is empty if not provided. Empty or whitespace-only payloads are rejected with a warning log.
+
+---
+
 ## HAEvents
 
 Event constants published by the component via the EventBus.
@@ -551,7 +664,7 @@ All topics follow the Home Assistant MQTT Discovery convention.
 ### Template Variables
 
 - `{prefix}` -- Discovery prefix (default: `homeassistant`)
-- `{component}` -- HA component type: `sensor`, `binary_sensor`, `switch`, `light`, `button`
+- `{component}` -- HA component type: `sensor`, `binary_sensor`, `switch`, `light`, `button`, `alarm_control_panel`
 - `{nodeId}` -- Unique device identifier from `HAConfig.nodeId`
 - `{entityId}` -- Entity ID from `HAEntity.id`
 
@@ -672,6 +785,36 @@ Topic: `homeassistant/button/esp32-demo/restart/config`
 
 Note: Buttons do **not** include a `state_topic`.
 
+### Alarm Control Panel Example
+
+Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
+
+```json
+{
+  "name": "Home Alarm",
+  "unique_id": "esp32-demo_alarm",
+  "state_topic": "homeassistant/alarm_control_panel/esp32-demo/alarm/state",
+  "command_topic": "homeassistant/alarm_control_panel/esp32-demo/alarm/set",
+  "icon": "mdi:shield-home",
+  "code": "1234",
+  "code_arm_required": false,
+  "code_disarm_required": true,
+  "code_trigger_required": false,
+  "command_template": "{{ action }}{% if code %} {{ code }}{% endif }}",
+  "payload_arm_home": "ARM_HOME",
+  "payload_arm_away": "ARM_AWAY",
+  "payload_disarm": "DISARM",
+  "payload_trigger": "TRIGGER",
+  "supported_features": ["arm_home", "arm_away", "trigger"],
+  "device": { "..." : "..." },
+  "availability_topic": "homeassistant/esp32-demo/availability",
+  "payload_available": "online",
+  "payload_not_available": "offline"
+}
+```
+
+Note: `code`, `code_*_required`, and `command_template` fields are **only included** when code configuration is active. `payload_arm_*` and `payload_trigger` fields are only included for features present in the `supportedFeatures` bitmask. `payload_disarm` is always included.
+
 ---
 
 ## Device Registry
@@ -706,6 +849,7 @@ When HA sends a command (e.g., turning a switch ON), the flow is:
    - **`"switch"`**: Calls `HASwitch::handleCommand(payload)`. If `autoPublishState` is true and `optimistic` is false, the received payload is immediately published back as state.
    - **`"light"`**: Calls `HALight::handleCommand(payload)` which parses JSON or falls back to simple ON/OFF.
    - **`"button"`**: Calls `HAButton::handleCommand(payload)` which fires the callback only if payload matches `payloadPress`.
+   - **`"alarm_control_panel"`**: Calls `entity->handleCommand(payload)` via virtual dispatch. Parses `"COMMAND"` or `"COMMAND CODE"` format and delegates to consumer callback. **No auto-publish** -- the consumer manages all state transitions.
 6. `stats.commandsReceived` is incremented.
 
 ### Re-Entrancy Guard

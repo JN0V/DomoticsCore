@@ -80,6 +80,11 @@ public:
             doc["payload_not_available"] = "offline";
         }
     }
+
+    // TODO: make handleCommand() virtual override in HASwitch/HALight/HAButton (progressive refactoring)
+    // Current shadow: calling handleCommand() via HAEntity* on switch/light/button invokes this empty base,
+    // not the derived method. Existing routing uses static_cast so behavior is unchanged.
+    virtual void handleCommand(const String& payload) {}
 };
 
 } // namespace HomeAssistant

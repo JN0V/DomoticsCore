@@ -49,7 +49,7 @@ public:
      * @brief Handle command from Home Assistant
      * @param payload Command payload (ON/OFF)
      */
-    void handleCommand(const String& payload) {
+    void handleCommand(const String& payload) override {
         if (commandCallback) {
             bool state = (payload == payloadOn);
             commandCallback(state);

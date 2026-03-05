@@ -19,6 +19,7 @@
 #include "HASwitch.h"
 #include "HALight.h"
 #include "HAButton.h"
+#include "HAAlarmControlPanel.h"
 #include <vector>
 #include <memory>
 
@@ -69,7 +70,7 @@ public:
         : config(config) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "HomeAssistant";
-        metadata.version = "1.5.0";
+        metadata.version = "1.6.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
         if (this->config.availabilityTopic.isEmpty()) {
@@ -213,9 +214,33 @@ public:
             republishEntity(id);
         }
     }
-    
+
+    /**
+     * @brief Add an alarm control panel entity
+     */
+    void addAlarmControlPanel(
+        const String& id, const String& name,
+        const std::function<void(const String& command, const String& code)>& commandCallback,
+        const String& icon = "mdi:shield-home",
+        uint8_t features = AlarmFeature::ArmAway,
+        const String& code = "",
+        bool codeArmRequired = false,
+        bool codeDisarmRequired = false,
+        bool codeTriggerRequired = false) {
+        auto panel = std::make_unique<HAAlarmControlPanel>(id, name, commandCallback, icon);
+        panel->supportedFeatures = features;
+        panel->code = code;
+        panel->codeArmRequired = codeArmRequired;
+        panel->codeDisarmRequired = codeDisarmRequired;
+        panel->codeTriggerRequired = codeTriggerRequired;
+        entities.push_back(std::move(panel));
+        stats.entityCount++;
+        DLOG_I(LOG_HA, "Added alarm_control_panel: %s", id.c_str());
+        if (mqttConnected) { republishEntity(id); }
+    }
+
     // ========== State Publishing ==========
-    
+
     /**
      * @brief Publish entity state (string) - INTERNAL IMPLEMENTATION
      */
@@ -253,7 +278,14 @@ public:
     void publishState(const String& id, bool state) {
         publishState(id, String(state ? "ON" : "OFF"));
     }
-    
+
+    /**
+     * @brief Publish entity state (const char*) — prevents implicit bool conversion
+     */
+    void publishState(const String& id, const char* state) {
+        publishState(id, String(state));
+    }
+
     /**
      * @brief Publish entity state with JSON (for lights with brightness)
      */
@@ -556,6 +588,11 @@ private:
             HAButton* button = static_cast<HAButton*>(entity);
             button->handleCommand(payload);
             // Buttons don't have state
+        } else if (entity->component == "alarm_control_panel") {
+            entity->handleCommand(payload);
+            // No auto-publish: consumer manages alarm state
+        } else {
+            DLOG_W(LOG_HA, "No command handler for component type: %s", entity->component.c_str());
         }
     }
 };

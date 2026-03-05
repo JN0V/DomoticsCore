@@ -86,10 +86,11 @@ Each component has 3 documentation files in `docs/components/{name}/`:
 - Source docs: [Specifications](../DomoticsCore-MQTT/SPECIFICATIONS.md), [State Machine](../DomoticsCore-MQTT/STATE_MACHINE.md)
 
 ### Home Assistant (`DomoticsCore-HomeAssistant/`)
-> MQTT Discovery integration with automatic entity registration
+> MQTT Discovery integration with automatic entity registration (sensor, binary_sensor, switch, light, button, alarm_control_panel)
 
 - [Overview](components/home-assistant/README.md) | [Technical Reference](components/home-assistant/technical-reference.md) | [Project Context](components/home-assistant/project-context.md)
 - Source docs: [Specifications](../DomoticsCore-HomeAssistant/SPECIFICATIONS.md)
+- Deep-dive: [Alarm Control Panel](deep-dive-ha-alarm-control-panel.md)
 
 ### NTP (`DomoticsCore-NTP/`)
 > Network time synchronization with timezone and DST support
@@ -126,6 +127,14 @@ Each component has 3 documentation files in `docs/components/{name}/`:
 > Meta-orchestrator that assembles all components into a ready-to-use system
 
 - [Overview](components/system/README.md) | [Technical Reference](components/system/technical-reference.md) | [Project Context](components/system/project-context.md)
+
+---
+
+## Deep-Dive Documentation
+
+Detailed exhaustive analysis of specific features and modules:
+
+- [HA Alarm Control Panel Deep-Dive](deep-dive-ha-alarm-control-panel.md) -- Comprehensive analysis of the alarm_control_panel entity implementation (12 files, ~2,950 LOC) -- Generated 2026-03-05
 
 ---
 
@@ -228,6 +237,6 @@ docs/
 
 ---
 
-**DomoticsCore Version:** 1.7.0 | **Documentation Last Updated:** 2026-03-04
+**DomoticsCore Version:** 1.7.0 | **Documentation Last Updated:** 2026-03-05
 
 **License:** See main repository [LICENSE](../LICENSE) file.

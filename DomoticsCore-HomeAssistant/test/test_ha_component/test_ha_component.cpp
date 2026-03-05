@@ -44,7 +44,7 @@ void test_ha_component_creation_default() {
 
     TEST_ASSERT_EQUAL_STRING("HomeAssistant", ha.metadata.name);
     TEST_ASSERT_EQUAL_STRING("DomoticsCore", ha.metadata.author);
-    TEST_ASSERT_EQUAL_STRING("1.5.0", ha.metadata.version);
+    TEST_ASSERT_EQUAL_STRING("1.6.0", ha.metadata.version);
 }
 
 void test_ha_component_creation_with_config() {
@@ -690,13 +690,180 @@ void test_switch_optimistic_true_auto_publish_false() {
 }
 
 // ============================================================================
+// publishState() overload resolution tests (bug 008)
+// ============================================================================
+
+void test_publish_state_const_char_ptr() {
+    // Bug: publishState(id, const char*) was resolving to bool overload,
+    // publishing "ON" instead of the actual string value.
+    Core core;
+    HAConfig config;
+    config.nodeId = "test_node";
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addSensor("alarm", "Alarm State");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    String capturedPayload;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            String topic(ev.topic);
+            if (topic.indexOf("/state") >= 0) {
+                capturedPayload = ev.payload;
+            }
+        });
+
+    simulateMqttConnect(core);
+
+    // Pass a const char* — must NOT resolve to bool overload
+    haPtr->publishState("alarm", AlarmPanelState::Arming);
+    for (int i = 0; i < 5; i++) core.loop();
+
+    TEST_ASSERT_EQUAL_STRING("arming", capturedPayload.c_str());
+
+    core.shutdown();
+}
+
+void test_publish_state_constexpr_char_ptr() {
+    // Verify constexpr const char* values work correctly
+    Core core;
+    HAConfig config;
+    config.nodeId = "test_node";
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addSensor("alarm", "Alarm State");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    String capturedPayload;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            String topic(ev.topic);
+            if (topic.indexOf("/state") >= 0) {
+                capturedPayload = ev.payload;
+            }
+        });
+
+    simulateMqttConnect(core);
+
+    haPtr->publishState("alarm", AlarmPanelState::ArmedAway);
+    for (int i = 0; i < 5; i++) core.loop();
+
+    TEST_ASSERT_EQUAL_STRING("armed_away", capturedPayload.c_str());
+
+    core.shutdown();
+}
+
+void test_publish_state_bool_still_works() {
+    // Ensure the bool overload is not broken by the new const char* overload
+    Core core;
+    HAConfig config;
+    config.nodeId = "test_node";
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addBinarySensor("fault", "Fault");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    String capturedPayload;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            String topic(ev.topic);
+            if (topic.indexOf("/state") >= 0) {
+                capturedPayload = ev.payload;
+            }
+        });
+
+    simulateMqttConnect(core);
+
+    haPtr->publishState("fault", true);
+    for (int i = 0; i < 5; i++) core.loop();
+
+    TEST_ASSERT_EQUAL_STRING("ON", capturedPayload.c_str());
+
+    capturedPayload = "";
+    haPtr->publishState("fault", false);
+    for (int i = 0; i < 5; i++) core.loop();
+
+    TEST_ASSERT_EQUAL_STRING("OFF", capturedPayload.c_str());
+
+    core.shutdown();
+}
+
+void test_publish_state_string_still_works() {
+    // Ensure the String overload still works
+    Core core;
+    HAConfig config;
+    config.nodeId = "test_node";
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addSensor("status", "Status");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    String capturedPayload;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            String topic(ev.topic);
+            if (topic.indexOf("/state") >= 0) {
+                capturedPayload = ev.payload;
+            }
+        });
+
+    simulateMqttConnect(core);
+
+    haPtr->publishState("status", String("custom_value"));
+    for (int i = 0; i < 5; i++) core.loop();
+
+    TEST_ASSERT_EQUAL_STRING("custom_value", capturedPayload.c_str());
+
+    core.shutdown();
+}
+
+void test_publish_state_string_literal() {
+    // String literals are const char[], which decay to const char*
+    Core core;
+    HAConfig config;
+    config.nodeId = "test_node";
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addSensor("alarm", "Alarm");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    String capturedPayload;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            String topic(ev.topic);
+            if (topic.indexOf("/state") >= 0) {
+                capturedPayload = ev.payload;
+            }
+        });
+
+    simulateMqttConnect(core);
+
+    haPtr->publishState("alarm", "triggered");
+    for (int i = 0; i < 5; i++) core.loop();
+
+    TEST_ASSERT_EQUAL_STRING("triggered", capturedPayload.c_str());
+
+    core.shutdown();
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
 void setUp() {}
 void tearDown() {}
 
-int main() {
+int runAllTests() {
     UNITY_BEGIN();
 
     // Event tests
@@ -773,5 +940,19 @@ int main() {
     RUN_TEST(test_switch_manual_publish_after_auto_disabled);
     RUN_TEST(test_switch_optimistic_true_auto_publish_false);
 
+    // publishState() overload resolution tests (bug 008)
+    RUN_TEST(test_publish_state_const_char_ptr);
+    RUN_TEST(test_publish_state_constexpr_char_ptr);
+    RUN_TEST(test_publish_state_bool_still_works);
+    RUN_TEST(test_publish_state_string_still_works);
+    RUN_TEST(test_publish_state_string_literal);
+
     return UNITY_END();
 }
+
+#ifdef ARDUINO
+void setup() { runAllTests(); }
+void loop() {}
+#else
+int main(int argc, char** argv) { return runAllTests(); }
+#endif

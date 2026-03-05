@@ -1,14 +1,16 @@
 /**
  * @file main.cpp
  * @brief Basic Home Assistant MQTT Discovery Example
- * 
+ *
  * Demonstrates:
  * - Automatic entity discovery in Home Assistant
  * - Sensor state publishing (temperature, humidity, uptime)
  * - Switch control (relay)
  * - Button trigger (restart)
+ * - Alarm control panel with complete state lifecycle:
+ *   disarmed → arming → armed_away → pending → triggered → disarmed
  * - Device information and availability
- * 
+ *
  * Requirements:
  * - WiFi network
  * - MQTT broker
@@ -50,6 +52,17 @@ Utils::NonBlockingDelay aliveTimer(5000);       // System alive message every 5 
 HomeAssistantComponent* haPtr = nullptr;
 bool lastRelayState = false;  // Track relay state changes
 bool initialStatePublished = false;  // Track if initial state sent to HA
+
+// ========== Alarm Panel Demo State Machine ==========
+// Demonstrates the complete alarm lifecycle with intermediate states.
+// All state transitions and delays are consumer responsibility — DomoticsCore
+// is a pure MQTT transport bridge with no internal alarm state tracking.
+enum class AlarmDemoState { Disarmed, Arming, ArmedAway, Pending, Triggered };
+AlarmDemoState alarmState = AlarmDemoState::Disarmed;
+unsigned long alarmDelayStart = 0;
+const unsigned long ALARM_EXIT_DELAY = 5000;   // 5s exit delay (arming → armed)
+const unsigned long ALARM_ENTRY_DELAY = 5000;  // 5s entry delay (pending → triggered)
+const unsigned long ALARM_TRIGGER_DURATION = 10000; // 10s siren then auto-disarm
 
 // Simulated sensor readings (replace with real sensors)
 float getTemperature() {
@@ -151,7 +164,38 @@ void setup() {
         HAL::Platform::delayMs(1000);
         HAL::Platform::restart();
     }, "mdi:restart");
-    
+
+    // Alarm control panel (ArmHome + ArmAway + Trigger, no PIN code)
+    haPtr->addAlarmControlPanel("alarm", "Demo Alarm",
+        [](const String& command, const String& /* code */) {
+            DLOG_I(LOG_APP, "Alarm command received: %s", command.c_str());
+
+            if (command == AlarmPanelCommand::ARM_AWAY ||
+                command == AlarmPanelCommand::ARM_HOME) {
+                if (alarmState == AlarmDemoState::Disarmed) {
+                    alarmState = AlarmDemoState::Arming;
+                    alarmDelayStart = HAL::Platform::getMillis();
+                    // Publish Arming IMMEDIATELY so HA UI updates before exit delay
+                    haPtr->publishState("alarm", AlarmPanelState::Arming);
+                    DLOG_I(LOG_APP, "Alarm arming — exit delay %lums", ALARM_EXIT_DELAY);
+                }
+            } else if (command == AlarmPanelCommand::DISARM) {
+                alarmState = AlarmDemoState::Disarmed;
+                haPtr->publishState("alarm", AlarmPanelState::Disarmed);
+                DLOG_I(LOG_APP, "Alarm disarmed");
+            } else if (command == AlarmPanelCommand::TRIGGER) {
+                if (alarmState == AlarmDemoState::ArmedAway ||
+                    alarmState == AlarmDemoState::Pending) {
+                    alarmState = AlarmDemoState::Triggered;
+                    alarmDelayStart = HAL::Platform::getMillis();
+                    haPtr->publishState("alarm", AlarmPanelState::Triggered);
+                    DLOG_I(LOG_APP, "Alarm TRIGGERED!");
+                }
+            }
+        },
+        "mdi:shield-home",
+        AlarmFeature::ArmHome | AlarmFeature::ArmAway | AlarmFeature::Trigger);
+
     core.addComponent(std::move(ha));
     
     // Initialize core
@@ -215,6 +259,42 @@ void loop() {
         }
     }
     
+    // ========== Alarm Panel State Machine ==========
+    // Simulates exit delay, entry delay, and siren duration via millis()
+    if (alarmState == AlarmDemoState::Arming) {
+        if (HAL::Platform::getMillis() - alarmDelayStart >= ALARM_EXIT_DELAY) {
+            alarmState = AlarmDemoState::ArmedAway;
+            haPtr->publishState("alarm", AlarmPanelState::ArmedAway);
+            DLOG_I(LOG_APP, "Alarm armed_away (exit delay complete)");
+
+            // Simulate a sensor trigger after 3s for demo purposes
+            alarmDelayStart = HAL::Platform::getMillis();
+        }
+    } else if (alarmState == AlarmDemoState::ArmedAway) {
+        // Simulate sensor trigger 3s after arming completes
+        if (HAL::Platform::getMillis() - alarmDelayStart >= 3000) {
+            alarmState = AlarmDemoState::Pending;
+            alarmDelayStart = HAL::Platform::getMillis();
+            // Publish Pending IMMEDIATELY so HA UI updates before entry delay
+            haPtr->publishState("alarm", AlarmPanelState::Pending);
+            DLOG_I(LOG_APP, "Sensor triggered — pending, entry delay %lums", ALARM_ENTRY_DELAY);
+        }
+    } else if (alarmState == AlarmDemoState::Pending) {
+        if (HAL::Platform::getMillis() - alarmDelayStart >= ALARM_ENTRY_DELAY) {
+            alarmState = AlarmDemoState::Triggered;
+            alarmDelayStart = HAL::Platform::getMillis();
+            haPtr->publishState("alarm", AlarmPanelState::Triggered);
+            DLOG_I(LOG_APP, "Alarm TRIGGERED (entry delay expired)");
+        }
+    } else if (alarmState == AlarmDemoState::Triggered) {
+        // Auto-disarm after siren duration for demo
+        if (HAL::Platform::getMillis() - alarmDelayStart >= ALARM_TRIGGER_DURATION) {
+            alarmState = AlarmDemoState::Disarmed;
+            haPtr->publishState("alarm", AlarmPanelState::Disarmed);
+            DLOG_I(LOG_APP, "Alarm auto-disarmed (siren timeout)");
+        }
+    }
+
     // Heartbeat log every 5 seconds
     if (aliveTimer.isReady()) {
         DLOG_I(LOG_APP, "System alive, uptime: %lus, MQTT: %s",

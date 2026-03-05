@@ -67,18 +67,28 @@ if current_project_dir is not None:
     pio_dirs = filtered
 
     # Only clean libdeps containing DomoticsCore-*
-    current_libdeps = current_pio / 'libdeps' / 'esp32dev'
+    try:
+        env_name = env['PIOENV']  # type: ignore
+    except Exception:
+        env_name = 'native'  # fallback
+        print(f"⚠️  PIOENV not available, falling back to '{env_name}' for libdeps cleanup")
+    current_libdeps = current_pio / 'libdeps' / env_name
     if current_libdeps.exists():
         try:
-            has_domotics_libs = any('DomoticsCore-' in d.name for d in current_libdeps.iterdir() if d.is_dir())
-            if has_domotics_libs:
-                print(f"🧹 Removing current project's libdeps (contains DomoticsCore libraries): {current_libdeps.relative_to(root_dir)}")
-                shutil.rmtree(current_libdeps, ignore_errors=True)
+            domotics_libs = [d for d in current_libdeps.iterdir()
+                             if d.is_dir() and 'DomoticsCore-' in d.name]
+            if domotics_libs:
+                for lib_dir in domotics_libs:
+                    print(f"🧹 Removing stale DomoticsCore lib: {lib_dir.relative_to(root_dir)}")
+                    shutil.rmtree(lib_dir, ignore_errors=True)
             else:
                 print(f"ℹ️  Skipping libdeps (no DomoticsCore libraries found): {current_libdeps.relative_to(root_dir)}")
         except Exception as e:
             print(f"⚠️  Error checking/cleaning libdeps {current_libdeps}: {e}")
 
+# WARNING: This script deletes ALL .pio build directories across the repo
+# (except the current project's). Use with caution in development — it will
+# invalidate cached builds from other components.
 if not pio_dirs:
     print("ℹ️  No .pio directories found. Nothing to clean.")
 else:

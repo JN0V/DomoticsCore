@@ -52,7 +52,7 @@ public:
      * @brief Handle command from Home Assistant
      * @param payload JSON command payload
      */
-    void handleCommand(const String& payload) {
+    void handleCommand(const String& payload) override {
         if (!commandCallback) return;
         
         // Parse JSON command
