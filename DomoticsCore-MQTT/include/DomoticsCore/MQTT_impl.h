@@ -291,6 +291,7 @@ inline bool MQTTComponent::unsubscribe(const String& topic) {
             }
         }
         stats.subscriptionCount = subscriptions.size();
+        subscriptions.shrink_to_fit();
         DLOG_I(LOG_MQTT, "Unsubscribed from: %s", topic.c_str());
     }
 
@@ -302,6 +303,7 @@ inline void MQTTComponent::unsubscribeAll() {
         mqttClient->unsubscribe(sub.topic.c_str());
     }
     subscriptions.clear();
+    subscriptions.shrink_to_fit();
     stats.subscriptionCount = 0;
 }
 
@@ -427,15 +429,18 @@ inline void MQTTComponent::handleReconnection() {
 
 inline void MQTTComponent::processMessageQueue() {
     if (messageQueue.empty()) return;
-    
+
+    bool erased = false;
     auto it = messageQueue.begin();
     while (it != messageQueue.end() && isConnected()) {
         if (publish(it->topic, it->payload, it->qos, it->retain)) {
             it = messageQueue.erase(it);
+            erased = true;
         } else {
             break;
         }
     }
+    if (erased) messageQueue.shrink_to_fit();
 }
 
 inline void MQTTComponent::handleIncomingMessage(char* topic, byte* payload, unsigned int length) {

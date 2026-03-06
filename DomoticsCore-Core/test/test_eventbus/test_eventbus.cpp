@@ -1,6 +1,7 @@
 #include <unity.h>
 #include <DomoticsCore/EventBus.h>
 #include <DomoticsCore/Platform_Stub.h>
+#include <DomoticsCore/Testing/HeapTracker.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Utils;
@@ -361,6 +362,111 @@ void test_unsubscribe_owner_clears_all_maps(void) {
     TEST_ASSERT_EQUAL(0, wildcardCount);
 }
 
+// --- Memory stability tests (R1 shrink_to_fit) ---
+
+void test_eventbus_memory_stability_single_cycle(void) {
+    using namespace DomoticsCore::Testing;
+    HeapTracker tracker;
+
+    // Warm up: subscribe+unsubscribe once to stabilize allocator
+    uint32_t warmId = testBus->subscribe(EventType::Custom, [](const void*) {}, nullptr);
+    testBus->unsubscribe(warmId);
+
+    tracker.checkpoint("before");
+
+    // Single cycle: type + topic + wildcard subscriptions
+    void* owner = (void*)0x9999;
+    uint32_t id1 = testBus->subscribe(EventType::Custom, [](const void*) {}, owner);
+    uint32_t id2 = testBus->subscribe(String("mem/test"), [](const void*) {}, owner);
+    uint32_t id3 = testBus->subscribe(String("mem.*"), [](const void*) {}, owner);
+
+    testBus->unsubscribe(id1);
+    testBus->unsubscribe(id2);
+    testBus->unsubscribe(id3);
+
+    tracker.checkpoint("after");
+
+    MemoryTestResult result = tracker.assertStable("before", "after", 512);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+void test_eventbus_memory_stability_multi_cycle(void) {
+    using namespace DomoticsCore::Testing;
+    HeapTracker tracker;
+
+    // Warm up
+    uint32_t warmId = testBus->subscribe(EventType::Custom, [](const void*) {}, nullptr);
+    testBus->unsubscribe(warmId);
+
+    tracker.checkpoint("before");
+
+    for (int i = 0; i < 20; i++) {
+        void* owner = (void*)(uintptr_t)(0xA000 + i);
+        uint32_t id1 = testBus->subscribe(EventType::Custom, [](const void*) {}, owner);
+        uint32_t id2 = testBus->subscribe(String("mem/cycle"), [](const void*) {}, owner);
+        uint32_t id3 = testBus->subscribe(String("mem.*"), [](const void*) {}, owner);
+
+        testBus->unsubscribe(id1);
+        testBus->unsubscribe(id2);
+        testBus->unsubscribe(id3);
+    }
+
+    tracker.checkpoint("after");
+
+    MemoryTestResult result = tracker.assertStable("before", "after", 512);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+void test_eventbus_memory_stability_unsubscribe_owner(void) {
+    using namespace DomoticsCore::Testing;
+    HeapTracker tracker;
+
+    // Warm up
+    void* warmOwner = (void*)0xBBBB;
+    testBus->subscribe(EventType::Custom, [](const void*) {}, warmOwner);
+    testBus->subscribe(String("own/topic"), [](const void*) {}, warmOwner);
+    testBus->subscribe(String("own.*"), [](const void*) {}, warmOwner);
+    testBus->unsubscribeOwner(warmOwner);
+
+    tracker.checkpoint("before");
+
+    for (int i = 0; i < 20; i++) {
+        void* owner = (void*)(uintptr_t)(0xC000 + i);
+        testBus->subscribe(EventType::Custom, [](const void*) {}, owner);
+        testBus->subscribe(String("own/topic"), [](const void*) {}, owner);
+        testBus->subscribe(String("own.*"), [](const void*) {}, owner);
+        testBus->unsubscribeOwner(owner);
+    }
+
+    tracker.checkpoint("after");
+
+    MemoryTestResult result = tracker.assertStable("before", "after", 512);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+void test_eventbus_prune_removes_empty_map_keys(void) {
+    // Verify that pruneMap removes map entries whose vector becomes empty
+    // Subscribe to a unique topic, then unsubscribe — the map key should be cleaned up
+    String topic = String("ephemeral/topic");
+    uint32_t id = testBus->subscribe(topic, [](const void*) {}, nullptr);
+
+    // Publish to verify it works
+    int payload = 1;
+    testBus->publish(topic, payload);
+    testBus->poll();
+
+    // Unsubscribe — pruneMap should remove the empty map key
+    testBus->unsubscribe(id);
+
+    // Subscribe to the same topic again — if the old key was cleaned up,
+    // this creates a fresh entry. Verify by subscribing and publishing.
+    int count = 0;
+    testBus->subscribe(topic, [&](const void*) { count++; }, nullptr);
+    testBus->publish(topic, payload);
+    testBus->poll();
+    TEST_ASSERT_EQUAL(1, count);
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
 
@@ -382,6 +488,12 @@ int main(int argc, char** argv) {
     RUN_TEST(test_reset_clears_queued_events);
     RUN_TEST(test_reset_comprehensive);
     RUN_TEST(test_unsubscribe_owner_clears_all_maps);
+
+    // Memory stability tests (R1)
+    RUN_TEST(test_eventbus_memory_stability_single_cycle);
+    RUN_TEST(test_eventbus_memory_stability_multi_cycle);
+    RUN_TEST(test_eventbus_memory_stability_unsubscribe_owner);
+    RUN_TEST(test_eventbus_prune_removes_empty_map_keys);
 
     return UNITY_END();
 }

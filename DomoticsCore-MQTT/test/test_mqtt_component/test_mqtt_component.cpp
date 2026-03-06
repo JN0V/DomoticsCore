@@ -20,6 +20,7 @@
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/MQTT.h>
 #include <DomoticsCore/MQTTEvents.h>
+#include <DomoticsCore/Testing/HeapTracker.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -638,6 +639,97 @@ void test_mqtt_loop_empty_broker_early_return() {
 }
 
 // ============================================================================
+// Memory Stability Tests (R2 shrink_to_fit)
+// ============================================================================
+
+void test_mqtt_memory_stability_message_queue(void) {
+    using namespace DomoticsCore::Testing;
+    HeapTracker tracker;
+
+    MQTTConfig config;
+    config.broker = "test.broker.com";
+    config.port = 1883;
+    config.enabled = true;
+    config.autoReconnect = false;
+
+    MQTTComponent mqtt(config);
+    mqtt.begin();
+
+    // Warm up: full connect/disconnect + queue/drain cycle to stabilize allocator
+    for (int w = 0; w < 3; w++) {
+        HAL::WiFiImpl::setConnectedForTest(false);
+        mqtt.publish("warmup/topic", "warmup_payload");
+        HAL::WiFiImpl::setConnectedForTest(true);
+        mqtt.connect();
+        for (int j = 0; j < 5; j++) mqtt.loop();
+        mqtt.disconnect();
+    }
+    HAL::WiFiImpl::setConnectedForTest(false);
+
+    tracker.checkpoint("before");
+
+    // Queue 10 messages while disconnected, then connect and drain
+    for (int i = 0; i < 10; i++) {
+        mqtt.publish("test/topic", "payload_data");
+    }
+
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+    for (int i = 0; i < 15; i++) {
+        mqtt.loop();
+    }
+    mqtt.disconnect();
+    HAL::WiFiImpl::setConnectedForTest(false);
+
+    tracker.checkpoint("after");
+
+    // Tolerance 2048: connect/disconnect emits EventBus events with String topics
+    // (EVENT_CONNECTED, EVENT_DISCONNECTED) that cause ~1.4KB allocator overhead
+    // on native glibc. This is expected noise per the HeapTracker native limitations.
+    MemoryTestResult result = tracker.assertStable("before", "after", 2048);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+
+    mqtt.shutdown();
+}
+
+void test_mqtt_memory_stability_subscribe_cycle(void) {
+    using namespace DomoticsCore::Testing;
+    HeapTracker tracker;
+
+    MQTTConfig config;
+    config.broker = "test.broker.com";
+    config.port = 1883;
+    config.enabled = true;
+    config.autoReconnect = false;
+
+    MQTTComponent mqtt(config);
+    mqtt.begin();
+
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+
+    // Warm up
+    mqtt.subscribe("warmup/topic");
+    mqtt.unsubscribe("warmup/topic");
+
+    tracker.checkpoint("before");
+
+    for (int i = 0; i < 10; i++) {
+        String topic = "test/sub/" + String(i);
+        mqtt.subscribe(topic);
+        mqtt.unsubscribe(topic);
+    }
+
+    tracker.checkpoint("after");
+
+    MemoryTestResult result = tracker.assertStable("before", "after", 512);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+
+    mqtt.shutdown();
+    HAL::WiFiImpl::setConnectedForTest(false);
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -707,6 +799,10 @@ int main() {
     RUN_TEST(test_mqtt_reconnect_blocked_when_disabled);
     RUN_TEST(test_mqtt_setconfig_does_not_preserve_when_disconnected);
     RUN_TEST(test_mqtt_loop_empty_broker_early_return);
+
+    // Memory stability tests (R2)
+    RUN_TEST(test_mqtt_memory_stability_message_queue);
+    RUN_TEST(test_mqtt_memory_stability_subscribe_cycle);
 
     return UNITY_END();
 }

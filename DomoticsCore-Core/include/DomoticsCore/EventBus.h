@@ -80,19 +80,10 @@ public:
     // WARNING: Must not be called during poll() dispatch (single-threaded assumption).
     void unsubscribe(uint32_t id) {
         assert(!dispatching_ && "Cannot unsubscribe during EventBus dispatch");
-        for (auto& kv : subscriptions) {
-            auto& vec = kv.second;
-            vec.erase(std::remove_if(vec.begin(), vec.end(), [id](const Subscription& s){ return s.id == id; }), vec.end());
-        }
-        for (auto& kv : topicSubscriptions) {
-            auto& vec = kv.second;
-            vec.erase(std::remove_if(vec.begin(), vec.end(), [id](const Subscription& s){ return s.id == id; }), vec.end());
-        }
-        for (auto& kv : wildcardTopicSubscriptions) {
-            auto& vec = kv.second;
-            vec.erase(std::remove_if(vec.begin(), vec.end(), [id](const Subscription& s){ return s.id == id; }), vec.end());
-        }
-        // TODO(R1): early exit after first match (IDs are unique), shrink_to_fit() after erase, remove empty map entries
+        auto pred = [id](const Subscription& s){ return s.id == id; };
+        if (pruneMap(subscriptions, pred)) return;
+        if (pruneMap(topicSubscriptions, pred)) return;
+        pruneMap(wildcardTopicSubscriptions, pred);
     }
 
     // Unsubscribe all belonging to a given owner pointer
@@ -100,19 +91,10 @@ public:
     void unsubscribeOwner(void* owner) {
         assert(!dispatching_ && "Cannot unsubscribeOwner during EventBus dispatch");
         if (!owner) return;
-        for (auto& kv : subscriptions) {
-            auto& vec = kv.second;
-            vec.erase(std::remove_if(vec.begin(), vec.end(), [owner](const Subscription& s){ return s.owner == owner; }), vec.end());
-        }
-        for (auto& kv : topicSubscriptions) {
-            auto& vec = kv.second;
-            vec.erase(std::remove_if(vec.begin(), vec.end(), [owner](const Subscription& s){ return s.owner == owner; }), vec.end());
-        }
-        for (auto& kv : wildcardTopicSubscriptions) {
-            auto& vec = kv.second;
-            vec.erase(std::remove_if(vec.begin(), vec.end(), [owner](const Subscription& s){ return s.owner == owner; }), vec.end());
-        }
-        // TODO(R1): shrink_to_fit() after erase + remove empty map entries
+        auto pred = [owner](const Subscription& s){ return s.owner == owner; };
+        pruneMap(subscriptions, pred);
+        pruneMap(topicSubscriptions, pred);
+        pruneMap(wildcardTopicSubscriptions, pred);
     }
 
     // Publish an event with an arbitrary payload type (copy).
@@ -220,7 +202,7 @@ public:
     // Note: dispatching_ is not reset because the assert guarantees it is already false.
     void reset() {
         assert(!dispatching_ && "Cannot reset during EventBus dispatch");
-        while (!queue.empty()) queue.pop();
+        queue = std::queue<QueuedEvent>();
         subscriptions.clear();
         topicSubscriptions.clear();
         wildcardTopicSubscriptions.clear();
@@ -265,6 +247,23 @@ private:
             return HAL::startsWith(concrete, prefix) && HAL::endsWith(concrete, suffix);
         }
         return HAL::startsWith(concrete, prefix);
+    }
+
+    template<typename Map, typename Pred>
+    static bool pruneMap(Map& m, Pred pred) {
+        bool found = false;
+        for (auto it = m.begin(); it != m.end(); ) {
+            auto& vec = it->second;
+            size_t oldSize = vec.size();
+            vec.erase(std::remove_if(vec.begin(), vec.end(), pred), vec.end());
+            if (vec.size() != oldSize) {
+                vec.shrink_to_fit();
+                found = true;
+            }
+            if (vec.empty()) it = m.erase(it);
+            else ++it;
+        }
+        return found;
     }
 
     // Internal state — if you add a new member, update reset() to clear it.

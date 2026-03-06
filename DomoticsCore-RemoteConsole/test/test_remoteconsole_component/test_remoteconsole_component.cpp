@@ -4,6 +4,7 @@
 #include <unity.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/RemoteConsole.h>
+#include <DomoticsCore/Testing/HeapTracker.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -31,7 +32,7 @@ void test_remoteconsole_component_creation_default(void) {
     auto console = std::make_unique<RemoteConsoleComponent>();
 
     TEST_ASSERT_EQUAL_STRING("RemoteConsole", console->metadata.name);
-    TEST_ASSERT_EQUAL_STRING("1.4.0", console->metadata.version);
+    TEST_ASSERT_EQUAL_STRING("1.4.1", console->metadata.version);
 }
 
 void test_remoteconsole_component_creation_with_config(void) {
@@ -383,6 +384,69 @@ void test_remoteconsole_rapid_buffer_cycles_no_leak(void) {
 }
 
 // ============================================================================
+// Memory Stability Tests (R4 shrink_to_fit)
+// ============================================================================
+
+void test_remoteconsole_memory_stability_single_connect(void) {
+    using namespace DomoticsCore::Testing;
+    HeapTracker tracker;
+
+    RemoteConsoleConfig config;
+    config.enabled = true;
+    config.port = 2324;
+
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+
+    // Warm up: setPort cycle to stabilize allocator
+    consolePtr->setPort(2325);
+    consolePtr->setPort(2326);
+
+    tracker.checkpoint("before");
+
+    // Single cycle: setPort triggers clients.clear() + clientBuffers.clear() + shrink_to_fit()
+    consolePtr->setPort(2327);
+
+    tracker.checkpoint("after");
+
+    MemoryTestResult result = tracker.assertStable("before", "after", 512);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+void test_remoteconsole_memory_stability_multi_connect(void) {
+    using namespace DomoticsCore::Testing;
+    HeapTracker tracker;
+
+    RemoteConsoleConfig config;
+    config.enabled = true;
+    config.port = 2330;
+
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+
+    // Warm up
+    consolePtr->setPort(2331);
+
+    tracker.checkpoint("before");
+
+    // 10 cycles of setPort (exercises clients.clear + shrink_to_fit + server recreation)
+    for (int i = 0; i < 10; i++) {
+        consolePtr->setPort(2340 + i);
+    }
+
+    tracker.checkpoint("after");
+
+    // Tolerance 1024: setPort() creates/deletes WiFiServer objects (new/delete)
+    // causing ~880 bytes of glibc allocator overhead on native platform.
+    MemoryTestResult result = tracker.assertStable("before", "after", 1024);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -424,6 +488,10 @@ int main(int argc, char **argv) {
     // Memory leak tests
     RUN_TEST(test_remoteconsole_log_buffer_no_memory_leak);
     RUN_TEST(test_remoteconsole_rapid_buffer_cycles_no_leak);
+
+    // Memory stability tests (R4 shrink_to_fit)
+    RUN_TEST(test_remoteconsole_memory_stability_single_connect);
+    RUN_TEST(test_remoteconsole_memory_stability_multi_connect);
 
     return UNITY_END();
 }

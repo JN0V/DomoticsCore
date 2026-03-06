@@ -118,6 +118,8 @@ public:
             }
         }
         clients.clear();
+        clientBuffers.clear();
+        clients.shrink_to_fit();
 
         telnetServer->stop();
         delete telnetServer;
@@ -201,19 +203,22 @@ public:
         }
         
         // Handle existing clients
+        bool erased = false;
         for (auto it = clients.begin(); it != clients.end(); ) {
             if (!it->connected()) {
                 // Clean up client buffer
                 uint32_t clientId = it->remoteIP();
                 clientBuffers.erase(clientId);
-                
+
                 DLOG_I(LOG_CONSOLE, "Client disconnected");
                 it = clients.erase(it);
+                erased = true;
             } else {
                 handleClient(*it);
                 ++it;
             }
         }
+        if (erased) clients.shrink_to_fit();
     }
     
     ComponentStatus shutdown() override {
@@ -224,7 +229,9 @@ public:
                 client.stop();
             }
             clients.clear();
-            
+            clientBuffers.clear();
+            clients.shrink_to_fit();
+
             telnetServer->stop();
             delete telnetServer;
             telnetServer = nullptr;
