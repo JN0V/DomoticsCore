@@ -88,6 +88,11 @@ public:
             auto& vec = kv.second;
             vec.erase(std::remove_if(vec.begin(), vec.end(), [id](const Subscription& s){ return s.id == id; }), vec.end());
         }
+        for (auto& kv : wildcardTopicSubscriptions) {
+            auto& vec = kv.second;
+            vec.erase(std::remove_if(vec.begin(), vec.end(), [id](const Subscription& s){ return s.id == id; }), vec.end());
+        }
+        // TODO(R1): early exit after first match (IDs are unique), shrink_to_fit() after erase, remove empty map entries
     }
 
     // Unsubscribe all belonging to a given owner pointer
@@ -103,6 +108,11 @@ public:
             auto& vec = kv.second;
             vec.erase(std::remove_if(vec.begin(), vec.end(), [owner](const Subscription& s){ return s.owner == owner; }), vec.end());
         }
+        for (auto& kv : wildcardTopicSubscriptions) {
+            auto& vec = kv.second;
+            vec.erase(std::remove_if(vec.begin(), vec.end(), [owner](const Subscription& s){ return s.owner == owner; }), vec.end());
+        }
+        // TODO(R1): shrink_to_fit() after erase + remove empty map entries
     }
 
     // Publish an event with an arbitrary payload type (copy).
@@ -205,12 +215,18 @@ public:
         dispatching_ = false;
     }
 
-    // Optional: clear all
+    // Contract: reset() must leave the EventBus in the exact same state
+    // as a freshly constructed instance. If you add new members, update this method.
+    // Note: dispatching_ is not reset because the assert guarantees it is already false.
     void reset() {
+        assert(!dispatching_ && "Cannot reset during EventBus dispatch");
         while (!queue.empty()) queue.pop();
         subscriptions.clear();
         topicSubscriptions.clear();
+        wildcardTopicSubscriptions.clear();
         nextId = 1;
+        lastByTopic.clear();
+        pendingByTopic.clear();
     }
 
 private:
@@ -251,6 +267,7 @@ private:
         return HAL::startsWith(concrete, prefix);
     }
 
+    // Internal state — if you add a new member, update reset() to clear it.
     std::map<EventType, std::vector<Subscription>> subscriptions;
     std::map<String, std::vector<Subscription>> topicSubscriptions;
     std::map<String, std::vector<Subscription>> wildcardTopicSubscriptions;

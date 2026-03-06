@@ -262,7 +262,7 @@ Each of these is a decision point: **implement** the feature or **remove** the d
 
 | Priority | Items | Constitution | Status |
 |----------|-------|-------------|--------|
-| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | TODO |
+| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: PARTIAL (functional fix done, shrink_to_fit deferred to R1). R1-R7: TODO |
 | 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | TODO |
 | 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | TODO |
 | 4. File Splits | R11-R13 | VII (800 lines) | TODO |
@@ -433,7 +433,7 @@ Fragmentation impact: **NONE** beyond what already exists from `MQTTMessageEvent
 
 | Priority | Items | Constitution | Status |
 |----------|-------|-------------|--------|
-| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | TODO |
+| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: PARTIAL (functional fix done, shrink_to_fit deferred to R1). R1-R7: TODO |
 | 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | TODO |
 | 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | TODO |
 | 4. File Splits | R11-R13 | VII (800 lines) | TODO |

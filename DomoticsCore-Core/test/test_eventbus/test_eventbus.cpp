@@ -210,9 +210,160 @@ void test_publish_during_dispatch_safe(void) {
     TEST_ASSERT_EQUAL(99, secondReceived);
 }
 
+// --- M9/M10 bug fix tests (TDD RED phase) ---
+
+void test_reset_clears_wildcard_subscriptions(void) {
+    int count = 0;
+    testBus->subscribe(String("sensor.*"), [&](const void*) { count++; }, nullptr);
+
+    testBus->reset();
+
+    int payload = 1;
+    testBus->publish(String("sensor.temp"), payload);
+    testBus->poll();
+    TEST_ASSERT_EQUAL(0, count);
+}
+
+void test_reset_clears_sticky_events(void) {
+    int setupCount = 0;
+    int replayCount = 0;
+
+    // Subscribe a counter handler BEFORE publishSticky so poll delivers to it
+    testBus->subscribe(String("sticky/topic"), [&](const void*) { setupCount++; }, nullptr);
+
+    int msg = 123;
+    testBus->publishSticky(String("sticky/topic"), msg);
+    // poll() before reset() is mandatory — without it, pendingByTopic > 0 would skip
+    // sticky replay even without the fix, making this test pass in RED phase
+    testBus->poll();
+    TEST_ASSERT_EQUAL(1, setupCount); // setup validation: handler was called during poll
+
+    testBus->reset();
+
+    // Subscribe with replayLast=true — sticky replay happens inline in subscribe(), NOT in poll()
+    testBus->subscribe(String("sticky/topic"), [&](const void* payload) {
+        if (payload) replayCount++;
+    }, nullptr, true);
+    TEST_ASSERT_EQUAL(0, replayCount); // no stale sticky replay after reset
+}
+
+void test_unsubscribe_wildcard_by_id(void) {
+    int count = 0;
+    uint32_t subId = testBus->subscribe(String("sensor.*"), [&](const void*) { count++; }, nullptr);
+
+    testBus->unsubscribe(subId);
+
+    int payload = 1;
+    testBus->publish(String("sensor.temp"), payload);
+    testBus->poll();
+    TEST_ASSERT_EQUAL(0, count);
+}
+
+void test_unsubscribe_owner_clears_wildcards(void) {
+    int count = 0;
+    void* owner = (void*)0x5678;
+    testBus->subscribe(String("sensor.*"), [&](const void*) { count++; }, owner);
+
+    testBus->unsubscribeOwner(owner);
+
+    int payload = 1;
+    testBus->publish(String("sensor.temp"), payload);
+    testBus->poll();
+    TEST_ASSERT_EQUAL(0, count);
+}
+
+void test_reset_clears_pending_counters(void) {
+    int replayCount = 0;
+
+    // Step 1: publishSticky WITHOUT poll — leaves pendingByTopic["pending/topic"] = 1
+    int msg1 = 42;
+    testBus->publishSticky(String("pending/topic"), msg1);
+
+    // Step 2: reset
+    testBus->reset();
+
+    // Step 3: publishSticky + poll — arithmetic: 0(cleared)+1(enqueue)-1(poll) = 0
+    int msg2 = 99;
+    testBus->publishSticky(String("pending/topic"), msg2);
+    testBus->poll();
+
+    // Step 4: subscribe with replayLast=true — should replay because pendingByTopic is 0
+    testBus->subscribe(String("pending/topic"), [&](const void* payload) {
+        if (payload) replayCount++;
+    }, nullptr, true);
+    TEST_ASSERT_EQUAL(1, replayCount);
+}
+
+void test_reset_clears_queued_events(void) {
+    // Regression guard — reset() already clears the queue. This test ensures it stays that way.
+    int oldCount = 0;
+    int newCount = 0;
+
+    testBus->subscribe(String("queued/topic"), [&](const void*) { oldCount++; }, nullptr);
+    int payload = 1;
+    testBus->publish(String("queued/topic"), payload); // sits in queue, not polled
+
+    testBus->reset();
+
+    testBus->subscribe(String("queued/topic"), [&](const void*) { newCount++; }, nullptr);
+    testBus->poll();
+
+    TEST_ASSERT_EQUAL(0, oldCount);
+    TEST_ASSERT_EQUAL(0, newCount);
+}
+
+void test_reset_comprehensive(void) {
+    int wildcardCount = 0;
+    int stickyReplayCount = 0;
+
+    // Setup: wildcard subscription + sticky event
+    testBus->subscribe(String("wild.*"), [&](const void*) { wildcardCount++; }, nullptr);
+    int msg = 42;
+    testBus->publishSticky(String("sticky/data"), msg);
+    testBus->poll(); // drain queue so pendingByTopic goes to 0
+
+    testBus->reset();
+
+    // Verify wildcard cleared
+    int payload = 1;
+    testBus->publish(String("wild.test"), payload);
+    testBus->poll();
+    TEST_ASSERT_EQUAL(0, wildcardCount);
+
+    // Verify sticky cleared
+    testBus->subscribe(String("sticky/data"), [&](const void* p) {
+        if (p) stickyReplayCount++;
+    }, nullptr, true);
+    TEST_ASSERT_EQUAL(0, stickyReplayCount);
+}
+
+void test_unsubscribe_owner_clears_all_maps(void) {
+    // F5: Cross-map test — owner has subscriptions in all 3 maps simultaneously
+    int typedCount = 0;
+    int topicCount = 0;
+    int wildcardCount = 0;
+    void* owner = (void*)0xABCD;
+
+    testBus->subscribe(EventType::Custom, [&](const void*) { typedCount++; }, owner);
+    testBus->subscribe(String("exact/topic"), [&](const void*) { topicCount++; }, owner);
+    testBus->subscribe(String("wild.*"), [&](const void*) { wildcardCount++; }, owner);
+
+    testBus->unsubscribeOwner(owner);
+
+    int payload = 1;
+    testBus->publish(EventType::Custom, payload);
+    testBus->publish(String("exact/topic"), payload);
+    testBus->publish(String("wild.test"), payload);
+    testBus->poll();
+
+    TEST_ASSERT_EQUAL(0, typedCount);
+    TEST_ASSERT_EQUAL(0, topicCount);
+    TEST_ASSERT_EQUAL(0, wildcardCount);
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
-    
+
     RUN_TEST(test_subscribe_and_publish);
     RUN_TEST(test_multiple_subscribers);
     RUN_TEST(test_different_topics_isolated);
@@ -223,6 +374,14 @@ int main(int argc, char** argv) {
     RUN_TEST(test_unsubscribe_owner);
     RUN_TEST(test_backpressure);
     RUN_TEST(test_publish_during_dispatch_safe);
-    
+    RUN_TEST(test_reset_clears_wildcard_subscriptions);
+    RUN_TEST(test_reset_clears_sticky_events);
+    RUN_TEST(test_unsubscribe_wildcard_by_id);
+    RUN_TEST(test_unsubscribe_owner_clears_wildcards);
+    RUN_TEST(test_reset_clears_pending_counters);
+    RUN_TEST(test_reset_clears_queued_events);
+    RUN_TEST(test_reset_comprehensive);
+    RUN_TEST(test_unsubscribe_owner_clears_all_maps);
+
     return UNITY_END();
 }
