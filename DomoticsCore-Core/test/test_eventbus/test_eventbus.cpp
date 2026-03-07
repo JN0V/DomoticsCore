@@ -1,5 +1,6 @@
 #include <unity.h>
 #include <DomoticsCore/EventBus.h>
+#include <DomoticsCore/Core.h>
 #include <DomoticsCore/Platform_Stub.h>
 #include <DomoticsCore/Testing/HeapTracker.h>
 
@@ -467,6 +468,34 @@ void test_eventbus_prune_removes_empty_map_keys(void) {
     TEST_ASSERT_EQUAL(1, count);
 }
 
+// M11: Core::emit() sticky parameter tests
+void test_core_emit_sticky_with_payload(void) {
+    Core core;
+    String topic = String("core/sticky");
+    int payload = 42;
+    core.emit(topic, payload, true);
+
+    int received = 0;
+    core.on<int>(topic, [&](const int& val) { received = val; }, true);
+    core.getEventBus().poll();
+    TEST_ASSERT_EQUAL(42, received);
+}
+
+void test_core_emit_non_sticky_default(void) {
+    Core core;
+    String topic = String("core/nonsticky");
+    int payload = 99;
+    core.emit(topic, payload);
+
+    // Flush the queue so the event is dispatched (to no subscribers)
+    core.getEventBus().poll();
+
+    int received = 0;
+    core.on<int>(topic, [&](const int& val) { received = val; }, true);
+    core.getEventBus().poll();
+    TEST_ASSERT_EQUAL(0, received);
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
 
@@ -488,6 +517,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_reset_clears_queued_events);
     RUN_TEST(test_reset_comprehensive);
     RUN_TEST(test_unsubscribe_owner_clears_all_maps);
+
+    // M11: Core::emit() sticky parameter
+    RUN_TEST(test_core_emit_sticky_with_payload);
+    RUN_TEST(test_core_emit_non_sticky_default);
 
     // Memory stability tests (R1)
     RUN_TEST(test_eventbus_memory_stability_single_cycle);

@@ -160,8 +160,9 @@ public:
      * @param payload Event payload data
      */
     template<typename PayloadT>
-    void emit(const String& topic, const PayloadT& payload) {
-        componentRegistry.getEventBus().publish(topic, payload);
+    void emit(const String& topic, const PayloadT& payload, bool sticky = false) {
+        if (sticky) componentRegistry.getEventBus().publishSticky(topic, payload);
+        else componentRegistry.getEventBus().publish(topic, payload);
     }
     
     /**
