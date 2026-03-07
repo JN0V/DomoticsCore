@@ -158,9 +158,11 @@ public:
      * @brief Emit/publish an event on a topic
      * @param topic Event topic string
      * @param payload Event payload data
+     * @param sticky If true, event is stored and replayed to late subscribers
      */
     template<typename PayloadT>
     void emit(const String& topic, const PayloadT& payload, bool sticky = false) {
+        if (topic.length() == 0) return;
         if (sticky) componentRegistry.getEventBus().publishSticky(topic, payload);
         else componentRegistry.getEventBus().publish(topic, payload);
     }
