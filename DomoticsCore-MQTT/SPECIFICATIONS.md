@@ -26,7 +26,7 @@
 - **JSON helper** for structured data
 - **Batch publishing** (queue multiple messages)
 - **Publish rate limiting** (configurable max messages/second)
-- **Topic validation** before publishing
+- **Topic wildcard matching** for subscriptions
 - **Publish confirmation** callbacks (for QoS > 0)
 
 ### 2.3 Subscribing
@@ -184,9 +184,6 @@ public:
 
 ### 4.2 Helper Functions
 ```cpp
-// Topic validation
-bool isValidTopic(const String& topic, bool allowWildcards = false);
-
 // Topic matching
 bool topicMatches(const String& filter, const String& topic);
 
@@ -472,7 +469,7 @@ enum class MQTTError {
 
 ### 12.1 Unit Tests
 - Connection state machine
-- Topic validation and matching
+- Topic wildcard matching
 - Message queue operations
 - Subscription management
 - Error handling

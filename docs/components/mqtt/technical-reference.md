@@ -509,14 +509,6 @@ Emitted for every incoming MQTT message. Data is copied into these fixed-size bu
 ## Static Utility Methods
 
 ```cpp
-static bool isValidTopic(const String& topic, bool allowWildcards = false);
-```
-
-> **Warning**: `isValidTopic()` is declared in the header but **not yet implemented** in `MQTT_impl.h`. Calling it will cause a **linker error**. Do not rely on this method until an implementation is provided.
-
-Intended behavior: validates an MQTT topic string. When `allowWildcards` is false, rejects topics containing `+` or `#`.
-
-```cpp
 static bool topicMatches(const String& filter, const String& topic);
 ```
 

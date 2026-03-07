@@ -73,7 +73,7 @@ The main component class. Inherits `IComponent`. Registered as `"NTP"` in the co
 
 ### `DomoticsCore::Components::NTPConfig`
 
-Plain struct for configuration. Fields: `enabled`, `servers` (vector, max 3), `syncInterval` (seconds), `timezone` (POSIX TZ), `timeoutMs`, `retryDelayMs`. **Note**: `retryDelayMs` is declared but not enforced at runtime -- see "Areas for Future Attention" below.
+Plain struct for configuration. Fields: `enabled`, `servers` (vector, max 3), `syncInterval` (seconds), `timezone` (POSIX TZ), `timeoutMs`.
 
 ### `DomoticsCore::Components::NTPStatistics`
 
@@ -172,7 +172,6 @@ This section maps the NTP component's design to specific constitution principles
 
 - **Principle II (TDD)**: The mock file `tests/mocks/MockNTPClient.h` exists, but test coverage for the NTP component should be verified for completeness.
 - **Principle XI (Centralized Storage)**: Configuration persistence is handled via a callback (`setConfigSaveCallback`), which is the correct decoupled pattern. The callback should delegate to the Storage component, not directly to Preferences.
-- **`retryDelayMs` field (C13 -- CRITICAL)**: Present in `NTPConfig` but **never read or enforced** by `NTPComponent`. After a sync timeout, the component does not schedule an automatic retry using this value. The field is retained for forward compatibility but has no runtime effect as of v1.3.0. Any code relying on automatic retry-after-failure behavior must implement its own retry logic via the `onSync` callback or EventBus subscription to `ntp/sync_failed`.
 
 ---
 

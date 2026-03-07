@@ -367,16 +367,6 @@ public:
     // ========== Helper Functions ==========
     
     /**
-     * @brief Check if topic is valid
-     * @param topic Topic string
-     * @param allowWildcards Allow + and # wildcards
-     * @return true if valid
-     * @warning Declared but NOT yet implemented. Calling this will cause a linker error.
-     *          See topicMatches() for a working alternative for wildcard matching.
-     */
-    static bool isValidTopic(const String& topic, bool allowWildcards = false);
-    
-    /**
      * @brief Check if topic matches filter (with wildcards)
      * @param filter Topic filter (can contain + and #)
      * @param topic Actual topic

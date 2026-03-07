@@ -117,7 +117,7 @@ void test_alarm_panel_discovery_supported_features() {
 
     // Single flag
     {
-        JsonDocument doc = buildFeatures(AlarmFeature::ArmNight);
+        JsonDocument doc = buildFeatures(static_cast<uint8_t>(AlarmFeature::ArmNight));
         JsonArray f = doc["supported_features"].as<JsonArray>();
         TEST_ASSERT_EQUAL(1, f.size());
         TEST_ASSERT_EQUAL_STRING("arm_night", f[0].as<String>().c_str());

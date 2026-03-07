@@ -251,7 +251,7 @@ public:
         const String& id, const String& name,
         const std::function<void(const String& command, const String& code)>& commandCallback,
         const String& icon = "mdi:shield-home",
-        uint8_t features = AlarmFeature::ArmAway,
+        uint8_t features = static_cast<uint8_t>(AlarmFeature::ArmAway),
         const String& code = "",
         bool codeArmRequired = false,
         bool codeDisarmRequired = false,

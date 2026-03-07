@@ -9,7 +9,7 @@ namespace HomeAssistant {
 /**
  * @brief Alarm panel feature flags (uint8_t bitmask)
  */
-enum AlarmFeature : uint8_t {
+enum class AlarmFeature : uint8_t {
     ArmHome         = 0x01,
     ArmAway         = 0x02,
     ArmNight        = 0x04,
@@ -17,6 +17,17 @@ enum AlarmFeature : uint8_t {
     ArmCustomBypass = 0x10,
     Trigger         = 0x20
 };
+
+// Bitwise operators for AlarmFeature bitmask usage
+inline constexpr uint8_t operator|(AlarmFeature a, AlarmFeature b) {
+    return static_cast<uint8_t>(a) | static_cast<uint8_t>(b);
+}
+inline constexpr uint8_t operator|(uint8_t a, AlarmFeature b) {
+    return a | static_cast<uint8_t>(b);
+}
+inline constexpr uint8_t operator&(uint8_t a, AlarmFeature b) {
+    return a & static_cast<uint8_t>(b);
+}
 
 /**
  * @brief HA alarm_control_panel state constants (zero per-instance heap)
@@ -68,7 +79,7 @@ public:
     }
 
     String code;
-    uint8_t supportedFeatures = AlarmFeature::ArmAway;
+    uint8_t supportedFeatures = static_cast<uint8_t>(AlarmFeature::ArmAway);
     bool codeArmRequired = false;
     bool codeDisarmRequired = false;
     bool codeTriggerRequired = false;

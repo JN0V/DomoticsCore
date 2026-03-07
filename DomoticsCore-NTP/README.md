@@ -123,7 +123,6 @@ struct NTPConfig {
     uint32_t syncInterval = 3600;           // Sync interval in seconds
     String timezone = "UTC0";               // POSIX TZ string
     uint32_t timeoutMs = 5000;              // Connection timeout
-    uint32_t retryDelayMs = 5000;           // Retry delay on failure
 };
 ```
 

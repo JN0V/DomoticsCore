@@ -77,7 +77,9 @@ private:
     std::vector<String> tagFilter;  // Empty = show all
     bool authenticated = false;
     bool connectionInfoDisplayed = false;  // Track if we've shown connection info
-    
+    bool rebootPending = false;
+    unsigned long rebootRequestedAt = 0;
+
 public:
     RemoteConsoleComponent(const RemoteConsoleConfig& cfg = RemoteConsoleConfig())
         : config(cfg), currentLogLevel(cfg.defaultLogLevel) {
@@ -169,6 +171,12 @@ public:
     }
     
     void loop() override {
+        // Non-blocking reboot (R9 — must be before status guard)
+        if (rebootPending && (HAL::Platform::getMillis() - rebootRequestedAt >= 100)) {
+            rebootPending = false;
+            HAL::restart();
+        }
+
         if (getLastStatus() != ComponentStatus::Success || !telnetServer) return;
         
         // Check if WiFi connected and we haven't displayed info yet
@@ -431,8 +439,8 @@ private:
             for (auto& client : clients) {
                 client.println("Rebooting...");
             }
-            HAL::delay(100);
-            HAL::restart();
+            rebootRequestedAt = HAL::Platform::getMillis();
+            rebootPending = true;
             return "";
         });
         

@@ -116,8 +116,6 @@ The WebUI component takes ownership of the `LEDWebUI` pointer.
 
 7. **String allocations in `getLEDNames()`**: This method allocates a new `std::vector<String>` on each call. Avoid calling it in tight loops. The `LEDWebUI` caches names internally for this reason.
 
-8. **`effectDirection` is dead code**: The `LEDState::effectDirection` field is never read or written by any effect update logic. Do not rely on it for new effect implementations. It may be removed in a future cleanup.
-
 ---
 
 ## Constitution Compliance Reminders

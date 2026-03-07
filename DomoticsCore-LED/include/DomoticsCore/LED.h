@@ -69,7 +69,6 @@ struct LEDState {
     // Effect state variables
     unsigned long lastUpdate = 0;
     float effectPhase = 0.0;
-    bool effectDirection = true;
 };
 
 /**

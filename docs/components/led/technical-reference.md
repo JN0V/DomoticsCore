@@ -109,11 +109,8 @@ struct LEDState {
     // Internal effect engine state
     unsigned long lastUpdate      = 0;
     float         effectPhase     = 0.0;    // 0.0 -- 1.0
-    bool          effectDirection = true;    // WARNING: Dead code -- never read or written by any effect logic. Retained for struct layout compatibility.
 };
 ```
-
-> **Dead code notice:** The `effectDirection` field in `LEDState` is never read or written by any effect update logic in the codebase. It exists in the struct but has no functional purpose. It may be removed in a future version.
 
 `LEDState` is managed internally. One entry exists per configured LED.
 

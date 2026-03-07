@@ -72,7 +72,6 @@ void test_ntp_config_defaults() {
     TEST_ASSERT_EQUAL_UINT32(3600, config.syncInterval);
     TEST_ASSERT_EQUAL_STRING("UTC0", config.timezone.c_str());
     TEST_ASSERT_EQUAL_UINT32(5000, config.timeoutMs);
-    TEST_ASSERT_EQUAL_UINT32(5000, config.retryDelayMs);
     TEST_ASSERT_EQUAL(3, config.servers.size());
 }
 
@@ -411,13 +410,11 @@ void test_ntp_config_timeout_update() {
 
     NTPConfig newConfig;
     newConfig.timeoutMs = 10000;
-    newConfig.retryDelayMs = 15000;
 
     ntp.setConfig(newConfig);
 
     const NTPConfig& cfg = ntp.getConfig();
     TEST_ASSERT_EQUAL_UINT32(10000, cfg.timeoutMs);
-    TEST_ASSERT_EQUAL_UINT32(15000, cfg.retryDelayMs);
 }
 
 // ============================================================================

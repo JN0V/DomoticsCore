@@ -12,7 +12,7 @@ MQTT client component for DomoticsCore with auto-reconnection, QoS support, and 
 - ✅ **Last Will Testament** (LWT) support
 - ✅ **TLS/SSL** support (optional)
 - ✅ **JSON helpers** for structured data
-- ✅ **Topic validation** and wildcard matching
+- ✅ **Topic wildcard matching**
 
 ### WebUI Integration
 - ✅ **Header badge** - Connection status indicator
@@ -251,9 +251,6 @@ String getLastError() const;
 ### Helper Functions
 
 ```cpp
-// Validate topic string
-static bool isValidTopic(const String& topic, bool allowWildcards = false);
-
 // Check if topic matches filter (with wildcards)
 static bool topicMatches(const String& filter, const String& topic);
 ```

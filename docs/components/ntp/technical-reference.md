@@ -43,7 +43,6 @@ struct NTPConfig {
     uint32_t syncInterval = 3600;    // seconds (1 hour)
     String timezone = "UTC0";         // POSIX TZ string
     uint32_t timeoutMs = 5000;       // Sync attempt timeout
-    uint32_t retryDelayMs = 5000;    // Retry delay on failure (declared but NOT enforced -- see warning below)
 };
 ```
 
@@ -54,7 +53,6 @@ struct NTPConfig {
 | `syncInterval` | `uint32_t` | `3600` | Automatic re-sync interval in seconds. Passed to the HAL in milliseconds. |
 | `timezone` | `String` | `"UTC0"` | POSIX TZ string controlling local time and DST rules. |
 | `timeoutMs` | `uint32_t` | `5000` | Maximum time in milliseconds to wait for a sync response before declaring failure. |
-| `retryDelayMs` | `uint32_t` | `5000` | Delay before retrying after a failed sync attempt. **Warning: this field is declared in `NTPConfig` but is not currently read or enforced by `NTPComponent`. After a sync timeout, no automatic retry is scheduled using this value. The field is retained for forward compatibility but has no runtime effect as of v1.3.0.** |
 
 ---
 
