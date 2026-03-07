@@ -29,16 +29,20 @@ public:
         HAEntity::buildDiscoveryPayload(doc, nodeId, discoveryPrefix, device, availabilityTopic);
         
         // Add light-specific fields
-        doc["command_topic"] = getCommandTopic(nodeId, discoveryPrefix);
+        char buf[HA_TOPIC_BUF_SIZE];
+        getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
+        doc["command_topic"] = buf;
         doc["payload_on"] = "ON";
         doc["payload_off"] = "OFF";
         doc["state_value_template"] = "{{ value_json.state }}";
-        
+
         if (supportsBrightness) {
             doc["brightness"] = true;
             doc["brightness_scale"] = 255;
-            doc["brightness_state_topic"] = getStateTopic(nodeId, discoveryPrefix);
-            doc["brightness_command_topic"] = getCommandTopic(nodeId, discoveryPrefix);
+            getStateTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
+            doc["brightness_state_topic"] = buf;
+            // brightness_command_topic is the same as command_topic
+            doc["brightness_command_topic"] = doc["command_topic"];
             doc["brightness_value_template"] = "{{ value_json.brightness }}";
             doc["on_command_type"] = "brightness";
         }

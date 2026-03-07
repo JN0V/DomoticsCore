@@ -82,7 +82,9 @@ public:
         HAEntity::buildDiscoveryPayload(doc, nodeId, discoveryPrefix, device, availabilityTopic);
 
         // Add command topic
-        doc["command_topic"] = getCommandTopic(nodeId, discoveryPrefix);
+        char buf[HA_TOPIC_BUF_SIZE];
+        getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
+        doc["command_topic"] = buf;
 
         // Code configuration (only when code support is active)
         bool hasCodeConfig = !code.isEmpty() || codeArmRequired || codeDisarmRequired || codeTriggerRequired;

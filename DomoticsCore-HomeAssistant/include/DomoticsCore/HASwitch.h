@@ -34,7 +34,9 @@ public:
         HAEntity::buildDiscoveryPayload(doc, nodeId, discoveryPrefix, device, availabilityTopic);
         
         // Add switch-specific fields
-        doc["command_topic"] = getCommandTopic(nodeId, discoveryPrefix);
+        char buf[HA_TOPIC_BUF_SIZE];
+        getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
+        doc["command_topic"] = buf;
         doc["payload_on"] = payloadOn;
         doc["payload_off"] = payloadOff;
         doc["state_on"] = payloadOn;

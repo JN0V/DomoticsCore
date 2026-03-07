@@ -258,7 +258,8 @@ public:
         
         // Set guard before MQTT publish to prevent re-entrant callbacks
         publishing = true;
-        String topic = entity->getStateTopic(config.nodeId, config.discoveryPrefix);
+        char topic[HA_TOPIC_BUF_SIZE];
+        entity->getStateTopic(topic, sizeof(topic), config.nodeId.c_str(), config.discoveryPrefix.c_str());
         DLOG_D(LOG_HA, "Publishing state: %s = %s", id.c_str(), state.c_str());
         mqttPublish(topic, state, 0, entity->retained);
         stats.stateUpdates++;
@@ -302,7 +303,8 @@ public:
         publishing = true;
         String payload;
         serializeJson(doc, payload);
-        String topic = entity->getStateTopic(config.nodeId, config.discoveryPrefix);
+        char topic[HA_TOPIC_BUF_SIZE];
+        entity->getStateTopic(topic, sizeof(topic), config.nodeId.c_str(), config.discoveryPrefix.c_str());
         mqttPublish(topic, payload, 0, entity->retained);
         stats.stateUpdates++;
         publishing = false;
@@ -317,7 +319,8 @@ public:
         
         String payload;
         serializeJson(attributes, payload);
-        String topic = entity->getAttributesTopic(config.nodeId, config.discoveryPrefix);
+        char topic[HA_TOPIC_BUF_SIZE];
+        entity->getAttributesTopic(topic, sizeof(topic), config.nodeId.c_str(), config.discoveryPrefix.c_str());
         mqttPublish(topic, payload, 0, true);
     }
     
@@ -332,7 +335,7 @@ public:
         DLOG_I(LOG_HA, "  Topic: %s", config.availabilityTopic.c_str());
         DLOG_I(LOG_HA, "  Payload: %s", payload.c_str());
         
-        bool published = mqttPublish(config.availabilityTopic, payload, 0, true);
+        bool published = mqttPublish(config.availabilityTopic.c_str(), payload, 0, true);
         if (published) {
             DLOG_I(LOG_HA, "  ✓ Availability published");
             availabilityPublished = available;  // Fix: track availability state for isReady()
@@ -371,7 +374,8 @@ public:
         DLOG_I(LOG_HA, "Removing discovery for all entities");
         
         for (const auto& entity : entities) {
-            String topic = entity->getDiscoveryTopic(config.nodeId, config.discoveryPrefix);
+            char topic[HA_TOPIC_BUF_SIZE];
+            entity->getDiscoveryTopic(topic, sizeof(topic), config.nodeId.c_str(), config.discoveryPrefix.c_str());
             mqttPublish(topic, "", 0, config.retainDiscovery);  // Empty payload removes entity
         }
     }
@@ -439,7 +443,7 @@ private:
     volatile bool publishing = false;  // Re-entrancy guard (volatile to prevent optimization)
     bool availabilityPublished = false;  // Track if initial availability sent
     bool mqttConnected = false;  // Track MQTT connection state via EventBus
-    String commandTopicFilter;  // Stored to keep pointer valid for EventBus
+    char commandTopicFilter[HA_TOPIC_BUF_SIZE] = {};  // Stored to keep pointer valid for EventBus
     
     /**
      * @brief Find entity by ID
@@ -456,12 +460,12 @@ private:
     /**
      * @brief Publish MQTT message via EventBus
      */
-    bool mqttPublish(const String& topic, const String& payload, uint8_t qos = 0, bool retain = false) {
+    bool mqttPublish(const char* topic, const String& payload, uint8_t qos = 0, bool retain = false) {
         using namespace DomoticsCore::Components;
         MQTTPublishEvent ev{};
 
         // Copy strings into fixed-size buffers
-        strncpy(ev.topic, topic.c_str(), MQTT_EVENT_TOPIC_SIZE - 1);
+        strncpy(ev.topic, topic, MQTT_EVENT_TOPIC_SIZE - 1);
         ev.topic[MQTT_EVENT_TOPIC_SIZE - 1] = '\0';
         strncpy(ev.payload, payload.c_str(), MQTT_EVENT_PAYLOAD_SIZE - 1);
         ev.payload[MQTT_EVENT_PAYLOAD_SIZE - 1] = '\0';
@@ -503,10 +507,11 @@ private:
         
         String payload;
         serializeJson(doc, payload);
-        String topic = entity->getDiscoveryTopic(config.nodeId, config.discoveryPrefix);
-        
+        char topic[HA_TOPIC_BUF_SIZE];
+        entity->getDiscoveryTopic(topic, sizeof(topic), config.nodeId.c_str(), config.discoveryPrefix.c_str());
+
         DLOG_I(LOG_HA, "Publishing discovery for '%s':", entity->id.c_str());
-        DLOG_I(LOG_HA, "  Topic: %s", topic.c_str());
+        DLOG_I(LOG_HA, "  Topic: %s", topic);
         DLOG_I(LOG_HA, "  Payload size: %d bytes", payload.length());
         DLOG_D(LOG_HA, "  Payload: %s", payload.c_str());
         
@@ -523,17 +528,18 @@ private:
      */
     void subscribeToCommands() {
         // Subscribe to wildcard command topics for all entity types via EventBus
-        commandTopicFilter = config.discoveryPrefix + "/+/" + config.nodeId + "/+/set";
+        snprintf(commandTopicFilter, sizeof(commandTopicFilter), "%s/+/%s/+/set",
+                 config.discoveryPrefix.c_str(), config.nodeId.c_str());
 
         using namespace DomoticsCore::Components;
         MQTTSubscribeEvent ev{};
-        strncpy(ev.topic, commandTopicFilter.c_str(), MQTT_EVENT_TOPIC_SIZE - 1);
+        strncpy(ev.topic, commandTopicFilter, MQTT_EVENT_TOPIC_SIZE - 1);
         ev.topic[MQTT_EVENT_TOPIC_SIZE - 1] = '\0';
         ev.qos = 0;
 
         emit(DomoticsCore::MQTTEvents::EVENT_SUBSCRIBE, ev);
 
-        DLOG_D(LOG_HA, "Subscribed to commands via EventBus: %s", commandTopicFilter.c_str());
+        DLOG_D(LOG_HA, "Subscribed to commands via EventBus: %s", commandTopicFilter);
         // Message handling is done via "mqtt/message" event listener in begin()
     }
     

@@ -28,27 +28,30 @@ public:
                               const JsonObject& device,
                               const String& availabilityTopic) const override {
         // Call base implementation (without state_topic for buttons)
+        char buf[HA_TOPIC_BUF_SIZE];
         doc["name"] = name;
-        doc["unique_id"] = getUniqueId(nodeId);
-        
+        getUniqueId(buf, sizeof(buf), nodeId.c_str());
+        doc["unique_id"] = buf;
+
         if (!icon.isEmpty()) {
             doc["icon"] = icon;
         }
-        
+
         if (!deviceClass.isEmpty()) {
             doc["device_class"] = deviceClass;
         }
-        
+
         doc["device"] = device;
-        
+
         if (!availabilityTopic.isEmpty()) {
             doc["availability_topic"] = availabilityTopic;
             doc["payload_available"] = "online";
             doc["payload_not_available"] = "offline";
         }
-        
+
         // Add button-specific fields
-        doc["command_topic"] = getCommandTopic(nodeId, discoveryPrefix);
+        getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
+        doc["command_topic"] = buf;
         doc["payload_press"] = payloadPress;
     }
     

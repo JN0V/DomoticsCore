@@ -16,6 +16,8 @@ namespace HomeAssistant {
  * - Device information
  * - Availability
  */
+static constexpr size_t HA_TOPIC_BUF_SIZE = 128;
+
 class HAEntity {
 public:
     HAEntity(const String& id, const String& name, const String& component)
@@ -31,26 +33,26 @@ public:
     String deviceClass;         // HA device class
     bool retained = true;       // Retain MQTT messages
     
-    // Topic generation
-    String getDiscoveryTopic(const String& nodeId, const String& discoveryPrefix = "homeassistant") const {
-        return discoveryPrefix + "/" + component + "/" + nodeId + "/" + id + "/config";
+    // Topic generation (zero-heap: snprintf into caller-provided buffer)
+    void getDiscoveryTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
+        buildTopic(buf, len, discoveryPrefix, nodeId, "config");
     }
-    
-    String getStateTopic(const String& nodeId, const String& discoveryPrefix = "homeassistant") const {
-        return discoveryPrefix + "/" + component + "/" + nodeId + "/" + id + "/state";
+
+    void getStateTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
+        buildTopic(buf, len, discoveryPrefix, nodeId, "state");
     }
-    
-    String getCommandTopic(const String& nodeId, const String& discoveryPrefix = "homeassistant") const {
-        return discoveryPrefix + "/" + component + "/" + nodeId + "/" + id + "/set";
+
+    void getCommandTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
+        buildTopic(buf, len, discoveryPrefix, nodeId, "set");
     }
-    
-    String getAttributesTopic(const String& nodeId, const String& discoveryPrefix = "homeassistant") const {
-        return discoveryPrefix + "/" + component + "/" + nodeId + "/" + id + "/attributes";
+
+    void getAttributesTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
+        buildTopic(buf, len, discoveryPrefix, nodeId, "attributes");
     }
-    
-    // Unique ID for HA
-    String getUniqueId(const String& nodeId) const {
-        return nodeId + "_" + id;
+
+    // Unique ID for HA (zero-heap)
+    void getUniqueId(char* buf, size_t len, const char* nodeId) const {
+        snprintf(buf, len, "%s_%s", nodeId, id.c_str());
     }
     
     // Discovery payload - to be implemented by derived classes
@@ -58,9 +60,12 @@ public:
                                       const String& discoveryPrefix,
                                       const JsonObject& device,
                                       const String& availabilityTopic) const {
+        char buf[HA_TOPIC_BUF_SIZE];
         doc["name"] = name;
-        doc["unique_id"] = getUniqueId(nodeId);
-        doc["state_topic"] = getStateTopic(nodeId, discoveryPrefix);
+        getUniqueId(buf, sizeof(buf), nodeId.c_str());
+        doc["unique_id"] = buf;
+        getStateTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
+        doc["state_topic"] = buf;
         
         if (!icon.isEmpty()) {
             doc["icon"] = icon;
@@ -85,6 +90,11 @@ public:
     // Current shadow: calling handleCommand() via HAEntity* on switch/light/button invokes this empty base,
     // not the derived method. Existing routing uses static_cast so behavior is unchanged.
     virtual void handleCommand(const String& payload) {}
+
+protected:
+    void buildTopic(char* buf, size_t len, const char* discoveryPrefix, const char* nodeId, const char* suffix) const {
+        snprintf(buf, len, "%s/%s/%s/%s/%s", discoveryPrefix, component.c_str(), nodeId, id.c_str(), suffix);
+    }
 };
 
 } // namespace HomeAssistant

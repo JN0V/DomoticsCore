@@ -262,9 +262,9 @@ Each of these is a decision point: **implement** the feature or **remove** the d
 
 | Priority | Items | Constitution | Status |
 |----------|-------|-------------|--------|
-| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5-R7: TODO |
-| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | TODO |
-| 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | TODO |
+| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5: DONE. R6-R7: TODO |
+| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | M16: DONE. Rest: TODO |
+| 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | R8: DONE. R9-R10: TODO |
 | 4. File Splits | R11-R13 | VII (800 lines) | TODO |
 | 5. Dead Code | R17-R23 | IV (YAGNI) | TODO |
 | 6. Anti-Patterns | R14-R16 | XIII | Document exceptions |
@@ -433,9 +433,9 @@ Fragmentation impact: **NONE** beyond what already exists from `MQTTMessageEvent
 
 | Priority | Items | Constitution | Status |
 |----------|-------|-------------|--------|
-| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5-R7: TODO |
-| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | TODO |
-| 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | TODO |
+| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5: DONE. R6-R7: TODO |
+| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | M16: DONE. Rest: TODO |
+| 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | R8: DONE. R9-R10: TODO |
 | 4. File Splits | R11-R13 | VII (800 lines) | TODO |
 | 5. Dead Code | R17-R23 | IV (YAGNI) | TODO |
 | 6. Anti-Patterns | R14-R16 | XIII | Document exceptions |

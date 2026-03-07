@@ -527,7 +527,7 @@ private:
     String getSystemStatus() {
         String status = "System Status:\n";
         status += "  Device: " + config.deviceName + " v" + config.firmwareVersion + "\n";
-        status += "  Uptime: " + String(millis() / 1000) + "s\n";
+        status += "  Uptime: " + String(HAL::getMillis() / 1000) + "s\n";
         status += "  Free Heap: " + String(HAL::getFreeHeap()) + " bytes\n";
         status += "  State: " + String(systemStateToString(state)) + "\n";
         return status;
