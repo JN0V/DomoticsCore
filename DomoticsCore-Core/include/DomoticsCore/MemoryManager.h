@@ -106,6 +106,9 @@ struct ProfileLimits {
  */
 class MemoryManager {
 public:
+    // Accepted deviation from Constitution XIII (no singleton abuse):
+    // MemoryManager requires global access for buffer sizing decisions across all components.
+    // No viable alternative without passing MemoryManager& through every component constructor.
     /**
      * @brief Get singleton instance
      */

@@ -49,22 +49,22 @@ void test_ha_component_creation_default() {
 
 void test_ha_component_creation_with_config() {
     HAConfig config;
-    config.nodeId = "test_node";
-    config.deviceName = "Test Device";
-    config.manufacturer = "TestMfg";
-    config.model = "TestModel";
-    config.swVersion = "2.0.0";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+    HA::setField(config.deviceName, "Test Device", sizeof(config.deviceName));
+    HA::setField(config.manufacturer, "TestMfg", sizeof(config.manufacturer));
+    HA::setField(config.model, "TestModel", sizeof(config.model));
+    HA::setField(config.swVersion, "2.0.0", sizeof(config.swVersion));
 
     HomeAssistantComponent ha(config);
 
     TEST_ASSERT_EQUAL_STRING("HomeAssistant", ha.metadata.name);
 
     const HAConfig& cfg = ha.getConfig();
-    TEST_ASSERT_EQUAL_STRING("test_node", cfg.nodeId.c_str());
-    TEST_ASSERT_EQUAL_STRING("Test Device", cfg.deviceName.c_str());
-    TEST_ASSERT_EQUAL_STRING("TestMfg", cfg.manufacturer.c_str());
-    TEST_ASSERT_EQUAL_STRING("TestModel", cfg.model.c_str());
-    TEST_ASSERT_EQUAL_STRING("2.0.0", cfg.swVersion.c_str());
+    TEST_ASSERT_EQUAL_STRING("test_node", cfg.nodeId);
+    TEST_ASSERT_EQUAL_STRING("Test Device", cfg.deviceName);
+    TEST_ASSERT_EQUAL_STRING("TestMfg", cfg.manufacturer);
+    TEST_ASSERT_EQUAL_STRING("TestModel", cfg.model);
+    TEST_ASSERT_EQUAL_STRING("2.0.0", cfg.swVersion);
 }
 
 // ============================================================================
@@ -75,66 +75,69 @@ void test_ha_config_defaults() {
     HAConfig config;
 
     // Default values from HAConfig struct in HomeAssistant.h
-    TEST_ASSERT_EQUAL_STRING("myDeviceId", config.nodeId.c_str());
-    TEST_ASSERT_EQUAL_STRING("My Device", config.deviceName.c_str());
-    TEST_ASSERT_EQUAL_STRING("DomoticsCore", config.manufacturer.c_str());
-    TEST_ASSERT_EQUAL_STRING("MyDeviceModel", config.model.c_str());
-    TEST_ASSERT_EQUAL_STRING("1.0.0", config.swVersion.c_str());
+    TEST_ASSERT_EQUAL_STRING("myDeviceId", config.nodeId);
+    TEST_ASSERT_EQUAL_STRING("My Device", config.deviceName);
+    TEST_ASSERT_EQUAL_STRING("DomoticsCore", config.manufacturer);
+    TEST_ASSERT_EQUAL_STRING("MyDeviceModel", config.model);
+    TEST_ASSERT_EQUAL_STRING("1.0.0", config.swVersion);
     TEST_ASSERT_TRUE(config.retainDiscovery);
-    TEST_ASSERT_EQUAL_STRING("homeassistant", config.discoveryPrefix.c_str());
+    TEST_ASSERT_EQUAL_STRING("homeassistant", config.discoveryPrefix);
+    TEST_ASSERT_EQUAL_STRING("", config.availabilityTopic);
+    TEST_ASSERT_EQUAL_STRING("", config.configUrl);
+    TEST_ASSERT_EQUAL_STRING("", config.suggestedArea);
 }
 
 void test_ha_config_get_set() {
     HomeAssistantComponent ha;
 
     HAConfig newConfig;
-    newConfig.nodeId = "new_node";
-    newConfig.deviceName = "New Device";
-    newConfig.discoveryPrefix = "custom_prefix";
+    HA::setField(newConfig.nodeId, "new_node", sizeof(newConfig.nodeId));
+    HA::setField(newConfig.deviceName, "New Device", sizeof(newConfig.deviceName));
+    HA::setField(newConfig.discoveryPrefix, "custom_prefix", sizeof(newConfig.discoveryPrefix));
     newConfig.retainDiscovery = false;
 
     ha.setConfig(newConfig);
 
     const HAConfig& cfg = ha.getConfig();
-    TEST_ASSERT_EQUAL_STRING("new_node", cfg.nodeId.c_str());
-    TEST_ASSERT_EQUAL_STRING("New Device", cfg.deviceName.c_str());
-    TEST_ASSERT_EQUAL_STRING("custom_prefix", cfg.discoveryPrefix.c_str());
+    TEST_ASSERT_EQUAL_STRING("new_node", cfg.nodeId);
+    TEST_ASSERT_EQUAL_STRING("New Device", cfg.deviceName);
+    TEST_ASSERT_EQUAL_STRING("custom_prefix", cfg.discoveryPrefix);
     TEST_ASSERT_FALSE(cfg.retainDiscovery);
 }
 
 void test_ha_availability_topic_auto_generated() {
     HAConfig config;
-    config.nodeId = "test_device";
-    config.discoveryPrefix = "homeassistant";
+    HA::setField(config.nodeId, "test_device", sizeof(config.nodeId));
+    HA::setField(config.discoveryPrefix, "homeassistant", sizeof(config.discoveryPrefix));
     // Leave availabilityTopic empty
 
     HomeAssistantComponent ha(config);
 
     const HAConfig& cfg = ha.getConfig();
-    TEST_ASSERT_EQUAL_STRING("homeassistant/test_device/availability", cfg.availabilityTopic.c_str());
+    TEST_ASSERT_EQUAL_STRING("homeassistant/test_device/availability", cfg.availabilityTopic);
 }
 
 void test_ha_availability_topic_custom() {
     HAConfig config;
-    config.nodeId = "test_device";
-    config.availabilityTopic = "custom/availability/topic";
+    HA::setField(config.nodeId, "test_device", sizeof(config.nodeId));
+    HA::setField(config.availabilityTopic, "custom/availability/topic", sizeof(config.availabilityTopic));
 
     HomeAssistantComponent ha(config);
 
     const HAConfig& cfg = ha.getConfig();
-    TEST_ASSERT_EQUAL_STRING("custom/availability/topic", cfg.availabilityTopic.c_str());
+    TEST_ASSERT_EQUAL_STRING("custom/availability/topic", cfg.availabilityTopic);
 }
 
 void test_ha_config_url_and_area() {
     HAConfig config;
-    config.configUrl = "http://192.168.1.100";
-    config.suggestedArea = "Living Room";
+    HA::setField(config.configUrl, "http://192.168.1.100", sizeof(config.configUrl));
+    HA::setField(config.suggestedArea, "Living Room", sizeof(config.suggestedArea));
 
     HomeAssistantComponent ha(config);
 
     const HAConfig& cfg = ha.getConfig();
-    TEST_ASSERT_EQUAL_STRING("http://192.168.1.100", cfg.configUrl.c_str());
-    TEST_ASSERT_EQUAL_STRING("Living Room", cfg.suggestedArea.c_str());
+    TEST_ASSERT_EQUAL_STRING("http://192.168.1.100", cfg.configUrl);
+    TEST_ASSERT_EQUAL_STRING("Living Room", cfg.suggestedArea);
 }
 
 // ============================================================================
@@ -342,7 +345,7 @@ void test_ha_full_lifecycle() {
     Core core;
 
     HAConfig config;
-    config.nodeId = "test_lifecycle";
+    HA::setField(config.nodeId, "test_lifecycle", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     ha->addSensor("test_sensor", "Test Sensor");
@@ -398,10 +401,10 @@ void test_ha_set_device_info() {
     ha.setDeviceInfo("Custom Name", "Custom Model", "Custom Manufacturer", "3.0.0");
 
     const HAConfig& cfg = ha.getConfig();
-    TEST_ASSERT_EQUAL_STRING("Custom Name", cfg.deviceName.c_str());
-    TEST_ASSERT_EQUAL_STRING("Custom Model", cfg.model.c_str());
-    TEST_ASSERT_EQUAL_STRING("Custom Manufacturer", cfg.manufacturer.c_str());
-    TEST_ASSERT_EQUAL_STRING("3.0.0", cfg.swVersion.c_str());
+    TEST_ASSERT_EQUAL_STRING("Custom Name", cfg.deviceName);
+    TEST_ASSERT_EQUAL_STRING("Custom Model", cfg.model);
+    TEST_ASSERT_EQUAL_STRING("Custom Manufacturer", cfg.manufacturer);
+    TEST_ASSERT_EQUAL_STRING("3.0.0", cfg.swVersion);
 }
 
 // ============================================================================
@@ -430,24 +433,24 @@ void test_ha_component_no_dependencies() {
 
 void test_ha_empty_config_fields() {
     HAConfig config;
-    config.configUrl = "";
-    config.suggestedArea = "";
+    config.configUrl[0] = '\0';
+    config.suggestedArea[0] = '\0';
 
     HomeAssistantComponent ha(config);
 
     const HAConfig& cfg = ha.getConfig();
-    TEST_ASSERT_TRUE(cfg.configUrl.isEmpty());
-    TEST_ASSERT_TRUE(cfg.suggestedArea.isEmpty());
+    TEST_ASSERT_EQUAL_STRING("", cfg.configUrl);
+    TEST_ASSERT_EQUAL_STRING("", cfg.suggestedArea);
 }
 
 void test_ha_special_characters_in_node_id() {
     HAConfig config;
-    config.nodeId = "device-with_mixed-chars123";
+    HA::setField(config.nodeId, "device-with_mixed-chars123", sizeof(config.nodeId));
 
     HomeAssistantComponent ha(config);
 
     const HAConfig& cfg = ha.getConfig();
-    TEST_ASSERT_EQUAL_STRING("device-with_mixed-chars123", cfg.nodeId.c_str());
+    TEST_ASSERT_EQUAL_STRING("device-with_mixed-chars123", cfg.nodeId);
 }
 
 // ============================================================================
@@ -521,7 +524,7 @@ void test_switch_command_auto_publishes_state() {
     // AC 1: Default switch auto-publishes state after command
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     ha->addSwitch("sw1", "Switch 1", [](bool) {});
@@ -557,7 +560,7 @@ void test_switch_command_no_auto_publish_when_disabled() {
     // AC 2: autoPublishState=false -> no auto-publish (RED until Phase 3 fix)
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     bool callbackCalled = false;
     auto ha = std::make_unique<HomeAssistantComponent>(config);
@@ -591,7 +594,7 @@ void test_switch_optimistic_overrides_auto_publish() {
     // AC 4: optimistic=true suppresses auto-publish regardless of autoPublishState
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     ha->addSwitch("sw1", "Switch 1", [](bool) {},
@@ -622,7 +625,7 @@ void test_switch_manual_publish_after_auto_disabled() {
     // AC 3: Manual publishState() works even when autoPublishState=false
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     HomeAssistantComponent* haPtr = ha.get();
@@ -662,7 +665,7 @@ void test_switch_optimistic_true_auto_publish_false() {
     // Interaction matrix: optimistic=true, autoPublishState=false -> no publish
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     ha->addSwitch("sw1", "Switch 1", [](bool) {},
@@ -698,7 +701,7 @@ void test_publish_state_const_char_ptr() {
     // publishing "ON" instead of the actual string value.
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     HomeAssistantComponent* haPtr = ha.get();
@@ -730,7 +733,7 @@ void test_publish_state_constexpr_char_ptr() {
     // Verify constexpr const char* values work correctly
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     HomeAssistantComponent* haPtr = ha.get();
@@ -761,7 +764,7 @@ void test_publish_state_bool_still_works() {
     // Ensure the bool overload is not broken by the new const char* overload
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     HomeAssistantComponent* haPtr = ha.get();
@@ -798,7 +801,7 @@ void test_publish_state_string_still_works() {
     // Ensure the String overload still works
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     HomeAssistantComponent* haPtr = ha.get();
@@ -829,7 +832,7 @@ void test_publish_state_string_literal() {
     // String literals are const char[], which decay to const char*
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     HomeAssistantComponent* haPtr = ha.get();
@@ -854,6 +857,52 @@ void test_publish_state_string_literal() {
     TEST_ASSERT_EQUAL_STRING("triggered", capturedPayload.c_str());
 
     core.shutdown();
+}
+
+// ============================================================================
+// R6 — char[] field tests
+// ============================================================================
+
+void test_ha_set_field_truncation() {
+    char buf[10];
+    HA::setField(buf, "a_very_long_string_exceeding_buffer", sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("a_very_lo", buf);
+    TEST_ASSERT_EQUAL(9, strlen(buf));
+    TEST_ASSERT_EQUAL('\0', buf[9]);
+}
+
+void test_ha_set_field_null_input() {
+    char buf[10];
+    buf[0] = 'x'; // ensure it gets cleared
+    HA::setField(buf, nullptr, sizeof(buf));
+    TEST_ASSERT_EQUAL('\0', buf[0]);
+}
+
+void test_ha_node_id_processing() {
+    // Simulate System.h nodeId processing: lowercase + space→underscore
+    HAConfig config;
+    HA::setField(config.nodeId, "My Device Name", sizeof(config.nodeId));
+    for (size_t i = 0; config.nodeId[i]; i++) {
+        if (config.nodeId[i] == ' ') config.nodeId[i] = '_';
+        else config.nodeId[i] = tolower((unsigned char)config.nodeId[i]);
+    }
+    TEST_ASSERT_EQUAL_STRING("my_device_name", config.nodeId);
+}
+
+void test_ha_config_no_heap_allocation() {
+    // Verify HAConfig uses no heap (all stack/struct storage)
+    size_t heapBefore = HAL::Platform::getFreeHeap();
+    {
+        HAConfig configs[10];
+        // Access fields to prevent optimization
+        for (int i = 0; i < 10; i++) {
+            volatile char c = configs[i].nodeId[0];
+            (void)c;
+        }
+    }
+    size_t heapAfter = HAL::Platform::getFreeHeap();
+    // Allow small variance for allocator bookkeeping
+    TEST_ASSERT_INT_WITHIN(64, 0, (int)(heapBefore - heapAfter));
 }
 
 // ============================================================================
@@ -946,6 +995,12 @@ int runAllTests() {
     RUN_TEST(test_publish_state_bool_still_works);
     RUN_TEST(test_publish_state_string_still_works);
     RUN_TEST(test_publish_state_string_literal);
+
+    // R6 — char[] field tests
+    RUN_TEST(test_ha_set_field_truncation);
+    RUN_TEST(test_ha_set_field_null_input);
+    RUN_TEST(test_ha_node_id_processing);
+    RUN_TEST(test_ha_config_no_heap_allocation);
 
     return UNITY_END();
 }

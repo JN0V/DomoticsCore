@@ -28,6 +28,11 @@
 #include "SystemPersistence.h"
 #include "SystemWebUISetup.h"
 
+// Intentional deviation from Constitution IX (no #ifdef outside HAL):
+// __has_include() enables the zero-config "just add components" developer experience.
+// This is compile-time optional dependency detection, not platform-specific feature-flagging.
+// 20 directives across: initial includes, component registration, event orchestration, console commands.
+
 // Optional components - include if available
 #if __has_include(<DomoticsCore/WebUI.h>)
 #include <DomoticsCore/WebUI.h>
@@ -327,16 +332,20 @@ private:
         
 #if __has_include(<DomoticsCore/HomeAssistant.h>)
         if (config.enableHomeAssistant) {
-            Components::HomeAssistant::HAConfig haConfig;
-            haConfig.deviceName = config.deviceName;
-            haConfig.swVersion = config.firmwareVersion;
-            haConfig.manufacturer = config.manufacturer;
-            haConfig.model = config.model;
-            haConfig.nodeId = config.deviceName.substring(0, 32);
-            haConfig.nodeId.toLowerCase();
-            haConfig.nodeId.replace(" ", "_");
-            core.addComponent(std::make_unique<Components::HomeAssistant::HomeAssistantComponent>(haConfig));
-            DLOG_I(LOG_SYSTEM, "✓ HomeAssistant component added (nodeId: %s)", haConfig.nodeId.c_str());
+            using namespace Components::HomeAssistant;
+            HAConfig haConfig;
+            HA::setField(haConfig.deviceName, config.deviceName.c_str(), HA::MAX_DEVICE_NAME);
+            HA::setField(haConfig.swVersion, config.firmwareVersion.c_str(), HA::MAX_SW_VERSION);
+            HA::setField(haConfig.manufacturer, config.manufacturer.c_str(), HA::MAX_MANUFACTURER);
+            HA::setField(haConfig.model, config.model.c_str(), HA::MAX_MODEL);
+            // nodeId: copy, lowercase, replace spaces with underscores
+            HA::setField(haConfig.nodeId, config.deviceName.c_str(), HA::MAX_NODE_ID);
+            for (size_t i = 0; haConfig.nodeId[i]; i++) {
+                if (haConfig.nodeId[i] == ' ') haConfig.nodeId[i] = '_';
+                else haConfig.nodeId[i] = tolower((unsigned char)haConfig.nodeId[i]);
+            }
+            core.addComponent(std::make_unique<HomeAssistantComponent>(haConfig));
+            DLOG_I(LOG_SYSTEM, "✓ HomeAssistant component added (nodeId: %s)", haConfig.nodeId);
         }
 #endif
 #else
@@ -347,7 +356,9 @@ private:
     void registerOTAComponent() {
 #if __has_include(<DomoticsCore/OTA.h>)
         if (!config.enableOTA) return;
-        core.addComponent(std::make_unique<Components::OTAComponent>());
+        Components::OTAConfig otaConfig;
+        otaConfig.bearerToken = config.otaPassword;
+        core.addComponent(std::make_unique<Components::OTAComponent>(otaConfig));
         DLOG_I(LOG_SYSTEM, "✓ OTA component added");
 #else
         if (config.enableOTA) DLOG_W(LOG_SYSTEM, "⚠️  OTA requested but library not installed");

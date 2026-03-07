@@ -33,6 +33,7 @@ public:
     String() = default;
     String(const char* str) : data(str) {}
     String(const std::string& str) : data(str) {}
+    String(char c) : data(1, c) {}
     String(int value) : data(std::to_string(value)) {}
     String(unsigned int value) : data(std::to_string(value)) {}
     String(long value) : data(std::to_string(value)) {}
@@ -72,20 +73,17 @@ public:
     
     int toInt() const { return std::stoi(data); }
     float toFloat() const { return std::stof(data); }
-    String toLowerCase() const {
-        std::string lower = data;
-        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-        return String(lower);
+    void toLowerCase() {
+        std::transform(data.begin(), data.end(), data.begin(), ::tolower);
     }
-    String toUpperCase() const {
-        std::string upper = data;
-        std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
-        return String(upper);
+    void toUpperCase() {
+        std::transform(data.begin(), data.end(), data.begin(), ::toupper);
     }
     
     char operator[](int index) const { return data[index]; }
     
     String& operator+=(const String& other) { data += other.data; return *this; }
+    String& operator+=(char c) { data += c; return *this; }
     String operator+(const String& other) const { return String(data + other.data); }
     
     // Allow const char* + String
@@ -142,7 +140,9 @@ public:
         return data.compare(data.length() - suffix.data.length(), suffix.data.length(), suffix.data) == 0;
     }
     bool equalsIgnoreCase(const String& other) const {
-        return toLowerCase().data == other.toLowerCase().data;
+        String a = *this; a.toLowerCase();
+        String b = other; b.toLowerCase();
+        return a.data == b.data;
     }
 
     String substring(int from) const {

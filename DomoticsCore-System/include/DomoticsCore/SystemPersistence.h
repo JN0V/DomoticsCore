@@ -303,17 +303,18 @@ inline void loadHomeAssistantConfig(Core& core, const SystemConfig& config) {
     auto* ha = core.getComponent<Components::HomeAssistant::HomeAssistantComponent>("HomeAssistant");
     if (!storage || !ha) return;
     
-    Components::HomeAssistant::HAConfig haConfig = ha->getConfig();
-    
-    haConfig.nodeId = storage->getString("ha_nodeid", haConfig.nodeId);
-    haConfig.deviceName = storage->getString("ha_device_name", haConfig.deviceName);
-    haConfig.manufacturer = storage->getString("ha_mfg", haConfig.manufacturer);
-    haConfig.model = storage->getString("ha_model", haConfig.model);
-    haConfig.swVersion = storage->getString("ha_sw_ver", haConfig.swVersion);
-    haConfig.discoveryPrefix = storage->getString("ha_disc_prefix", haConfig.discoveryPrefix);
-    
+    using namespace Components::HomeAssistant;
+    HAConfig haConfig = ha->getConfig();
+
+    HA::setField(haConfig.nodeId, storage->getString("ha_nodeid", haConfig.nodeId).c_str(), HA::MAX_NODE_ID);
+    HA::setField(haConfig.deviceName, storage->getString("ha_device_name", haConfig.deviceName).c_str(), HA::MAX_DEVICE_NAME);
+    HA::setField(haConfig.manufacturer, storage->getString("ha_mfg", haConfig.manufacturer).c_str(), HA::MAX_MANUFACTURER);
+    HA::setField(haConfig.model, storage->getString("ha_model", haConfig.model).c_str(), HA::MAX_MODEL);
+    HA::setField(haConfig.swVersion, storage->getString("ha_sw_ver", haConfig.swVersion).c_str(), HA::MAX_SW_VERSION);
+    HA::setField(haConfig.discoveryPrefix, storage->getString("ha_disc_prefix", haConfig.discoveryPrefix).c_str(), HA::MAX_DISCOVERY_PREFIX);
+
     ha->setConfig(haConfig);
-    DLOG_I(LOG_PERSISTENCE, "Loaded HomeAssistant config: nodeId=%s", haConfig.nodeId.c_str());
+    DLOG_I(LOG_PERSISTENCE, "Loaded HomeAssistant config: nodeId=%s", haConfig.nodeId);
 #endif
 }
 

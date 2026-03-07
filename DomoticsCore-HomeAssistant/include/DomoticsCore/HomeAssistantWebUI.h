@@ -109,28 +109,28 @@ public:
             doc["status"] = statusText;
 
         } else if (contextId == "ha_dashboard") {
-            doc["node_id"] = cfg.nodeId;
-            doc["device_name"] = cfg.deviceName;
+            doc["node_id"] = (const char*)cfg.nodeId;
+            doc["device_name"] = (const char*)cfg.deviceName;
             doc["entity_count"] = stats.entityCount;
             doc["discovery_count"] = stats.discoveryCount;
             doc["state_updates"] = stats.stateUpdates;
             doc["commands"] = stats.commandsReceived;
 
         } else if (contextId == "ha_settings") {
-            doc["node_id"] = cfg.nodeId;
-            doc["device_name"] = cfg.deviceName;
-            doc["manufacturer"] = cfg.manufacturer;
-            doc["model"] = cfg.model;
-            doc["discovery_prefix"] = cfg.discoveryPrefix;
-            doc["suggested_area"] = cfg.suggestedArea;
+            doc["node_id"] = (const char*)cfg.nodeId;
+            doc["device_name"] = (const char*)cfg.deviceName;
+            doc["manufacturer"] = (const char*)cfg.manufacturer;
+            doc["model"] = (const char*)cfg.model;
+            doc["discovery_prefix"] = (const char*)cfg.discoveryPrefix;
+            doc["suggested_area"] = (const char*)cfg.suggestedArea;
 
         } else if (contextId == "ha_detail") {
             doc["entity_count"] = stats.entityCount;
             doc["discovery_count"] = stats.discoveryCount;
             doc["state_updates"] = stats.stateUpdates;
             doc["commands_received"] = stats.commandsReceived;
-            doc["availability_topic"] = cfg.availabilityTopic;
-            doc["config_url"] = cfg.configUrl.isEmpty() ? "N/A" : cfg.configUrl;
+            doc["availability_topic"] = (const char*)cfg.availabilityTopic;
+            doc["config_url"] = cfg.configUrl[0] == '\0' ? "N/A" : (const char*)cfg.configUrl;
         }
 
         String json;
@@ -146,23 +146,24 @@ public:
             // Update configuration
             HomeAssistant::HAConfig newCfg = ha->getConfig();
 
+            using namespace HomeAssistant;
             auto it = params.find("node_id");
-            if (it != params.end()) newCfg.nodeId = it->second;
+            if (it != params.end()) HA::setField(newCfg.nodeId, it->second.c_str(), HA::MAX_NODE_ID);
 
             it = params.find("device_name");
-            if (it != params.end()) newCfg.deviceName = it->second;
+            if (it != params.end()) HA::setField(newCfg.deviceName, it->second.c_str(), HA::MAX_DEVICE_NAME);
 
             it = params.find("manufacturer");
-            if (it != params.end()) newCfg.manufacturer = it->second;
+            if (it != params.end()) HA::setField(newCfg.manufacturer, it->second.c_str(), HA::MAX_MANUFACTURER);
 
             it = params.find("model");
-            if (it != params.end()) newCfg.model = it->second;
+            if (it != params.end()) HA::setField(newCfg.model, it->second.c_str(), HA::MAX_MODEL);
 
             it = params.find("discovery_prefix");
-            if (it != params.end()) newCfg.discoveryPrefix = it->second;
+            if (it != params.end()) HA::setField(newCfg.discoveryPrefix, it->second.c_str(), HA::MAX_DISCOVERY_PREFIX);
 
             it = params.find("suggested_area");
-            if (it != params.end()) newCfg.suggestedArea = it->second;
+            if (it != params.end()) HA::setField(newCfg.suggestedArea, it->second.c_str(), HA::MAX_SUGGESTED_AREA);
 
             ha->setConfig(newCfg);
 

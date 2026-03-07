@@ -19,14 +19,14 @@ enum class AlarmFeature : uint8_t {
 };
 
 // Bitwise operators for AlarmFeature bitmask usage
-inline constexpr uint8_t operator|(AlarmFeature a, AlarmFeature b) {
-    return static_cast<uint8_t>(a) | static_cast<uint8_t>(b);
+inline constexpr AlarmFeature operator|(AlarmFeature a, AlarmFeature b) {
+    return static_cast<AlarmFeature>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
 }
-inline constexpr uint8_t operator|(uint8_t a, AlarmFeature b) {
-    return a | static_cast<uint8_t>(b);
+inline AlarmFeature& operator|=(AlarmFeature& a, AlarmFeature b) {
+    return a = a | b;
 }
-inline constexpr uint8_t operator&(uint8_t a, AlarmFeature b) {
-    return a & static_cast<uint8_t>(b);
+inline constexpr bool operator&(AlarmFeature a, AlarmFeature b) {
+    return (static_cast<uint8_t>(a) & static_cast<uint8_t>(b)) != 0;
 }
 
 /**
@@ -79,7 +79,7 @@ public:
     }
 
     String code;
-    uint8_t supportedFeatures = static_cast<uint8_t>(AlarmFeature::ArmAway);
+    AlarmFeature supportedFeatures = AlarmFeature::ArmAway;
     bool codeArmRequired = false;
     bool codeDisarmRequired = false;
     bool codeTriggerRequired = false;

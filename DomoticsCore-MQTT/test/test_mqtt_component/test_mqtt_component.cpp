@@ -738,6 +738,90 @@ void tearDown() {
     HAL::WiFiImpl::setConnectedForTest(false);
 }
 
+// ============================================================================
+// R18 — Config Limit Enforcement Tests
+// ============================================================================
+
+void test_mqtt_queue_rejects_when_full() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.maxQueueSize = 5;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    // Not connected → messages get queued
+    for (int i = 0; i < 5; i++) {
+        TEST_ASSERT_TRUE(mqtt.publish("topic", String(i)));
+    }
+    // 6th should be rejected
+    TEST_ASSERT_FALSE(mqtt.publish("topic", "overflow"));
+    mqtt.shutdown();
+}
+
+void test_mqtt_queue_unlimited_when_zero() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.maxQueueSize = 0;
+    cfg.publishRateLimit = 0; // disable rate limit to test queue only
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    for (int i = 0; i < 100; i++) {
+        TEST_ASSERT_TRUE(mqtt.publish("topic", String(i)));
+    }
+    mqtt.shutdown();
+}
+
+void test_mqtt_subscribe_rejects_at_limit() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.maxSubscriptions = 3;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    TEST_ASSERT_TRUE(mqtt.subscribe("topic/1"));
+    TEST_ASSERT_TRUE(mqtt.subscribe("topic/2"));
+    TEST_ASSERT_TRUE(mqtt.subscribe("topic/3"));
+    TEST_ASSERT_FALSE(mqtt.subscribe("topic/4"));
+    mqtt.shutdown();
+}
+
+void test_mqtt_subscribe_unlimited_when_zero() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.maxSubscriptions = 0;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    for (int i = 0; i < 100; i++) {
+        TEST_ASSERT_TRUE(mqtt.subscribe("topic/" + String(i)));
+    }
+    mqtt.shutdown();
+}
+
+void test_mqtt_rate_limit_enforced() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.publishRateLimit = 2;
+    cfg.maxQueueSize = 0; // unlimited queue
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    // Not connected, but rate limit is checked before queue
+    TEST_ASSERT_TRUE(mqtt.publish("topic", "msg1"));
+    TEST_ASSERT_TRUE(mqtt.publish("topic", "msg2"));
+    TEST_ASSERT_FALSE(mqtt.publish("topic", "msg3"));
+    mqtt.shutdown();
+}
+
+void test_mqtt_rate_limit_unlimited_when_zero() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.publishRateLimit = 0;
+    cfg.maxQueueSize = 0;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    for (int i = 0; i < 50; i++) {
+        TEST_ASSERT_TRUE(mqtt.publish("topic", String(i)));
+    }
+    mqtt.shutdown();
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -803,6 +887,14 @@ int main() {
     // Memory stability tests (R2)
     RUN_TEST(test_mqtt_memory_stability_message_queue);
     RUN_TEST(test_mqtt_memory_stability_subscribe_cycle);
+
+    // R18 — Config limit enforcement tests
+    RUN_TEST(test_mqtt_queue_rejects_when_full);
+    RUN_TEST(test_mqtt_queue_unlimited_when_zero);
+    RUN_TEST(test_mqtt_subscribe_rejects_at_limit);
+    RUN_TEST(test_mqtt_subscribe_unlimited_when_zero);
+    RUN_TEST(test_mqtt_rate_limit_enforced);
+    RUN_TEST(test_mqtt_rate_limit_unlimited_when_zero);
 
     return UNITY_END();
 }

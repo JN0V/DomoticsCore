@@ -117,13 +117,16 @@ void setup() {
 
     // Home Assistant Component (communicates with MQTT via EventBus)
     HAConfig haCfg;
-    haCfg.nodeId = "esp32-webui-demo";
-    haCfg.deviceName = "ESP32 WebUI Demo";
-    haCfg.manufacturer = "DomoticsCore";
-    haCfg.model = "ESP32-DevKit";
-    haCfg.swVersion = "1.0.0";
-    haCfg.configUrl = "http://" + HAL::WiFiHAL::getLocalIP();
-    haCfg.suggestedArea = "Office";
+    HA::setField(haCfg.nodeId, "esp32-webui-demo", HA::MAX_NODE_ID);
+    HA::setField(haCfg.deviceName, "ESP32 WebUI Demo", HA::MAX_DEVICE_NAME);
+    HA::setField(haCfg.manufacturer, "DomoticsCore", HA::MAX_MANUFACTURER);
+    HA::setField(haCfg.model, "ESP32-DevKit", HA::MAX_MODEL);
+    HA::setField(haCfg.swVersion, "1.0.0", HA::MAX_SW_VERSION);
+    {
+        String configUrlStr = "http://" + HAL::WiFiHAL::getLocalIP();
+        HA::setField(haCfg.configUrl, configUrlStr.c_str(), HA::MAX_CONFIG_URL);
+    }
+    HA::setField(haCfg.suggestedArea, "Office", HA::MAX_SUGGESTED_AREA);
 
     auto ha = std::make_unique<HomeAssistantComponent>(haCfg);
     haPtr = ha.get();

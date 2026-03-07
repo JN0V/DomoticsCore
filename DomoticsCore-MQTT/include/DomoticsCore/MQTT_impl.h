@@ -207,9 +207,32 @@ inline String MQTTComponent::getStateString() const {
 
 // Publishing
 inline bool MQTTComponent::publish(const String& topic, const String& payload, uint8_t qos, bool retain) {
+    // Rate limit guard (tumbling window: reset counter every 1000ms)
+    if (config.publishRateLimit > 0) {
+        unsigned long now = HAL::getMillis();
+        if (now - lastPublishTime >= 1000) {
+            publishCountThisSecond = 0;
+            lastPublishTime = now;
+        }
+        if (publishCountThisSecond >= config.publishRateLimit) {
+            DLOG_W(LOG_MQTT, "Publish rate limit reached (%u/s), dropping message for '%s'",
+                   config.publishRateLimit, topic.c_str());
+            stats.publishErrors++;
+            return false;
+        }
+    }
+
     if (!isConnected()) {
+        // Queue size guard (0 = unlimited)
+        if (config.maxQueueSize > 0 && messageQueue.size() >= config.maxQueueSize) {
+            DLOG_W(LOG_MQTT, "Message queue full (%u/%u), dropping message for '%s'",
+                   (unsigned)messageQueue.size(), config.maxQueueSize, topic.c_str());
+            stats.publishErrors++;
+            return false;
+        }
         // Queue message for later if offline
         messageQueue.push_back({topic, payload, qos, retain});
+        publishCountThisSecond++;
         return true;
     }
     
@@ -260,6 +283,13 @@ inline bool MQTTComponent::subscribe(const String& topic, uint8_t qos) {
         }
     }
     
+    // Max subscriptions guard (0 = unlimited)
+    if (config.maxSubscriptions > 0 && subscriptions.size() >= config.maxSubscriptions) {
+        DLOG_W(LOG_MQTT, "Max subscriptions reached (%u/%u), rejecting '%s'",
+               (unsigned)subscriptions.size(), config.maxSubscriptions, topic.c_str());
+        return false;
+    }
+
     if (!isConnected()) {
         subscriptions.push_back({topic, qos});
         stats.subscriptionCount = subscriptions.size();

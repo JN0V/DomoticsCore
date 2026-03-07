@@ -38,6 +38,7 @@ struct RemoteConsoleConfig {
     String password = "";                  // Auth password
     uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;  // Platform-specific (ESP8266=5, ESP32=100)
     bool allowCommands = true;             // Enable command execution
+    uint32_t authTimeoutMs = 10000;        // Auth timeout (10s default, 0 = no timeout)
     std::vector<HAL::IPAddress> allowedIPs;     // IP whitelist (empty = all allowed)
     bool colorOutput = true;               // ANSI color codes
     uint32_t maxClients = 3;               // Max concurrent connections
@@ -64,7 +65,8 @@ class RemoteConsoleComponent : public IComponent {
 private:
     RemoteConsoleConfig config;
     HAL::WiFiServer* telnetServer = nullptr;
-    std::vector<HAL::WiFiClient> clients;
+    uint32_t nextClientId = 1;
+    std::vector<std::pair<uint32_t, HAL::WiFiClient>> clients;
     
     // Circular buffer for log entries - grows lazily to avoid OOM on startup
     std::vector<LogEntry> logBuffer;
@@ -73,9 +75,10 @@ private:
     
     std::map<String, CommandHandler> commands;
     std::map<uint32_t, String> clientBuffers;  // Per-client command buffers (key = client ID)
+    std::map<uint32_t, bool> clientAuthenticated;
+    std::map<uint32_t, unsigned long> clientConnectTime;
     LogLevel currentLogLevel;
     std::vector<String> tagFilter;  // Empty = show all
-    bool authenticated = false;
     bool connectionInfoDisplayed = false;  // Track if we've shown connection info
     bool rebootPending = false;
     unsigned long rebootRequestedAt = 0;
@@ -96,6 +99,7 @@ public:
     }
 
     uint16_t getPort() const { return config.port; }
+    HAL::WiFiServer* getServer() const { return telnetServer; }
 
     LogLevel getLogLevel() const { return currentLogLevel; }
 
@@ -113,7 +117,7 @@ public:
             return true;
         }
 
-        for (auto& client : clients) {
+        for (auto& [cid, client] : clients) {
             if (client.connected()) {
                 client.println("\nRemoteConsole port changed - disconnecting...");
                 client.stop();
@@ -121,6 +125,8 @@ public:
         }
         clients.clear();
         clientBuffers.clear();
+        clientAuthenticated.clear();
+        clientConnectTime.clear();
         clients.shrink_to_fit();
 
         telnetServer->stop();
@@ -184,10 +190,10 @@ public:
             displayConnectionInfo();
         }
         
-        // Accept new clients
+        // Accept new clients (Task 28)
         if (telnetServer->hasClient()) {
             HAL::WiFiClient newClient = telnetServer->accept();
-            
+
             if (newClient) {
                 // Check max clients
                 if (clients.size() >= config.maxClients) {
@@ -197,32 +203,54 @@ public:
                     newClient.println("IP not allowed. Disconnecting.");
                     newClient.stop();
                 } else {
-                    clients.push_back(newClient);
-                    
-                    // Clear any initial buffer noise (telnet negotiation)
-                    uint32_t clientId = (uint32_t)newClient.remoteIP();
+                    uint32_t clientId = nextClientId++;
+                    clients.push_back({clientId, newClient});
+                    clientAuthenticated[clientId] = !config.requireAuth;
+                    clientConnectTime[clientId] = HAL::Platform::getMillis();
                     clientBuffers[clientId] = "";
 
-                    DLOG_I(LOG_CONSOLE, "Client connected: 0x%08X", clientId);
+                    DLOG_I(LOG_CONSOLE, "Client connected: #%u", clientId);
 
-                    sendWelcome(newClient);
+                    sendWelcome(clients.back().second);
                 }
             }
         }
-        
+
+        // Auth timeout pass — separate from handleClient to avoid processing partially-disconnected clients
+        if (config.requireAuth && config.authTimeoutMs > 0) {
+            unsigned long now = HAL::Platform::getMillis();
+            for (auto it = clients.begin(); it != clients.end(); ) {
+                uint32_t cid = it->first;
+                HAL::WiFiClient& client = it->second;
+                if (!clientAuthenticated[cid] && (now - clientConnectTime[cid]) >= config.authTimeoutMs) {
+                    client.println("Authentication timeout. Disconnecting.");
+                    client.stop();
+                    clientAuthenticated.erase(cid);
+                    clientConnectTime.erase(cid);
+                    clientBuffers.erase(cid);
+                    it = clients.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+
         // Handle existing clients
         bool erased = false;
         for (auto it = clients.begin(); it != clients.end(); ) {
-            if (!it->connected()) {
-                // Clean up client buffer
-                uint32_t clientId = it->remoteIP();
-                clientBuffers.erase(clientId);
+            uint32_t cid = it->first;
+            HAL::WiFiClient& client = it->second;
+            if (!client.connected()) {
+                // Clean up all client state (Task 29)
+                clientBuffers.erase(cid);
+                clientAuthenticated.erase(cid);
+                clientConnectTime.erase(cid);
 
-                DLOG_I(LOG_CONSOLE, "Client disconnected");
+                DLOG_I(LOG_CONSOLE, "Client disconnected: #%u", cid);
                 it = clients.erase(it);
                 erased = true;
             } else {
-                handleClient(*it);
+                handleClient(cid, client);
                 ++it;
             }
         }
@@ -232,12 +260,14 @@ public:
     ComponentStatus shutdown() override {
         if (telnetServer) {
             // Disconnect all clients
-            for (auto& client : clients) {
+            for (auto& [cid, client] : clients) {
                 client.println("\nRemoteConsole shutting down...");
                 client.stop();
             }
             clients.clear();
             clientBuffers.clear();
+            clientAuthenticated.clear();
+            clientConnectTime.clear();
             clients.shrink_to_fit();
 
             telnetServer->stop();
@@ -284,11 +314,11 @@ public:
             logBufferHead = (logBufferHead + 1) % config.bufferSize;
         }
         
-        // Send to connected clients
+        // Send to connected clients (only authenticated ones when auth required)
         if (!clients.empty()) {
             String formatted = formatLogEntry(entry);
-            for (auto& client : clients) {
-                if (client.connected()) {
+            for (auto& [cid, client] : clients) {
+                if (client.connected() && clientAuthenticated.count(cid) && clientAuthenticated[cid]) {
                     client.print(formatted);
                 }
             }
@@ -369,6 +399,7 @@ private:
             help += "  info              - System information\n";
             help += "  heap              - Memory usage\n";
             help += "  reboot            - Restart device\n";
+            help += "  auth <password>   - Authenticate (if auth required)\n";
             help += "  quit              - Disconnect\n";
             
             // Add custom commands
@@ -451,7 +482,7 @@ private:
         
         // Reboot command
         registerCommand("reboot", [this](const String& args) {
-            for (auto& client : clients) {
+            for (auto& [cid, client] : clients) {
                 client.println("Rebooting...");
             }
             rebootRequestedAt = HAL::Platform::getMillis();
@@ -479,42 +510,45 @@ private:
         client.println("\n========================================");
         client.println("  DomoticsCore Remote Console");
         client.println("========================================");
-        client.println("Type 'help' for available commands\n");
-        
-        // Show recent logs
-        auto recent = getRecentLogs(10);
-        if (!recent.empty()) {
-            client.println("Recent logs:");
-            for (const auto& entry : recent) {
-                client.print(formatLogEntry(entry));
+
+        if (config.requireAuth) {
+            client.println("Authentication required. Use: auth <password>\n");
+        } else {
+            client.println("Type 'help' for available commands\n");
+
+            // Show recent logs only if not requiring auth
+            auto recent = getRecentLogs(10);
+            if (!recent.empty()) {
+                client.println("Recent logs:");
+                for (const auto& entry : recent) {
+                    client.print(formatLogEntry(entry));
+                }
+                client.println();
             }
-            client.println();
         }
-        
+
         client.print("> ");  // Show initial prompt
     }
     
-    void handleClient(HAL::WiFiClient& client) {
-        uint32_t clientId = client.remoteIP();  // Use IP as unique ID
-        
+    void handleClient(uint32_t clientId, HAL::WiFiClient& client) {
         while (client.available()) {
             char c = client.read();
-            
+
             // Get or create command buffer for this client
             String& commandBuffer = clientBuffers[clientId];
-            
+
             // Handle newline (command complete)
             if (c == '\n' || c == '\r') {
                 // Skip if buffer is empty (just a newline from log output)
                 if (commandBuffer.isEmpty()) {
                     continue;
                 }
-                
+
                 String line = commandBuffer;
                 commandBuffer = "";  // Clear buffer
-                
+
                 line.trim();
-                
+
                 // Remove any non-printable characters (telnet negotiation)
                 String cleaned = "";
                 for (size_t i = 0; i < line.length(); i++) {
@@ -524,38 +558,68 @@ private:
                     }
                 }
                 line = cleaned;
-                
+
                 if (line.isEmpty()) continue;
-                
+
                 // Debug: log what we received
                 DLOG_D(LOG_CONSOLE, "Command received: '%s' (len=%d)", line.c_str(), line.length());
-                
+
                 // Skip if command contains non-alphanumeric at start (telnet noise)
                 if (line.length() > 0 && !isalnum(line.charAt(0)) && line.charAt(0) != ' ') {
                     DLOG_D(LOG_CONSOLE, "Skipping command with non-alphanumeric start: 0x%02X", line.charAt(0));
                     continue;
                 }
-                
+
                 // Parse command and args
                 int spacePos = line.indexOf(' ');
                 String cmd = spacePos > 0 ? line.substring(0, spacePos) : line;
                 String args = spacePos > 0 ? line.substring(spacePos + 1) : "";
-                
+
                 cmd.trim();
                 args.trim();
                 cmd.toLowerCase();
-                
+
+                // Handle auth command specially (needs client context)
+                if (cmd == "auth") {
+                    if (!config.requireAuth) {
+                        client.println("Authentication not required.");
+                    } else if (config.password == args) {
+                        clientAuthenticated[clientId] = true;
+                        client.println("Authentication successful!");
+                    } else {
+                        client.println("Authentication failed.");
+                    }
+                    client.print("> ");
+                    continue;
+                }
+
+                // Block commands if not authenticated (allow help + quit for discoverability)
+                if (config.requireAuth
+                    && (!clientAuthenticated.count(clientId) || !clientAuthenticated[clientId])
+                    && cmd != "help" && cmd != "quit") {
+                    client.println("Authentication required. Use: auth <password>");
+                    client.print("> ");
+                    continue;
+                }
+
+                // Block commands if allowCommands is false (except help, quit)
+                if (!config.allowCommands && cmd != "help" && cmd != "quit") {
+                    client.println("Commands are disabled.");
+                    client.print("> ");
+                    continue;
+                }
+
                 // Execute command
                 auto it = commands.find(cmd);
                 if (it != commands.end()) {
                     String result = it->second(args);
-                    
+
                     if (result == "QUIT") {
                         client.println("Goodbye!");
                         client.stop();
                         return;
                     }
-                    
+
                     if (!result.isEmpty()) {
                         client.print(result);
                     }

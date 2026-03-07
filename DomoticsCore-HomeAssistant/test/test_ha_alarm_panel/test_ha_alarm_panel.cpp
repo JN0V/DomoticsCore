@@ -105,7 +105,7 @@ void test_alarm_panel_discovery_payload() {
 // ============================================================================
 
 void test_alarm_panel_discovery_supported_features() {
-    auto buildFeatures = [](uint8_t mask) -> JsonDocument {
+    auto buildFeatures = [](AlarmFeature mask) -> JsonDocument {
         HAAlarmControlPanel panel("alarm", "Alarm", [](const String&, const String&) {});
         panel.supportedFeatures = mask;
         JsonDocument doc;
@@ -117,7 +117,7 @@ void test_alarm_panel_discovery_supported_features() {
 
     // Single flag
     {
-        JsonDocument doc = buildFeatures(static_cast<uint8_t>(AlarmFeature::ArmNight));
+        JsonDocument doc = buildFeatures(AlarmFeature::ArmNight);
         JsonArray f = doc["supported_features"].as<JsonArray>();
         TEST_ASSERT_EQUAL(1, f.size());
         TEST_ASSERT_EQUAL_STRING("arm_night", f[0].as<String>().c_str());
@@ -134,8 +134,8 @@ void test_alarm_panel_discovery_supported_features() {
 
     // All flags
     {
-        uint8_t all = AlarmFeature::ArmHome | AlarmFeature::ArmAway | AlarmFeature::ArmNight
-                    | AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass | AlarmFeature::Trigger;
+        AlarmFeature all = AlarmFeature::ArmHome | AlarmFeature::ArmAway | AlarmFeature::ArmNight
+                         | AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass | AlarmFeature::Trigger;
         JsonDocument doc = buildFeatures(all);
         JsonArray f = doc["supported_features"].as<JsonArray>();
         TEST_ASSERT_EQUAL(6, f.size());
@@ -272,7 +272,7 @@ void test_alarm_panel_handle_command_edge_cases() {
 void test_alarm_panel_state_publish() {
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     ha->addAlarmControlPanel("alarm", "Alarm Panel", [](const String&, const String&) {});
@@ -312,7 +312,7 @@ void test_alarm_panel_state_publish() {
 void test_alarm_panel_no_auto_publish() {
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     bool callbackCalled = false;
     auto ha = std::make_unique<HomeAssistantComponent>(config);
@@ -348,7 +348,7 @@ void test_alarm_panel_no_auto_publish() {
 void test_alarm_panel_add_method() {
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     bool callbackCalled = false;
     auto ha = std::make_unique<HomeAssistantComponent>(config);
@@ -395,7 +395,7 @@ void test_alarm_panel_add_method() {
 void test_alarm_panel_command_routing() {
     Core core;
     HAConfig config;
-    config.nodeId = "test_node";
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     String receivedCommand;
     auto ha = std::make_unique<HomeAssistantComponent>(config);
@@ -463,6 +463,28 @@ void test_alarm_panel_heap_stability() {
 }
 
 // ============================================================================
+// Test 14: AlarmFeature type safety (R25)
+// ============================================================================
+
+void test_alarm_feature_type_safety() {
+    // operator| returns AlarmFeature (not uint8_t)
+    AlarmFeature combined = AlarmFeature::ArmAway | AlarmFeature::ArmHome;
+    (void)combined; // Compiles = type is AlarmFeature
+
+    // operator& returns bool (usable in conditionals)
+    AlarmFeature features = AlarmFeature::ArmAway | AlarmFeature::ArmHome;
+    TEST_ASSERT_TRUE(features & AlarmFeature::ArmAway);
+    TEST_ASSERT_TRUE(features & AlarmFeature::ArmHome);
+    TEST_ASSERT_FALSE(features & AlarmFeature::ArmNight);
+
+    // operator|= works for compound assignment
+    AlarmFeature f = AlarmFeature::ArmAway;
+    f |= AlarmFeature::ArmHome;
+    TEST_ASSERT_TRUE(f & AlarmFeature::ArmHome);
+    TEST_ASSERT_TRUE(f & AlarmFeature::ArmAway);
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -485,6 +507,7 @@ int runAllTests() {
     RUN_TEST(test_alarm_panel_command_routing);
     RUN_TEST(test_alarm_panel_polymorphic_dispatch);
     RUN_TEST(test_alarm_panel_heap_stability);
+    RUN_TEST(test_alarm_feature_type_safety);
 
     return UNITY_END();
 }

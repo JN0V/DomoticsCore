@@ -22,6 +22,8 @@ void tearDown(void) {
         delete testCore;
         testCore = nullptr;
     }
+    // Clear static logger callbacks to prevent dangling pointers from deleted components
+    LoggerCallbacks::removeCallback(nullptr);
 }
 
 // ============================================================================
@@ -296,6 +298,176 @@ void test_remoteconsole_commands_disabled(void) {
 }
 
 // ============================================================================
+// Authentication Tests (R21)
+// ============================================================================
+
+void test_remoteconsole_auth_config_defaults(void) {
+    RemoteConsoleConfig config;
+
+    TEST_ASSERT_FALSE(config.requireAuth);
+    TEST_ASSERT_TRUE(config.password.isEmpty());
+    TEST_ASSERT_EQUAL_UINT32(10000, config.authTimeoutMs);
+    TEST_ASSERT_TRUE(config.allowCommands);
+}
+
+void test_remoteconsole_auth_config_custom(void) {
+    RemoteConsoleConfig config;
+    config.requireAuth = true;
+    config.password = "s3cret";
+    config.authTimeoutMs = 5000;
+    config.allowCommands = false;
+
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+
+    TEST_ASSERT_EQUAL(ComponentStatus::Success, consolePtr->getLastStatus());
+}
+
+void test_remoteconsole_auth_timeout_zero_means_no_timeout(void) {
+    RemoteConsoleConfig config;
+    config.requireAuth = true;
+    config.password = "pass";
+    config.authTimeoutMs = 0;
+
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+
+    // Run several loops — should not crash with timeout=0
+    for (int i = 0; i < 20; i++) {
+        testCore->loop();
+    }
+
+    TEST_ASSERT_EQUAL(ComponentStatus::Success, consolePtr->getLastStatus());
+}
+
+void test_remoteconsole_auth_require_with_password(void) {
+    RemoteConsoleConfig config;
+    config.requireAuth = true;
+    config.password = "mypass";
+
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+
+    // Component should start successfully even with auth enabled
+    TEST_ASSERT_EQUAL(ComponentStatus::Success, consolePtr->getLastStatus());
+
+    // Multiple loops should not crash
+    for (int i = 0; i < 10; i++) {
+        testCore->loop();
+    }
+}
+
+void test_remoteconsole_allow_commands_false_lifecycle(void) {
+    RemoteConsoleConfig config;
+    config.allowCommands = false;
+
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+
+    TEST_ASSERT_EQUAL(ComponentStatus::Success, consolePtr->getLastStatus());
+
+    // Full lifecycle with commands disabled
+    for (int i = 0; i < 10; i++) {
+        testCore->loop();
+    }
+    testCore->shutdown();
+}
+
+void test_remoteconsole_auth_protocol_flow(void) {
+    // Protocol-level test: verify auth blocks commands, correct password grants access
+    RemoteConsoleConfig config;
+    config.enabled = true;
+    config.requireAuth = true;
+    config.password = "s3cret";
+    config.authTimeoutMs = 0;  // No timeout for this test
+
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+
+    // Simulate a client connection — returns a handle sharing state with the accepted copy
+    HAL::WiFiClient clientHandle = consolePtr->getServer()->simulateClient(true, 42);
+
+    // First loop: accept the client, send welcome
+    testCore->loop();
+
+    // Verify welcome message mentions auth
+    std::string output = clientHandle.getWriteBufferAsString();
+    TEST_ASSERT_TRUE_MESSAGE(
+        output.find("Authentication required") != std::string::npos,
+        "Welcome should mention auth required");
+    clientHandle.clearWriteBuffer();
+
+    // Try a command before auth — should be blocked
+    clientHandle.simulateIncomingData("info\n");
+    testCore->loop();
+
+    output = clientHandle.getWriteBufferAsString();
+    TEST_ASSERT_TRUE_MESSAGE(
+        output.find("Authentication required") != std::string::npos,
+        "Command before auth should be blocked");
+    clientHandle.clearWriteBuffer();
+
+    // Wrong password
+    clientHandle.simulateIncomingData("auth wrongpass\n");
+    testCore->loop();
+
+    output = clientHandle.getWriteBufferAsString();
+    TEST_ASSERT_TRUE_MESSAGE(
+        output.find("Authentication failed") != std::string::npos,
+        "Wrong password should fail");
+    clientHandle.clearWriteBuffer();
+
+    // Correct password
+    clientHandle.simulateIncomingData("auth s3cret\n");
+    testCore->loop();
+
+    output = clientHandle.getWriteBufferAsString();
+    TEST_ASSERT_TRUE_MESSAGE(
+        output.find("Authentication successful") != std::string::npos,
+        "Correct password should succeed");
+    clientHandle.clearWriteBuffer();
+
+    // Now commands should work
+    clientHandle.simulateIncomingData("heap\n");
+    testCore->loop();
+
+    output = clientHandle.getWriteBufferAsString();
+    TEST_ASSERT_TRUE_MESSAGE(
+        output.find("Free Heap") != std::string::npos,
+        "Commands should work after auth");
+}
+
+void test_remoteconsole_auth_and_commands_disabled(void) {
+    RemoteConsoleConfig config;
+    config.requireAuth = true;
+    config.password = "secret";
+    config.allowCommands = false;
+
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+
+    TEST_ASSERT_EQUAL(ComponentStatus::Success, consolePtr->getLastStatus());
+
+    // Full lifecycle with both auth and commands disabled
+    for (int i = 0; i < 10; i++) {
+        testCore->loop();
+    }
+    testCore->shutdown();
+}
+
+// ============================================================================
 // Memory Leak Tests
 // ============================================================================
 
@@ -440,9 +612,10 @@ void test_remoteconsole_memory_stability_multi_connect(void) {
 
     tracker.checkpoint("after");
 
-    // Tolerance 1024: setPort() creates/deletes WiFiServer objects (new/delete)
-    // causing ~880 bytes of glibc allocator overhead on native platform.
-    MemoryTestResult result = tracker.assertStable("before", "after", 1024);
+    // Tolerance 2048: setPort() creates/deletes WiFiServer objects (new/delete)
+    // causing glibc allocator overhead on native platform. WiFiClient uses
+    // shared_ptr for state, increasing per-client allocation.
+    MemoryTestResult result = tracker.assertStable("before", "after", 2048);
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
 }
 
@@ -484,6 +657,15 @@ int main(int argc, char **argv) {
     RUN_TEST(test_remoteconsole_empty_password);
     RUN_TEST(test_remoteconsole_color_output_disabled);
     RUN_TEST(test_remoteconsole_commands_disabled);
+
+    // Authentication tests (R21)
+    RUN_TEST(test_remoteconsole_auth_config_defaults);
+    RUN_TEST(test_remoteconsole_auth_config_custom);
+    RUN_TEST(test_remoteconsole_auth_timeout_zero_means_no_timeout);
+    RUN_TEST(test_remoteconsole_auth_require_with_password);
+    RUN_TEST(test_remoteconsole_allow_commands_false_lifecycle);
+    RUN_TEST(test_remoteconsole_auth_and_commands_disabled);
+    RUN_TEST(test_remoteconsole_auth_protocol_flow);
 
     // Memory leak tests
     RUN_TEST(test_remoteconsole_log_buffer_no_memory_leak);

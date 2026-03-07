@@ -27,6 +27,28 @@ namespace DomoticsCore {
 namespace Components {
 namespace HomeAssistant {
 
+namespace HA {
+constexpr size_t MAX_NODE_ID         = 33;   // 32 chars + null (MQTT client ID limit)
+constexpr size_t MAX_DEVICE_NAME     = 65;   // 64 chars + null (HA device registry)
+constexpr size_t MAX_MANUFACTURER    = 33;   // 32 chars + null
+constexpr size_t MAX_MODEL           = 33;   // 32 chars + null
+constexpr size_t MAX_SW_VERSION      = 17;   // 16 chars + null (semver with pre-release)
+constexpr size_t MAX_DISCOVERY_PREFIX = 33;   // 32 chars + null
+constexpr size_t MAX_AVAIL_TOPIC     = 129;  // 128 chars + null (generated topic)
+constexpr size_t MAX_CONFIG_URL      = 129;  // 128 chars + null (http://IP:port)
+constexpr size_t MAX_SUGGESTED_AREA  = 33;   // 32 chars + null
+
+inline void setField(char* dest, const char* src, size_t maxLen) {
+    if (!src) { dest[0] = '\0'; return; }
+    size_t srcLen = strlen(src);
+    if (srcLen >= maxLen) {
+        DLOG_W("HA", "Field truncated: '%.*s...' (max %zu)", (int)(maxLen - 1), src, maxLen - 1);
+    }
+    strncpy(dest, src, maxLen - 1);
+    dest[maxLen - 1] = '\0';
+}
+} // namespace HA
+
 /**
  * @brief Event for entity added to Home Assistant
  */
@@ -40,18 +62,30 @@ struct HAEntityAddedEvent {
  */
 struct HAConfig {
     // Device identity (populated by System.h from SystemConfig)
-    String nodeId = "myDeviceId";                        // Unique device ID (derived from deviceName)
-    String deviceName = "My Device";             // Device display name (from SystemConfig.deviceName)
-    String manufacturer = "DomoticsCore";           // Manufacturer name (from SystemConfig.manufacturer)
-    String model = "MyDeviceModel";                         // Hardware model (from SystemConfig.model, auto-detected via ESP.getChipModel())
-    String swVersion = "1.0.0";                     // Firmware version (from SystemConfig.firmwareVersion)
-    
+    char nodeId[HA::MAX_NODE_ID];
+    char deviceName[HA::MAX_DEVICE_NAME];
+    char manufacturer[HA::MAX_MANUFACTURER];
+    char model[HA::MAX_MODEL];
+    char swVersion[HA::MAX_SW_VERSION];
+
     // Home Assistant specific settings
-    bool retainDiscovery = true;                    // Retain discovery messages
-    String discoveryPrefix = "homeassistant";       // MQTT discovery prefix
-    String availabilityTopic = "";                  // Auto-generated if empty
-    String configUrl = "";                          // Device configuration URL
-    String suggestedArea = "";                      // Suggested area in HA
+    bool retainDiscovery = true;
+    char discoveryPrefix[HA::MAX_DISCOVERY_PREFIX];
+    char availabilityTopic[HA::MAX_AVAIL_TOPIC];
+    char configUrl[HA::MAX_CONFIG_URL];
+    char suggestedArea[HA::MAX_SUGGESTED_AREA];
+
+    HAConfig() : retainDiscovery(true) {
+        HA::setField(nodeId, "myDeviceId", sizeof(nodeId));
+        HA::setField(deviceName, "My Device", sizeof(deviceName));
+        HA::setField(manufacturer, "DomoticsCore", sizeof(manufacturer));
+        HA::setField(model, "MyDeviceModel", sizeof(model));
+        HA::setField(swVersion, "1.0.0", sizeof(swVersion));
+        HA::setField(discoveryPrefix, "homeassistant", sizeof(discoveryPrefix));
+        availabilityTopic[0] = '\0';
+        configUrl[0] = '\0';
+        suggestedArea[0] = '\0';
+    }
 };
 
 /**
@@ -73,9 +107,13 @@ public:
         metadata.version = "1.6.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
-        if (this->config.availabilityTopic.isEmpty()) {
-            this->config.availabilityTopic = this->config.discoveryPrefix + "/" + 
-                                            this->config.nodeId + "/availability";
+        if (this->config.availabilityTopic[0] == '\0') {
+            int written = snprintf(this->config.availabilityTopic, HA::MAX_AVAIL_TOPIC,
+                                   "%s/%s/availability", this->config.discoveryPrefix, this->config.nodeId);
+            if (written >= (int)HA::MAX_AVAIL_TOPIC) {
+                DLOG_W("HA", "availabilityTopic truncated (%d chars, max %zu)",
+                       written, HA::MAX_AVAIL_TOPIC - 1);
+            }
         }
     }
     
@@ -84,8 +122,8 @@ public:
     // IComponent interface
     ComponentStatus begin() override {
         DLOG_I(LOG_HA, "Initializing Home Assistant integration");
-        DLOG_I(LOG_HA, "Node ID: %s", config.nodeId.c_str());
-        DLOG_I(LOG_HA, "Discovery prefix: %s", config.discoveryPrefix.c_str());
+        DLOG_I(LOG_HA, "Node ID: %s", config.nodeId);
+        DLOG_I(LOG_HA, "Discovery prefix: %s", config.discoveryPrefix);
         
         // Subscribe to MQTT events via EventBus
         on<bool>(DomoticsCore::MQTTEvents::EVENT_CONNECTED, [this](const bool&) {
@@ -251,7 +289,7 @@ public:
         const String& id, const String& name,
         const std::function<void(const String& command, const String& code)>& commandCallback,
         const String& icon = "mdi:shield-home",
-        uint8_t features = static_cast<uint8_t>(AlarmFeature::ArmAway),
+        AlarmFeature features = AlarmFeature::ArmAway,
         const String& code = "",
         bool codeArmRequired = false,
         bool codeDisarmRequired = false,
@@ -294,7 +332,7 @@ public:
         // Set guard before MQTT publish to prevent re-entrant callbacks
         publishing = true;
         char topic[HA_TOPIC_BUF_SIZE];
-        entity->getStateTopic(topic, sizeof(topic), config.nodeId.c_str(), config.discoveryPrefix.c_str());
+        entity->getStateTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
         DLOG_D(LOG_HA, "Publishing state: %s = %s", id.c_str(), state.c_str());
         mqttPublish(topic, state, 0, entity->retained);
         stats.stateUpdates++;
@@ -339,7 +377,7 @@ public:
         String payload;
         serializeJson(doc, payload);
         char topic[HA_TOPIC_BUF_SIZE];
-        entity->getStateTopic(topic, sizeof(topic), config.nodeId.c_str(), config.discoveryPrefix.c_str());
+        entity->getStateTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
         mqttPublish(topic, payload, 0, entity->retained);
         stats.stateUpdates++;
         publishing = false;
@@ -355,7 +393,7 @@ public:
         String payload;
         serializeJson(attributes, payload);
         char topic[HA_TOPIC_BUF_SIZE];
-        entity->getAttributesTopic(topic, sizeof(topic), config.nodeId.c_str(), config.discoveryPrefix.c_str());
+        entity->getAttributesTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
         mqttPublish(topic, payload, 0, true);
     }
     
@@ -367,10 +405,10 @@ public:
     void setAvailable(bool available) {
         String payload = available ? "online" : "offline";
         DLOG_I(LOG_HA, "Publishing availability:");
-        DLOG_I(LOG_HA, "  Topic: %s", config.availabilityTopic.c_str());
+        DLOG_I(LOG_HA, "  Topic: %s", config.availabilityTopic);
         DLOG_I(LOG_HA, "  Payload: %s", payload.c_str());
         
-        bool published = mqttPublish(config.availabilityTopic.c_str(), payload, 0, true);
+        bool published = mqttPublish(config.availabilityTopic, payload, 0, true);
         if (published) {
             DLOG_I(LOG_HA, "  ✓ Availability published");
             availabilityPublished = available;  // Fix: track availability state for isReady()
@@ -410,7 +448,7 @@ public:
         
         for (const auto& entity : entities) {
             char topic[HA_TOPIC_BUF_SIZE];
-            entity->getDiscoveryTopic(topic, sizeof(topic), config.nodeId.c_str(), config.discoveryPrefix.c_str());
+            entity->getDiscoveryTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
             mqttPublish(topic, "", 0, config.retainDiscovery);  // Empty payload removes entity
         }
     }
@@ -433,8 +471,13 @@ public:
     
     void setConfig(const HAConfig& cfg) {
         config = cfg;
-        if (config.availabilityTopic.isEmpty()) {
-            config.availabilityTopic = config.discoveryPrefix + "/" + config.nodeId + "/availability";
+        if (config.availabilityTopic[0] == '\0') {
+            int written = snprintf(config.availabilityTopic, HA::MAX_AVAIL_TOPIC,
+                                   "%s/%s/availability", config.discoveryPrefix, config.nodeId);
+            if (written >= (int)HA::MAX_AVAIL_TOPIC) {
+                DLOG_W("HA", "availabilityTopic truncated (%d chars, max %zu)",
+                       written, HA::MAX_AVAIL_TOPIC - 1);
+            }
         }
     }
     
@@ -444,12 +487,12 @@ public:
      */
     const HAConfig& getConfig() const { return config; }
     
-    void setDeviceInfo(const String& name, const String& model,
-                       const String& manufacturer, const String& swVersion) {
-        config.deviceName = name;
-        config.model = model;
-        config.manufacturer = manufacturer;
-        config.swVersion = swVersion;
+    void setDeviceInfo(const char* name, const char* model,
+                       const char* manufacturer, const char* swVersion) {
+        HA::setField(config.deviceName, name, sizeof(config.deviceName));
+        HA::setField(config.model, model, sizeof(config.model));
+        HA::setField(config.manufacturer, manufacturer, sizeof(config.manufacturer));
+        HA::setField(config.swVersion, swVersion, sizeof(config.swVersion));
     }
     
     // ========== Statistics ==========
@@ -516,19 +559,19 @@ private:
      */
     void buildDeviceInfo(JsonObject& device) {
         JsonArray identifiers = device["identifiers"].to<JsonArray>();
-        identifiers.add(config.nodeId);
-        
-        device["name"] = config.deviceName;
-        device["model"] = config.model;
-        device["manufacturer"] = config.manufacturer;
-        device["sw_version"] = config.swVersion;
-        
-        if (!config.configUrl.isEmpty()) {
-            device["configuration_url"] = config.configUrl;
+        identifiers.add((const char*)config.nodeId);
+
+        device["name"] = (const char*)config.deviceName;
+        device["model"] = (const char*)config.model;
+        device["manufacturer"] = (const char*)config.manufacturer;
+        device["sw_version"] = (const char*)config.swVersion;
+
+        if (config.configUrl[0] != '\0') {
+            device["configuration_url"] = (const char*)config.configUrl;
         }
-        
-        if (!config.suggestedArea.isEmpty()) {
-            device["suggested_area"] = config.suggestedArea;
+
+        if (config.suggestedArea[0] != '\0') {
+            device["suggested_area"] = (const char*)config.suggestedArea;
         }
     }
     
@@ -543,7 +586,7 @@ private:
         String payload;
         serializeJson(doc, payload);
         char topic[HA_TOPIC_BUF_SIZE];
-        entity->getDiscoveryTopic(topic, sizeof(topic), config.nodeId.c_str(), config.discoveryPrefix.c_str());
+        entity->getDiscoveryTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
 
         DLOG_I(LOG_HA, "Publishing discovery for '%s':", entity->id.c_str());
         DLOG_I(LOG_HA, "  Topic: %s", topic);
@@ -564,7 +607,7 @@ private:
     void subscribeToCommands() {
         // Subscribe to wildcard command topics for all entity types via EventBus
         snprintf(commandTopicFilter, sizeof(commandTopicFilter), "%s/+/%s/+/set",
-                 config.discoveryPrefix.c_str(), config.nodeId.c_str());
+                 config.discoveryPrefix, config.nodeId);
 
         using namespace DomoticsCore::Components;
         MQTTSubscribeEvent ev{};

@@ -109,11 +109,11 @@ struct MQTTConfig {
     uint32_t maxReconnectDelay = 30000;     ///< Maximum reconnection delay (ms)
     
     // Publishing
-    uint16_t maxQueueSize = 100;            ///< Max queued messages when offline @warning Not enforced at runtime
-    uint8_t publishRateLimit = 10;          ///< Max messages per second (0 = unlimited) @warning Not enforced at runtime
+    uint16_t maxQueueSize = 100;            ///< Max queued messages when offline (0 = unlimited). Tumbling window.
+    uint8_t publishRateLimit = 10;          ///< Max messages per second (0 = unlimited). Tumbling 1s window.
 
     // Subscriptions
-    uint8_t maxSubscriptions = 50;          ///< Maximum number of subscriptions @warning Not enforced at runtime
+    uint8_t maxSubscriptions = 50;          ///< Maximum number of subscriptions (0 = unlimited)
     bool resubscribeOnConnect = true;       ///< Re-subscribe after reconnection
     
     // Timeouts
@@ -420,7 +420,10 @@ private:
     void updateStatistics();
     String generateClientId();
     
-    // Static callback for PubSubClient
+    // Accepted deviation from Constitution XIII (no singleton abuse):
+    // PubSubClient's C-style callback (void(*)(char*, byte*, unsigned int)) does not support
+    // user-data pointers. Static instance is required for callback routing.
+    // Consider std::function wrapper if PubSubClient is ever replaced.
     static void mqttCallback(char* topic, byte* payload, unsigned int length);
     static MQTTComponent* instance;  // For static callback
 };

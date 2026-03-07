@@ -122,14 +122,17 @@ void setup() {
     
     // Configure Home Assistant (communicates with MQTT via EventBus)
     HAConfig haCfg;
-    haCfg.nodeId = "MyDeviceId";
-    haCfg.deviceName = "MyDeviceName";
-    haCfg.manufacturer = "MyManufacturer";
-    haCfg.model = "MyModel";
-    haCfg.swVersion = "1.0.0";
-    haCfg.discoveryPrefix = "homeassistant";
-    haCfg.configUrl = "http://" + HAL::WiFiHAL::getLocalIP();
-    haCfg.suggestedArea = "Office";
+    HA::setField(haCfg.nodeId, "MyDeviceId", HA::MAX_NODE_ID);
+    HA::setField(haCfg.deviceName, "MyDeviceName", HA::MAX_DEVICE_NAME);
+    HA::setField(haCfg.manufacturer, "MyManufacturer", HA::MAX_MANUFACTURER);
+    HA::setField(haCfg.model, "MyModel", HA::MAX_MODEL);
+    HA::setField(haCfg.swVersion, "1.0.0", HA::MAX_SW_VERSION);
+    HA::setField(haCfg.discoveryPrefix, "homeassistant", HA::MAX_DISCOVERY_PREFIX);
+    {
+        String configUrlStr = "http://" + HAL::WiFiHAL::getLocalIP();
+        HA::setField(haCfg.configUrl, configUrlStr.c_str(), HA::MAX_CONFIG_URL);
+    }
+    HA::setField(haCfg.suggestedArea, "Office", HA::MAX_SUGGESTED_AREA);
     
     auto ha = std::make_unique<HomeAssistantComponent>(haCfg);
     haPtr = ha.get();
@@ -207,7 +210,7 @@ void setup() {
     DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "System ready!");
     DLOG_I(LOG_APP, "MQTT Broker: %s:%d", MQTT_BROKER, MQTT_PORT);
-    DLOG_I(LOG_APP, "Node ID: %s", haCfg.nodeId.c_str());
+    DLOG_I(LOG_APP, "Node ID: %s", haCfg.nodeId);
     DLOG_I(LOG_APP, "Registered %d entities", haPtr->getStatistics().entityCount);
     DLOG_I(LOG_APP, "========================================");
 }
