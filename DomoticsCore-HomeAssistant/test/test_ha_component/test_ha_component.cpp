@@ -44,7 +44,7 @@ void test_ha_component_creation_default() {
 
     TEST_ASSERT_EQUAL_STRING("HomeAssistant", ha.metadata.name);
     TEST_ASSERT_EQUAL_STRING("DomoticsCore", ha.metadata.author);
-    TEST_ASSERT_EQUAL_STRING("1.6.0", ha.metadata.version);
+    TEST_ASSERT_EQUAL_STRING("1.6.1", ha.metadata.version);
 }
 
 void test_ha_component_creation_with_config() {
