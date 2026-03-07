@@ -129,7 +129,7 @@ class LEDComponent : public IComponent { ... };
 
 | Field | Value |
 |-------|-------|
-| `metadata.name` | `"LEDComponent"` (**Bug:** inconsistent with all other components which use short names like `"MQTT"`, `"Wifi"`, `"NTP"`. Should be `"LED"`. Until fixed in source, use `"LEDComponent"` for lookups.) |
+| `metadata.name` | `"LED"` |
 | `metadata.version` | `"1.3.0"` |
 | `metadata.author` | `"DomoticsCore"` |
 | `metadata.category` | `"Hardware"` |
@@ -292,7 +292,7 @@ The provider registers two contexts:
 
 #### `String getWebUIName() const`
 
-Returns `metadata.name` from the linked `LEDComponent` (currently `"LEDComponent"`, should be `"LED"` -- see metadata note above).
+Returns `metadata.name` from the linked `LEDComponent` (`"LED"`).
 
 #### `String getWebUIVersion() const`
 

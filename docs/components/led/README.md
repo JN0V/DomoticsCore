@@ -6,7 +6,7 @@
 
 DomoticsCore-LED is the hardware LED management component for the DomoticsCore IoT framework. It provides PWM-based brightness control, named LED management, and a built-in effects engine for both single-color and RGB LEDs on ESP32 and ESP8266 platforms.
 
-The component is header-only, registers as `"LEDComponent"` in the Core component registry (note: this name is inconsistent with other components that use short names like `"MQTT"`, `"LED"` would be expected -- see technical reference), and follows the standard `IComponent` lifecycle (`begin` / `loop` / `shutdown`).
+The component is header-only, registers as `"LED"` in the Core component registry, and follows the standard `IComponent` lifecycle (`begin` / `loop` / `shutdown`).
 
 ## Supported Effects
 
@@ -46,8 +46,7 @@ void setup() {
     core.begin(cfg);
 
     // Set a solid color
-    // NOTE: metadata.name is currently "LEDComponent" (should be "LED")
-    auto* ledComp = core.getComponent<LEDComponent>("LEDComponent");
+    auto* ledComp = core.getComponent<LEDComponent>("LED");
     if (ledComp) {
         ledComp->setLED("Status", LEDColor::White(), 128);
         ledComp->setLED("MainRGB", LEDColor::Blue(), 200);
@@ -70,8 +69,7 @@ Pair the component with `LEDWebUI` to expose a browser-based control panel:
 
 // After core.addComponent for both WebUIComponent and LEDComponent:
 auto* webui = core.getComponent<WebUIComponent>("WebUI");
-// NOTE: metadata.name is currently "LEDComponent" (should be "LED")
-auto* ledComp = core.getComponent<LEDComponent>("LEDComponent");
+auto* ledComp = core.getComponent<LEDComponent>("LED");
 if (webui && ledComp) {
     webui->registerProviderWithComponent(new LEDWebUI(ledComp), ledComp);
 }

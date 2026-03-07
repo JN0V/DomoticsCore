@@ -297,7 +297,7 @@ All optional components use `__has_include()` compile-time detection. If the cor
 
 | Component | Core Registration Name | Notes |
 |-----------|----------------------|-------|
-| LED | `"LEDComponent"` | Only if `enableLED` is true; early-initialized before Core |
+| LED | `"LED"` | Only if `enableLED` is true; early-initialized before Core |
 | Wifi | `"Wifi"` | Always registered; AP mode if SSID is empty |
 | RemoteConsole | `"RemoteConsole"` | Only if `enableConsole` is true |
 

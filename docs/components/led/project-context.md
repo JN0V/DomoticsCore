@@ -12,7 +12,7 @@ This document is intended for AI coding agents working on the DomoticsCore-LED c
 |-------|-------|
 | **Library name** | `DomoticsCore-LED` |
 | **Component class** | `DomoticsCore::Components::LEDComponent` |
-| **Registered name** | `"LEDComponent"` (set in `metadata.name`) -- **Bug:** inconsistent with all other components (should be `"LED"`) |
+| **Registered name** | `"LED"` (set in `metadata.name`) |
 | **Version** | `1.3.0` (must match in both `library.json` and `metadata.version`) |
 | **Category** | `Hardware` |
 | **Platforms** | `espressif32`, `espressif8266` |

@@ -71,7 +71,7 @@ void setup() {
 
     // Hook up LED WebUI provider
     auto* webui = core.getComponent<WebUIComponent>("WebUI");
-    auto* ledComp = core.getComponent<LEDComponent>("LEDComponent");
+    auto* ledComp = core.getComponent<LEDComponent>("LED");
     if (webui && ledComp) {
         // Create provider wrapper and register it with owning component for lifecycle awareness
         webui->registerProviderWithComponent(new LEDWebUI(ledComp), ledComp);
