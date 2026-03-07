@@ -2,7 +2,7 @@
 title: 'Core, LED & HomeAssistant Bug Fixes (M11, M12, M19)'
 slug: 'core-led-ha-bugfixes-m11-m12-m19'
 created: '2026-03-07'
-status: 'ready-for-dev'
+status: 'completed'
 stepsCompleted: [1, 2, 3, 4]
 tech_stack: ['C++17', 'PlatformIO', 'Arduino', 'ESP32', 'ESP8266', 'Unity test framework']
 files_to_modify:
@@ -114,7 +114,7 @@ Align all three APIs with their established patterns:
 
 #### Commit 1: `fix(core): add sticky parameter to Core::emit() (M11)`
 
-- [ ] Task 1: Add sticky parameter to Core::emit() template overload
+- [x] Task 1: Add sticky parameter to Core::emit() template overload
   - File: `DomoticsCore-Core/include/DomoticsCore/Core.h`
   - Action: Replace lines 162-165 with:
     ```cpp
@@ -126,7 +126,7 @@ Align all three APIs with their established patterns:
     ```
   - Notes: Same pattern as IComponent.h:222-226. Default `false` preserves all existing call sites.
 
-- [ ] Task 2: Add M11 tests to existing EventBus test file
+- [x] Task 2: Add M11 tests to existing EventBus test file
   - File: `DomoticsCore-Core/test/test_eventbus/test_eventbus.cpp`
   - Action: Add 2 test functions before the test runner section (~line 475), and register them with `RUN_TEST()`:
     - `test_core_emit_sticky_with_payload`: Create Core, emit with sticky=true, subscribe late with replayLast=true, verify payload received.
@@ -135,7 +135,7 @@ Align all three APIs with their established patterns:
 
 #### Commit 2: `fix(ha): use HAEntityAddedEvent struct in all addXxx() methods (M19, C21)`
 
-- [ ] Task 3: Fix addSensor() — replace raw String emit with HAEntityAddedEvent struct
+- [x] Task 3: Fix addSensor() — replace raw String emit with HAEntityAddedEvent struct
   - File: `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h`
   - Action: Replace `emit(DomoticsCore::HAEvents::EVENT_ENTITY_ADDED, id);` (line 153) with:
     ```cpp
@@ -148,7 +148,7 @@ Align all three APIs with their established patterns:
     ```
   - Notes: Fixes C21 — the struct was defined but never used. `snprintf` truncates safely if id exceeds 63 chars. Block scope avoids polluting the method namespace.
 
-- [ ] Task 4: Add emit to addBinarySensor() with HAEntityAddedEvent struct
+- [x] Task 4: Add emit to addBinarySensor() with HAEntityAddedEvent struct
   - File: `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h`
   - Action: Add after `DLOG_I(LOG_HA, "Added binary sensor: ...")`, before `if (mqttConnected)`:
     ```cpp
@@ -160,7 +160,7 @@ Align all three APIs with their established patterns:
     }
     ```
 
-- [ ] Task 5: Add emit to addSwitch() with HAEntityAddedEvent struct
+- [x] Task 5: Add emit to addSwitch() with HAEntityAddedEvent struct
   - File: `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h`
   - Action: Add after `DLOG_I(LOG_HA, "Added switch: ...")`, before `if (mqttConnected)`:
     ```cpp
@@ -172,7 +172,7 @@ Align all three APIs with their established patterns:
     }
     ```
 
-- [ ] Task 6: Add emit to addLight() with HAEntityAddedEvent struct
+- [x] Task 6: Add emit to addLight() with HAEntityAddedEvent struct
   - File: `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h`
   - Action: Add after `DLOG_I(LOG_HA, "Added light: ...")`, before `if (mqttConnected)`:
     ```cpp
@@ -184,7 +184,7 @@ Align all three APIs with their established patterns:
     }
     ```
 
-- [ ] Task 7: Add emit to addButton() with HAEntityAddedEvent struct
+- [x] Task 7: Add emit to addButton() with HAEntityAddedEvent struct
   - File: `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h`
   - Action: Add after `DLOG_I(LOG_HA, "Added button: ...")`, before `if (mqttConnected)`:
     ```cpp
@@ -196,7 +196,7 @@ Align all three APIs with their established patterns:
     }
     ```
 
-- [ ] Task 8: Add emit to addAlarmControlPanel() with HAEntityAddedEvent struct
+- [x] Task 8: Add emit to addAlarmControlPanel() with HAEntityAddedEvent struct
   - File: `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h`
   - Action: Add after `DLOG_I(LOG_HA, "Added alarm_control_panel: ...")`, before `if (mqttConnected)`:
     ```cpp
@@ -208,7 +208,7 @@ Align all three APIs with their established patterns:
     }
     ```
 
-- [ ] Task 9: Create test_ha_events.cpp with M19 entity_added event tests
+- [x] Task 9: Create test_ha_events.cpp with M19 entity_added event tests
   - File: `DomoticsCore-HomeAssistant/test/test_ha_events/test_ha_events.cpp` (NEW)
   - Action: Create test file with 6 tests, one per addXxx() method. Each test:
     1. Creates Core + HomeAssistantComponent (no `begin()` needed, no MQTT simulation)
@@ -221,23 +221,23 @@ Align all three APIs with their established patterns:
 
 #### Commit 3: `fix(led)!: change metadata.name from "LEDComponent" to "LED" (M12)`
 
-- [ ] Task 10: Fix LED metadata.name
+- [x] Task 10: Fix LED metadata.name
   - File: `DomoticsCore-LED/include/DomoticsCore/LED.h`
   - Action: Change line 94 from `metadata.name = "LEDComponent";` to `metadata.name = "LED";`
 
-- [ ] Task 11: Update LED example
+- [x] Task 11: Update LED example
   - File: `DomoticsCore-LED/examples/LEDWithWebUI/src/main.cpp`
   - Action: Change line 74 from `getComponent<LEDComponent>("LEDComponent")` to `getComponent<LEDComponent>("LED")`
 
-- [ ] Task 12: Update LED README
+- [x] Task 12: Update LED README
   - File: `docs/components/led/README.md`
   - Action: Replace all occurrences of `getComponent<LEDComponent>("LEDComponent")` with `getComponent<LEDComponent>("LED")`. Remove any bug notation comments about the name.
 
-- [ ] Task 13: Update System technical reference
+- [x] Task 13: Update System technical reference
   - File: `docs/components/system/technical-reference.md`
   - Action: Change `"LEDComponent"` to `"LED"` in the component registry table (~line 300).
 
-- [ ] Task 14: Create test_led_component.cpp with metadata name and lookup tests
+- [x] Task 14: Create test_led_component.cpp with metadata name and lookup tests
   - File: `DomoticsCore-LED/test/test_led_component/test_led_component.cpp` (NEW)
   - Action: Create test file with 2 tests:
     - `test_led_metadata_name_is_short`: Create LEDComponent, call getMetadata(), assert `metadata.name == "LED"`.
@@ -246,7 +246,7 @@ Align all three APIs with their established patterns:
 
 #### Commit 4: `chore(release): bump Core 1.5.2, HA 1.6.1, LED 1.4.0, Root 1.9.0`
 
-- [ ] Task 15: Run version bump scripts
+- [x] Task 15: Run version bump scripts
   - Action: Execute in order:
     ```bash
     python tools/bump_version.py Core patch
@@ -260,28 +260,28 @@ Align all three APIs with their established patterns:
 
 #### M11 — Core::emit() sticky parameter
 
-- [ ] AC-1: Given a Core instance, when `core.emit("topic", payload, true)` is called and a late subscriber subscribes with `replayLast=true`, then the subscriber receives the sticky payload.
-- [ ] AC-2: Given a Core instance, when `core.emit("topic", payload)` is called (default sticky=false) and a late subscriber subscribes with `replayLast=true`, then the subscriber receives nothing.
-- [ ] AC-3: Given existing code calling `core.emit("topic", payload)` or `core.emit("topic")`, when compiled, then no compilation errors occur (backward compatibility preserved).
+- [x] AC-1: Given a Core instance, when `core.emit("topic", payload, true)` is called and a late subscriber subscribes with `replayLast=true`, then the subscriber receives the sticky payload.
+- [x] AC-2: Given a Core instance, when `core.emit("topic", payload)` is called (default sticky=false) and a late subscriber subscribes with `replayLast=true`, then the subscriber receives nothing.
+- [x] AC-3: Given existing code calling `core.emit("topic", payload)` or `core.emit("topic")`, when compiled, then no compilation errors occur (backward compatibility preserved).
 
 #### M12 — LED metadata.name
 
-- [ ] AC-4: Given a LEDComponent instance, when `getMetadata()` is called, then `metadata.name` equals `"LED"`.
-- [ ] AC-5: Given a Core with LEDComponent registered, when `core.getComponent<LEDComponent>("LED")` is called, then the component is returned.
-- [ ] AC-6: Given the example `LEDWithWebUI/src/main.cpp`, when compiled, then it uses `getComponent<LEDComponent>("LED")` and compiles without errors.
+- [x] AC-4: Given a LEDComponent instance, when `getMetadata()` is called, then `metadata.name` equals `"LED"`.
+- [x] AC-5: Given a Core with LEDComponent registered, when `core.getComponent<LEDComponent>("LED")` is called, then the component is returned.
+- [x] AC-6: Given the example `LEDWithWebUI/src/main.cpp`, when compiled, then it uses `getComponent<LEDComponent>("LED")` and compiles without errors.
 
 #### M19 — ha/entity_added event emission (+ C21 struct fix)
 
-- [ ] AC-7: Given a HomeAssistantComponent, when `addSensor(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "sensor"`.
-- [ ] AC-8: Given a HomeAssistantComponent, when `addBinarySensor(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "binary_sensor"`.
-- [ ] AC-9: Given a HomeAssistantComponent, when `addSwitch(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "switch"`.
-- [ ] AC-10: Given a HomeAssistantComponent, when `addLight(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "light"`.
-- [ ] AC-11: Given a HomeAssistantComponent, when `addButton(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "button"`.
-- [ ] AC-12: Given a HomeAssistantComponent, when `addAlarmControlPanel(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "alarm_control_panel"`.
+- [x] AC-7: Given a HomeAssistantComponent, when `addSensor(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "sensor"`.
+- [x] AC-8: Given a HomeAssistantComponent, when `addBinarySensor(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "binary_sensor"`.
+- [x] AC-9: Given a HomeAssistantComponent, when `addSwitch(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "switch"`.
+- [x] AC-10: Given a HomeAssistantComponent, when `addLight(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "light"`.
+- [x] AC-11: Given a HomeAssistantComponent, when `addButton(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "button"`.
+- [x] AC-12: Given a HomeAssistantComponent, when `addAlarmControlPanel(id, ...)` is called, then `ha/entity_added` event is emitted with `HAEntityAddedEvent` payload where `ev.id == id` and `ev.component == "alarm_control_panel"`.
 
 #### Version bumps
 
-- [ ] AC-13: Given all fixes are committed, when `python tools/check_versions.py --verbose` is run, then it reports no inconsistencies. Final versions: Core 1.5.2, LED 1.4.0, HomeAssistant 1.6.1, Root 1.9.0.
+- [x] AC-13: Given all fixes are committed, when `python tools/check_versions.py --verbose` is run, then it reports no inconsistencies. Final versions: Core 1.5.2, LED 1.4.0, HomeAssistant 1.6.1, Root 1.9.0.
 
 ## Additional Context
 
@@ -322,3 +322,8 @@ Align all three APIs with their established patterns:
 - Party Mode consensus: clean break for M12 (no backward compat alias), Constitution IV (YAGNI). MINOR bump (not MAJOR) — `metadata.name` is an internal registration key, `!` conventional commit prefix signals the breaking change.
 - M19 fixes C21 (REVIEW-FINDINGS.md:47): `HAEntityAddedEvent` struct was defined at `HomeAssistant.h:33-36` but never used — `addSensor()` emitted a raw `String` via `reinterpret_cast`, risking dangling pointer on dispatch. All 6 `addXxx()` methods now use the struct with `snprintf` — fixed-size, zero-heap, safe for EventBus serialization.
 - M19 edge cases (duplicate entity IDs, no subscribers) are covered by existing EventBus tests — M19 tests focus solely on verifying the emit call is present in each `addXxx()` method.
+
+## Review Notes
+- Adversarial review completed
+- Findings: 8 total, 3 fixed (F3, F4, F5), 5 skipped (F1 intended behavior, F2 by design, F6/F7/F8 out of scope)
+- Resolution approach: auto-fix
