@@ -150,7 +150,12 @@ public:
         entities.push_back(std::move(sensor));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added sensor: %s", id.c_str());
-        emit(DomoticsCore::HAEvents::EVENT_ENTITY_ADDED, id);
+        {
+            HAEntityAddedEvent ev{};
+            snprintf(ev.id, sizeof(ev.id), "%s", id.c_str());
+            snprintf(ev.component, sizeof(ev.component), "sensor");
+            emit(DomoticsCore::HAEvents::EVENT_ENTITY_ADDED, ev);
+        }
         if (mqttConnected) {
             republishEntity(id);
         }
@@ -165,11 +170,17 @@ public:
         entities.push_back(std::move(sensor));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added binary sensor: %s", id.c_str());
+        {
+            HAEntityAddedEvent ev{};
+            snprintf(ev.id, sizeof(ev.id), "%s", id.c_str());
+            snprintf(ev.component, sizeof(ev.component), "binary_sensor");
+            emit(DomoticsCore::HAEvents::EVENT_ENTITY_ADDED, ev);
+        }
         if (mqttConnected) {
             republishEntity(id);
         }
     }
-    
+
     /**
      * @brief Add a switch entity
      */
@@ -182,11 +193,17 @@ public:
         entities.push_back(std::move(sw));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added switch: %s", id.c_str());
+        {
+            HAEntityAddedEvent ev{};
+            snprintf(ev.id, sizeof(ev.id), "%s", id.c_str());
+            snprintf(ev.component, sizeof(ev.component), "switch");
+            emit(DomoticsCore::HAEvents::EVENT_ENTITY_ADDED, ev);
+        }
         if (mqttConnected) {
             republishEntity(id);
         }
     }
-    
+
     /**
      * @brief Add a light entity
      */
@@ -196,11 +213,17 @@ public:
         entities.push_back(std::move(light));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added light: %s", id.c_str());
+        {
+            HAEntityAddedEvent ev{};
+            snprintf(ev.id, sizeof(ev.id), "%s", id.c_str());
+            snprintf(ev.component, sizeof(ev.component), "light");
+            emit(DomoticsCore::HAEvents::EVENT_ENTITY_ADDED, ev);
+        }
         if (mqttConnected) {
             republishEntity(id);
         }
     }
-    
+
     /**
      * @brief Add a button entity
      */
@@ -210,6 +233,12 @@ public:
         entities.push_back(std::move(button));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added button: %s", id.c_str());
+        {
+            HAEntityAddedEvent ev{};
+            snprintf(ev.id, sizeof(ev.id), "%s", id.c_str());
+            snprintf(ev.component, sizeof(ev.component), "button");
+            emit(DomoticsCore::HAEvents::EVENT_ENTITY_ADDED, ev);
+        }
         if (mqttConnected) {
             republishEntity(id);
         }
@@ -236,6 +265,12 @@ public:
         entities.push_back(std::move(panel));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added alarm_control_panel: %s", id.c_str());
+        {
+            HAEntityAddedEvent ev{};
+            snprintf(ev.id, sizeof(ev.id), "%s", id.c_str());
+            snprintf(ev.component, sizeof(ev.component), "alarm_control_panel");
+            emit(DomoticsCore::HAEvents::EVENT_ENTITY_ADDED, ev);
+        }
         if (mqttConnected) { republishEntity(id); }
     }
 
