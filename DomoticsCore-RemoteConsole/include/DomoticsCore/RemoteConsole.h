@@ -392,17 +392,20 @@ private:
         
         // Level command
         registerCommand("level", [this](const String& args) -> String {
+            char buf[128];
             if (args.isEmpty()) {
-                return "Current log level: " + String((int)currentLogLevel) + "\n";
+                snprintf(buf, sizeof(buf), "Current log level: %d\n", (int)currentLogLevel);
+                return String(buf);
             }
-            
+
             int level = args.toInt();
             if (level < 0 || level > 4) {
                 return String("Invalid level. Use 0-4 (NONE/ERROR/WARN/INFO/DEBUG)\n");
             }
-            
+
             setLogLevel((LogLevel)level);
-            return "Log level set to: " + String(level) + "\n";
+            snprintf(buf, sizeof(buf), "Log level set to: %d\n", level);
+            return String(buf);
         });
         
         // Filter command
@@ -411,27 +414,39 @@ private:
                 tagFilter.clear();
                 return String("Tag filter cleared (showing all)\n");
             }
-            
+
             tagFilter.clear();
             tagFilter.push_back(args);
-            return "Filtering logs by tag: " + args + "\n";
+            char buf[128];
+            snprintf(buf, sizeof(buf), "Filtering logs by tag: %s\n", args.c_str());
+            return String(buf);
         });
         
         // Info command
         registerCommand("info", [this](const String& args) {
-            String info = "\nSystem Information:\n";
-            info += "  Uptime: " + String(HAL::Platform::getMillis() / 1000) + "s\n";
-            info += "  Free Heap: " + String(HAL::getFreeHeap()) + " bytes\n";
-            info += "  Chip: " + HAL::getChipModel() + " Rev" + String(HAL::getChipRevision()) + "\n";
-            info += "  CPU Freq: " + String(HAL::getCpuFreqMHz()) + " MHz\n";
-            info += "  WiFi: " + HAL::WiFiHAL::getSSID() + " (" + HAL::WiFiHAL::getLocalIP() + ")\n";
-            info += "  RSSI: " + String(HAL::WiFiHAL::getRSSI()) + " dBm\n";
-            return info;
+            char buf[384];
+            snprintf(buf, sizeof(buf),
+                     "\nSystem Information:\n"
+                     "  Uptime: %lus\n"
+                     "  Free Heap: %lu bytes\n"
+                     "  Chip: %s Rev%d\n"
+                     "  CPU Freq: %lu MHz\n"
+                     "  WiFi: %s (%s)\n"
+                     "  RSSI: %d dBm\n",
+                     (unsigned long)(HAL::Platform::getMillis() / 1000),
+                     (unsigned long)HAL::getFreeHeap(),
+                     HAL::getChipModel().c_str(), HAL::getChipRevision(),
+                     (unsigned long)HAL::getCpuFreqMHz(),
+                     HAL::WiFiHAL::getSSID().c_str(), HAL::WiFiHAL::getLocalIP().c_str(),
+                     HAL::WiFiHAL::getRSSI());
+            return String(buf);
         });
         
         // Heap command
         registerCommand("heap", [this](const String& args) {
-            return "Free Heap: " + String(HAL::getFreeHeap()) + " bytes\n";
+            char buf[128];
+            snprintf(buf, sizeof(buf), "Free Heap: %lu bytes\n", (unsigned long)HAL::getFreeHeap());
+            return String(buf);
         });
         
         // Reboot command
@@ -546,7 +561,9 @@ private:
                     }
                     client.print("> ");  // Show prompt after command
                 } else {
-                    client.println("Unknown command: " + cmd + " (type 'help' for commands)");
+                    char buf[128];
+                    snprintf(buf, sizeof(buf), "Unknown command: %s (type 'help' for commands)", cmd.c_str());
+                    client.println(buf);
                     client.print("> ");  // Show prompt after error
                 }
             }
@@ -565,33 +582,48 @@ private:
         }
     }
     
+    static const char* getColorForLevel(LogLevel level) {
+        switch (level) {
+            case LOG_LEVEL_ERROR: return "\033[31m";
+            case LOG_LEVEL_WARN:  return "\033[33m";
+            case LOG_LEVEL_INFO:  return "\033[32m";
+            case LOG_LEVEL_DEBUG: return "\033[36m";
+            default:              return "";
+        }
+    }
+
     String formatLogEntry(const LogEntry& entry) {
-        String formatted;
-        
-        // Add color codes if enabled
-        if (config.colorOutput) {
-            switch (entry.level) {
-                case LOG_LEVEL_ERROR: formatted += "\033[31m"; break;  // Red
-                case LOG_LEVEL_WARN:  formatted += "\033[33m"; break;  // Yellow
-                case LOG_LEVEL_INFO:  formatted += "\033[32m"; break;  // Green
-                case LOG_LEVEL_DEBUG: formatted += "\033[36m"; break;  // Cyan
-                default: break;
+        // Header: color(5) + timestamp(12) + level(6) + tag brackets/space(5) = ~28 fixed
+        // Dynamic: tag + message — use stack buffer for typical case, fallback for long messages
+        size_t needed = 40 + entry.tag.length() + entry.message.length();
+        if (needed <= 256) {
+            char buf[256];
+            if (config.colorOutput) {
+                snprintf(buf, sizeof(buf), "%s[%lu][%s][%s] %s\033[0m\n",
+                         getColorForLevel(entry.level),
+                         (unsigned long)entry.timestamp,
+                         logLevelToString(entry.level).c_str(),
+                         entry.tag.c_str(), entry.message.c_str());
+            } else {
+                snprintf(buf, sizeof(buf), "[%lu][%s][%s] %s\n",
+                         (unsigned long)entry.timestamp,
+                         logLevelToString(entry.level).c_str(),
+                         entry.tag.c_str(), entry.message.c_str());
             }
+            return String(buf);
         }
-        
-        // Format: [timestamp][LEVEL][TAG] message
-        formatted += "[" + String(entry.timestamp) + "]";
-        formatted += "[" + logLevelToString(entry.level) + "]";
-        formatted += "[" + entry.tag + "] ";
+        // Fallback for long messages — single String concat
+        String formatted;
+        if (config.colorOutput) formatted += getColorForLevel(entry.level);
+        char hdr[32];
+        snprintf(hdr, sizeof(hdr), "[%lu][%s]", (unsigned long)entry.timestamp, logLevelToString(entry.level).c_str());
+        formatted += hdr;
+        formatted += "[";
+        formatted += entry.tag;
+        formatted += "] ";
         formatted += entry.message;
-        
-        // Reset color
-        if (config.colorOutput) {
-            formatted += "\033[0m";
-        }
-        
+        if (config.colorOutput) formatted += "\033[0m";
         formatted += "\n";
-        
         return formatted;
     }
     

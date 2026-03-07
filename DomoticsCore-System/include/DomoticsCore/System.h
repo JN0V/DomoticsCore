@@ -247,7 +247,9 @@ private:
             String apSSID = config.wifiAPSSID;
             if (apSSID.isEmpty()) {
                 uint64_t chipid = HAL::getChipId();
-                apSSID = config.deviceName + "-" + String((uint32_t)(chipid >> 32), HEX);
+                char apBuf[64];
+                snprintf(apBuf, sizeof(apBuf), "%s-%08X", config.deviceName.c_str(), (uint32_t)(chipid >> 32));
+                apSSID = apBuf;
             }
             wifi->enableAP(apSSID, config.wifiAPPassword);
             DLOG_I(LOG_SYSTEM, "✓ WiFi AP mode enabled: %s", apSSID.c_str());
@@ -525,12 +527,18 @@ private:
     // ========== Console Commands ==========
     
     String getSystemStatus() {
-        String status = "System Status:\n";
-        status += "  Device: " + config.deviceName + " v" + config.firmwareVersion + "\n";
-        status += "  Uptime: " + String(HAL::getMillis() / 1000) + "s\n";
-        status += "  Free Heap: " + String(HAL::getFreeHeap()) + " bytes\n";
-        status += "  State: " + String(systemStateToString(state)) + "\n";
-        return status;
+        char buf[256];
+        snprintf(buf, sizeof(buf),
+                 "System Status:\n"
+                 "  Device: %s v%s\n"
+                 "  Uptime: %lus\n"
+                 "  Free Heap: %lu bytes\n"
+                 "  State: %s\n",
+                 config.deviceName.c_str(), config.firmwareVersion.c_str(),
+                 (unsigned long)(HAL::getMillis() / 1000),
+                 (unsigned long)HAL::getFreeHeap(),
+                 systemStateToString(state));
+        return String(buf);
     }
     
     String getWiFiStatus() {
@@ -555,28 +563,44 @@ private:
         const auto& diag = sysInfo->getBootDiagnostics();
         if (!diag.valid) return "Boot Diagnostics: Not captured\n";
         
-        String result = "Boot Diagnostics:\n";
-        result += "  Boot Count: " + String(diag.bootCount) + "\n";
-        result += "  Reset Reason: " + diag.getResetReasonString() + "\n";
-        result += "  Boot Heap: " + String(diag.lastBootHeap) + " bytes\n";
-        result += "  Boot Min Heap: " + String(diag.lastBootMinHeap) + " bytes\n";
-        
+        char buf[512];
+        int pos = snprintf(buf, sizeof(buf),
+                 "Boot Diagnostics:\n"
+                 "  Boot Count: %lu\n"
+                 "  Reset Reason: %s\n"
+                 "  Boot Heap: %lu bytes\n"
+                 "  Boot Min Heap: %lu bytes\n",
+                 (unsigned long)diag.bootCount,
+                 diag.getResetReasonString().c_str(),
+                 (unsigned long)diag.lastBootHeap,
+                 (unsigned long)diag.lastBootMinHeap);
+        if (pos < 0) pos = 0;
+        if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
+
         if (diag.wasUnexpectedReset()) {
-            result += "  ⚠ WARNING: Previous boot ended unexpectedly!\n";
+            pos += snprintf(buf + pos, sizeof(buf) - pos,
+                            "  WARNING: Previous boot ended unexpectedly!\n");
+            if (pos < 0) pos = 0;
+            if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
         }
-        
+
         // Also show persisted history from Storage
 #if __has_include(<DomoticsCore/Storage.h>)
         auto* storage = core.getComponent<Components::StorageComponent>("Storage");
         if (storage) {
-            result += "\nPersisted Data:\n";
-            result += "  boot_count: " + String(storage->getInt("boot_count", 0)) + "\n";
-            result += "  last_reset: " + String(storage->getInt("last_reset", -1)) + "\n";
-            result += "  last_heap: " + String(storage->getInt("last_heap", 0)) + "\n";
-            result += "  last_minheap: " + String(storage->getInt("last_minheap", 0)) + "\n";
+            snprintf(buf + pos, sizeof(buf) - pos,
+                     "\nPersisted Data:\n"
+                     "  boot_count: %d\n"
+                     "  last_reset: %d\n"
+                     "  last_heap: %d\n"
+                     "  last_minheap: %d\n",
+                     storage->getInt("boot_count", 0),
+                     storage->getInt("last_reset", -1),
+                     storage->getInt("last_heap", 0),
+                     storage->getInt("last_minheap", 0));
         }
 #endif
-        return result;
+        return String(buf);
 #else
         return "Boot Diagnostics: SystemInfo not compiled in\n";
 #endif

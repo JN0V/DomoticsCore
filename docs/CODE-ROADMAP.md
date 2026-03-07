@@ -57,16 +57,12 @@ These items violate the constitution's highest-priority principle. IoT devices r
 - **Test**: Monitor `getMaxFreeBlockSize()` vs `getFreeHeap()` — fragmentation ratio should stay below 20%.
 - **Note**: This is a larger refactor — may require API changes. Consider for a minor version bump.
 
-### R7 — Multiple: String concatenation in logging hot paths
+### R7 — Multiple: String concatenation in logging hot paths — DONE
 
 - **Files**: `RemoteConsole.h`, `Storage.h`, `System.h`
 - **Problem**: Log formatting uses String concatenation in hot paths (e.g., `String msg = "[" + tag + "] " + message`). Each concatenation allocates a new String on the heap.
-- **Fix**: Use `snprintf()` with static thread-local buffers:
-  ```cpp
-  static char buf[200];
-  snprintf(buf, sizeof(buf), "[%s] %s", tag, message);
-  ```
-- **Test**: HeapTracker around 100 log operations — assert zero growth.
+- **Fix**: Replaced with `snprintf()` + stack-allocated `char[]` buffers across 13 locations (RemoteConsole: 7, System: 4, Storage: 2). `formatLogEntry` uses dynamic fallback for long messages. Chained snprintf calls clamp `pos` to prevent OOB.
+- **Status**: DONE — implemented in batch1-quickwins tech-spec.
 
 ---
 
@@ -88,11 +84,12 @@ These are functional bugs or inconsistencies found while reviewing documentation
 - **Fix**: Extend both methods to also scan and remove from `wildcardTopicSubscriptions`.
 - **Test**: Subscribe wildcard, unsubscribe by ID, publish — handler must NOT fire.
 
-### M11 — Core::emit() missing sticky parameter
+### M11 — Core::emit() missing sticky parameter — DONE
 
-- **File**: `DomoticsCore-Core/include/DomoticsCore/Core.h` (or `Core.cpp`)
-- **Problem**: `Core::emit()` does not have a `sticky` parameter, unlike `IComponent::emit()`. This means code using `core.emit()` directly cannot create sticky events.
-- **Fix**: Add `bool sticky = false` parameter to `Core::emit()` and forward to `eventBus.publishSticky()` when true. Or document the difference explicitly.
+- **File**: `DomoticsCore-Core/include/DomoticsCore/Core.h`
+- **Problem**: `Core::emit()` does not have a `sticky` parameter, unlike `IComponent::emit()`.
+- **Fix**: Sticky param added in commit `ab026e2` (batch R9/R17/R19/R22/R23/R25).
+- **Status**: DONE.
 
 ### M12 — LED metadata.name inconsistency
 
@@ -101,12 +98,12 @@ These are functional bugs or inconsistencies found while reviewing documentation
 - **Fix**: Change to `metadata.name = "LED"`.
 - **Impact**: Breaking change for anyone using `getComponent("LEDComponent")`. Requires minor version bump.
 
-### M15 — Storage: no change events
+### M15 — Storage: no change events — DONE
 
-- **File**: `DomoticsCore-Storage/include/DomoticsCore/Storage.h`
+- **File**: `DomoticsCore-Storage/include/DomoticsCore/Storage.h`, `StorageEvents.h`
 - **Problem**: Constitution XI requires storage changes to emit events, but only `storage/ready` is emitted. `putString()`, `putInt()`, `remove()`, `clear()` never emit change events.
-- **Fix**: Emit `storage/changed` event after successful write/remove/clear operations. Define a `StorageChangedEvent` struct with key + operation type.
-- **Note**: Design the event payload carefully — avoid emitting on every write in high-frequency scenarios.
+- **Fix**: Added `EVENT_CHANGED` constant + `StorageChangedEvent` POD struct (`char key[64]`). All 6 `put*` methods emit with type-safe dirty check (compare cache before writing). `remove()` emits with key, `clear()` emits with key="*". Fixed `putULong64` cache gap (added `UInt64` to enum + `uint64Value` field). 19 unit tests added.
+- **Status**: DONE — implemented in batch1-quickwins tech-spec.
 
 ### M16 — System: direct millis() call
 
@@ -114,11 +111,12 @@ These are functional bugs or inconsistencies found while reviewing documentation
 - **Problem**: `getSystemStatus()` calls `millis()` directly instead of `HAL::Platform::getMillis()`. Violates constitution IX (HAL isolation).
 - **Fix**: Replace `millis()` with `HAL::Platform::getMillis()`.
 
-### M19 — HomeAssistant: inconsistent `ha/entity_added` event emission
+### M19 — HomeAssistant: inconsistent `ha/entity_added` event emission — DONE
 
 - **File**: `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h`
-- **Problem**: Only `addSensor()` emits `ha/entity_added`. The 5 other registration methods (`addBinarySensor()`, `addSwitch()`, `addLight()`, `addButton()`, `addAlarmControlPanel()`) do not emit it.
-- **Fix**: Either add `emit<String>(HAEvents::EVENT_ENTITY_ADDED, id)` to all `addXxx()` methods for consistency, or remove it from `addSensor()` if the event is unused.
+- **Problem**: Only `addSensor()` emitted `ha/entity_added`. The 5 other registration methods did not.
+- **Fix**: All 6 `add*` methods now emit `HAEntityAddedEvent` via commit `ab026e2` (batch R9/R17/R19/R22/R23/R25).
+- **Status**: DONE.
 
 ---
 
@@ -262,8 +260,8 @@ Each of these is a decision point: **implement** the feature or **remove** the d
 
 | Priority | Items | Constitution | Status |
 |----------|-------|-------------|--------|
-| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5: DONE. R6-R7: TODO |
-| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | M16: DONE. Rest: TODO |
+| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5: DONE. R6: DONE. R7: DONE |
+| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | M11: DONE. M12: TODO. M15: DONE. M16: DONE. M19: DONE |
 | 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | R8: DONE. R9-R10: TODO |
 | 4. File Splits | R11-R13 | VII (800 lines) | TODO |
 | 5. Dead Code | R17-R23 | IV (YAGNI) | TODO |
@@ -433,8 +431,8 @@ Fragmentation impact: **NONE** beyond what already exists from `MQTTMessageEvent
 
 | Priority | Items | Constitution | Status |
 |----------|-------|-------------|--------|
-| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5: DONE. R6-R7: TODO |
-| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | M16: DONE. Rest: TODO |
+| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5: DONE. R6: DONE. R7: DONE |
+| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | M11: DONE. M12: TODO. M15: DONE. M16: DONE. M19: DONE |
 | 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | R8: DONE. R9-R10: TODO |
 | 4. File Splits | R11-R13 | VII (800 lines) | TODO |
 | 5. Dead Code | R17-R23 | IV (YAGNI) | TODO |

@@ -30,7 +30,8 @@ enum class StorageValueType {
     Integer,
     Float,
     Boolean,
-    Blob
+    Blob,
+    UInt64
 };
 
 // Storage entry structure
@@ -41,10 +42,11 @@ struct StorageEntry {
     int32_t intValue;
     float floatValue;
     bool boolValue;
+    uint64_t uint64Value;
     std::vector<uint8_t> blobValue;
     size_t size;
-    
-    StorageEntry() : type(StorageValueType::String), intValue(0), floatValue(0.0f), boolValue(false), size(0) {}
+
+    StorageEntry() : type(StorageValueType::String), intValue(0), floatValue(0.0f), boolValue(false), uint64Value(0), size(0) {}
 };
 
 // Storage configuration
@@ -179,6 +181,9 @@ public:
             return false;
         }
 
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::String && it->second.stringValue == value) return true;
+
         bool success = storage.putString(key.c_str(), value);
         if (success) {
             StorageEntry entry;
@@ -187,6 +192,10 @@ public:
             entry.stringValue = value;
             entry.size = value.length();
             cache[key] = entry;
+
+            StorageEvents::StorageChangedEvent ev{};
+            snprintf(ev.key, sizeof(ev.key), "%s", key.c_str());
+            emit(StorageEvents::EVENT_CHANGED, ev);
 
             DLOG_D(LOG_STORAGE, "Stored string '%s' = '%s' (%d bytes)", key.c_str(), value.c_str(), value.length());
             return true;
@@ -200,6 +209,9 @@ public:
             return false;
         }
 
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::Integer && it->second.intValue == value) return true;
+
         bool success = storage.putInt(key.c_str(), value);
         if (success) {
             StorageEntry entry;
@@ -208,6 +220,10 @@ public:
             entry.intValue = value;
             entry.size = sizeof(int32_t);
             cache[key] = entry;
+
+            StorageEvents::StorageChangedEvent ev{};
+            snprintf(ev.key, sizeof(ev.key), "%s", key.c_str());
+            emit(StorageEvents::EVENT_CHANGED, ev);
 
             DLOG_D(LOG_STORAGE, "Stored int '%s' = %d", key.c_str(), value);
             return true;
@@ -221,6 +237,9 @@ public:
             return false;
         }
 
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::Float && it->second.floatValue == value) return true;
+
         bool success = storage.putFloat(key.c_str(), value);
         if (success) {
             StorageEntry entry;
@@ -229,6 +248,10 @@ public:
             entry.floatValue = value;
             entry.size = sizeof(float);
             cache[key] = entry;
+
+            StorageEvents::StorageChangedEvent ev{};
+            snprintf(ev.key, sizeof(ev.key), "%s", key.c_str());
+            emit(StorageEvents::EVENT_CHANGED, ev);
 
             DLOG_D(LOG_STORAGE, "Stored float '%s' = %.2f", key.c_str(), value);
             return true;
@@ -242,6 +265,9 @@ public:
             return false;
         }
 
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::Boolean && it->second.boolValue == value) return true;
+
         bool success = storage.putBool(key.c_str(), value);
         if (success) {
             StorageEntry entry;
@@ -250,6 +276,10 @@ public:
             entry.boolValue = value;
             entry.size = sizeof(bool);
             cache[key] = entry;
+
+            StorageEvents::StorageChangedEvent ev{};
+            snprintf(ev.key, sizeof(ev.key), "%s", key.c_str());
+            emit(StorageEvents::EVENT_CHANGED, ev);
 
             DLOG_D(LOG_STORAGE, "Stored bool '%s' = %s", key.c_str(), value ? "true" : "false");
             return true;
@@ -263,8 +293,22 @@ public:
             return false;
         }
 
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::UInt64 && it->second.uint64Value == value) return true;
+
         bool success = storage.putULong64(key.c_str(), value);
         if (success) {
+            StorageEntry entry;
+            entry.key = key;
+            entry.type = StorageValueType::UInt64;
+            entry.uint64Value = value;
+            entry.size = sizeof(uint64_t);
+            cache[key] = entry;
+
+            StorageEvents::StorageChangedEvent ev{};
+            snprintf(ev.key, sizeof(ev.key), "%s", key.c_str());
+            emit(StorageEvents::EVENT_CHANGED, ev);
+
             DLOG_D(LOG_STORAGE, "Stored uint64 '%s' = %llu", key.c_str(), (unsigned long long)value);
             return true;
         }
@@ -285,7 +329,11 @@ public:
             entry.blobValue.assign(data, data + length);
             entry.size = length;
             cache[key] = entry;
-            
+
+            StorageEvents::StorageChangedEvent ev{};
+            snprintf(ev.key, sizeof(ev.key), "%s", key.c_str());
+            emit(StorageEvents::EVENT_CHANGED, ev);
+
             DLOG_D(LOG_STORAGE, "Stored blob '%s' (%zu bytes)", key.c_str(), length);
             return true;
         }
@@ -378,6 +426,11 @@ public:
         bool success = storage.remove(key.c_str());
         if (success) {
             cache.erase(key);
+
+            StorageEvents::StorageChangedEvent ev{};
+            snprintf(ev.key, sizeof(ev.key), "%s", key.c_str());
+            emit(StorageEvents::EVENT_CHANGED, ev);
+
             DLOG_I(LOG_STORAGE, "Removed key: %s", key.c_str());
         } else {
             DLOG_E(LOG_STORAGE, "Failed to remove key: %s", key.c_str());
@@ -394,6 +447,11 @@ public:
         bool success = storage.clear();
         if (success) {
             cache.clear();
+
+            StorageEvents::StorageChangedEvent ev{};
+            snprintf(ev.key, sizeof(ev.key), "*");
+            emit(StorageEvents::EVENT_CHANGED, ev);
+
             DLOG_I(LOG_STORAGE, "Cleared all entries");
         } else {
             DLOG_E(LOG_STORAGE, "Failed to clear");
@@ -419,16 +477,25 @@ public:
     }
     
     String getStorageInfo() {
-        String info = "Storage: HAL PlatformStorage";
-        info += "\nNamespace: " + storageConfig.namespace_name;
-        info += "\nOpen: " + String(isOpen ? "Yes" : "No");
-        info += "\nRead-only: " + String(storageConfig.readOnly ? "Yes" : "No");
+        char buf[256];
+        int pos = snprintf(buf, sizeof(buf),
+                 "Storage: HAL PlatformStorage\n"
+                 "Namespace: %s\n"
+                 "Open: %s\n"
+                 "Read-only: %s",
+                 storageConfig.namespace_name.c_str(),
+                 isOpen ? "Yes" : "No",
+                 storageConfig.readOnly ? "Yes" : "No");
+        if (pos < 0) pos = 0;
+        if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
         if (isOpen) {
             size_t storedCount = getStoredKeyCount();
-            info += "\nRegistered keys: " + String(registeredKeys.size());
-            info += "\nStored values: " + String(storedCount);
+            snprintf(buf + pos, sizeof(buf) - pos,
+                     "\nRegistered keys: %lu\nStored values: %lu",
+                     (unsigned long)registeredKeys.size(),
+                     (unsigned long)storedCount);
         }
-        return info;
+        return String(buf);
     }
     
     std::vector<String> getKeys() {
@@ -474,50 +541,49 @@ public:
      */
     String dumpContents() {
         if (!isOpen) return "Storage: Not open\n";
-        
-        String result = "Storage Contents (namespace: " + storageConfig.namespace_name + "):\n";
+
+        char headerBuf[128];
+        snprintf(headerBuf, sizeof(headerBuf), "Storage Contents (namespace: %s):\n", storageConfig.namespace_name.c_str());
+        String result = headerBuf;
         result += "──────────────────────────────────────\n";
-        
+
         if (registeredKeys.empty()) {
             result += "  (no keys registered)\n";
         } else {
             int found = 0;
+            char entryBuf[256];
             for (const auto& kd : registeredKeys) {
                 if (exists(kd.key)) {
                     found++;
-                    result += "  ";
-                    result += kd.key;
-                    result += " = ";
-                    
                     if (kd.type == 'b') {
-                        result += getBool(kd.key, false) ? "true" : "false";
+                        snprintf(entryBuf, sizeof(entryBuf), "  %s = %s\n", kd.key.c_str(), getBool(kd.key, false) ? "true" : "false");
                     } else if (kd.type == 'i') {
-                        result += String(getInt(kd.key, 0));
+                        snprintf(entryBuf, sizeof(entryBuf), "  %s = %d\n", kd.key.c_str(), getInt(kd.key, 0));
                     } else if (kd.type == 'f') {
-                        result += String(getFloat(kd.key, 0.0f), 2);
+                        snprintf(entryBuf, sizeof(entryBuf), "  %s = %.2f\n", kd.key.c_str(), getFloat(kd.key, 0.0f));
                     } else if (kd.type == 'u') {
-                        result += String((unsigned long)getULong64(kd.key, 0));
+                        snprintf(entryBuf, sizeof(entryBuf), "  %s = %llu\n", kd.key.c_str(), (unsigned long long)getULong64(kd.key, 0));
                     } else {
                         String val = getString(kd.key, "");
-                        // Mask passwords
                         if (kd.key.indexOf("pass") >= 0 && val.length() > 0) {
-                            result += "****";
+                            snprintf(entryBuf, sizeof(entryBuf), "  %s = ****\n", kd.key.c_str());
                         } else {
-                            result += "\"" + val + "\"";
+                            snprintf(entryBuf, sizeof(entryBuf), "  %s = \"%s\"\n", kd.key.c_str(), val.c_str());
                         }
                     }
-                    result += "\n";
+                    result += entryBuf;
                 }
             }
-            
+
             if (found == 0) {
                 result += "  (no stored values found)\n";
             }
-            
+
             result += "──────────────────────────────────────\n";
-            result += "Registered: " + String(registeredKeys.size()) + " keys, Found: " + String(found) + " stored\n";
+            snprintf(entryBuf, sizeof(entryBuf), "Registered: %lu keys, Found: %d stored\n", (unsigned long)registeredKeys.size(), found);
+            result += entryBuf;
         }
-        
+
         return result;
     }
 
