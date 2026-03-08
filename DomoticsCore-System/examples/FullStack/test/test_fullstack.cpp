@@ -95,27 +95,23 @@ void test_home_assistant_entity_creation() {
     
     // Configuration HA
     HomeAssistant::HAConfig haCfg;
-    haCfg.nodeId = "test-device";
-    haCfg.deviceName = "Test Device";
-    
-    auto haComp = new HomeAssistant::HomeAssistantComponent(mqttComp, haCfg);
-    
+    snprintf(haCfg.nodeId, sizeof(haCfg.nodeId), "%s", "test-device");
+    snprintf(haCfg.deviceName, sizeof(haCfg.deviceName), "%s", "Test Device");
+
+    auto haComp = new HomeAssistant::HomeAssistantComponent(haCfg);
+
     // Créer les entités comme dans l'exemple
     haComp->addSensor("temperature", "Temperature", "°C", "temperature", "mdi:thermometer");
     haComp->addSensor("uptime", "Uptime", "s", "", "mdi:clock-outline");
     haComp->addSensor("free_heap", "Free Heap", "bytes", "", "mdi:memory");
     haComp->addSensor("wifi_signal", "WiFi Signal", "dBm", "signal_strength", "mdi:wifi");
-    haComp->addSwitch("relay", "Cooling Relay", [](bool state) {
-        // Callback vide pour le test
-    }, "mdi:fan");
-    haComp->addButton("restart", "Restart Device", []() {
-        // Callback vide pour le test
-    }, "mdi:restart");
-    
+    haComp->addSwitch("relay", "Cooling Relay", "mdi:fan");
+    haComp->addButton("restart", "Restart Device", "mdi:restart");
+
     // Vérifier que toutes les entités ont été créées
     TEST_ASSERT_EQUAL_MESSAGE(6, haComp->getStatistics().entityCount,
                              "Should have 6 entities (4 sensors + 1 switch + 1 button)");
-    
+
     // Nettoyage
     delete haComp;
     delete mqttComp;

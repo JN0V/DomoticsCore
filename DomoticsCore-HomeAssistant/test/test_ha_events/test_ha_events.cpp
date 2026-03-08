@@ -77,7 +77,7 @@ void test_add_switch_emits_entity_added(void) {
         }
     }, nullptr);
 
-    core.getComponent<HomeAssistantComponent>("HomeAssistant")->addSwitch("relay_1", "Relay", [](bool){});
+    core.getComponent<HomeAssistantComponent>("HomeAssistant")->addSwitch("relay_1", "Relay");
     core.getEventBus().poll();
 
     TEST_ASSERT_TRUE(fired);
@@ -100,7 +100,7 @@ void test_add_light_emits_entity_added(void) {
         }
     }, nullptr);
 
-    core.getComponent<HomeAssistantComponent>("HomeAssistant")->addLight("led_strip", "LED Strip", [](bool, uint8_t){});
+    core.getComponent<HomeAssistantComponent>("HomeAssistant")->addLight("led_strip", "LED Strip");
     core.getEventBus().poll();
 
     TEST_ASSERT_TRUE(fired);
@@ -123,7 +123,7 @@ void test_add_button_emits_entity_added(void) {
         }
     }, nullptr);
 
-    core.getComponent<HomeAssistantComponent>("HomeAssistant")->addButton("restart_btn", "Restart", [](){});
+    core.getComponent<HomeAssistantComponent>("HomeAssistant")->addButton("restart_btn", "Restart");
     core.getEventBus().poll();
 
     TEST_ASSERT_TRUE(fired);
@@ -147,7 +147,7 @@ void test_add_alarm_control_panel_emits_entity_added(void) {
     }, nullptr);
 
     core.getComponent<HomeAssistantComponent>("HomeAssistant")->addAlarmControlPanel(
-        "alarm_1", "Home Alarm", [](const String&, const String&){});
+        "alarm_1", "Home Alarm");
     core.getEventBus().poll();
 
     TEST_ASSERT_TRUE(fired);

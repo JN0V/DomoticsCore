@@ -72,9 +72,8 @@ namespace AlarmPanelCommand {
 class HAAlarmControlPanel : public HAEntity {
 public:
     HAAlarmControlPanel(const String& id, const String& name,
-                        const std::function<void(const String&, const String&)>& onCommand,
                         const String& icon = "mdi:shield-home")
-        : HAEntity(id, name, "alarm_control_panel"), commandCallback(onCommand) {
+        : HAEntity(id, name, "alarm_control_panel") {
         this->icon = icon;
     }
 
@@ -83,7 +82,8 @@ public:
     bool codeArmRequired = false;
     bool codeDisarmRequired = false;
     bool codeTriggerRequired = false;
-    std::function<void(const String&, const String&)> commandCallback;
+    char lastCommand[64] = {};  // Parsed command from last handleCommand (e.g., "ARM_AWAY")
+    char lastCode[32] = {};     // Parsed code from last handleCommand (e.g., "1234")
 
     void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
                               const String& discoveryPrefix,
@@ -131,11 +131,14 @@ public:
     /**
      * @brief Handle command from Home Assistant
      *
-     * Parses "COMMAND" or "COMMAND CODE" format and calls commandCallback.
-     * Consumer callback handles all validation.
+     * Parses "COMMAND" or "COMMAND CODE" format and stores in lastCommand/lastCode.
+     * @param payload Raw MQTT payload
+     * @return true (alarm commands are always valid — parsing always succeeds)
      */
-    void handleCommand(const String& payload) override {
-        if (!commandCallback) return;
+    bool handleCommand(const String& payload) override {
+        // Zero-initialize to prevent stale data leakage
+        memset(lastCommand, 0, sizeof(lastCommand));
+        memset(lastCode, 0, sizeof(lastCode));
 
         // Trim boundaries without copying the full payload
         int start = 0;
@@ -146,7 +149,7 @@ public:
 
         if (start >= end) {
             DLOG_W(LOG_HA, "Empty alarm command payload");
-            return;
+            return true;
         }
 
         int spaceIdx = payload.indexOf(' ', start);
@@ -163,7 +166,9 @@ public:
             if (codeStart < end) codeValue = payload.substring(codeStart, end);
         }
 
-        commandCallback(command, codeValue);
+        strncpy(lastCommand, command.c_str(), sizeof(lastCommand) - 1);
+        strncpy(lastCode, codeValue.c_str(), sizeof(lastCode) - 1);
+        return true;
     }
 };
 

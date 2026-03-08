@@ -13,13 +13,13 @@ namespace HomeAssistant {
  */
 class HALight : public HAEntity {
 public:
-    HALight(const String& id, const String& name,
-            std::function<void(bool, uint8_t)> commandCallback = nullptr)
-        : HAEntity(id, name, "light"), commandCallback(commandCallback) {}
-    
+    HALight(const String& id, const String& name)
+        : HAEntity(id, name, "light") {}
+
     bool supportsBrightness = true;
     bool optimistic = false;
-    std::function<void(bool, uint8_t)> commandCallback;  // state, brightness
+    bool state = false;        // Current light state (updated by handleCommand)
+    uint8_t brightness = 0;    // Current brightness (updated by handleCommand)
     
     void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
                               const String& discoveryPrefix,
@@ -54,28 +54,31 @@ public:
     
     /**
      * @brief Handle command from Home Assistant
-     * @param payload JSON command payload
+     * @param payload JSON command payload or simple ON/OFF
+     * @return true if command was valid and processed, false for invalid/garbage payloads
      */
-    void handleCommand(const String& payload) override {
-        if (!commandCallback) return;
-        
+    bool handleCommand(const String& payload) override {
         // Parse JSON command
         JsonDocument cmdDoc;
         DeserializationError error = deserializeJson(cmdDoc, payload);
-        
+
         if (error) {
             // Try simple ON/OFF
-            bool state = (payload == "ON");
-            commandCallback(state, state ? 255 : 0);
-            return;
+            if (payload == "ON" || payload == "OFF") {
+                state = (payload == "ON");
+                brightness = state ? 255 : 0;
+                return true;
+            }
+            // Invalid payload (not JSON, not ON/OFF)
+            DLOG_W(LOG_HA, "Invalid light command payload: %s", payload.c_str());
+            return false;
         }
-        
-        // Extract state and brightness
-        String state = cmdDoc["state"] | String("ON");
-        uint8_t brightness = cmdDoc["brightness"] | 255;
-        
-        bool isOn = (state == "ON");
-        commandCallback(isOn, brightness);
+
+        // Extract state and brightness from JSON
+        String stateStr = cmdDoc["state"] | String("ON");
+        brightness = cmdDoc["brightness"] | 255;
+        state = (stateStr == "ON");
+        return true;
     }
 };
 

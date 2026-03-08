@@ -263,10 +263,10 @@ Each of these is a decision point: **implement** the feature or **remove** the d
 | 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5: DONE. R6: DONE — char[] migration. R7: DONE |
 | 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | M11: DONE. M12: DONE — metadata.name = "LED". M15: DONE. M16: DONE. M19: DONE |
 | 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | R8: DONE. R9: DONE — non-blocking reboot. R10: DONE — dead WebUI block removed |
-| 4. File Splits | R11-R13 | VII (800 lines) | TODO |
+| 4. File Splits | R11-R13 | VII (800 lines) | N/A — files already compliant (excluding blanks/comments: WebUI.h=767, StreamingContextSerializer.h=745, Wifi.h=671) |
 | 5. Dead Code | R17-R23 | IV (YAGNI) | R17: DONE. R18: DONE — limits enforced. R19: DONE. R20: DONE — wired to OTAConfig. R21: DONE — auth implemented. R22: DONE. R23: DONE |
 | 6. Anti-Patterns | R14-R16 | XIII | DONE — documented as accepted exceptions |
-| 7. Progressive Refactoring | R24-R25 | VIII, XIII | R24 partial (override added). R25: DONE — enum class with type-safe operators |
+| 7. Progressive Refactoring | R24-R25 | VIII, XIII | R24: DONE — virtual dispatch replaces static_cast routing. R25: DONE — enum class with type-safe operators |
 
 ---
 
@@ -434,11 +434,11 @@ Fragmentation impact: **NONE** beyond what already exists from `MQTTMessageEvent
 | 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5: DONE. R6: DONE — char[] migration. R7: DONE |
 | 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | M11: DONE. M12: DONE — metadata.name = "LED". M15: DONE. M16: DONE. M19: DONE |
 | 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | R8: DONE. R9: DONE — non-blocking reboot. R10: DONE — dead WebUI block removed |
-| 4. File Splits | R11-R13 | VII (800 lines) | TODO |
+| 4. File Splits | R11-R13 | VII (800 lines) | N/A — files already compliant (excluding blanks/comments: WebUI.h=767, StreamingContextSerializer.h=745, Wifi.h=671) |
 | 5. Dead Code | R17-R23 | IV (YAGNI) | R17: DONE. R18: DONE — limits enforced. R19: DONE. R20: DONE — wired to OTAConfig. R21: DONE — auth implemented. R22: DONE. R23: DONE |
 | 6. Anti-Patterns | R14-R16 | XIII | DONE — documented as accepted exceptions |
-| 7. Progressive Refactoring | R24-R25 | VIII, XIII | R24 partial (override added). R25: DONE — enum class with type-safe operators |
-| 8. EventBus Commands | R26 | VI (EventBus Architecture) | TODO — Impact analysis: LOW RISK |
+| 7. Progressive Refactoring | R24-R25 | VIII, XIII | R24: DONE — virtual dispatch replaces static_cast routing. R25: DONE — enum class with type-safe operators |
+| 8. EventBus Commands | R26 | VI (EventBus Architecture) | DONE — ha/command EventBus event, callbacks removed (v2.0.0 breaking change) |
 
 ---
 

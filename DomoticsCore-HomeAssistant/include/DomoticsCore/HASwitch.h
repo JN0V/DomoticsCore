@@ -14,17 +14,16 @@ namespace HomeAssistant {
 class HASwitch : public HAEntity {
 public:
     HASwitch(const String& id, const String& name,
-             std::function<void(bool)> commandCallback = nullptr,
              const String& icon = "")
-        : HAEntity(id, name, "switch"), commandCallback(commandCallback) {
+        : HAEntity(id, name, "switch") {
         this->icon = icon;
     }
-    
+
     String payloadOn = "ON";
     String payloadOff = "OFF";
     bool optimistic = false;    // If true, HA assumes state changes immediately
-    bool autoPublishState = true;  // If true, handleCommand() auto-publishes state back to HA
-    std::function<void(bool)> commandCallback;
+    bool autoPublishState = true;  // If true, auto-publishes state back to HA after command
+    bool state = false;  // Current switch state (updated by handleCommand)
     
     void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
                               const String& discoveryPrefix,
@@ -50,12 +49,11 @@ public:
     /**
      * @brief Handle command from Home Assistant
      * @param payload Command payload (ON/OFF)
+     * @return true (switch commands are always valid)
      */
-    void handleCommand(const String& payload) override {
-        if (commandCallback) {
-            bool state = (payload == payloadOn);
-            commandCallback(state);
-        }
+    bool handleCommand(const String& payload) override {
+        state = (payload == payloadOn);
+        return true;
     }
 };
 

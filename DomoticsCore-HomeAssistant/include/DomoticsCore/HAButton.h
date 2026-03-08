@@ -14,14 +14,12 @@ namespace HomeAssistant {
 class HAButton : public HAEntity {
 public:
     HAButton(const String& id, const String& name,
-             std::function<void()> pressCallback = nullptr,
              const String& icon = "")
-        : HAEntity(id, name, "button"), pressCallback(pressCallback) {
+        : HAEntity(id, name, "button") {
         this->icon = icon;
     }
-    
+
     String payloadPress = "PRESS";
-    std::function<void()> pressCallback;
     
     void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
                               const String& discoveryPrefix,
@@ -58,11 +56,14 @@ public:
     /**
      * @brief Handle button press from Home Assistant
      * @param payload Command payload
+     * @return true if payload matches payloadPress, false otherwise
      */
-    void handleCommand(const String& payload) override {
-        if (pressCallback && payload == payloadPress) {
-            pressCallback();
+    bool handleCommand(const String& payload) override {
+        if (payload == payloadPress) {
+            DLOG_D(LOG_HA, "Button pressed: %s", id.c_str());
+            return true;
         }
+        return false;
     }
 };
 

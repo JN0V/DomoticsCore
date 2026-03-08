@@ -20,6 +20,7 @@
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/MQTT.h>
 #include <DomoticsCore/HomeAssistant.h>
+#include <DomoticsCore/HAEvents.h>
 #include <DomoticsCore/HomeAssistantWebUI.h>
 #include <DomoticsCore/WebUI.h>
 #include <DomoticsCore/Timer.h>
@@ -94,7 +95,7 @@ void setup() {
 
     // WebUI Component
     WebUIConfig webuiCfg;
-    webuiCfg.deviceName = "ESP32 HA Demo";
+    webuiCfg.setDeviceName("ESP32 HA Demo");
     webuiCfg.port = 80;
     auto webui = std::make_unique<WebUIComponent>(webuiCfg);
     auto* webuiPtr = webui.get();
@@ -139,18 +140,10 @@ void setup() {
     haPtr->addSensor("free_heap", "Free Heap", "bytes", "", "mdi:memory");
 
     // Relay switch (controls built-in LED on pin 2)
-    haPtr->addSwitch("relay", "Relay", [](bool state) {
-        HAL::Platform::digitalWrite(LED_BUILTIN, state ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
-        DLOG_I(LOG_APP, "Relay: %s", state ? "ON" : "OFF");
-        // NOTE: State published separately in loop() to avoid recursion
-    }, "mdi:electric-switch");
+    haPtr->addSwitch("relay", "Relay", "mdi:electric-switch");
 
     // Restart button
-    haPtr->addButton("restart", "Restart", []() {
-        DLOG_I(LOG_APP, "Restart triggered from HA");
-        HAL::Platform::delayMs(1000);
-        HAL::Platform::restart();
-    }, "mdi:restart");
+    haPtr->addButton("restart", "Restart", "mdi:restart");
 
     core.addComponent(std::move(ha));
 
@@ -159,6 +152,26 @@ void setup() {
         DLOG_E(LOG_APP, "Failed to initialize core!");
         while (1) HAL::Platform::delayMs(1000);
     }
+
+    // ========== EventBus Command Handlers (R26) ==========
+
+    // Switch command handler
+    core.getEventBus().subscribe(String(HAEvents::EVENT_COMMAND), [](const void* data) {
+        auto& ev = *reinterpret_cast<const HAEvents::HACommandEvent*>(data);
+        if (strcmp(ev.component, "switch") != 0) return;
+        bool state = (strcmp(ev.command, "ON") == 0);
+        HAL::Platform::digitalWrite(LED_BUILTIN, state ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
+        DLOG_I(LOG_APP, "Relay: %s", state ? "ON" : "OFF");
+    }, nullptr);
+
+    // Button command handler
+    core.getEventBus().subscribe(String(HAEvents::EVENT_COMMAND), [](const void* data) {
+        auto& ev = *reinterpret_cast<const HAEvents::HACommandEvent*>(data);
+        if (strcmp(ev.component, "button") != 0) return;
+        DLOG_I(LOG_APP, "Restart triggered from HA");
+        HAL::Platform::delayMs(1000);
+        HAL::Platform::restart();
+    }, nullptr);
 
     // Register HA WebUI provider
     if (webuiPtr && haPtr) {

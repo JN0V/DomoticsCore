@@ -22,6 +22,7 @@
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/MQTT.h>
 #include <DomoticsCore/HomeAssistant.h>
+#include <DomoticsCore/HAEvents.h>
 #include <DomoticsCore/Timer.h>
 
 using namespace DomoticsCore;
@@ -154,48 +155,14 @@ void setup() {
     // Free heap sensor
     haPtr->addSensor("free_heap", "Free Heap", "bytes", "", "mdi:memory");
     
-    // Relay switch (controllable from HA)
-    haPtr->addSwitch("relay", "Relay", [](bool state) {
-        HAL::Platform::digitalWrite(LED_BUILTIN, state ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
-        DLOG_I(LOG_APP, "Relay set to: %s", state ? "ON" : "OFF");
-        // NOTE: State is published separately in loop() to avoid recursion
-    }, "mdi:electric-switch");
-    
+    // Relay switch (controllable from HA via EventBus)
+    haPtr->addSwitch("relay", "Relay", "mdi:electric-switch");
+
     // Restart button
-    haPtr->addButton("restart", "Restart", []() {
-        DLOG_I(LOG_APP, "Restart button pressed from Home Assistant");
-        HAL::Platform::delayMs(1000);
-        HAL::Platform::restart();
-    }, "mdi:restart");
+    haPtr->addButton("restart", "Restart", "mdi:restart");
 
     // Alarm control panel (ArmHome + ArmAway + Trigger, no PIN code)
     haPtr->addAlarmControlPanel("alarm", "Demo Alarm",
-        [](const String& command, const String& /* code */) {
-            DLOG_I(LOG_APP, "Alarm command received: %s", command.c_str());
-
-            if (command == AlarmPanelCommand::ARM_AWAY ||
-                command == AlarmPanelCommand::ARM_HOME) {
-                if (alarmState == AlarmDemoState::Disarmed) {
-                    alarmState = AlarmDemoState::Arming;
-                    alarmDelayStart = HAL::Platform::getMillis();
-                    // Publish Arming IMMEDIATELY so HA UI updates before exit delay
-                    haPtr->publishState("alarm", AlarmPanelState::Arming);
-                    DLOG_I(LOG_APP, "Alarm arming — exit delay %lums", ALARM_EXIT_DELAY);
-                }
-            } else if (command == AlarmPanelCommand::DISARM) {
-                alarmState = AlarmDemoState::Disarmed;
-                haPtr->publishState("alarm", AlarmPanelState::Disarmed);
-                DLOG_I(LOG_APP, "Alarm disarmed");
-            } else if (command == AlarmPanelCommand::TRIGGER) {
-                if (alarmState == AlarmDemoState::ArmedAway ||
-                    alarmState == AlarmDemoState::Pending) {
-                    alarmState = AlarmDemoState::Triggered;
-                    alarmDelayStart = HAL::Platform::getMillis();
-                    haPtr->publishState("alarm", AlarmPanelState::Triggered);
-                    DLOG_I(LOG_APP, "Alarm TRIGGERED!");
-                }
-            }
-        },
         "mdi:shield-home",
         AlarmFeature::ArmHome | AlarmFeature::ArmAway | AlarmFeature::Trigger);
 
@@ -206,7 +173,56 @@ void setup() {
         DLOG_E(LOG_APP, "Failed to initialize core!");
         while (1) HAL::Platform::delayMs(1000);
     }
-    
+
+    // ========== EventBus Command Handlers (R26) ==========
+
+    // Switch command handler
+    core.getEventBus().subscribe(String(HAEvents::EVENT_COMMAND), [](const void* data) {
+        auto& ev = *reinterpret_cast<const HAEvents::HACommandEvent*>(data);
+        if (strcmp(ev.component, "switch") != 0) return;
+        bool state = (strcmp(ev.command, "ON") == 0);
+        HAL::Platform::digitalWrite(LED_BUILTIN, state ? HAL::ledBuiltinOn() : HAL::ledBuiltinOff());
+        DLOG_I(LOG_APP, "Relay set to: %s", state ? "ON" : "OFF");
+    }, nullptr);
+
+    // Button command handler
+    core.getEventBus().subscribe(String(HAEvents::EVENT_COMMAND), [](const void* data) {
+        auto& ev = *reinterpret_cast<const HAEvents::HACommandEvent*>(data);
+        if (strcmp(ev.component, "button") != 0) return;
+        DLOG_I(LOG_APP, "Restart button pressed from Home Assistant");
+        HAL::Platform::delayMs(1000);
+        HAL::Platform::restart();
+    }, nullptr);
+
+    // Alarm command handler
+    core.getEventBus().subscribe(String(HAEvents::EVENT_COMMAND), [](const void* data) {
+        auto& ev = *reinterpret_cast<const HAEvents::HACommandEvent*>(data);
+        if (strcmp(ev.component, "alarm_control_panel") != 0) return;
+        DLOG_I(LOG_APP, "Alarm command received: %s", ev.command);
+
+        if (strcmp(ev.command, AlarmPanelCommand::ARM_AWAY) == 0 ||
+            strcmp(ev.command, AlarmPanelCommand::ARM_HOME) == 0) {
+            if (alarmState == AlarmDemoState::Disarmed) {
+                alarmState = AlarmDemoState::Arming;
+                alarmDelayStart = HAL::Platform::getMillis();
+                haPtr->publishState("alarm", AlarmPanelState::Arming);
+                DLOG_I(LOG_APP, "Alarm arming — exit delay %lums", ALARM_EXIT_DELAY);
+            }
+        } else if (strcmp(ev.command, AlarmPanelCommand::DISARM) == 0) {
+            alarmState = AlarmDemoState::Disarmed;
+            haPtr->publishState("alarm", AlarmPanelState::Disarmed);
+            DLOG_I(LOG_APP, "Alarm disarmed");
+        } else if (strcmp(ev.command, AlarmPanelCommand::TRIGGER) == 0) {
+            if (alarmState == AlarmDemoState::ArmedAway ||
+                alarmState == AlarmDemoState::Pending) {
+                alarmState = AlarmDemoState::Triggered;
+                alarmDelayStart = HAL::Platform::getMillis();
+                haPtr->publishState("alarm", AlarmPanelState::Triggered);
+                DLOG_I(LOG_APP, "Alarm TRIGGERED!");
+            }
+        }
+    }, nullptr);
+
     DLOG_I(LOG_APP, "========================================");
     DLOG_I(LOG_APP, "System ready!");
     DLOG_I(LOG_APP, "MQTT Broker: %s:%d", MQTT_BROKER, MQTT_PORT);

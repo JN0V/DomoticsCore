@@ -104,7 +104,7 @@ public:
         : config(config) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "HomeAssistant";
-        metadata.version = "1.6.1";
+        metadata.version = "2.0.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
         if (this->config.availabilityTopic[0] == '\0') {
@@ -222,10 +222,9 @@ public:
     /**
      * @brief Add a switch entity
      */
-    void addSwitch(const String& id, const String& name,
-                   std::function<void(bool)> commandCallback, const String& icon = "",
+    void addSwitch(const String& id, const String& name, const String& icon = "",
                    bool autoPublishState = true, bool optimistic = false) {
-        auto sw = std::make_unique<HASwitch>(id, name, commandCallback, icon);
+        auto sw = std::make_unique<HASwitch>(id, name, icon);
         sw->autoPublishState = autoPublishState;
         sw->optimistic = optimistic;
         entities.push_back(std::move(sw));
@@ -245,9 +244,8 @@ public:
     /**
      * @brief Add a light entity
      */
-    void addLight(const String& id, const String& name,
-                  std::function<void(bool, uint8_t)> commandCallback) {
-        auto light = std::make_unique<HALight>(id, name, commandCallback);
+    void addLight(const String& id, const String& name) {
+        auto light = std::make_unique<HALight>(id, name);
         entities.push_back(std::move(light));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added light: %s", id.c_str());
@@ -265,9 +263,8 @@ public:
     /**
      * @brief Add a button entity
      */
-    void addButton(const String& id, const String& name,
-                   std::function<void()> pressCallback, const String& icon = "") {
-        auto button = std::make_unique<HAButton>(id, name, pressCallback, icon);
+    void addButton(const String& id, const String& name, const String& icon = "") {
+        auto button = std::make_unique<HAButton>(id, name, icon);
         entities.push_back(std::move(button));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added button: %s", id.c_str());
@@ -287,14 +284,13 @@ public:
      */
     void addAlarmControlPanel(
         const String& id, const String& name,
-        const std::function<void(const String& command, const String& code)>& commandCallback,
         const String& icon = "mdi:shield-home",
         AlarmFeature features = AlarmFeature::ArmAway,
         const String& code = "",
         bool codeArmRequired = false,
         bool codeDisarmRequired = false,
         bool codeTriggerRequired = false) {
-        auto panel = std::make_unique<HAAlarmControlPanel>(id, name, commandCallback, icon);
+        auto panel = std::make_unique<HAAlarmControlPanel>(id, name, icon);
         panel->supportedFeatures = features;
         panel->code = code;
         panel->codeArmRequired = codeArmRequired;
@@ -653,30 +649,43 @@ private:
         stats.commandsReceived++;
         DLOG_D(LOG_HA, "Command for %s: %s", entityId.c_str(), payload.c_str());
         
-        // Route command to appropriate entity type and auto-publish state
+        // R24: Virtual dispatch — replaces static_cast chain
+        // R26: handleCommand returns false if command is invalid (e.g., button with wrong payload, light with garbage)
+        bool valid = entity->handleCommand(payload);
+        if (!valid) return;
+
+        // R26: Emit ha/command EventBus event
+        HAEvents::HACommandEvent ev{};
+        strncpy(ev.entityId, entityId.c_str(), sizeof(ev.entityId) - 1);
+        strncpy(ev.component, entity->component.c_str(), sizeof(ev.component) - 1);
+        strncpy(ev.command, payload.c_str(), sizeof(ev.command) - 1);
+
+        // Log warning if entity ID or payload was truncated (use .length() for O(1))
+        if (entityId.length() >= sizeof(ev.entityId)) {
+            DLOG_W(LOG_HA, "Entity ID truncated: %s (%u > %zu)",
+                   entityId.c_str(), entityId.length(), sizeof(ev.entityId) - 1);
+        }
+        if (payload.length() >= sizeof(ev.command)) {
+            DLOG_W(LOG_HA, "Command payload truncated for entity %s (%u > %zu)",
+                   entityId.c_str(), payload.length(), sizeof(ev.command) - 1);
+        }
+
+        // Populate code field for alarm_control_panel
+        // Note: overwrites ev.command with parsed command (e.g., "ARM_AWAY" instead of raw "ARM_AWAY 1234")
+        if (entity->component == "alarm_control_panel") {
+            auto* alarm = static_cast<HAAlarmControlPanel*>(entity);
+            strncpy(ev.command, alarm->lastCommand, sizeof(ev.command) - 1);
+            strncpy(ev.code, alarm->lastCode, sizeof(ev.code) - 1);
+        }
+
+        emit(HAEvents::EVENT_COMMAND, ev);
+
+        // Auto-publish for switches (moved from old if/else chain)
         if (entity->component == "switch") {
-            HASwitch* sw = static_cast<HASwitch*>(entity);
-            sw->handleCommand(payload);
-            
-            // Auto-publish state after command execution
-            // This ensures HA immediately sees the state change
+            auto* sw = static_cast<HASwitch*>(entity);
             if (!sw->optimistic && sw->autoPublishState) {
                 publishState(entityId, payload);
-                DLOG_D(LOG_HA, "Auto-published switch state: %s = %s", entityId.c_str(), payload.c_str());
             }
-        } else if (entity->component == "light") {
-            HALight* light = static_cast<HALight*>(entity);
-            light->handleCommand(payload);
-            // TODO: Auto-publish light state (needs JSON state)
-        } else if (entity->component == "button") {
-            HAButton* button = static_cast<HAButton*>(entity);
-            button->handleCommand(payload);
-            // Buttons don't have state
-        } else if (entity->component == "alarm_control_panel") {
-            entity->handleCommand(payload);
-            // No auto-publish: consumer manages alarm state
-        } else {
-            DLOG_W(LOG_HA, "No command handler for component type: %s", entity->component.c_str());
         }
     }
 };

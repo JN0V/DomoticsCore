@@ -25,6 +25,7 @@
  */
 
 #include <DomoticsCore/System.h>
+#include <DomoticsCore/HAEvents.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -181,25 +182,39 @@ void setup() {
         // ADD SWITCH (Relay control)
         // ====================================================================
         
-        haPtr->addSwitch("relay", "Cooling Relay", [](bool state) {
-            setRelay(state);
-            DLOG_I(LOG_APP, "Relay command from HA: %s", state ? "ON" : "OFF");
-            // State is automatically published by the HA component
-        }, "mdi:fan");
-        
+        haPtr->addSwitch("relay", "Cooling Relay", "mdi:fan");
+
         // ====================================================================
         // ADD BUTTON (Restart device)
         // ====================================================================
+
+        haPtr->addButton("restart", "Restart Device", "mdi:restart");
         
-        haPtr->addButton("restart", "Restart Device", []() {
+        DLOG_I(LOG_APP, "✓ Home Assistant entities created (%d entities)",
+               haPtr->getStatistics().entityCount);
+
+        // ====================================================================
+        // EventBus Command Handlers (R26)
+        // ====================================================================
+
+        // Switch command handler
+        domotics->getCore().getEventBus().subscribe(String(DomoticsCore::HAEvents::EVENT_COMMAND), [](const void* data) {
+            auto& ev = *reinterpret_cast<const HAEvents::HACommandEvent*>(data);
+            if (strcmp(ev.component, "switch") != 0) return;
+            bool state = (strcmp(ev.command, "ON") == 0);
+            setRelay(state);
+            DLOG_I(LOG_APP, "Relay command from HA: %s", state ? "ON" : "OFF");
+        }, nullptr);
+
+        // Button command handler
+        domotics->getCore().getEventBus().subscribe(String(DomoticsCore::HAEvents::EVENT_COMMAND), [](const void* data) {
+            auto& ev = *reinterpret_cast<const HAEvents::HACommandEvent*>(data);
+            if (strcmp(ev.component, "button") != 0) return;
             DLOG_I(LOG_APP, "Restart button pressed from Home Assistant");
             HAL::Platform::delayMs(1000);
             HAL::Platform::restart();
-        }, "mdi:restart");
-        
-        DLOG_I(LOG_APP, "✓ Home Assistant entities created (%d entities)", 
-               haPtr->getStatistics().entityCount);
-        
+        }, nullptr);
+
         // Discovery is automatically published by the HomeAssistant component
         // when MQTT connects (via EventBus "mqtt/connected" event)
         DLOG_I(LOG_APP, "✓ Home Assistant integration ready (waiting for MQTT connection)");

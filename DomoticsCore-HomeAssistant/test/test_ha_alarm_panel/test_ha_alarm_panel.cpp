@@ -56,8 +56,7 @@ static void simulateAlarmCommand(Core& core, const char* nodeId,
 // ============================================================================
 
 void test_alarm_panel_discovery_payload() {
-    HAAlarmControlPanel panel("alarm", "Alarm Panel",
-        [](const String&, const String&) {}, "mdi:shield-home");
+    HAAlarmControlPanel panel("alarm", "Alarm Panel", "mdi:shield-home");
     panel.supportedFeatures = AlarmFeature::ArmAway | AlarmFeature::ArmHome | AlarmFeature::Trigger;
     panel.code = "1234";
     panel.codeDisarmRequired = true;
@@ -106,7 +105,7 @@ void test_alarm_panel_discovery_payload() {
 
 void test_alarm_panel_discovery_supported_features() {
     auto buildFeatures = [](AlarmFeature mask) -> JsonDocument {
-        HAAlarmControlPanel panel("alarm", "Alarm", [](const String&, const String&) {});
+        HAAlarmControlPanel panel("alarm", "Alarm");
         panel.supportedFeatures = mask;
         JsonDocument doc;
         JsonDocument deviceDoc;
@@ -149,7 +148,7 @@ void test_alarm_panel_discovery_supported_features() {
 void test_alarm_panel_discovery_code_fields() {
     // No code config -> no code fields at all
     {
-        HAAlarmControlPanel panel("alarm", "Alarm", [](const String&, const String&) {});
+        HAAlarmControlPanel panel("alarm", "Alarm");
         JsonDocument doc;
         JsonDocument deviceDoc;
         JsonObject device = deviceDoc.to<JsonObject>();
@@ -164,7 +163,7 @@ void test_alarm_panel_discovery_code_fields() {
 
     // Code set -> command_template present
     {
-        HAAlarmControlPanel panel("alarm", "Alarm", [](const String&, const String&) {});
+        HAAlarmControlPanel panel("alarm", "Alarm");
         panel.code = "5678";
         panel.codeArmRequired = true;
         panel.codeDisarmRequired = true;
@@ -187,19 +186,13 @@ void test_alarm_panel_discovery_code_fields() {
 // ============================================================================
 
 void test_alarm_panel_handle_command_basic() {
-    String receivedCommand;
-    String receivedCode;
+    HAAlarmControlPanel panel("alarm", "Alarm");
 
-    HAAlarmControlPanel panel("alarm", "Alarm",
-        [&](const String& cmd, const String& code) {
-            receivedCommand = cmd;
-            receivedCode = code;
-        });
+    bool result = panel.handleCommand("ARM_AWAY");
 
-    panel.handleCommand("ARM_AWAY");
-
-    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", receivedCommand.c_str());
-    TEST_ASSERT_EQUAL_STRING("", receivedCode.c_str());
+    TEST_ASSERT_TRUE(result);
+    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", panel.lastCommand);
+    TEST_ASSERT_EQUAL_STRING("", panel.lastCode);
 }
 
 // ============================================================================
@@ -207,19 +200,13 @@ void test_alarm_panel_handle_command_basic() {
 // ============================================================================
 
 void test_alarm_panel_handle_command_with_code() {
-    String receivedCommand;
-    String receivedCode;
+    HAAlarmControlPanel panel("alarm", "Alarm");
 
-    HAAlarmControlPanel panel("alarm", "Alarm",
-        [&](const String& cmd, const String& code) {
-            receivedCommand = cmd;
-            receivedCode = code;
-        });
+    bool result = panel.handleCommand("DISARM 1234");
 
-    panel.handleCommand("DISARM 1234");
-
-    TEST_ASSERT_EQUAL_STRING("DISARM", receivedCommand.c_str());
-    TEST_ASSERT_EQUAL_STRING("1234", receivedCode.c_str());
+    TEST_ASSERT_TRUE(result);
+    TEST_ASSERT_EQUAL_STRING("DISARM", panel.lastCommand);
+    TEST_ASSERT_EQUAL_STRING("1234", panel.lastCode);
 }
 
 // ============================================================================
@@ -227,11 +214,13 @@ void test_alarm_panel_handle_command_with_code() {
 // ============================================================================
 
 void test_alarm_panel_handle_command_no_callback() {
-    HAAlarmControlPanel panel("alarm", "Alarm", nullptr);
-    // Should not crash
+    HAAlarmControlPanel panel("alarm", "Alarm");
+    // Should not crash and should store results
     panel.handleCommand("ARM_AWAY");
+    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", panel.lastCommand);
     panel.handleCommand("DISARM 1234");
-    TEST_ASSERT_TRUE(true);
+    TEST_ASSERT_EQUAL_STRING("DISARM", panel.lastCommand);
+    TEST_ASSERT_EQUAL_STRING("1234", panel.lastCode);
 }
 
 // ============================================================================
@@ -239,30 +228,20 @@ void test_alarm_panel_handle_command_no_callback() {
 // ============================================================================
 
 void test_alarm_panel_handle_command_edge_cases() {
-    int callCount = 0;
-    String lastCommand;
-    String lastCode;
+    HAAlarmControlPanel panel("alarm", "Alarm");
 
-    HAAlarmControlPanel panel("alarm", "Alarm",
-        [&](const String& cmd, const String& code) {
-            callCount++;
-            lastCommand = cmd;
-            lastCode = code;
-        });
-
-    // Empty payload -> no callback
+    // Empty payload -> lastCommand stays empty
     panel.handleCommand("");
-    TEST_ASSERT_EQUAL(0, callCount);
+    TEST_ASSERT_EQUAL_STRING("", panel.lastCommand);
 
-    // Whitespace only -> no callback
+    // Whitespace only -> lastCommand stays empty
     panel.handleCommand("   ");
-    TEST_ASSERT_EQUAL(0, callCount);
+    TEST_ASSERT_EQUAL_STRING("", panel.lastCommand);
 
     // Trailing space -> command parsed, code empty
     panel.handleCommand("ARM_AWAY ");
-    TEST_ASSERT_EQUAL(1, callCount);
-    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", lastCommand.c_str());
-    TEST_ASSERT_EQUAL_STRING("", lastCode.c_str());
+    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", panel.lastCommand);
+    TEST_ASSERT_EQUAL_STRING("", panel.lastCode);
 }
 
 // ============================================================================
@@ -275,7 +254,7 @@ void test_alarm_panel_state_publish() {
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
-    ha->addAlarmControlPanel("alarm", "Alarm Panel", [](const String&, const String&) {});
+    ha->addAlarmControlPanel("alarm", "Alarm Panel");
     core.addComponent(std::move(ha));
     core.begin();
 
@@ -314,10 +293,8 @@ void test_alarm_panel_no_auto_publish() {
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
-    bool callbackCalled = false;
     auto ha = std::make_unique<HomeAssistantComponent>(config);
-    ha->addAlarmControlPanel("alarm", "Alarm Panel",
-        [&](const String&, const String&) { callbackCalled = true; });
+    ha->addAlarmControlPanel("alarm", "Alarm Panel");
     core.addComponent(std::move(ha));
     core.begin();
 
@@ -335,7 +312,6 @@ void test_alarm_panel_no_auto_publish() {
 
     simulateAlarmCommand(core, "test_node", "alarm", "ARM_AWAY");
 
-    TEST_ASSERT_TRUE(callbackCalled);
     TEST_ASSERT_FALSE(statePublished);  // No auto-publish for alarm panel
 
     core.shutdown();
@@ -350,10 +326,8 @@ void test_alarm_panel_add_method() {
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
-    bool callbackCalled = false;
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     ha->addAlarmControlPanel("alarm", "Alarm Panel",
-        [&](const String&, const String&) { callbackCalled = true; },
         "mdi:shield-lock",
         AlarmFeature::ArmAway | AlarmFeature::ArmHome,
         "5678", true, true, false);
@@ -397,17 +371,27 @@ void test_alarm_panel_command_routing() {
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
-    String receivedCommand;
     auto ha = std::make_unique<HomeAssistantComponent>(config);
-    ha->addAlarmControlPanel("alarm", "Alarm Panel",
-        [&](const String& cmd, const String&) { receivedCommand = cmd; });
+    ha->addAlarmControlPanel("alarm", "Alarm Panel");
     core.addComponent(std::move(ha));
     core.begin();
+
+    // Subscribe to ha/command EventBus events
+    bool eventFired = false;
+    char receivedCommand[128] = {};
+    core.getEventBus().subscribe(String(HAEvents::EVENT_COMMAND), [&](const void* data) {
+        auto& ev = *reinterpret_cast<const HAEvents::HACommandEvent*>(data);
+        if (strcmp(ev.component, "alarm_control_panel") == 0) {
+            eventFired = true;
+            strncpy(receivedCommand, ev.command, sizeof(receivedCommand) - 1);
+        }
+    }, nullptr);
 
     simulateMqttConnect(core);
     simulateAlarmCommand(core, "test_node", "alarm", "ARM_AWAY");
 
-    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", receivedCommand.c_str());
+    TEST_ASSERT_TRUE(eventFired);
+    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", receivedCommand);
 
     auto* haComp = static_cast<HomeAssistantComponent*>(core.getComponent("HomeAssistant"));
     TEST_ASSERT_EQUAL_UINT32(1, haComp->getStatistics().commandsReceived);
@@ -420,16 +404,14 @@ void test_alarm_panel_command_routing() {
 // ============================================================================
 
 void test_alarm_panel_polymorphic_dispatch() {
-    String receivedCommand;
-
-    HAAlarmControlPanel panel("alarm", "Alarm",
-        [&](const String& cmd, const String&) { receivedCommand = cmd; });
+    HAAlarmControlPanel panel("alarm", "Alarm");
 
     // Call through HAEntity base pointer — verifies virtual override works
     HAEntity* base = &panel;
-    base->handleCommand("ARM_AWAY");
+    bool result = base->handleCommand("ARM_AWAY");
 
-    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", receivedCommand.c_str());
+    TEST_ASSERT_TRUE(result);
+    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", panel.lastCommand);
 }
 
 // ============================================================================
@@ -441,8 +423,7 @@ void test_alarm_panel_heap_stability() {
     HEAP_CHECKPOINT(tracker, "before");
 
     for (int i = 0; i < 10; i++) {
-        HAAlarmControlPanel panel("alarm", "Alarm",
-            [](const String&, const String&) {}, "mdi:shield-home");
+        HAAlarmControlPanel panel("alarm", "Alarm", "mdi:shield-home");
         panel.supportedFeatures = AlarmFeature::ArmAway | AlarmFeature::ArmHome;
         panel.code = "1234";
         panel.codeDisarmRequired = true;

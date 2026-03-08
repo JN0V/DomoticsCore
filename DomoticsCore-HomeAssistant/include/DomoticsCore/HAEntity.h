@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ArduinoJson.h>
-#include <functional>
 
 namespace DomoticsCore {
 namespace Components {
@@ -86,10 +85,12 @@ public:
         }
     }
 
-    // TODO: make handleCommand() virtual override in HASwitch/HALight/HAButton (progressive refactoring)
-    // Current shadow: calling handleCommand() via HAEntity* on switch/light/button invokes this empty base,
-    // not the derived method. Existing routing uses static_cast so behavior is unchanged.
-    virtual void handleCommand(const String& payload) {}
+    /**
+     * @brief Handle command from Home Assistant (virtual dispatch)
+     * @param payload Raw MQTT command payload
+     * @return true if command was valid and processed, false to skip EventBus emission
+     */
+    virtual bool handleCommand(const String& payload) { return true; }
 
 protected:
     void buildTopic(char* buf, size_t len, const char* discoveryPrefix, const char* nodeId, const char* suffix) const {

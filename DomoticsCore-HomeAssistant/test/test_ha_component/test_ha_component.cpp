@@ -17,10 +17,12 @@
 #include <DomoticsCore/HomeAssistant.h>
 #include <DomoticsCore/HAEvents.h>
 #include <DomoticsCore/ArduinoJsonString.h>  // String converters for ArduinoJson 7
+#include <DomoticsCore/Testing/HeapTracker.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 using namespace DomoticsCore::Components::HomeAssistant;
+using namespace DomoticsCore::Testing;
 
 // ============================================================================
 // Event Tests
@@ -44,7 +46,7 @@ void test_ha_component_creation_default() {
 
     TEST_ASSERT_EQUAL_STRING("HomeAssistant", ha.metadata.name);
     TEST_ASSERT_EQUAL_STRING("DomoticsCore", ha.metadata.author);
-    TEST_ASSERT_EQUAL_STRING("1.6.1", ha.metadata.version);
+    TEST_ASSERT_EQUAL_STRING("2.0.0", ha.metadata.version);
 }
 
 void test_ha_component_creation_with_config() {
@@ -201,30 +203,20 @@ void test_ha_add_binary_sensor_with_class() {
 
 void test_ha_add_switch() {
     HomeAssistantComponent ha;
-    bool switchState = false;
 
-    ha.addSwitch("relay", "Relay Switch", [&switchState](bool state) {
-        switchState = state;
-    }, "mdi:electric-switch");
+    ha.addSwitch("relay", "Relay Switch", "mdi:electric-switch");
 
     const auto& stats = ha.getStatistics();
     TEST_ASSERT_EQUAL_UINT32(1, stats.entityCount);
 }
 
-void test_ha_add_switch_callback_captured() {
+void test_ha_add_switch_entity_registered() {
     HomeAssistantComponent ha;
-    bool callbackCalled = false;
-    bool lastState = false;
 
-    ha.addSwitch("test_switch", "Test Switch", [&callbackCalled, &lastState](bool state) {
-        callbackCalled = true;
-        lastState = state;
-    });
+    ha.addSwitch("test_switch", "Test Switch");
 
     const auto& stats = ha.getStatistics();
     TEST_ASSERT_EQUAL_UINT32(1, stats.entityCount);
-    // Callback is stored but not yet called
-    TEST_ASSERT_FALSE(callbackCalled);
 }
 
 // ============================================================================
@@ -234,9 +226,7 @@ void test_ha_add_switch_callback_captured() {
 void test_ha_add_light() {
     HomeAssistantComponent ha;
 
-    ha.addLight("light1", "Main Light", [](bool state, uint8_t brightness) {
-        // Light control callback
-    });
+    ha.addLight("light1", "Main Light");
 
     const auto& stats = ha.getStatistics();
     TEST_ASSERT_EQUAL_UINT32(1, stats.entityCount);
@@ -248,11 +238,8 @@ void test_ha_add_light() {
 
 void test_ha_add_button() {
     HomeAssistantComponent ha;
-    bool buttonPressed = false;
 
-    ha.addButton("restart", "Restart", [&buttonPressed]() {
-        buttonPressed = true;
-    }, "mdi:restart");
+    ha.addButton("restart", "Restart", "mdi:restart");
 
     const auto& stats = ha.getStatistics();
     TEST_ASSERT_EQUAL_UINT32(1, stats.entityCount);
@@ -267,9 +254,9 @@ void test_ha_add_multiple_entity_types() {
 
     ha.addSensor("temp", "Temperature", "°C");
     ha.addBinarySensor("door", "Door", "door");
-    ha.addSwitch("relay", "Relay", [](bool){});
-    ha.addButton("restart", "Restart", [](){});
-    ha.addLight("light", "Light", [](bool, uint8_t){});
+    ha.addSwitch("relay", "Relay");
+    ha.addButton("restart", "Restart");
+    ha.addLight("light", "Light");
 
     const auto& stats = ha.getStatistics();
     TEST_ASSERT_EQUAL_UINT32(5, stats.entityCount);
@@ -295,7 +282,7 @@ void test_ha_statistics_after_adding_entities() {
 
     ha.addSensor("s1", "Sensor 1");
     ha.addSensor("s2", "Sensor 2");
-    ha.addSwitch("sw1", "Switch 1", [](bool){});
+    ha.addSwitch("sw1", "Switch 1");
 
     const auto& stats = ha.getStatistics();
 
@@ -468,31 +455,25 @@ void test_switch_auto_publish_set_false() {
     TEST_ASSERT_FALSE(sw.autoPublishState);
 }
 
-void test_switch_handle_command_calls_callback() {
-    bool callbackCalled = false;
-    bool lastState = false;
+void test_switch_handle_command_updates_state() {
+    HASwitch sw("test", "Test Switch");
 
-    HASwitch sw("test", "Test Switch", [&](bool state) {
-        callbackCalled = true;
-        lastState = state;
-    });
+    bool result = sw.handleCommand("ON");
+    TEST_ASSERT_TRUE(result);
+    TEST_ASSERT_TRUE(sw.state);
 
-    sw.handleCommand("ON");
-    TEST_ASSERT_TRUE(callbackCalled);
-    TEST_ASSERT_TRUE(lastState);
-
-    callbackCalled = false;
-    sw.handleCommand("OFF");
-    TEST_ASSERT_TRUE(callbackCalled);
-    TEST_ASSERT_FALSE(lastState);
+    result = sw.handleCommand("OFF");
+    TEST_ASSERT_TRUE(result);
+    TEST_ASSERT_FALSE(sw.state);
 }
 
-void test_switch_handle_command_no_callback_no_crash() {
-    HASwitch sw("test", "Test Switch", nullptr);
-    // Should not crash
+void test_switch_handle_command_no_crash() {
+    HASwitch sw("test", "Test Switch");
+    // Should not crash and should update state
     sw.handleCommand("ON");
+    TEST_ASSERT_TRUE(sw.state);
     sw.handleCommand("OFF");
-    TEST_ASSERT_TRUE(true);  // If we get here, no crash
+    TEST_ASSERT_FALSE(sw.state);
 }
 
 // ============================================================================
@@ -527,7 +508,7 @@ void test_switch_command_auto_publishes_state() {
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
-    ha->addSwitch("sw1", "Switch 1", [](bool) {});
+    ha->addSwitch("sw1", "Switch 1");
     core.addComponent(std::move(ha));
     core.begin();
 
@@ -562,10 +543,8 @@ void test_switch_command_no_auto_publish_when_disabled() {
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
-    bool callbackCalled = false;
     auto ha = std::make_unique<HomeAssistantComponent>(config);
-    ha->addSwitch("sw1", "Switch 1", [&](bool) { callbackCalled = true; },
-                  "", false);  // autoPublishState = false
+    ha->addSwitch("sw1", "Switch 1", "", false);  // autoPublishState = false
     core.addComponent(std::move(ha));
     core.begin();
 
@@ -584,7 +563,6 @@ void test_switch_command_no_auto_publish_when_disabled() {
 
     simulateSwitchCommand(core, "test_node", "sw1", "ON");
 
-    TEST_ASSERT_TRUE(callbackCalled);
     TEST_ASSERT_FALSE(statePublished);  // Should NOT auto-publish
 
     core.shutdown();
@@ -597,8 +575,7 @@ void test_switch_optimistic_overrides_auto_publish() {
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
-    ha->addSwitch("sw1", "Switch 1", [](bool) {},
-                  "", true, true);  // autoPublishState=true, optimistic=true
+    ha->addSwitch("sw1", "Switch 1", "", true, true);  // autoPublishState=true, optimistic=true
     core.addComponent(std::move(ha));
     core.begin();
 
@@ -629,8 +606,7 @@ void test_switch_manual_publish_after_auto_disabled() {
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     HomeAssistantComponent* haPtr = ha.get();
-    ha->addSwitch("sw1", "Switch 1", [](bool) {},
-                  "", false);  // autoPublishState = false
+    ha->addSwitch("sw1", "Switch 1", "", false);  // autoPublishState = false
     core.addComponent(std::move(ha));
     core.begin();
 
@@ -668,8 +644,7 @@ void test_switch_optimistic_true_auto_publish_false() {
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
-    ha->addSwitch("sw1", "Switch 1", [](bool) {},
-                  "", false, true);  // autoPublishState=false, optimistic=true
+    ha->addSwitch("sw1", "Switch 1", "", false, true);  // autoPublishState=false, optimistic=true
     core.addComponent(std::move(ha));
     core.begin();
 
@@ -905,6 +880,7 @@ void test_ha_config_no_heap_allocation() {
     TEST_ASSERT_INT_WITHIN(64, 0, (int)(heapBefore - heapAfter));
 }
 
+
 // ============================================================================
 // Test Runner
 // ============================================================================
@@ -940,7 +916,7 @@ int runAllTests() {
 
     // Entity management tests - Switches
     RUN_TEST(test_ha_add_switch);
-    RUN_TEST(test_ha_add_switch_callback_captured);
+    RUN_TEST(test_ha_add_switch_entity_registered);
 
     // Entity management tests - Lights
     RUN_TEST(test_ha_add_light);
@@ -979,8 +955,8 @@ int runAllTests() {
     // HASwitch autoPublishState - Unit tests
     RUN_TEST(test_switch_auto_publish_default_true);
     RUN_TEST(test_switch_auto_publish_set_false);
-    RUN_TEST(test_switch_handle_command_calls_callback);
-    RUN_TEST(test_switch_handle_command_no_callback_no_crash);
+    RUN_TEST(test_switch_handle_command_updates_state);
+    RUN_TEST(test_switch_handle_command_no_crash);
 
     // HASwitch autoPublishState - Integration tests
     RUN_TEST(test_switch_command_auto_publishes_state);
