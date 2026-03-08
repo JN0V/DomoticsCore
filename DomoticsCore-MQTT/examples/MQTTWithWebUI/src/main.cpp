@@ -135,7 +135,7 @@ void setup() {
     
     // Configure WebUI
     WebUIConfig webConfig;
-    webConfig.deviceName = "ESP32 MQTT Device";
+    webConfig.setDeviceName("ESP32 MQTT Device");
     webConfig.wsUpdateInterval = 2000;
     auto webui = std::make_unique<WebUIComponent>(webConfig);
     auto* webuiPtr = webui.get();

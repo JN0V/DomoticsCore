@@ -63,7 +63,7 @@ void setup() {
 
     // Configure WebUI
     WebUIConfig webuiCfg;
-    webuiCfg.deviceName = "NTP Demo";
+    webuiCfg.setDeviceName("NTP Demo");
     webuiCfg.port = 80;
 
     auto webui = std::make_unique<WebUIComponent>(webuiCfg);

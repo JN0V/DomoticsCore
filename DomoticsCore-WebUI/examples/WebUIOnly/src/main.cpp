@@ -195,7 +195,7 @@ void setup() {
 
     // Create WebUI component
     DomoticsCore::Components::WebUIConfig webUIConfig;
-    webUIConfig.deviceName = "DomoticsCore WebUI Demo";
+    webUIConfig.setDeviceName("DomoticsCore WebUI Demo");
     // Note: manufacturer, version, copyright have been moved to SystemInfo component
     webUIConfig.port = 80;
     webUIConfig.enableWebSocket = true;

@@ -56,7 +56,7 @@ void setup() {
 
     // WebUI configuration
     WebUIConfig webCfg;
-    webCfg.deviceName = "LED With WebUI";
+    webCfg.setDeviceName("LED With WebUI");
     webCfg.port = 80;
     webCfg.enableWebSocket = true;
     webCfg.wsUpdateInterval = 2000;

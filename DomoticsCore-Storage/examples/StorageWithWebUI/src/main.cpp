@@ -23,7 +23,7 @@ void setup() {
 
     // Core initialized
 
-    WebUIConfig webCfg; webCfg.deviceName = "Storage With WebUI"; webCfg.wsUpdateInterval = 3000;
+    WebUIConfig webCfg; webCfg.setDeviceName("Storage With WebUI"); webCfg.wsUpdateInterval = 3000;
     core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 
     // Storage component

@@ -24,7 +24,7 @@ Web interface component for DomoticsCore. Serves a modern dashboard (HTML/CSS/JS
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-WebUIConfig cfg; cfg.deviceName = "My Device"; cfg.wsUpdateInterval = 2000;
+WebUIConfig cfg; cfg.setDeviceName("My Device"); cfg.wsUpdateInterval = 2000;
 core.addComponent(std::make_unique<WebUIComponent>(cfg));
 
 // Discover providers automatically when components are ready

@@ -75,7 +75,7 @@ void setup() {
 
     // WebUI component
     WebUIConfig webCfg;
-    webCfg.deviceName = "MQTT Wifi WebUI";
+    webCfg.setDeviceName("MQTT Wifi WebUI");
     webCfg.wsUpdateInterval = 2000;
     auto webui = std::make_unique<WebUIComponent>(webCfg);
     auto* webuiPtr = webui.get();

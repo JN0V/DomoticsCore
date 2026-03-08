@@ -136,7 +136,7 @@ void setup() {
     // Configure WebUI component (API only, no UI assets)
     WebUIConfig config;
     config.port = API_PORT;
-    config.deviceName = "ESP32 API Server";
+    config.setDeviceName("ESP32 API Server");
     config.useFileSystem = false;  // No UI files needed
     config.enableAuth = false;     // Using custom API key auth
     config.enableCORS = true;      // Enable CORS for cross-origin requests

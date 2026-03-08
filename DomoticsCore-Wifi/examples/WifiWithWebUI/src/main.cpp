@@ -24,7 +24,7 @@ Core core;
 void setup() {
     DLOG_I(LOG_APP, "=== DomoticsCore WifiWithWebUI Starting ===");
 
-    WebUIConfig webCfg; webCfg.deviceName = "WiFi With WebUI"; webCfg.wsUpdateInterval = 5000; // 5 sec - WiFi state changes infrequently
+    WebUIConfig webCfg; webCfg.setDeviceName("WiFi With WebUI"); webCfg.wsUpdateInterval = 5000; // 5 sec - WiFi state changes infrequently
     core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 
     // Start in AP mode for easy access (empty SSID means AP-only in WifiComponent implementation)

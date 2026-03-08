@@ -90,7 +90,7 @@ void setup() {
 
     // Web UI component
     WebUIConfig webCfg;
-    webCfg.deviceName = "OTA With WebUI";
+    webCfg.setDeviceName("OTA With WebUI");
     webCfg.wsUpdateInterval = 2000;
     core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 

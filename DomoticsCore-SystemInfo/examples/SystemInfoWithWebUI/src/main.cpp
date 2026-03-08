@@ -32,7 +32,7 @@ void setup() {
 
     // WebUI configuration
     WebUIConfig webCfg;
-    webCfg.deviceName = "System Info With WebUI";
+    webCfg.setDeviceName("System Info With WebUI");
     webCfg.port = 80;
     webCfg.enableWebSocket = true;
     webCfg.wsUpdateInterval = 2000;
