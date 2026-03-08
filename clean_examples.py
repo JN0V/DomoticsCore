@@ -1,110 +1,103 @@
 #!/usr/bin/env python3
 
-# This runs before any build steps
-print("\n🔍 Running pre-dependency cleanup script...")
+# PlatformIO pre-build script: clean .pio directories to prevent recursive
+# nesting and ensure fresh DomoticsCore-* library resolution.
+#
+# PROBLEM: When PlatformIO resolves file:// dependencies (e.g., file://../DomoticsCore-Core),
+# it copies the ENTIRE source directory — including any .pio/ subdirectory. If that .pio/
+# contains libdeps with more DomoticsCore-* copies (which have their own .pio/), this creates
+# an exponentially growing recursive nesting. We've observed 12,000+ nested .pio directories.
+#
+# SOLUTION: Before each build, remove .pio/ directories from:
+#   1. Each DomoticsCore-* source dir at repo root (prevents them being copied into libdeps)
+#   2. Each DomoticsCore-*/examples/*/ dir (prevents nesting from example builds)
+#   3. Stale DomoticsCore-* libs in the current project's libdeps (forces re-resolution)
+#
+# IMPORTANT: This script does NOT use rglob('.pio') because that would find .pio directories
+# inside the current project's own libdeps/build dirs, causing .sconsign312 corruption.
+# It only cleans at known, fixed directory levels.
+#
+# IMPORTANT: Never build examples in parallel — each build's pre-script cleans other
+# projects' .pio dirs, which would corrupt parallel builds.
 
-import os
 import shutil
 from pathlib import Path
 
-"""Clean all PlatformIO build directories (.pio) across the repo, except the current project's .pio.
-Also clean current project's libdeps if it contains DomoticsCore-* libs.
-
-We must set root_dir to the repository root, not the current example's project dir,
-otherwise we only ever see the current .pio and end up skipping everything.
-"""
-
-# Determine repository root in a way compatible with PlatformIO pre-scripts
-root_dir = None
-env_available = False
 try:
-    # PlatformIO provides the build environment via SCons
     Import('env')  # type: ignore  # Provided by PlatformIO
-    env_available = True
-    current_project_dir = Path(env['PROJECT_DIR']).resolve()  # type: ignore
-    # Walk up until we find the repo root (folder containing multiple DomoticsCore-* packages)
-    probe = current_project_dir
-    max_up = 6
-    for _ in range(max_up):
-        # Heuristic: repo root has these subfolders
-        if (probe / 'DomoticsCore-Core').exists() and (probe / 'DomoticsCore-WebUI').exists():
-            root_dir = probe
-            break
-        if probe.parent == probe:
-            break
-        probe = probe.parent
-    if root_dir is None:
-        # Fallback to current project dir
-        root_dir = current_project_dir
 except Exception:
-    # Fallback: use current working directory
-    try:
-        root_dir = Path(os.getcwd()).resolve()
-        current_project_dir = None
-    except Exception:
-        # Last resort: use relative path
-        root_dir = Path('.')
-        current_project_dir = None
+    raise SystemExit(0)
+
+current_project_dir = Path(env['PROJECT_DIR']).resolve()  # type: ignore
+
+# Find repo root by walking up
+repo_root = None
+probe = current_project_dir
+for _ in range(6):
+    if (probe / 'DomoticsCore-Core').exists() and (probe / 'DomoticsCore-WebUI').exists():
+        repo_root = probe
+        break
+    if probe.parent == probe:
+        break
+    probe = probe.parent
+
+if repo_root is None:
+    repo_root = current_project_dir
+
+current_pio = (current_project_dir / '.pio').resolve()
 deleted_count = 0
 
-print(f"🔍 Searching for all .pio directories under: {root_dir}")
+# 1. Clean .pio from DomoticsCore-* source dirs at repo root
+#    and from their examples subdirectories (two fixed levels only, no rglob)
+for comp_dir in repo_root.iterdir():
+    if not comp_dir.is_dir() or not comp_dir.name.startswith('DomoticsCore-'):
+        continue
 
-# Find every directory named '.pio' anywhere under the repo root
-pio_dirs = [p for p in root_dir.rglob('.pio') if p.is_dir()]
-
-if current_project_dir is not None:
-    # Do NOT delete the current project's working .pio during this build
-    current_pio = (current_project_dir / '.pio').resolve()
-    filtered = []
-    for d in pio_dirs:
-        try:
-            if d.resolve() == current_pio:
-                print(f"⏭️  Skipping current build directory: {d.relative_to(root_dir)}")
-                continue
-        except Exception:
-            pass
-        filtered.append(d)
-    pio_dirs = filtered
-
-    # Only clean libdeps containing DomoticsCore-*
+    # Component-level .pio (from running component tests)
+    # Skip if the current project is this component or a subdirectory of it
     try:
-        env_name = env['PIOENV']  # type: ignore
-    except Exception:
-        env_name = 'native'  # fallback
-        print(f"⚠️  PIOENV not available, falling back to '{env_name}' for libdeps cleanup")
-    current_libdeps = current_pio / 'libdeps' / env_name
-    if current_libdeps.exists():
-        try:
-            domotics_libs = [d for d in current_libdeps.iterdir()
-                             if d.is_dir() and 'DomoticsCore-' in d.name]
-            if domotics_libs:
-                for lib_dir in domotics_libs:
-                    print(f"🧹 Removing stale DomoticsCore lib: {lib_dir.relative_to(root_dir)}")
-                    shutil.rmtree(lib_dir, ignore_errors=True)
-            else:
-                print(f"ℹ️  Skipping libdeps (no DomoticsCore libraries found): {current_libdeps.relative_to(root_dir)}")
-        except Exception as e:
-            print(f"⚠️  Error checking/cleaning libdeps {current_libdeps}: {e}")
+        current_project_dir.relative_to(comp_dir.resolve())
+        # current_project_dir is inside comp_dir — skip to avoid corruption
+        continue
+    except ValueError:
+        pass  # Not a subdirectory — safe to clean
 
-# WARNING: This script deletes ALL .pio build directories across the repo
-# (except the current project's). Use with caution in development — it will
-# invalidate cached builds from other components.
-if not pio_dirs:
-    print("ℹ️  No .pio directories found. Nothing to clean.")
-else:
-    print(f"📁 Found {len(pio_dirs)} .pio directorie(s) to remove:")
-    for p in pio_dirs:
-        print(f"  - {p.relative_to(root_dir)}")
+    pio_dir = comp_dir / '.pio'
+    if pio_dir.exists():
+        shutil.rmtree(pio_dir, ignore_errors=True)
+        deleted_count += 1
 
-    for pio_dir in pio_dirs:
-        try:
-            if 'node_modules' in str(pio_dir):
-                # Safety: skip any accidental matches inside node_modules
+    # Example-level .pio dirs
+    examples_dir = comp_dir / 'examples'
+    if examples_dir.is_dir():
+        for example_dir in examples_dir.iterdir():
+            if not example_dir.is_dir():
                 continue
-            print(f"🧹 Removing: {pio_dir.relative_to(root_dir)}")
-            shutil.rmtree(pio_dir, ignore_errors=True)
-            deleted_count += 1
-        except Exception as e:
-            print(f"⚠️  Error cleaning {pio_dir}: {e}")
+            # Never touch the directory that is currently being built
+            try:
+                if example_dir.resolve() == current_project_dir:
+                    continue
+            except Exception:
+                pass
+            pio_dir = example_dir / '.pio'
+            if pio_dir.exists():
+                shutil.rmtree(pio_dir, ignore_errors=True)
+                deleted_count += 1
 
-print(f"\n✅ Cleanup complete! Removed {deleted_count} .pio directorie(s)")
+# 2. Clean stale DomoticsCore-* libs from current project's libdeps
+try:
+    env_name = env['PIOENV']  # type: ignore
+except Exception:
+    env_name = 'native'
+
+current_libdeps = current_pio / 'libdeps' / env_name
+if current_libdeps.exists():
+    try:
+        for lib_dir in current_libdeps.iterdir():
+            if lib_dir.is_dir() and 'DomoticsCore-' in lib_dir.name:
+                shutil.rmtree(lib_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+if deleted_count > 0:
+    print(f"  Cleaned {deleted_count} .pio director(ies) to prevent recursive nesting")
