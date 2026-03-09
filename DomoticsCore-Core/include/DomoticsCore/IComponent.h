@@ -143,7 +143,7 @@ public:
     /**
      * Optional: Called after ALL components (including built-ins) are ready
      * Use this for late initialization that depends on other components
-     * All components declared in getDependenciesEx() are guaranteed available here
+     * All components declared in getDependencies() are guaranteed available here
      * 
      * Lifecycle order:
      * 1. begin() - Internal initialization only (GPIO, state, etc.)
@@ -161,7 +161,7 @@ public:
      *     // All components guaranteed available here
      *     storage_ = getCore()->getComponent<StorageComponent>("Storage");
      *     mqtt_ = getCore()->getComponent<MQTTComponent>("MQTT");
-     *     // No null checks needed if declared in getDependenciesEx()
+     *     // No null checks needed if declared in getDependencies()
      * }
      * ```
      */

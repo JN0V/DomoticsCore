@@ -159,7 +159,7 @@ All fields have sensible defaults. Fields are grouped by functional area.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enableOTA` | `bool` | `false` | Enable over-the-air firmware updates |
-| `otaPassword` | `String` | `""` | **NOT WIRED.** This field is declared but never passed to the `OTAComponent`. The OTA component uses `OTAConfig::bearerToken` / `OTAConfig::basicAuthUser` / `OTAConfig::basicAuthPassword` instead. Setting this field has no effect. |
+| `otaPassword` | `String` | `""` | Mapped to `OTAConfig::bearerToken` during component registration (see `System::registerOTAComponent()`). When set, OTA upload requests must provide this value as a bearer token for authentication. |
 
 ### SystemInfo
 
@@ -443,6 +443,22 @@ For each optional WebUI provider library detected via `__has_include`:
 | `SystemInfoWebUI` | `WEBUI_SETUP_HAS_SYSINFO_WEBUI` | SystemInfo |
 | `RemoteConsoleWebUI` | `WEBUI_SETUP_HAS_CONSOLE_WEBUI` | RemoteConsole |
 | `HomeAssistantWebUI` | `WEBUI_SETUP_HAS_HA_WEBUI` | HomeAssistant |
+
+### NTP Timezone API Endpoint
+
+When the NTP WebUI provider is registered, the System also registers a custom API route on the WebUI component:
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/ntp/timezones` | `GET` | Returns a JSON array of all supported timezone options. Each entry has `"value"` (POSIX timezone string) and `"label"` (human-friendly name). The response is streamed from flash via `TIMEZONE_LOOKUP` to avoid heap allocation. |
+
+### Provider `.init()` Calls
+
+The **OTA** and **RemoteConsole** WebUI providers require an additional `.init(webuiComponent)` call after `registerProviderWithComponent()`. This call registers provider-specific API routes on the WebUI web server (e.g., `/api/console/loglevels` for RemoteConsole, OTA upload route for OTA). Other providers do not require this extra step.
+
+### Home Assistant Save Callback Asymmetry
+
+The HA WebUI save callback only persists **3 of the 6** HAConfig fields to Storage: `nodeId`, `deviceName`, and `discoveryPrefix`. The remaining fields (`manufacturer`, `model`, `swVersion`) are **not saved** by the WebUI callback. However, all 6 fields are **loaded** from Storage on boot (see `loadHomeAssistantConfig()` in SystemPersistence.h). This means that `manufacturer`, `model`, and `swVersion` can only be set via direct Storage writes or through initial `SystemConfig` values -- they cannot be changed from the WebUI.
 
 ### WebUI Self-Persistence
 

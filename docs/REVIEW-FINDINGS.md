@@ -1,5 +1,8 @@
 # DomoticsCore Documentation - Adversarial Review Findings
 
+> **ARCHIVED** — All findings have been resolved as of 2026-03-09 (see [CODE-ROADMAP.md](./CODE-ROADMAP.md) for tracking).
+> This file is kept for historical reference only.
+
 > Generated: 2026-03-04 | Review scope: All 39 documentation files + source code cross-reference
 > Total findings: **104** (21 CRITICAL, 33 MAJOR, 27 MINOR, 23 ROADMAP)
 

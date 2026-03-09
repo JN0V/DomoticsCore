@@ -2,6 +2,8 @@
 
 > Generated from adversarial documentation review (2026-03-04).
 > Each item is a separate commit/PR. Priority order follows the constitution.
+>
+> **Status (2026-03-09): ALL ITEMS COMPLETE.** Priorities P1 through P8 are done. R24 (virtual dispatch), R25 (enum class), and R26 (ha/command EventBus event) are all complete. The v2.0.0 breaking change (HA callback removal) is the culmination of R24 + R26.
 
 ---
 
@@ -439,6 +441,44 @@ Fragmentation impact: **NONE** beyond what already exists from `MQTTMessageEvent
 | 6. Anti-Patterns | R14-R16 | XIII | DONE — documented as accepted exceptions |
 | 7. Progressive Refactoring | R24-R25 | VIII, XIII | R24: DONE — virtual dispatch replaces static_cast routing. R25: DONE — enum class with type-safe operators |
 | 8. EventBus Commands | R26 | VI (EventBus Architecture) | DONE — ha/command EventBus event, callbacks removed (v2.0.0 breaking change) |
+| 9. Documentation Debt | D1-D12 | — | In progress — see below |
+| 10. Dead Config Fields | C1-C3 | IV (YAGNI) | Open — see below |
+
+---
+
+## Priority 9: Documentation Debt (D1-D12)
+
+> Identified during exhaustive documentation verification pass (2026-03-09).
+> Items marked DONE were fixed inline during the verification.
+
+| ID | Scope | Description | Status |
+|----|-------|-------------|--------|
+| D1 | `docs/components/led/` | LED version was 1.3.0 in README.md and technical-reference.md (should be 1.4.0) | DONE |
+| D2 | `DomoticsCore-Core/include/DomoticsCore/IComponent.h` | Stale Doxygen comment on `getDependencies()` still references removed `getDependenciesEx()` | DONE |
+| D3 | `docs/guides/webui-developer.md` | Surviving `getName()` reference (method was removed) | DONE |
+| D4 | `docs/components/core/project-context.md`, `technical-reference.md` | `wifi/connected` topic (should be `wifi/status`) | DONE |
+| D5 | `docs/technical-reference.md` | Wildcard example using dots (`sensor.*`) instead of slashes (`sensor/*`) | DONE |
+| D6 | `DomoticsCore-Core/include/DomoticsCore/EventBus.h` | Source comment still uses dot separator in topic example | DONE |
+| D7 | `docs/architecture/eventbus-patterns.md` | Old `std::function<EventCallback>` subscribe signatures in "Waiting for Dependencies" examples | DONE |
+| D8 | Generated Doxygen HTML | HTML docs are stale; regenerate after all source-level fixes | DONE |
+| D9 | `CHANGELOG.md` | Missing entries for versions 1.7.0 through 2.0.0 | DONE |
+| D10 | `docs/architecture.md` | Section numbering inconsistent (jumps from 3 to 5) | DONE |
+| D11 | `docs/REVIEW-FINDINGS.md` | Should be archived or marked superseded — all findings resolved | DONE |
+| D12 | `docs/architecture/component-configuration-pattern.md` | `getXxxConfig` naming contradiction (actual pattern is `getConfig`) | DONE |
+
+## Priority 10: Dead Config Fields (C1-C3)
+
+> Config fields declared/documented but never read by the runtime. These waste RAM on constrained devices and mislead users.
+
+| ID | Component | Dead Fields | Notes |
+|----|-----------|-------------|-------|
+| C1 | **MQTT** (`MQTTConfig`) | `resubscribeOnConnect`, `cleanSession`, `connectTimeout`, `operationTimeout` | Declared in config struct, settable via WebUI, but never read by `MQTT.cpp` connection/subscribe logic |
+| C2 | **System** (`SystemConfig`) | `haDiscoveryPrefix`, `webUIEnableAPI`, `wifiTimeout` | Set in config but not consumed by any runtime code path |
+| C3 | **Storage** (`StorageConfig`) | `autoCommit` | Field exists, always `true`, never checked — all writes commit immediately |
+
+### Recommendation
+
+- **C1-C3**: Either wire these fields to actual behavior (implement the feature) or remove them from the config structs and WebUI forms. Removing is preferred per Constitution IV (YAGNI) unless the feature is planned for a near-term release.
 
 ---
 

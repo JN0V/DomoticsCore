@@ -60,7 +60,7 @@ Total source files: 2 headers, 0 implementation files (header-only component).
 ### `DomoticsCore::Components::RemoteConsoleConfig`
 - **Role**: Configuration struct with defaults for all console settings.
 - **Header**: `include/DomoticsCore/RemoteConsole.h`
-- **Caveat**: The fields `requireAuth`, `password`, and `allowCommands` are declared in the struct but **NOT enforced** at runtime. Authentication is not implemented and command gating is not checked. Only `allowedIPs` is enforced for access control.
+- **Security features**: `requireAuth` and `password` enable per-client password authentication with configurable timeout (`authTimeoutMs`). `allowCommands` gates all commands except `help` and `quit`. `allowedIPs` restricts connections by IP address. All four mechanisms are enforced at runtime.
 
 ### `DomoticsCore::Components::LogEntry`
 - **Role**: Single log entry stored in the circular buffer (timestamp, level, tag, message).
@@ -100,7 +100,7 @@ Optional (for WebUI integration):
 - **Header-only**: The component has no `.cpp` files. All logic resides in `RemoteConsole.h` and `RemoteConsoleWebUI.h`.
 - **Lazy buffer allocation**: The circular buffer (`std::vector<LogEntry>`) grows on demand via `push_back()` up to `bufferSize`, then overwrites in-place. This prevents OOM on startup, particularly on ESP8266 with its limited heap.
 - **Logger integration**: Uses `LoggerCallbacks::addCallback()` to tap into the `DLOG_*` macro system without redefining any macros.
-- **Client management**: Each client has a per-IP command buffer (`std::map<uint32_t, String>`). Telnet negotiation bytes and non-printable characters are silently discarded.
+- **Client management**: Each client has a per-client-ID command buffer (`std::map<uint32_t, String>`), authentication state (`std::map<uint32_t, bool>`), and connection timestamp (`std::map<uint32_t, unsigned long>`). Telnet negotiation bytes and non-printable characters are silently discarded.
 - **WebUI state caching**: `RemoteConsoleWebUI` uses `LazyState<ConsoleUIState>` to avoid reserializing JSON when the underlying data has not changed.
 
 ---

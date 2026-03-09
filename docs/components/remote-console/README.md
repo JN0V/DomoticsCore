@@ -11,11 +11,12 @@ DomoticsCore-RemoteConsole is a Telnet-based remote debugging component for ESP3
 - **Telnet Server** -- Standard telnet protocol on configurable port (default 23).
 - **Real-time Log Streaming** -- All `DLOG_*` macro output is captured via the logger callback system and streamed to connected clients.
 - **Circular Log Buffer** -- Configurable size (platform-dependent default); lazily allocated to avoid OOM on startup. Oldest entries are overwritten when full.
-- **Built-in Commands** -- `help`, `clear`, `level`, `filter`, `info`, `heap`, `reboot`, `quit`.
+- **Built-in Commands** -- `help`, `clear`, `level`, `filter`, `info`, `heap`, `reboot`, `auth`, `quit`.
 - **Custom Commands** -- Register application-specific commands with `registerCommand()`.
 - **ANSI Color Output** -- Color-coded log levels: red (ERROR), yellow (WARN), green (INFO), cyan (DEBUG).
 - **Tag Filtering** -- Show only logs matching a specific tag at runtime.
-- **IP Whitelist** -- Restrict access to specific IP addresses (enforced). Note: `requireAuth`/`password` config fields are declared but **not enforced** in the current implementation.
+- **Password Authentication** -- Optional per-client authentication with configurable timeout (`requireAuth`, `password`, `authTimeoutMs`).
+- **IP Whitelist** -- Restrict access to specific IP addresses.
 - **Multi-client** -- Up to 3 concurrent Telnet connections (configurable).
 - **WebUI Integration** -- Optional `RemoteConsoleWebUI` provider for browser-based monitoring.
 
@@ -70,7 +71,19 @@ telnet <device-ip> 23
 
 Telnet transmits data in plain text. Use this component only on trusted networks.
 
-> **WARNING:** The `requireAuth` and `password` config fields are **declared but NOT enforced** in the current implementation. Setting them has no effect -- no authentication is performed. The `allowCommands` field is also declared but never checked; commands are always accepted. The only enforced access control is the `allowedIPs` whitelist. For production deployments, configure `allowedIPs` and use network-level firewalling.
+### Authentication
+
+When `requireAuth` is `true`, new clients must authenticate using the `auth <password>` command before they can execute any command other than `help` and `quit`. Unauthenticated clients do not receive log output. A configurable timeout (`authTimeoutMs`, default 10 seconds) automatically disconnects clients that fail to authenticate in time. Set `authTimeoutMs = 0` to disable the timeout.
+
+When `requireAuth` is `false` (default), clients are automatically authenticated on connect and receive the full welcome message with recent logs.
+
+### Command Gating
+
+When `allowCommands` is `false`, all commands except `help` and `quit` are blocked with a "Commands are disabled" message. This allows log-only monitoring sessions.
+
+### IP Whitelist
+
+The `allowedIPs` field restricts connections to a set of IP addresses. An empty list (default) allows all IPs. For production deployments, combine `allowedIPs` with `requireAuth` and network-level firewalling.
 
 ## Further Reading
 

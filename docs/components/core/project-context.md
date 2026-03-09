@@ -11,7 +11,7 @@ This document provides the context an AI coding agent needs to understand, navig
 | Field | Value |
 |-------|-------|
 | **Name** | DomoticsCore-Core |
-| **Version** | 1.5.0 (see `library.json`) |
+| **Version** | 1.5.2 (see `library.json`) |
 | **Role** | Foundation library -- runtime engine, component model, EventBus, logging, timers, memory management |
 | **Namespace** | `DomoticsCore` (top-level), `DomoticsCore::Components`, `DomoticsCore::Utils`, `DomoticsCore::Testing` |
 | **License** | MIT |
@@ -83,6 +83,9 @@ This document provides the context an AI coding agent needs to understand, navig
 | `MemoryManager` | Runtime memory profiling and adaptive sizing | "Adapt to available memory" |
 | `NonBlockingDelay` | Interval timing without blocking | "Schedule periodic work" |
 | `HeapTracker` | Checkpoint-based heap monitoring for tests | "Detect memory leaks" |
+| `NativeAllocTracker` | Per-allocation heap tracking for native tests (singleton) | "Track individual allocations for leak diagnosis" |
+| `ScopedAllocTracking` | RAII helper that enables/disables `NativeAllocTracker` around a test | "Scope allocation tracking to a test" |
+| `AllocationRecord` | Record of a single allocation (ptr, size, source location, freed flag) | "Describe one allocation event" |
 | `LoggerCallbacks` | Broadcast log messages to registered listeners | "Route log output" |
 
 ---
@@ -131,7 +134,7 @@ Every DomoticsCore component depends on Core. Based on `library.json` dependency
 
 6. **Subscription ownership.** The `on<T>()` helper on IComponent automatically sets `this` as the subscription owner. This enables automatic cleanup during `shutdown()`.
 
-7. **Event topic naming.** Use hierarchical slash-separated topics: `"component/ready"`, `"wifi/connected"`, `"mqtt/message"`. Constants must be defined in an `Events.h` or `*Events.h` file, not scattered as magic strings.
+7. **Event topic naming.** Use hierarchical slash-separated topics: `"component/ready"`, `"wifi/sta/connected"`, `"mqtt/message"`. Constants must be defined in an `Events.h` or `*Events.h` file, not scattered as magic strings.
 
 ### Pitfalls
 

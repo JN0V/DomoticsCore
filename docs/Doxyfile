@@ -1,7 +1,7 @@
 # Doxyfile for DomoticsCore
 
 PROJECT_NAME           = "DomoticsCore"
-PROJECT_NUMBER         = "1.0"
+PROJECT_NUMBER         = "2.0.0"
 OUTPUT_DIRECTORY       = docs/html
 CREATE_SUBDIRS         = NO
 GENERATE_LATEX         = NO
@@ -17,7 +17,13 @@ INPUT                  = \
     DomoticsCore-Wifi/include \
     DomoticsCore-Storage/include \
     DomoticsCore-SystemInfo/include \
-    DomoticsCore-LED/include
+    DomoticsCore-LED/include \
+    DomoticsCore-MQTT/include \
+    DomoticsCore-HomeAssistant/include \
+    DomoticsCore-OTA/include \
+    DomoticsCore-NTP/include \
+    DomoticsCore-RemoteConsole/include \
+    DomoticsCore-System/include
 RECURSIVE              = YES
 EXCLUDE_SYMLINKS       = YES
 
@@ -55,4 +61,10 @@ STRIP_FROM_PATH        = \
     DomoticsCore-Wifi \
     DomoticsCore-Storage \
     DomoticsCore-SystemInfo \
-    DomoticsCore-LED
+    DomoticsCore-LED \
+    DomoticsCore-MQTT \
+    DomoticsCore-HomeAssistant \
+    DomoticsCore-OTA \
+    DomoticsCore-NTP \
+    DomoticsCore-RemoteConsole \
+    DomoticsCore-System

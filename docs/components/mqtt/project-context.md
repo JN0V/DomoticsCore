@@ -166,7 +166,7 @@ When working on DomoticsCore-MQTT, the following Constitution principles are esp
 
 3. **Principle X (Non-Blocking Timer)**: `delay()` is forbidden. Reconnection uses `NonBlockingDelay`. The `loop()` method must complete in under 10 ms. `connectInternal()` calls `HAL::Platform::yield()` before and after the blocking PubSubClient connect call to prevent watchdog resets.
 
-4. **Principle XIV (Memory Leak Prevention)**: Monitor heap impact of the message queue. After processing queued messages, `std::vector::erase()` is used but `shrink_to_fit()` is not currently called -- this is a potential improvement area. Event payload buffers are stack-allocated (fixed-size), avoiding heap churn.
+4. **Principle XIV (Memory Leak Prevention)**: Monitor heap impact of the message queue. `shrink_to_fit()` is called in three places: `unsubscribe()` (after erasing one subscription), `unsubscribeAll()` (after clearing the subscription vector), and `processMessageQueue()` (after draining queued messages). Event payload buffers are stack-allocated (fixed-size), avoiding heap churn.
 
 5. **Principle XV (Semantic Versioning)**: Version changes must use `tools/bump_version.py`. The version in `library.json` must match `metadata.version` in the constructor (`MQTT_impl.h` line 34).
 

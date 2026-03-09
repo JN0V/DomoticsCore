@@ -198,20 +198,18 @@ All fields with their types, defaults, and descriptions:
 | `autoReconnect` | `bool` | `true` | Auto-reconnect on disconnect |
 | `reconnectDelay` | `uint32_t` | `1000` | Initial reconnection delay in ms |
 | `maxReconnectDelay` | `uint32_t` | `30000` | Maximum reconnection delay in ms |
-| `maxQueueSize` | `uint16_t` | `100` | Maximum offline message queue size **(not enforced -- see warning below)** |
-| `publishRateLimit` | `uint8_t` | `10` | Max messages per second (0 = unlimited) **(not enforced -- see warning below)** |
-| `maxSubscriptions` | `uint8_t` | `50` | Maximum number of subscriptions **(not enforced -- see warning below)** |
+| `maxQueueSize` | `uint16_t` | `100` | Maximum offline message queue size (0 = unlimited). Enforced: queue size is checked before adding; excess messages are dropped with a warning log. |
+| `publishRateLimit` | `uint8_t` | `10` | Max messages per second (0 = unlimited). Enforced: uses a tumbling 1-second window; messages exceeding the limit are dropped with a warning log. |
+| `maxSubscriptions` | `uint8_t` | `50` | Maximum number of subscriptions (0 = unlimited). Enforced: subscription count is checked before subscribing; excess subscriptions are rejected with a warning log. |
 | `resubscribeOnConnect` | `bool` | `true` | Re-subscribe to all topics after reconnect |
 | `connectTimeout` | `uint32_t` | `10000` | Connection attempt timeout in ms |
 | `operationTimeout` | `uint32_t` | `5000` | Generic operation timeout in ms |
 | `enabled` | `bool` | `true` | Master enable/disable flag |
 
-> **Warning -- Unenforced config fields**: The `maxQueueSize`, `publishRateLimit`, and `maxSubscriptions` fields are declared in `MQTTConfig` but are **not enforced at runtime** in the current implementation. Specifically:
-> - `maxQueueSize`: `publish()` appends to the offline queue unconditionally with no size check. The queue can grow beyond this value.
-> - `publishRateLimit`: The `lastPublishTime` and `publishCountThisSecond` members exist in the class but are never checked before publishing. Rate limiting is not applied.
-> - `maxSubscriptions`: `subscribe()` adds subscriptions with no count check against this limit.
->
-> Do not rely on these fields for resource protection until enforcement logic is implemented.
+**Enforcement details for resource-protection fields**:
+> - `maxQueueSize`: `publish()` checks the queue size before adding a message when offline. If the queue is at capacity, the message is dropped, a warning is logged, and `publish()` returns `false`. Set to `0` for unlimited queue growth.
+> - `publishRateLimit`: `publish()` uses a tumbling 1-second window. A counter (`publishCountThisSecond`) resets every 1000 ms. When the counter reaches the limit, further messages within that window are dropped, a warning is logged, and `publish()` returns `false`. Set to `0` for unlimited rate.
+> - `maxSubscriptions`: `subscribe()` checks the subscription count before adding. If the limit is reached, the subscription is rejected, a warning is logged, and `subscribe()` returns `false`. Set to `0` for unlimited subscriptions.
 
 ---
 
@@ -308,7 +306,7 @@ struct QueuedMessage {
 
 **Queue processing** happens in `loop()` when the connection is active. The component iterates through the queue, publishing each message. Successfully published messages are removed; if a publish fails, processing stops (preserving message order).
 
-**Limits**: The `config.maxQueueSize` field (default 100) is intended to bound queue size, but **this limit is not currently enforced** in the code. `publish()` appends to the queue unconditionally. Monitor `getQueuedMessageCount()` and implement your own bounds checking if unbounded growth is a concern.
+**Limits**: The `config.maxQueueSize` field (default 100) bounds the queue size. When the queue reaches `maxQueueSize`, additional messages are dropped with a warning log and `publish()` returns `false`. Set `maxQueueSize` to `0` for unlimited queue growth. Monitor `getQueuedMessageCount()` to track current queue depth.
 
 **Important**: `publishBinary()` does NOT queue when offline -- it returns `false` immediately.
 

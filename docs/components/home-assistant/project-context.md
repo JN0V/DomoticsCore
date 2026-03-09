@@ -11,7 +11,7 @@ This document provides AI-oriented context for the DomoticsCore-HomeAssistant co
 | Field | Value |
 |-------|-------|
 | **Library Name** | `DomoticsCore-HomeAssistant` |
-| **Version** | `1.6.0` |
+| **Version** | `2.0.0` |
 | **Component Name** | `HomeAssistant` (registered as `metadata.name`) |
 | **Namespace** | `DomoticsCore::Components::HomeAssistant` |
 | **Architecture** | Header-only (no `.cpp` source files) |
@@ -27,7 +27,7 @@ This document provides AI-oriented context for the DomoticsCore-HomeAssistant co
 
 ```
 DomoticsCore-HomeAssistant/
-  library.json                                  # PlatformIO metadata (v1.5.0)
+  library.json                                  # PlatformIO metadata (v2.0.0)
   README.md                                     # Component README
   SPECIFICATIONS.md                             # Design specifications
   include/
@@ -40,7 +40,7 @@ DomoticsCore-HomeAssistant/
       HALight.h                                 # Light entity (on/off + brightness)
       HAButton.h                                # Button entity (trigger-only)
       HAAlarmControlPanel.h                     # Alarm control panel entity (arm/disarm + code)
-      HAEvents.h                                # EventBus event constants
+      HAEvents.h                                # EventBus event constants + HACommandEvent struct
       HomeAssistantWebUI.h                      # WebUI provider (optional)
   examples/
     BasicHA/src/main.cpp                        # Minimal HA integration example
@@ -57,28 +57,35 @@ Total header files: 10 (all under `include/DomoticsCore/`).
 
 - **File:** `HomeAssistant.h`
 - **Inherits:** `IComponent`
-- **Role:** Top-level orchestrator. Manages entity vector, publishes discovery, routes commands, tracks statistics.
+- **Role:** Top-level orchestrator. Manages entity vector, publishes discovery, routes commands via virtual dispatch, emits `ha/command` EventBus events, tracks statistics.
 - **EventBus subscriptions:** `mqtt/connected`, `mqtt/disconnected`, `mqtt/message`
-- **EventBus emissions:** `ha/discovery_published`, `ha/entity_added`
+- **EventBus emissions:** `ha/discovery_published`, `ha/entity_added`, `ha/command`
+
+  The `ha/command` event (v2.0.0) is the primary mechanism for consumers to react to commands from Home Assistant. It carries an `HACommandEvent` struct with `entityId`, `component`, `command`, and `code` fields.
+
 - **MQTT communication:** All MQTT operations go through EventBus (`mqtt/publish`, `mqtt/subscribe`) -- never through direct MQTT client references.
 
 ### HAEntity (base)
 
 - **File:** `HAEntity.h`
-- **Role:** Provides topic generation, unique ID, and base discovery payload. All entity types derive from this.
+- **Role:** Provides topic generation (zero-heap `char* buf` API), unique ID, and base discovery payload. All entity types derive from this.
 - **Properties:** `id`, `name`, `component`, `icon`, `deviceClass`, `retained`
-- **Virtual method:** `buildDiscoveryPayload()` -- overridden by each entity type.
+- **Virtual methods:**
+  - `buildDiscoveryPayload()` -- overridden by each entity type.
+  - `handleCommand(const String& payload) -> bool` -- virtual dispatch for command handling (v2.0.0). Returns `true` if the command was valid, `false` to suppress `ha/command` emission.
 
 ### Entity Type Classes
 
-| Class | File | HA Component | Callback Signature | Has State | Receives Commands |
-|-------|------|-------------|-------------------|-----------|-------------------|
+| Class | File | HA Component | Internal State Fields | Has State | Receives Commands |
+|-------|------|-------------|----------------------|-----------|-------------------|
 | `HASensor` | `HASensor.h` | `sensor` | None | Yes | No |
 | `HABinarySensor` | `HABinarySensor.h` | `binary_sensor` | None | Yes | No |
-| `HASwitch` | `HASwitch.h` | `switch` | `void(bool)` | Yes | Yes |
-| `HALight` | `HALight.h` | `light` | `void(bool, uint8_t)` | Yes (JSON) | Yes (JSON) |
-| `HAButton` | `HAButton.h` | `button` | `void()` | No | Yes |
-| `HAAlarmControlPanel` | `HAAlarmControlPanel.h` | `alarm_control_panel` | `void(const String&, const String&)` | Yes (consumer-managed) | Yes |
+| `HASwitch` | `HASwitch.h` | `switch` | `bool state` | Yes | Yes |
+| `HALight` | `HALight.h` | `light` | `bool state`, `uint8_t brightness` | Yes (JSON) | Yes (JSON) |
+| `HAButton` | `HAButton.h` | `button` | None | No | Yes |
+| `HAAlarmControlPanel` | `HAAlarmControlPanel.h` | `alarm_control_panel` | `char lastCommand[64]`, `char lastCode[32]` | Yes (consumer-managed) | Yes |
+
+**v2.0.0 change:** No entity type has a `commandCallback` or `pressCallback` field. All command handling is via virtual `handleCommand()` which stores state internally, followed by the `ha/command` EventBus event for consumer logic.
 
 ### HomeAssistantWebUI
 
@@ -118,19 +125,46 @@ HomeAssistant depends on Core (IComponent, EventBus, Logger) and MQTT (event str
 
 ---
 
+## HAConfig: Fixed-Size Char Arrays (v2.0.0)
+
+All `HAConfig` fields are fixed-size `char[]` arrays. Use `HA::setField(dest, src, maxLen)` to safely populate them. Fields that exceed `maxLen` are truncated with a warning log.
+
+| Field | Type | Max Size Constant |
+|-------|------|-------------------|
+| `nodeId` | `char[33]` | `HA::MAX_NODE_ID` |
+| `deviceName` | `char[65]` | `HA::MAX_DEVICE_NAME` |
+| `manufacturer` | `char[33]` | `HA::MAX_MANUFACTURER` |
+| `model` | `char[33]` | `HA::MAX_MODEL` |
+| `swVersion` | `char[17]` | `HA::MAX_SW_VERSION` |
+| `discoveryPrefix` | `char[33]` | `HA::MAX_DISCOVERY_PREFIX` |
+| `availabilityTopic` | `char[129]` | `HA::MAX_AVAIL_TOPIC` |
+| `configUrl` | `char[129]` | `HA::MAX_CONFIG_URL` |
+| `suggestedArea` | `char[33]` | `HA::MAX_SUGGESTED_AREA` |
+
+---
+
 ## Entity Type Patterns
 
 All entity types follow the same pattern:
 
 1. **Class inherits `HAEntity`** with component type set in constructor (e.g., `"sensor"`, `"switch"`).
-2. **Constructor** accepts `id`, `name`, and type-specific parameters.
+2. **Constructor** accepts `id`, `name`, and type-specific parameters. **No callback parameters** (v2.0.0).
 3. **`buildDiscoveryPayload()` override** calls `HAEntity::buildDiscoveryPayload()` first, then appends type-specific JSON fields.
 4. **Controllable entities** (`HASwitch`, `HALight`, `HAButton`, `HAAlarmControlPanel`) have:
-   - A `commandCallback` (or `pressCallback` for buttons)
-   - A `handleCommand(const String& payload) override` method (virtual dispatch via `HAEntity` base)
+   - A `handleCommand(const String& payload) -> bool` override (virtual dispatch)
+   - Internal state fields updated by `handleCommand()` (e.g., `HASwitch::state`, `HALight::brightness`)
    - A `command_topic` in their discovery payload
 5. **Entity storage:** `std::vector<std::unique_ptr<HAEntity>>` in `HomeAssistantComponent`.
 6. **Entity lookup:** Linear scan by `id` string via `findEntity()`.
+
+### Command Flow (v2.0.0)
+
+1. MQTT message arrives on `{prefix}/+/{nodeId}/+/set`.
+2. `HomeAssistantComponent::handleCommand()` extracts entity ID from topic.
+3. `entity->handleCommand(payload)` is called via virtual dispatch -- each entity type validates and stores state internally.
+4. If `handleCommand()` returns `true`, an `HACommandEvent` is emitted on `ha/command`.
+5. If `handleCommand()` returns `false` (invalid payload), no event is emitted.
+6. Consumers subscribe to `ha/command` to react to commands.
 
 ### Adding a New Entity Type
 
@@ -138,10 +172,9 @@ To add a new entity type (e.g., `HANumber`), follow the pattern established by `
 
 1. Create `HANumber.h` inheriting `HAEntity` with `component = "number"`.
 2. Override `buildDiscoveryPayload()` to add type-specific fields (`min`, `max`, `step`).
-3. Add `handleCommand()` if the entity receives commands.
-4. Add `addNumber()` method to `HomeAssistantComponent`.
-5. Add command routing in `handleCommand()` for `entity->component == "number"`.
-6. Include the new header in `HomeAssistant.h`.
+3. Override `handleCommand()` to validate and store the command, returning `bool`.
+4. Add `addNumber()` method to `HomeAssistantComponent` (no callback parameter).
+5. Include the new header in `HomeAssistant.h`.
 
 ---
 
@@ -174,6 +207,15 @@ Payload: `"online"` or `"offline"` (always retained).
 
 The component subscribes to `{prefix}/+/{nodeId}/+/set` to receive commands for all entity types in a single subscription.
 
+### Topic Generation (v2.0.0 -- zero-heap)
+
+All topic methods use a caller-provided `char* buf` buffer instead of returning `String`:
+
+```cpp
+char topic[HA_TOPIC_BUF_SIZE];  // HA_TOPIC_BUF_SIZE = 128
+entity->getStateTopic(topic, sizeof(topic), nodeId, discoveryPrefix);
+```
+
 ---
 
 ## EventBus Integration
@@ -184,21 +226,39 @@ The component subscribes to `{prefix}/+/{nodeId}/+/set` to receive commands for 
 |-------|--------|-------------|---------|
 | `mqtt/connected` | MQTT component | `bool` | Publishes availability, subscribes to commands, publishes discovery |
 | `mqtt/disconnected` | MQTT component | `bool` | Sets `mqttConnected = false` |
-| `mqtt/message` | MQTT component | `MQTTMessageEvent` | Routes to `handleCommand()` |
+| `mqtt/message` | MQTT component | `MQTTMessageEvent` | Routes to `handleCommand()` via virtual dispatch |
 
 ### Emitted Events
 
 | Event | Payload Type | When |
 |-------|-------------|------|
 | `ha/discovery_published` | `int` (entity count) | After `publishDiscovery()` completes |
-| `ha/entity_added` | `String` (entity ID) | When `addSensor()` is called (**only** -- see known issues below; `addAlarmControlPanel()` and others do not emit this) |
+| `ha/entity_added` | `HAEntityAddedEvent` | When any `add*()` method is called (all entity types) |
+| `ha/command` | `HACommandEvent` | When an entity processes a valid command from HA |
 | `mqtt/publish` | `MQTTPublishEvent` | Every state/discovery/availability publish |
 | `mqtt/subscribe` | `MQTTSubscribeEvent` | On MQTT connect (command wildcard) |
 
-### Known Issues
+### HACommandEvent Struct (v2.0.0)
 
-- **C21 -- HAEntityAddedEvent struct alignment:** The `HAEntityAddedEvent` struct is defined in `HomeAssistant.h` with `id[64]` and `component[32]` fields, but `emit()` passes a `String` (entity ID only) for `ha/entity_added`. The struct and actual emission are not aligned; resolution is pending.
-- **M19 -- Inconsistent `ha/entity_added` emission:** Only `addSensor()` emits the `ha/entity_added` event. `addBinarySensor()`, `addSwitch()`, `addLight()`, `addButton()`, and `addAlarmControlPanel()` do not emit this event, which is an inconsistency to be addressed in a future release.
+```cpp
+struct HACommandEvent {
+    char entityId[64];    // Entity that received the command
+    char component[32];   // HA component type (switch, light, button, alarm_control_panel)
+    char command[128];    // Raw MQTT payload (or parsed command for alarm_control_panel)
+    char code[32];        // Alarm PIN code (empty for non-alarm entities)
+};
+```
+
+### HAEntityAddedEvent Struct
+
+```cpp
+struct HAEntityAddedEvent {
+    char id[64];           // Entity ID
+    char component[32];    // Component type (sensor, switch, etc.)
+};
+```
+
+All `add*()` methods properly emit this event with both `id` and `component` populated.
 
 ---
 
@@ -208,15 +268,15 @@ This section maps component behavior to the [DomoticsCore Constitution](../../..
 
 | Principle | Compliance |
 |-----------|------------|
-| **I. SOLID** | SRP: Each entity type is a separate class. DIP: Depends on `IComponent` abstraction, communicates via EventBus. ISP: Entity classes expose only relevant methods. |
+| **I. SOLID** | SRP: Each entity type is a separate class. OCP: Virtual `handleCommand()` allows extension without modifying base. DIP: Depends on `IComponent` abstraction, communicates via EventBus. ISP: Entity classes expose only relevant methods. |
 | **III. KISS** | Header-only library. Simple linear entity lookup. No complex inheritance hierarchies. |
 | **IV. YAGNI** | 6 entity types implemented (sensor, binary_sensor, switch, light, button, alarm_control_panel). Future types added as needed. |
-| **V. Performance** | Reuses device JSON across all entity discovery. Volatile publishing guard prevents re-entrancy. |
-| **VI. EventBus Architecture** | All MQTT communication via EventBus events. No direct component references. Topic-based messaging with type-safe payload structs. |
-| **VII. File Size** | All header files are well under 800 lines. Largest file (`HomeAssistant.h`) is ~595 lines. |
+| **V. Performance** | Fixed-size `char[]` config fields (zero heap). Zero-heap topic generation. Reuses device JSON across all entity discovery. Volatile publishing guard prevents re-entrancy. |
+| **VI. EventBus Architecture** | All MQTT communication via EventBus events. `ha/command` event replaces per-entity callbacks. No direct component references. Topic-based messaging with type-safe payload structs. |
+| **VII. File Size** | All header files are well under 800 lines. Largest file (`HomeAssistant.h`) is ~695 lines. |
 | **IX. HAL Isolation** | No `#ifdef` platform directives in any file. Fully platform-agnostic. |
 | **X. Non-Blocking** | `loop()` is a no-op. All operations are event-driven callbacks. |
 | **XII. Multi-Registry** | `library.json` present with proper PlatformIO structure. |
 | **XIII. Anti-Patterns** | No singletons. No circular dependencies. Event constants centralized in `HAEvents.h` and `MQTTEvents.h`. |
-| **XIV. Memory Leak Prevention** | Entities stored in `std::unique_ptr`. No raw `new`/`delete`. Fixed-size char buffers for MQTT events (`MQTT_EVENT_TOPIC_SIZE`, `MQTT_EVENT_PAYLOAD_SIZE`). |
-| **XV. Semantic Versioning** | `library.json` version (`1.6.0`) matches `metadata.version` in constructor. |
+| **XIV. Memory Leak Prevention** | Entities stored in `std::unique_ptr`. No raw `new`/`delete`. Fixed-size char buffers for MQTT events (`MQTT_EVENT_TOPIC_SIZE`, `MQTT_EVENT_PAYLOAD_SIZE`) and HAConfig. |
+| **XV. Semantic Versioning** | `library.json` version (`2.0.0`) matches `metadata.version` in constructor. |

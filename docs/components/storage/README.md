@@ -10,12 +10,13 @@ On ESP32, data is persisted to NVS (Non-Volatile Storage) via the Preferences li
 
 ## Key Features
 
-- **Typed key-value storage** -- String, int32, float, bool, uint64, and binary blob support
+- **Typed key-value storage** -- String, int32, float, bool, uint64 (UInt64), and binary blob support
 - **Namespace isolation** -- each StorageComponent instance operates within its own namespace, preventing key collisions between components
 - **In-memory cache** -- write-through cache keeps recently stored entries in RAM for fast reads
 - **Auto-commit** -- changes are flushed to the backend immediately by default
 - **Read-only mode** -- open a namespace for diagnostic reads without risk of accidental writes
 - **Key registration** -- components declare their storage keys with type and description metadata
+- **Change notifications** -- emits `storage/changed` events (with a `StorageChangedEvent` POD struct containing the key name) on every `put*`, `remove`, or `clear` operation
 - **Periodic maintenance** -- background timers report storage health and usage statistics
 - **WebUI provider** -- optional `StorageWebUI` wrapper exposes namespace stats and settings to the DomoticsCore WebUI
 - **Multi-platform HAL** -- ESP32 (Preferences/NVS), ESP8266 (LittleFS+JSON), Stub (RAM-only)

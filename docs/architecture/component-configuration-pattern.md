@@ -218,7 +218,6 @@ public:
         DLOG_I("MyComponent", "Config updated: sensitivity=%.2f", config.sensitivity);
     }
     
-    String getName() const override { return "MyComponent"; }
 };
 ```
 
@@ -284,7 +283,7 @@ myComp->setConfig(cfg);  // All fields correct
 
 For each component needing update:
 
-- [ ] Add `getXxxConfig()` method
+- [ ] Add `getConfig()` method
 - [ ] Verify `setConfig()` is smart (detects changes, minimal restart)
 - [ ] Add Storage integration section in `System.h`
 - [ ] Test with empty Storage (should use defaults)

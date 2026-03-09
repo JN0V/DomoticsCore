@@ -48,8 +48,8 @@ Called when `Core::shutdown()` executes. Components shutdown in reverse dependen
 Components declare dependencies via `getDependencies()`:
 
 ```cpp
-std::vector<String> getDependencies() const override {
-    return {"StorageComponent", "WifiComponent"};
+std::vector<Dependency> getDependencies() const override {
+    return {{"Storage", false}, {"Wifi", false}};  // Optional dependencies
 }
 ```
 

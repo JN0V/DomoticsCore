@@ -77,8 +77,8 @@ config.deviceName = "FullStackDevice";
 config.wifiSSID = "MyNetwork";
 config.wifiPassword = "password";
 config.mqttBroker = "192.168.1.100";
-// NOTE: config.otaPassword is declared but NOT wired to the OTA component.
-// The OTAComponent uses OTAConfig::bearerToken / basicAuthUser / basicAuthPassword instead.
+// config.otaPassword is mapped to OTAConfig::bearerToken by System.
+// Set it here to require a bearer token for OTA uploads.
 
 System system(config);
 ```

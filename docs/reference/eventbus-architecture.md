@@ -104,7 +104,7 @@ sequenceDiagram
     Note over System: User configures WiFi via WebUI
     
     WiFi->>WiFi: connect()
-    WiFi-->>System: emit("wifi/connected")
+    WiFi-->>System: emit("wifi/sta/connected")
     System->>MQTT: connect()
     
     MQTT->>Broker: TCP connect
@@ -216,8 +216,8 @@ struct MQTTMessageEvent {
 
 | Event Name | Type | Payload | When |
 |------------|------|---------|------|
-| `wifi/connected` | `bool` | `true` | After successful connection |
-| `wifi/disconnected` | `bool` | `true` | After disconnection |
+| `wifi/sta/connected` | `bool` | `true` | After STA connection established |
+| `wifi/ap/enabled` | `bool` | `true` | After Access Point enabled |
 
 ### System Orchestration
 
@@ -225,7 +225,7 @@ The `System.h` component orchestrates events between components:
 
 ```cpp
 // WiFi → MQTT orchestration
-on<bool>("wifi/connected", [this](const bool&) {
+on<bool>("wifi/sta/connected", [this](const bool&) {
     if (mqtt && mqtt->isEnabled()) {
         mqtt->connect();
     }

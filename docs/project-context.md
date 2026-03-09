@@ -5,7 +5,7 @@
 ## Project Identity
 
 - **Name**: DomoticsCore
-- **Version**: 1.7.0
+- **Version**: 2.0.0
 - **Type**: Embedded IoT library (PlatformIO / Arduino framework)
 - **Platforms**: ESP32, ESP32-C3, ESP8266
 - **Language**: C++ (header-only design)

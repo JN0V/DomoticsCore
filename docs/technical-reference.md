@@ -232,7 +232,7 @@ bus.publishSticky("custom/state", myState);
 The EventBus supports prefix wildcards using `*`:
 
 ```cpp
-bus.subscribe("sensor.*", handler);  // Matches "sensor/temperature", "sensor/humidity", etc.
+bus.subscribe("sensor/*", handler);  // Matches "sensor/temperature", "sensor/humidity", etc.
 ```
 
 > **Note**: EventBus wildcards use `*` (not MQTT's `+`/`#`). This is an internal EventBus feature, separate from MQTT topic wildcards.
@@ -609,7 +609,7 @@ Tests run on the `native` platform (no hardware). Use mocks from `tests/mocks/` 
 
 ### Library Version
 
-The root `library.json` carries the overall library version (currently `1.7.0`). Each component also has its own version in its `library.json`.
+The root `library.json` carries the overall library version (currently `2.0.0`). Each component also has its own version in its `library.json`.
 
 ### Component Versions
 
@@ -617,8 +617,9 @@ Components are versioned independently:
 
 | Component | Version |
 |-----------|---------|
-| Core | 1.5.0 |
-| LED | 1.3.0 |
+| Root (DomoticsCore) | 2.0.0 |
+| Core | 1.5.2 |
+| LED | 1.4.0 |
 | MQTT | 1.4.1 |
 | NTP | 1.3.0 |
 | OTA | 1.4.1 |
@@ -628,7 +629,7 @@ Components are versioned independently:
 | SystemInfo | 1.4.0 |
 | WebUI | 1.5.0 |
 | Wifi | 1.4.1 |
-| HomeAssistant | 1.5.0 |
+| HomeAssistant | 2.0.0 |
 
 ### Semantic Versioning
 

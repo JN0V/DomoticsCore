@@ -62,7 +62,7 @@ struct CoreConfig {
 | **createTimer** | `static NonBlockingDelay createTimer(unsigned long intervalMs)` | Convenience factory for timers. |
 | **getEventBus** | `EventBus& getEventBus()` | Returns reference to the shared EventBus. |
 | **on\<PayloadT\>** | `template<PayloadT> uint32_t on(const String& topic, handler, bool replayLast = false)` | Subscribe to a topic with typed payload. Returns subscription ID. |
-| **emit\<PayloadT\>** | `template<PayloadT> void emit(const String& topic, const PayloadT& payload)` | Publish an event with payload. |
+| **emit\<PayloadT\>** | `template<PayloadT> void emit(const String& topic, const PayloadT& payload, bool sticky = false)` | Publish an event with payload. If `sticky` is true, the event is stored and replayed to late subscribers. |
 | **emit** | `void emit(const String& topic)` | Publish an event without payload. |
 
 ### begin() Sequence
@@ -118,6 +118,12 @@ struct Dependency {
 | **eventBus** | `EventBus& eventBus()` | Returns reference to the injected EventBus. |
 | **on\<T\>** | `template<T> uint32_t on(const String& topic, handler, bool replayLast = false)` | Subscribe to a topic with typed payload. Owner defaults to `this`. |
 | **emit\<T\>** | `template<T> void emit(const String& topic, const T& payload, bool sticky = false)` | Publish (or sticky-publish) an event with typed payload. |
+
+### Protected Methods
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| **setStatus** | `void setStatus(ComponentStatus status)` | Update the internal `lastStatus` field. Components can call this from their lifecycle methods to track status transitions. |
 
 ### Protected Members
 
@@ -517,6 +523,66 @@ HEAP_ASSERT_NO_GROWTH(tracker, "checkpoint", toleranceBytes)
 
 These macros integrate with Unity's `TEST_ASSERT_TRUE_MESSAGE`.
 
+### Native Allocation Tracking Utilities
+
+**Header:** `DomoticsCore/Testing/HeapTracker_Native.h`
+**Namespace:** `DomoticsCore::Testing`
+
+These utilities provide detailed heap tracking on native (desktop) platforms using system APIs (`mallinfo` on Linux, `mach_task_basic_info` on macOS). They complement the `HeapTracker` checkpoint-based approach with per-allocation granularity.
+
+#### Standalone Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| **getRealHeapUsage** | `size_t getRealHeapUsage()` | Returns actual bytes currently allocated on the heap. |
+| **getRealHeapTotal** | `size_t getRealHeapTotal()` | Returns total heap arena size. |
+| **getRealLargestFreeBlock** | `size_t getRealLargestFreeBlock()` | Approximation of the largest contiguous free block. |
+| **takeHeapSnapshot** | `HeapSnapshot takeHeapSnapshot()` | Creates a `HeapSnapshot` using real system heap metrics (not simulated). |
+
+#### AllocationRecord
+
+```cpp
+struct AllocationRecord {
+    void* ptr = nullptr;
+    size_t size = 0;
+    const char* file = nullptr;
+    int line = 0;
+    bool freed = false;
+};
+```
+
+Records a single allocation with optional source location for leak diagnostics.
+
+#### NativeAllocTracker
+
+Singleton class for detailed per-allocation tracking. Enable it around the code under test and query unfreed allocations afterward.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| **instance** | `static NativeAllocTracker& instance()` | Meyer's singleton accessor. |
+| **setEnabled** | `void setEnabled(bool)` | Enable or disable tracking. |
+| **isEnabled** | `bool isEnabled() const` | Check if tracking is active. |
+| **recordAlloc** | `void recordAlloc(void* ptr, size_t size, const char* file = nullptr, int line = 0)` | Record an allocation event. |
+| **recordFree** | `void recordFree(void* ptr)` | Record a deallocation event. |
+| **getTotalAllocated** | `size_t getTotalAllocated() const` | Cumulative bytes allocated while tracking was enabled. |
+| **getTotalFreed** | `size_t getTotalFreed() const` | Cumulative bytes freed while tracking was enabled. |
+| **getCurrentUsage** | `size_t getCurrentUsage() const` | `totalAllocated - totalFreed`. |
+| **getUnfreedAllocations** | `std::vector<AllocationRecord> getUnfreedAllocations() const` | List of allocations not yet freed. |
+| **getUnfreedCount** | `size_t getUnfreedCount() const` | Number of unfreed allocations. |
+| **getUnfreedBytes** | `size_t getUnfreedBytes() const` | Total bytes in unfreed allocations. |
+| **reset** | `void reset()` | Clear all recorded allocations and counters. |
+
+#### ScopedAllocTracking
+
+RAII helper that enables `NativeAllocTracker` on construction (with reset) and disables it on destruction. Convenient for wrapping a test body.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| **constructor** | `ScopedAllocTracking()` | Resets the tracker and enables it. |
+| **destructor** | `~ScopedAllocTracking()` | Disables tracking. |
+| **getUnfreedCount** | `size_t getUnfreedCount() const` | Delegates to `NativeAllocTracker::instance()`. |
+| **getUnfreedBytes** | `size_t getUnfreedBytes() const` | Delegates to `NativeAllocTracker::instance()`. |
+
 ---
 
 ## 10. Platform HAL
@@ -547,6 +613,82 @@ The HAL routing header detects the platform at compile time and includes the app
 ### HAL Functions (`DomoticsCore::HAL::`)
 
 `initializeLogging`, `isLoggerReady`, `getMillis`, `delay`, `formatChipIdHex`, `toUpperCase`, `substring`, `indexOf`, `startsWith`, `endsWith`, `getPlatformName`, `getChipModel`, `getChipRevision`, `getChipId`, `getFreeHeap`, `getTotalRAM_KB`, `getCpuFreqMHz`, `restart`, `ledBuiltinOn`, `ledBuiltinOff`, `isInternalLEDInverted`, `digitalWrite`, `pinMode`, `analogWrite`, `digitalRead`, `map`
+
+### HAL Type Aliases and Constants
+
+| Symbol | Kind | Description |
+|--------|------|-------------|
+| `HAL::SHA256` | Type alias | Alias for `Platform::SHA256`. Provides SHA-256 hash computation (uses mbedtls on ESP32). Methods: `begin()`, `update(data, len)`, `finish(digest)`, `abort()`, `toHex(digest, len)`. |
+| `HAL::PI` | `constexpr double` | Mathematical constant PI for platform-independent trigonometry (e.g., LED effects). |
+
+### Platform-Only Functions (`HAL::Platform::`)
+
+The following functions are available in the `DomoticsCore::HAL::Platform` namespace but are **not** forwarded to the top-level `HAL::` namespace. Access them explicitly via `HAL::Platform::`.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| **getTemperature** | `float getTemperature()` | Chip temperature in Celsius (ESP32 only; returns NAN on unsupported platforms). |
+| **getTotalHeap** | `uint32_t getTotalHeap()` | Total heap size in bytes. |
+| **getMinFreeHeap** | `uint32_t getMinFreeHeap()` | Minimum free heap ever recorded since boot. |
+| **getMaxAllocHeap** | `uint32_t getMaxAllocHeap()` | Largest allocatable block in bytes. |
+| **getFlashSize** | `uint32_t getFlashSize()` | Flash chip size in bytes. |
+| **getSketchSize** | `uint32_t getSketchSize()` | Size of the uploaded sketch (program) in bytes. |
+| **getFreeSketchSpace** | `uint32_t getFreeSketchSpace()` | Free space available for OTA updates in bytes. |
+| **getResetReason** | `ResetReason getResetReason()` | Returns the platform-agnostic reset reason (see ResetReason enum below). |
+| **getResetReasonString** | `String getResetReasonString(ResetReason)` | Human-readable string for a reset reason value. |
+| **wasUnexpectedReset** | `bool wasUnexpectedReset(ResetReason)` | Returns `true` if the reset was caused by a crash (Panic, watchdog, brownout). |
+
+### ResetReason Enum
+
+**Namespace:** `DomoticsCore::HAL::Platform`
+
+Platform-agnostic enumeration of reset causes. Defined in `Platform_ESP32.h` (and corresponding stub/ESP8266 headers).
+
+```cpp
+enum class ResetReason : uint8_t {
+    Unknown      = 0,
+    PowerOn      = 1,
+    External     = 2,
+    Software     = 3,
+    Panic        = 4,
+    IntWatchdog  = 5,
+    TaskWatchdog = 6,
+    Watchdog     = 7,
+    DeepSleep    = 8,
+    Brownout     = 9,
+    SDIO         = 10
+};
+```
+
+| Value | Meaning |
+|-------|---------|
+| `Unknown` | Cause could not be determined |
+| `PowerOn` | Normal power-on boot |
+| `External` | External reset pin asserted |
+| `Software` | Software-initiated restart (`ESP.restart()`) |
+| `Panic` | Unhandled exception or assertion failure |
+| `IntWatchdog` | Interrupt watchdog timeout |
+| `TaskWatchdog` | Task watchdog timeout |
+| `Watchdog` | Other watchdog timeout |
+| `DeepSleep` | Wake from deep sleep |
+| `Brownout` | Supply voltage dropped below threshold |
+| `SDIO` | SDIO reset |
+
+### Filesystem HAL
+
+**Header:** `DomoticsCore/Filesystem_HAL.h`
+**Namespace:** `DomoticsCore::HAL::Filesystem`
+
+The Filesystem HAL provides a platform-agnostic interface to the on-chip filesystem. Like the main Platform HAL, it routes to the appropriate implementation at compile time (`Filesystem_ESP32.h`, `Filesystem_ESP8266.h`, or `Filesystem_Stub.h`).
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| **begin** | `bool begin()` | Initialize the filesystem. Returns `true` on success. |
+| **exists** | `bool exists(const String& path)` | Check whether a file exists at the given path. |
+| **getFS** | `fs::FS& getFS()` | Return a reference to the underlying `fs::FS` object (for use with `AsyncWebServer`, etc.). |
+| **format** | `bool format()` | Format (erase) the entire filesystem. Returns `true` on success. |
+| **totalBytes** | `size_t totalBytes()` | Total filesystem capacity in bytes. |
+| **usedBytes** | `size_t usedBytes()` | Bytes currently used on the filesystem. |
 
 ---
 
@@ -619,7 +761,7 @@ Component-specific events are defined in their respective libraries (e.g., `Wifi
 
 ### Sticky Events
 
-`publishSticky()` stores the last payload for a topic. When a new subscriber calls `subscribe()` with `replayLast = true`, it immediately receives the stored value without waiting for the next publish. This is essential for state events like `wifi/connected` that late-starting components need.
+`publishSticky()` stores the last payload for a topic. When a new subscriber calls `subscribe()` with `replayLast = true`, it immediately receives the stored value without waiting for the next publish. This is essential for state events like `wifi/sta/connected` that late-starting components need.
 
 ### Wildcard Subscriptions
 

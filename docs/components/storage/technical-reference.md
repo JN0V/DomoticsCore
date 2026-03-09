@@ -109,7 +109,7 @@ bool     putULong64(const String& key, uint64_t value);
 uint64_t getULong64(const String& key, uint64_t defaultValue = 0);
 ```
 
-Note: `putULong64` does not update the in-memory cache (unlike the other put methods).
+Like the other `put*` methods, `putULong64` updates the in-memory cache on success and emits a `storage/changed` event.
 
 ### Binary Blob
 
@@ -212,7 +212,7 @@ String getStorageInfo();          // Multi-line human-readable status string
 
 ## Caching Layer
 
-`StorageComponent` maintains an in-memory `std::map<String, StorageEntry>` cache. Every successful `put*` call (except `putULong64`) writes through to the backend and simultaneously updates the cache. The cache is consulted for `getEntryCount()` and `getFreeEntries()` but is **not** consulted for `get*` reads -- those always go to the backend. The cache is cleared on `shutdown()`, `clear()`, and individual entries are evicted on `remove()`.
+`StorageComponent` maintains an in-memory `std::map<String, StorageEntry>` cache. Every successful `put*` call (including `putULong64`) writes through to the backend and simultaneously updates the cache. The cache is consulted for `getEntryCount()` and `getFreeEntries()` but is **not** consulted for `get*` reads -- those always go to the backend. The cache is cleared on `shutdown()`, `clear()`, and individual entries are evicted on `remove()`.
 
 ---
 
@@ -245,8 +245,22 @@ Defined in `DomoticsCore/StorageEvents.h` under `DomoticsCore::StorageEvents`.
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `EVENT_READY` | `"storage/ready"` | Emitted after `begin()` succeeds. Payload is the namespace name. |
+| `EVENT_CHANGED` | `"storage/changed"` | Emitted on every successful `put*`, `remove`, or `clear` call. Payload is a `StorageChangedEvent` POD struct. |
 
-Subscribe to this event to perform initialization that depends on storage being available.
+### StorageChangedEvent
+
+```cpp
+struct StorageChangedEvent {
+    char key[64];   // The key that was changed (null-terminated). For clear(), key is "*".
+};
+```
+
+Defined in `DomoticsCore/StorageEvents.h` under `DomoticsCore::StorageEvents`. This is a POD struct suitable for EventBus byte-copy dispatch. Emitted by every mutation operation:
+- `putString`, `putInt`, `putFloat`, `putBool`, `putULong64`, `putBlob`: key is the storage key name.
+- `remove`: key is the removed key name.
+- `clear`: key is `"*"` (wildcard indicating all keys were cleared).
+
+Subscribe to this event to perform initialization that depends on storage being available, or to react to storage changes.
 
 ---
 
@@ -351,7 +365,7 @@ A fixed-size array of 32 entries stored in RAM. Keys are prefixed with `namespac
 ### StorageValueType
 
 ```cpp
-enum class StorageValueType { String, Integer, Float, Boolean, Blob };
+enum class StorageValueType { String, Integer, Float, Boolean, Blob, UInt64 };
 ```
 
 ### StorageEntry
@@ -364,6 +378,7 @@ struct StorageEntry {
     int32_t               intValue;
     float                 floatValue;
     bool                  boolValue;
+    uint64_t              uint64Value;
     std::vector<uint8_t>  blobValue;
     size_t                size;
 };

@@ -76,7 +76,7 @@ Creates the component with the given configuration. Default-constructed `OTAConf
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `begin()` | `ComponentStatus` | Initializes internal state, resets timers and upload session. Returns `ComponentStatus::Success`. |
-| `loop()` | `void` | Processes pending URL updates, pending manifest checks, periodic auto-checks, upload buffer processing (ESP8266), and auto-reboot countdown. |
+| `loop()` | `void` | Processes pending URL updates, pending manifest checks, periodic auto-checks, and auto-reboot countdown. |
 | `shutdown()` | `ComponentStatus` | Aborts any active upload session and resets state to `Idle`. |
 | `getTypeKey()` | `const char*` | Returns `"ota"`. |
 
@@ -282,7 +282,7 @@ Initializes the HAL update subsystem for the given size (or `UPDATE_SIZE_UNKNOWN
 bool acceptUploadChunk(const uint8_t* data, size_t length);
 ```
 
-Writes a chunk of firmware data to the HAL. On ESP32, this writes directly to flash. On ESP8266, data is buffered internally and flushed in `loop()` to work within the dual-partition constraints. Returns `false` on write failure or buffer overflow.
+Writes a chunk of firmware data to the HAL. On both ESP32 and ESP8266, this writes directly to flash. (ESP8266 uses `Update.runAsync(true)` to enable direct writes from async callbacks.) Returns `false` on write failure.
 
 ### `finalizeUpload`
 
@@ -290,7 +290,7 @@ Writes a chunk of firmware data to the HAL. On ESP32, this writes directly to fl
 bool finalizeUpload();
 ```
 
-Signals the HAL that all data has been received. On ESP32, finalization is immediate. On ESP8266, the component enters a buffered-finalization mode and completes in subsequent `loop()` calls. Returns `false` if no upload is active or if `HAL::OTAUpdate::end()` fails.
+Signals the HAL that all data has been received. Finalization is immediate on both ESP32 and ESP8266. Returns `false` if no upload is active or if `HAL::OTAUpdate::end()` fails.
 
 ### `abortUpload`
 
@@ -342,7 +342,9 @@ The `init()` call is required because OTA registers custom REST routes for file 
 
 ### WebUI Card
 
-The provider builds a unified settings card (`ota_unified`) with the following fields:
+The provider builds a unified settings card using the `ota_unified` context ID. The `handleWebUIRequest` method also accepts `ota_manager` as an alias for the same context, allowing either context ID to be used interchangeably for WebUI interactions.
+
+The card includes the following fields:
 
 | Field ID | Type | Description |
 |----------|------|-------------|
@@ -394,7 +396,7 @@ Defined in `DomoticsCore/Update_HAL.h`. This is a routing header that includes t
 | Platform | Implementation Header | Notes |
 |----------|-----------------------|-------|
 | ESP32 | `Update_ESP32.h` | Direct flash write via ESP32 Update library |
-| ESP8266 | `Update_ESP8266.h` | Buffered writes required due to dual-partition constraints |
+| ESP8266 | `Update_ESP8266.h` | Direct flash write using `Update.runAsync(true)` for async-safe writes |
 | Other | `Update_Stub.h` | No-op stub for native testing |
 
 ### Key HAL Functions Used
@@ -406,9 +408,9 @@ Defined in `DomoticsCore/Update_HAL.h`. This is a routing header that includes t
 | `HAL::OTAUpdate::end(true)` | Finalize flash write |
 | `HAL::OTAUpdate::abort()` | Cancel in-progress update |
 | `HAL::OTAUpdate::errorString()` | Last error description |
-| `HAL::OTAUpdate::hasPendingData()` | ESP8266 buffering: check if data awaits processing |
-| `HAL::OTAUpdate::processBuffer(error)` | ESP8266 buffering: flush pending data to flash |
-| `HAL::OTAUpdate::requiresBuffering()` | `true` on ESP8266, `false` on ESP32 |
-| `HAL::OTAUpdate::hasBufferOverflow()` | Check if write buffer was exceeded |
+| `HAL::OTAUpdate::hasPendingData()` | Always returns `false` (legacy buffering API, now unused on all platforms) |
+| `HAL::OTAUpdate::processBuffer(error)` | No-op on all platforms (returns `0`). Retained for interface compatibility. |
+| `HAL::OTAUpdate::requiresBuffering()` | Returns `false` on all platforms (ESP8266 now uses `Update.runAsync(true)` for direct writes) |
+| `HAL::OTAUpdate::hasBufferOverflow()` | Always returns `false` (no buffering on any platform) |
 | `HAL::OTAUpdate::getBytesWritten()` | Total bytes committed to flash |
 | `HAL::SHA256` | SHA-256 context for download integrity verification |

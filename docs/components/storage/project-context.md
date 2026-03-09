@@ -35,7 +35,7 @@ All paths are relative to `DomoticsCore-Storage/`.
 | `Storage_ESP32.h` | ESP32 implementation: `PreferencesStorage` wrapping `<Preferences.h>` | ~129 |
 | `Storage_ESP8266.h` | ESP8266 implementation: `LittleFSStorage` using LittleFS + ArduinoJson | ~203 |
 | `Storage_Stub.h` | Stub implementation: `RAMOnlyStorage` for native/test builds | ~158 |
-| `StorageEvents.h` | Event constants: `EVENT_READY` | ~18 |
+| `StorageEvents.h` | Event constants: `EVENT_READY`, `EVENT_CHANGED`; POD struct `StorageChangedEvent` | ~27 |
 | `StorageWebUI.h` | WebUI provider: `StorageWebUI` extending `CachingWebUIProvider` | ~66 |
 
 ### Configuration
@@ -104,7 +104,7 @@ No `.cpp` source files. The component is header-only.
 
 ### Runtime
 
-- `EventBus` -- used to emit `storage/ready` on successful initialization.
+- `EventBus` -- used to emit `storage/ready` on successful initialization and `storage/changed` on every mutation (`put*`, `remove`, `clear`).
 - `WebUIComponent` -- optional; required only if `StorageWebUI` is registered.
 
 ---
@@ -152,7 +152,7 @@ This section maps DomoticsCore-Storage design decisions to specific constitution
 |---------------------|-------------|---------------------|
 | I. SOLID | SRP, DIP, ISP | `StorageComponent` handles storage only; depends on `IStorage` abstraction; `IStorage` interface is minimal |
 | V. Performance | Memory budget, no busy-wait | Cache uses `std::map` (bounded by `maxEntries`); timers are non-blocking |
-| VI. EventBus | Decoupled communication | Emits `storage/ready` event; no direct references to other components |
+| VI. EventBus | Decoupled communication | Emits `storage/ready` and `storage/changed` events; no direct references to other components |
 | VII. File Size | < 800 lines per file | `Storage.h` is ~651 lines; all other files are well under 200 lines |
 | IX. HAL Isolation | `#ifdef` only in HAL files | Platform guards in `Storage_HAL.h`, `Storage_ESP32.h`, `Storage_ESP8266.h`, `Storage_Stub.h` only |
 | X. Non-Blocking Timer | No `delay()` | Uses `Utils::NonBlockingDelay` for status and maintenance timers |
@@ -168,7 +168,6 @@ This section maps DomoticsCore-Storage design decisions to specific constitution
 These observations are provided for AI assistants planning future work:
 
 1. **Cache read-through**: `get*` methods currently bypass the cache and always read from the backend. A cache-first strategy could reduce HAL calls.
-2. **putULong64 cache gap**: Unlike other `put*` methods, `putULong64` does not update the in-memory cache.
-3. **getKeys scope**: `getKeys()` only returns registered keys that exist. Unregistered keys in the backend are invisible.
+2. **getKeys scope**: `getKeys()` only returns registered keys that exist. Unregistered keys in the backend are invisible.
 4. **WebUI write support**: `StorageWebUI::handleWebUIRequest` currently returns `{"success":false}` for all requests. The commented-out section in `Storage.h` shows intended CRUD operations.
 5. **File size of Storage.h**: At ~651 lines it approaches the 800-line hard limit. If new features are added, consider extracting the cache or key-registration logic into separate headers.

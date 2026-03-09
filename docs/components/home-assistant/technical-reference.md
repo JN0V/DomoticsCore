@@ -2,65 +2,107 @@
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**
 
-This document provides the complete API surface, MQTT topic conventions, payload formats, and internal architecture of the DomoticsCore-HomeAssistant component (v1.6.0).
+This document provides the complete API surface, MQTT topic conventions, payload formats, and internal architecture of the DomoticsCore-HomeAssistant component (v2.0.0).
 
 ---
 
 ## Table of Contents
 
 1. [HAConfig](#haconfig)
-2. [HomeAssistantComponent](#homeassistantcomponent)
-3. [HAEntity Base Class](#haentity-base-class)
-4. [HASensor](#hasensor)
-5. [HABinarySensor](#habinarysensor)
-6. [HASwitch](#haswitch)
-7. [HALight](#halight)
-8. [HAButton](#habutton)
-9. [HAAlarmControlPanel](#haalarmcontrolpanel)
-10. [HAEvents](#haevents)
-11. [HAStatistics](#hastatistics)
-12. [HomeAssistantWebUI](#homeassistantwebui)
-13. [MQTT Topic Structure](#mqtt-topic-structure)
-14. [Discovery Payloads](#discovery-payloads)
-15. [Device Registry](#device-registry)
-16. [Command Handling](#command-handling)
-17. [Availability](#availability)
+2. [HA Namespace Utilities](#ha-namespace-utilities)
+3. [HomeAssistantComponent](#homeassistantcomponent)
+4. [HAEntity Base Class](#haentity-base-class)
+5. [HASensor](#hasensor)
+6. [HABinarySensor](#habinarysensor)
+7. [HASwitch](#haswitch)
+8. [HALight](#halight)
+9. [HAButton](#habutton)
+10. [HAAlarmControlPanel](#haalarmcontrolpanel)
+11. [HAEvents](#haevents)
+12. [HAStatistics](#hastatistics)
+13. [HomeAssistantWebUI](#homeassistantwebui)
+14. [MQTT Topic Structure](#mqtt-topic-structure)
+15. [Discovery Payloads](#discovery-payloads)
+16. [Device Registry](#device-registry)
+17. [Command Handling](#command-handling)
+18. [Availability](#availability)
 
 ---
 
 ## HAConfig
 
-Configuration structure for the Home Assistant component. Passed to `HomeAssistantComponent` at construction.
+Configuration structure for the Home Assistant component. Passed to `HomeAssistantComponent` at construction. All fields are fixed-size `char[]` arrays (v2.0.0 -- zero heap allocation).
 
 **Namespace:** `DomoticsCore::Components::HomeAssistant`
 
 ```cpp
 struct HAConfig {
-    String nodeId = "myDeviceId";             // Unique device ID (used in MQTT topics)
-    String deviceName = "My Device";          // Display name in HA device registry
-    String manufacturer = "DomoticsCore";     // Manufacturer shown in HA
-    String model = "MyDeviceModel";           // Hardware model (auto-detected via ESP.getChipModel())
-    String swVersion = "1.0.0";               // Firmware version
-    bool retainDiscovery = true;              // Retain discovery messages on the broker
-    String discoveryPrefix = "homeassistant"; // MQTT discovery prefix (match HA config)
-    String availabilityTopic = "";            // Auto-generated as "{prefix}/{nodeId}/availability" if empty
-    String configUrl = "";                    // URL for "Configuration" link in HA device page
-    String suggestedArea = "";                // Suggested area in HA (e.g., "Living Room")
+    char nodeId[HA::MAX_NODE_ID];                 // 33 bytes -- unique device ID (used in MQTT topics)
+    char deviceName[HA::MAX_DEVICE_NAME];         // 65 bytes -- display name in HA device registry
+    char manufacturer[HA::MAX_MANUFACTURER];       // 33 bytes -- manufacturer shown in HA
+    char model[HA::MAX_MODEL];                     // 33 bytes -- hardware model
+    char swVersion[HA::MAX_SW_VERSION];            // 17 bytes -- firmware version
+    bool retainDiscovery = true;                   // Retain discovery messages on the broker
+    char discoveryPrefix[HA::MAX_DISCOVERY_PREFIX]; // 33 bytes -- MQTT discovery prefix
+    char availabilityTopic[HA::MAX_AVAIL_TOPIC];   // 129 bytes -- auto-generated if empty
+    char configUrl[HA::MAX_CONFIG_URL];            // 129 bytes -- "Configuration" link in HA device page
+    char suggestedArea[HA::MAX_SUGGESTED_AREA];    // 33 bytes -- suggested area in HA
 };
 ```
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `nodeId` | `"myDeviceId"` | Used in all MQTT topics and as the device identifier. Must be unique per device. |
-| `deviceName` | `"My Device"` | Human-readable device name in the HA device registry. |
-| `manufacturer` | `"DomoticsCore"` | Populated from `SystemConfig.manufacturer` when using the System component. |
-| `model` | `"MyDeviceModel"` | Populated from `SystemConfig.model`; auto-detected via `ESP.getChipModel()`. |
-| `swVersion` | `"1.0.0"` | Populated from `SystemConfig.firmwareVersion`. |
-| `retainDiscovery` | `true` | When true, discovery payloads persist on the broker across broker restarts. |
-| `discoveryPrefix` | `"homeassistant"` | Must match the MQTT discovery prefix configured in Home Assistant. |
-| `availabilityTopic` | `""` (auto) | If left empty, auto-generated as `{discoveryPrefix}/{nodeId}/availability`. |
-| `configUrl` | `""` | Optional. If set, HA shows a "Configuration" link on the device page. |
-| `suggestedArea` | `""` | Optional. Suggests a room/area when the device first appears in HA. |
+| Field | Max Size | Default | Description |
+|-------|----------|---------|-------------|
+| `nodeId` | 32 chars | `"myDeviceId"` | Used in all MQTT topics and as the device identifier. Must be unique per device. |
+| `deviceName` | 64 chars | `"My Device"` | Human-readable device name in the HA device registry. |
+| `manufacturer` | 32 chars | `"DomoticsCore"` | Populated from `SystemConfig.manufacturer` when using the System component. |
+| `model` | 32 chars | `"MyDeviceModel"` | Populated from `SystemConfig.model`; auto-detected via `ESP.getChipModel()`. |
+| `swVersion` | 16 chars | `"1.0.0"` | Populated from `SystemConfig.firmwareVersion`. |
+| `retainDiscovery` | -- | `true` | When true, discovery payloads persist on the broker across broker restarts. |
+| `discoveryPrefix` | 32 chars | `"homeassistant"` | Must match the MQTT discovery prefix configured in Home Assistant. |
+| `availabilityTopic` | 128 chars | `""` (auto) | If left empty, auto-generated as `{discoveryPrefix}/{nodeId}/availability`. |
+| `configUrl` | 128 chars | `""` | Optional. If set, HA shows a "Configuration" link on the device page. |
+| `suggestedArea` | 32 chars | `""` | Optional. Suggests a room/area when the device first appears in HA. |
+
+### Setting HAConfig Fields
+
+Use `HA::setField()` to safely populate fields with truncation protection:
+
+```cpp
+HAConfig cfg;
+HA::setField(cfg.nodeId, "esp32-sensor", HA::MAX_NODE_ID);
+HA::setField(cfg.deviceName, "Living Room Sensor", HA::MAX_DEVICE_NAME);
+HA::setField(cfg.manufacturer, "Acme Corp", HA::MAX_MANUFACTURER);
+```
+
+If the source string exceeds the maximum length, it is truncated and a warning is logged.
+
+---
+
+## HA Namespace Utilities
+
+**Namespace:** `DomoticsCore::Components::HomeAssistant::HA`
+
+### Size Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `MAX_NODE_ID` | 33 | 32 chars + null |
+| `MAX_DEVICE_NAME` | 65 | 64 chars + null |
+| `MAX_MANUFACTURER` | 33 | 32 chars + null |
+| `MAX_MODEL` | 33 | 32 chars + null |
+| `MAX_SW_VERSION` | 17 | 16 chars + null |
+| `MAX_DISCOVERY_PREFIX` | 33 | 32 chars + null |
+| `MAX_AVAIL_TOPIC` | 129 | 128 chars + null |
+| `MAX_CONFIG_URL` | 129 | 128 chars + null |
+| `MAX_SUGGESTED_AREA` | 33 | 32 chars + null |
+
+### setField()
+
+```cpp
+inline void setField(char* dest, const char* src, size_t maxLen);
+```
+
+Safely copies `src` into `dest` with truncation. If `src` is `nullptr`, sets `dest` to empty string. Logs a warning if truncation occurs.
 
 ---
 
@@ -80,7 +122,7 @@ HomeAssistantComponent(const HAConfig& config = HAConfig());
 
 Sets component metadata:
 - `name`: `"HomeAssistant"`
-- `version`: `"1.6.0"`
+- `version`: `"2.0.0"`
 - Auto-generates `availabilityTopic` if not provided.
 
 ### IComponent Lifecycle
@@ -105,7 +147,7 @@ void addSensor(const String& id, const String& name,
                const String& icon = "", const String& stateClass = "");
 ```
 
-Registers a read-only sensor entity. If `stateClass` is empty and `unit` is non-empty, `stateClass` defaults to `"measurement"` in the discovery payload.
+Registers a read-only sensor entity. If `stateClass` is empty and `unit` is non-empty, `stateClass` defaults to `"measurement"` in the discovery payload. Emits `ha/entity_added` with `HAEntityAddedEvent{id, "sensor"}`.
 
 #### addBinarySensor
 
@@ -114,76 +156,70 @@ void addBinarySensor(const String& id, const String& name,
                      const String& deviceClass = "", const String& icon = "");
 ```
 
-Registers a binary (on/off) sensor entity.
-
-> **Note (M19):** Unlike `addSensor()`, this method does **not** emit the `ha/entity_added` event. This is a known inconsistency. See [HAEvents -- Known Issues](#known-issues) for details.
+Registers a binary (on/off) sensor entity. Emits `ha/entity_added` with `HAEntityAddedEvent{id, "binary_sensor"}`.
 
 #### addSwitch
 
 ```cpp
-void addSwitch(const String& id, const String& name,
-               std::function<void(bool)> commandCallback,
-               const String& icon = "",
+void addSwitch(const String& id, const String& name, const String& icon = "",
                bool autoPublishState = true, bool optimistic = false);
 ```
 
-Registers a controllable switch entity.
+Registers a controllable switch entity. **No callback parameter** (v2.0.0). Subscribe to `ha/command` event to handle switch commands.
 
 | Parameter | Description |
 |-----------|-------------|
-| `commandCallback` | Called with `true` (ON) or `false` (OFF) when HA sends a command. |
-| `autoPublishState` | When `true`, the component auto-publishes the received state back to HA after the callback executes. |
+| `autoPublishState` | When `true`, the component auto-publishes the received state back to HA after command processing. |
 | `optimistic` | When `true`, HA assumes the command succeeds without waiting for state confirmation. |
+
+Emits `ha/entity_added` with `HAEntityAddedEvent{id, "switch"}`.
 
 #### addLight
 
 ```cpp
-void addLight(const String& id, const String& name,
-              std::function<void(bool, uint8_t)> commandCallback);
+void addLight(const String& id, const String& name);
 ```
 
-Registers a light entity with brightness support. The callback receives `(state, brightness)` where brightness is 0-255.
+Registers a light entity with brightness support. **No callback parameter** (v2.0.0). Subscribe to `ha/command` event to handle light commands. Emits `ha/entity_added` with `HAEntityAddedEvent{id, "light"}`.
 
 #### addButton
 
 ```cpp
-void addButton(const String& id, const String& name,
-               std::function<void()> pressCallback,
-               const String& icon = "");
+void addButton(const String& id, const String& name, const String& icon = "");
 ```
 
-Registers a trigger-only button entity. The callback fires when the user presses the button in HA.
+Registers a trigger-only button entity. **No callback parameter** (v2.0.0). Subscribe to `ha/command` event to handle button presses. Emits `ha/entity_added` with `HAEntityAddedEvent{id, "button"}`.
 
 #### addAlarmControlPanel
 
 ```cpp
 void addAlarmControlPanel(
     const String& id, const String& name,
-    const std::function<void(const String& command, const String& code)>& commandCallback,
     const String& icon = "mdi:shield-home",
-    uint8_t features = AlarmFeature::ArmAway,
+    AlarmFeature features = AlarmFeature::ArmAway,
     const String& code = "",
     bool codeArmRequired = false,
     bool codeDisarmRequired = false,
     bool codeTriggerRequired = false);
 ```
 
-Registers a native Home Assistant alarm control panel entity. Renders as the alarm panel Lovelace card with keypad and color-coded status.
+Registers a native Home Assistant alarm control panel entity. Renders as the alarm panel Lovelace card with keypad and color-coded status. **No callback parameter** (v2.0.0). Subscribe to `ha/command` event to handle alarm commands.
 
 | Parameter | Description |
 |-----------|-------------|
-| `commandCallback` | Called with `(command, code)` when HA sends an arm/disarm/trigger command. Command is one of `AlarmPanelCommand::*`. Code is the raw PIN entered by the user (empty if not provided). **The library does not validate the code — the consumer must.** |
 | `features` | Bitmask of `AlarmFeature` flags defining which arm modes are available in the HA UI. |
-| `code` | PIN code included in discovery so HA's frontend shows a keypad. The library does NOT validate entered codes — it passes them through to the callback. |
+| `code` | PIN code included in discovery so HA's frontend shows a keypad. The library does NOT validate entered codes -- it passes them through via the `ha/command` event. |
 | `codeArmRequired` | If true, HA's frontend requires code entry for arm operations. |
 | `codeDisarmRequired` | If true, HA's frontend requires code entry for disarm. |
 | `codeTriggerRequired` | If true, HA's frontend requires code entry for trigger. |
 
-> **Important — Library vs Consumer boundary:** The alarm panel entity is a thin MQTT plumbing layer. The library handles discovery, command parsing, and topic management. **All business logic is the consumer's responsibility:**
-> - **Code validation** — The library passes the raw code to the callback; the consumer must verify it.
-> - **State transitions** — The library has no state machine; the consumer calls `publishState()` with the appropriate `AlarmPanelState::*` value.
-> - **Command validation** — The library does not check if a command matches the configured `supportedFeatures`.
-> - **Timing** — Arming delays, entry delays, trigger durations are entirely consumer logic.
+Emits `ha/entity_added` with `HAEntityAddedEvent{id, "alarm_control_panel"}`.
+
+> **Important -- Library vs Consumer boundary:** The alarm panel entity is a thin MQTT plumbing layer. The library handles discovery, command parsing, and topic management. **All business logic is the consumer's responsibility:**
+> - **Code validation** -- The library passes the raw code via `HACommandEvent.code`; the consumer must verify it.
+> - **State transitions** -- The library has no state machine; the consumer calls `publishState()` with the appropriate `AlarmPanelState::*` value.
+> - **Command validation** -- The library does not check if a command matches the configured `supportedFeatures`.
+> - **Timing** -- Arming delays, entry delays, trigger durations are entirely consumer logic.
 
 ### State Publishing Methods
 
@@ -210,6 +246,14 @@ void publishState(const String& id, bool state);
 ```
 
 Publishes `"ON"` or `"OFF"`.
+
+#### publishState (const char*)
+
+```cpp
+void publishState(const String& id, const char* state);
+```
+
+Publishes a C-string state. This overload exists to **prevent implicit `bool` conversion** when passing string literals like `"ON"`.
 
 #### publishStateJson
 
@@ -252,9 +296,11 @@ void republishEntity(const String& id);  // Republish discovery for a single ent
 ```cpp
 void setConfig(const HAConfig& cfg);
 const HAConfig& getConfig() const;
-void setDeviceInfo(const String& name, const String& model,
-                   const String& manufacturer, const String& swVersion);
+void setDeviceInfo(const char* name, const char* model,
+                   const char* manufacturer, const char* swVersion);
 ```
+
+Note: `setDeviceInfo()` takes `const char*` parameters (v2.0.0), not `const String&`.
 
 ### Status Methods
 
@@ -268,10 +314,16 @@ const HAStatistics& getStatistics() const;
 
 ## HAEntity Base Class
 
-Abstract base class for all entity types.
+Base class for all entity types.
 
 **Namespace:** `DomoticsCore::Components::HomeAssistant`
 **Header:** `DomoticsCore/HAEntity.h`
+
+### Constants
+
+```cpp
+static constexpr size_t HA_TOPIC_BUF_SIZE = 128;
+```
 
 ### Properties
 
@@ -284,28 +336,34 @@ Abstract base class for all entity types.
 | `deviceClass` | `String` | `""` | HA device class (e.g., `"temperature"`, `"motion"`) |
 | `retained` | `bool` | `true` | Whether state messages are retained on the broker |
 
-### Topic Generation Methods
+### Topic Generation Methods (zero-heap)
 
-All topic methods take `nodeId` and an optional `discoveryPrefix` (default `"homeassistant"`).
+All topic methods write into a caller-provided buffer. No heap allocation.
 
 ```cpp
-String getDiscoveryTopic(const String& nodeId, const String& discoveryPrefix) const;
-// Returns: {prefix}/{component}/{nodeId}/{id}/config
+void getDiscoveryTopic(char* buf, size_t len, const char* nodeId,
+                       const char* discoveryPrefix = "homeassistant") const;
+// Writes: {prefix}/{component}/{nodeId}/{id}/config
 
-String getStateTopic(const String& nodeId, const String& discoveryPrefix) const;
-// Returns: {prefix}/{component}/{nodeId}/{id}/state
+void getStateTopic(char* buf, size_t len, const char* nodeId,
+                   const char* discoveryPrefix = "homeassistant") const;
+// Writes: {prefix}/{component}/{nodeId}/{id}/state
 
-String getCommandTopic(const String& nodeId, const String& discoveryPrefix) const;
-// Returns: {prefix}/{component}/{nodeId}/{id}/set
+void getCommandTopic(char* buf, size_t len, const char* nodeId,
+                     const char* discoveryPrefix = "homeassistant") const;
+// Writes: {prefix}/{component}/{nodeId}/{id}/set
 
-String getAttributesTopic(const String& nodeId, const String& discoveryPrefix) const;
-// Returns: {prefix}/{component}/{nodeId}/{id}/attributes
+void getAttributesTopic(char* buf, size_t len, const char* nodeId,
+                        const char* discoveryPrefix = "homeassistant") const;
+// Writes: {prefix}/{component}/{nodeId}/{id}/attributes
 
-String getUniqueId(const String& nodeId) const;
-// Returns: {nodeId}_{id}
+void getUniqueId(char* buf, size_t len, const char* nodeId) const;
+// Writes: {nodeId}_{id}
 ```
 
-### Discovery Payload
+### Virtual Methods
+
+#### buildDiscoveryPayload
 
 ```cpp
 virtual void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
@@ -317,6 +375,18 @@ virtual void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
 The base implementation adds: `name`, `unique_id`, `state_topic`, `icon` (if set), `device_class` (if set), `device` (device registry object), and `availability_topic` with `payload_available`/`payload_not_available`.
 
 Derived classes call the base implementation and then add type-specific fields.
+
+#### handleCommand
+
+```cpp
+virtual bool handleCommand(const String& payload);
+```
+
+Virtual dispatch for command handling (v2.0.0). Each controllable entity overrides this to validate the command and store state internally.
+
+- Returns `true` if the command was valid and should be emitted as `ha/command`.
+- Returns `false` if the command was invalid (e.g., garbage JSON for lights, wrong payload for buttons). The `ha/command` event is suppressed.
+- Base implementation returns `true` (pass-through).
 
 ---
 
@@ -379,7 +449,7 @@ Controllable on/off device (relay, socket).
 | `payloadOff` | `String` | `"OFF"` | Payload for the OFF command/state |
 | `optimistic` | `bool` | `false` | If true, HA assumes commands succeed immediately |
 | `autoPublishState` | `bool` | `true` | If true, state is auto-published after command handling |
-| `commandCallback` | `std::function<void(bool)>` | `nullptr` | Called when HA sends ON/OFF command |
+| `state` | `bool` | `false` | Current switch state (updated by `handleCommand()`) |
 
 ### Discovery Fields Added
 
@@ -391,10 +461,12 @@ Controllable on/off device (relay, socket).
 ### Command Handling
 
 ```cpp
-void handleCommand(const String& payload);
+bool handleCommand(const String& payload) override;
 ```
 
-Compares `payload` to `payloadOn` and invokes `commandCallback(true)` or `commandCallback(false)`.
+Sets `state = (payload == payloadOn)`. Always returns `true` (switch commands are always valid).
+
+After `handleCommand()`, if `autoPublishState` is `true` and `optimistic` is `false`, `HomeAssistantComponent` auto-publishes the received payload back as state.
 
 ---
 
@@ -411,7 +483,8 @@ Controllable light with optional brightness.
 |----------|------|---------|-------------|
 | `supportsBrightness` | `bool` | `true` | Enable brightness control |
 | `optimistic` | `bool` | `false` | If true, HA assumes commands succeed immediately |
-| `commandCallback` | `std::function<void(bool, uint8_t)>` | `nullptr` | Called with `(state, brightness)` |
+| `state` | `bool` | `false` | Current light state (updated by `handleCommand()`) |
+| `brightness` | `uint8_t` | `0` | Current brightness 0-255 (updated by `handleCommand()`) |
 
 ### Discovery Fields Added
 
@@ -430,10 +503,12 @@ Controllable light with optional brightness.
 ### Command Handling
 
 ```cpp
-void handleCommand(const String& payload);
+bool handleCommand(const String& payload) override;
 ```
 
-Attempts to parse `payload` as JSON with `state` and `brightness` keys. Falls back to simple `"ON"`/`"OFF"` parsing if JSON deserialization fails.
+Attempts to parse `payload` as JSON with `state` and `brightness` keys. Falls back to simple `"ON"`/`"OFF"` parsing if JSON deserialization fails. Returns `false` for payloads that are neither valid JSON nor `"ON"`/`"OFF"` (invalid commands are suppressed from the `ha/command` event).
+
+Updates `state` and `brightness` internally.
 
 ### State Payload Format
 
@@ -460,7 +535,6 @@ Trigger-only action (restart, calibrate, etc.).
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `payloadPress` | `String` | `"PRESS"` | Expected payload to trigger the action |
-| `pressCallback` | `std::function<void()>` | `nullptr` | Called when the button is pressed |
 
 ### Discovery Fields Added
 
@@ -473,10 +547,10 @@ Buttons override the base `buildDiscoveryPayload()` completely (no `state_topic`
 ### Command Handling
 
 ```cpp
-void handleCommand(const String& payload);
+bool handleCommand(const String& payload) override;
 ```
 
-Invokes `pressCallback()` only if `payload == payloadPress`.
+Returns `true` only if `payload == payloadPress`. Returns `false` for any other payload, suppressing the `ha/command` event.
 
 ---
 
@@ -533,12 +607,13 @@ Combine with bitwise OR: `AlarmFeature::ArmAway | AlarmFeature::ArmHome | AlarmF
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `code` | `String` | `""` | PIN code sent to HA frontend for keypad display; the library does NOT validate it — passthrough only |
-| `supportedFeatures` | `uint8_t` | `ArmAway` | Bitmask of supported arm modes |
+| `code` | `String` | `""` | PIN code sent to HA frontend for keypad display; the library does NOT validate it -- passthrough only |
+| `supportedFeatures` | `AlarmFeature` | `ArmAway` | Bitmask of supported arm modes |
 | `codeArmRequired` | `bool` | `false` | Require code for arm operations |
 | `codeDisarmRequired` | `bool` | `false` | Require code for disarm |
 | `codeTriggerRequired` | `bool` | `false` | Require code for trigger |
-| `commandCallback` | `std::function<void(const String&, const String&)>` | -- | Called with `(command, code)` |
+| `lastCommand` | `char[64]` | `""` | Parsed command from last `handleCommand()` (e.g., `"ARM_AWAY"`) |
+| `lastCode` | `char[32]` | `""` | Parsed code from last `handleCommand()` (e.g., `"1234"`) |
 
 ### Discovery Fields Added
 
@@ -554,42 +629,80 @@ Combine with bitwise OR: `AlarmFeature::ArmAway | AlarmFeature::ArmHome | AlarmF
 ### Command Handling
 
 ```cpp
-void handleCommand(const String& payload) override;
+bool handleCommand(const String& payload) override;
 ```
 
-Parses payloads in `"COMMAND"` or `"COMMAND CODE"` format. Trims whitespace. Calls `commandCallback(command, code)` where `code` is empty if not provided. Empty or whitespace-only payloads are rejected with a warning log.
+Parses payloads in `"COMMAND"` or `"COMMAND CODE"` format. Trims whitespace. Stores the parsed command in `lastCommand` and the code in `lastCode`. Always returns `true` (alarm commands are always valid). Empty or whitespace-only payloads are accepted with a warning log.
+
+The `HomeAssistantComponent` reads `lastCommand` and `lastCode` to populate the `HACommandEvent.command` and `HACommandEvent.code` fields before emitting `ha/command`.
 
 ---
 
 ## HAEvents
 
-Event constants published by the component via the EventBus.
+Event constants and structures published by the component via the EventBus.
 
 **Namespace:** `DomoticsCore::HAEvents`
 **Header:** `DomoticsCore/HAEvents.h`
 
+### Event Constants
+
 | Constant | Topic String | Payload Type | Description |
 |----------|-------------|--------------|-------------|
 | `EVENT_DISCOVERY_PUBLISHED` | `"ha/discovery_published"` | `int` | Emitted after all discovery payloads are sent. Payload is entity count. |
-| `EVENT_ENTITY_ADDED` | `"ha/entity_added"` | `String` | Emitted when a new entity is registered. Payload is the entity ID. |
+| `EVENT_ENTITY_ADDED` | `"ha/entity_added"` | `HAEntityAddedEvent` | Emitted when a new entity is registered via any `add*()` method. |
+| `EVENT_COMMAND` | `"ha/command"` | `HACommandEvent` | Emitted when an entity processes a valid command from Home Assistant (v2.0.0). |
 
-### Known Issues
-
-**C21 -- `HAEntityAddedEvent` struct/EventBus payload alignment:** The `HAEntityAddedEvent` struct is defined in `HomeAssistant.h` with `id[64]` and `component[32]` fields, but the EventBus `emit()` call for `EVENT_ENTITY_ADDED` currently passes a `String` (the entity ID only). The struct and the actual emission are not aligned. This is pending resolution -- either the emit should use the struct, or the struct should be removed.
+### HACommandEvent Struct
 
 ```cpp
-// Defined in HomeAssistant.h but NOT used by emit():
+struct HACommandEvent {
+    char entityId[64];    // Entity that received the command
+    char component[32];   // HA component type (switch, light, button, alarm_control_panel)
+    char command[128];    // Raw MQTT payload (or parsed command for alarm_control_panel)
+    char code[32];        // Alarm PIN code (empty for non-alarm entities)
+};
+```
+
+Fixed-size POD struct (~256 bytes), zero heap allocation. This is the **primary mechanism** for consumers to react to commands from Home Assistant in v2.0.0.
+
+- `entityId` -- the entity that received the command (e.g., `"relay"`, `"alarm"`)
+- `component` -- HA component type (e.g., `"switch"`, `"alarm_control_panel"`)
+- `command` -- the raw MQTT payload for most entities; for `alarm_control_panel`, the parsed command (e.g., `"ARM_AWAY"` instead of `"ARM_AWAY 1234"`)
+- `code` -- alarm PIN code entered by the user (empty for non-alarm entities)
+
+### HAEntityAddedEvent Struct
+
+```cpp
 struct HAEntityAddedEvent {
     char id[64];           // Entity ID
     char component[32];    // Component type (sensor, switch, etc.)
 };
 ```
 
-**M19 -- Inconsistent `ha/entity_added` emission:** Only `addSensor()` emits the `ha/entity_added` event. The following methods do **not** emit it, which is inconsistent:
-- `addBinarySensor()` -- missing `emit(EVENT_ENTITY_ADDED, id)`
-- `addSwitch()` -- missing `emit(EVENT_ENTITY_ADDED, id)`
-- `addLight()` -- missing `emit(EVENT_ENTITY_ADDED, id)`
-- `addButton()` -- missing `emit(EVENT_ENTITY_ADDED, id)`
+Emitted by all `add*()` methods with both `id` and `component` populated.
+
+### Consumer Usage Example
+
+```cpp
+haPtr->on<HAEvents::HACommandEvent>(HAEvents::EVENT_COMMAND,
+    [](const HAEvents::HACommandEvent& ev) {
+        if (strcmp(ev.component, "switch") == 0) {
+            bool on = (strcmp(ev.command, "ON") == 0);
+            // Handle switch command
+        }
+        if (strcmp(ev.component, "light") == 0) {
+            // ev.command contains JSON or ON/OFF
+        }
+        if (strcmp(ev.component, "button") == 0) {
+            // Button was pressed (only fires for valid payloads)
+        }
+        if (strcmp(ev.component, "alarm_control_panel") == 0) {
+            // ev.command = "ARM_AWAY", "DISARM", etc.
+            // ev.code = PIN entered by user (may be empty)
+        }
+    });
+```
 
 ---
 
@@ -645,7 +758,7 @@ Set a callback that fires when the user saves HA settings via the web interface.
 
 ### Settings API
 
-POST to `ha_settings` with parameters: `node_id`, `device_name`, `manufacturer`, `model`, `discovery_prefix`, `suggested_area`. The handler updates the config, invokes the save callback, and republishes discovery.
+POST to `ha_settings` with parameters: `node_id`, `device_name`, `manufacturer`, `model`, `discovery_prefix`, `suggested_area`. The handler updates the config using `HA::setField()`, invokes the save callback, and republishes discovery.
 
 ### Registration
 
@@ -687,6 +800,15 @@ The component subscribes to a single wildcard topic to receive all commands:
 ```
 
 Commands are routed internally to the appropriate entity based on the entity ID extracted from the topic.
+
+### Topic Generation (zero-heap)
+
+All topic methods use caller-provided `char*` buffers (v2.0.0):
+
+```cpp
+char topic[HA_TOPIC_BUF_SIZE];  // HA_TOPIC_BUF_SIZE = 128
+entity->getStateTopic(topic, sizeof(topic), nodeId, discoveryPrefix);
+```
 
 ---
 
@@ -800,7 +922,7 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
   "code_arm_required": false,
   "code_disarm_required": true,
   "code_trigger_required": false,
-  "command_template": "{{ action }}{% if code %} {{ code }}{% endif }}",
+  "command_template": "{{ action }}{% if code %} {{ code }}{% endif %}",
   "payload_arm_home": "ARM_HOME",
   "payload_arm_away": "ARM_AWAY",
   "payload_disarm": "DISARM",
@@ -845,12 +967,15 @@ When HA sends a command (e.g., turning a switch ON), the flow is:
 2. The MQTT component emits an `mqtt/message` event via the EventBus.
 3. `HomeAssistantComponent` receives the event and extracts the `entityId` from the topic.
 4. The entity is looked up by ID. If not found, the command is ignored with a warning log.
-5. The command is routed based on `entity->component`:
-   - **`"switch"`**: Calls `HASwitch::handleCommand(payload)`. If `autoPublishState` is true and `optimistic` is false, the received payload is immediately published back as state.
-   - **`"light"`**: Calls `HALight::handleCommand(payload)` which parses JSON or falls back to simple ON/OFF.
-   - **`"button"`**: Calls `HAButton::handleCommand(payload)` which fires the callback only if payload matches `payloadPress`.
-   - **`"alarm_control_panel"`**: Calls `entity->handleCommand(payload)` via virtual dispatch. Parses `"COMMAND"` or `"COMMAND CODE"` format and delegates to consumer callback. **No auto-publish** -- the consumer manages all state transitions.
-6. `stats.commandsReceived` is incremented.
+5. `entity->handleCommand(payload)` is called via **virtual dispatch** (v2.0.0). Each entity type validates the command and stores state internally:
+   - **`HASwitch`**: Sets `state = (payload == payloadOn)`. Returns `true`.
+   - **`HALight`**: Parses JSON or simple ON/OFF. Sets `state` and `brightness`. Returns `true` for valid payloads, `false` for garbage.
+   - **`HAButton`**: Returns `true` only if `payload == payloadPress`, `false` otherwise.
+   - **`HAAlarmControlPanel`**: Parses `"COMMAND"` or `"COMMAND CODE"` format into `lastCommand`/`lastCode`. Returns `true`.
+6. If `handleCommand()` returns `true`, an `HACommandEvent` is emitted on the `ha/command` EventBus topic.
+7. If `handleCommand()` returns `false`, the event is suppressed (invalid command).
+8. For switches with `autoPublishState == true` and `optimistic == false`, the received payload is immediately published back as state.
+9. `stats.commandsReceived` is incremented.
 
 ### Re-Entrancy Guard
 

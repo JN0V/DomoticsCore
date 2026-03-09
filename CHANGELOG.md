@@ -5,6 +5,108 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-03-09
+
+### Breaking Changes
+
+- **HomeAssistant: Virtual dispatch replaces callbacks** (R24/R26)
+  - `addSwitch()`, `addSensor()`, etc. no longer accept callback parameters
+  - Command handling via `handleCommand()` virtual method override or `ha/command` EventBus topic
+  - All HA entity callbacks removed — migrate to `HACommandEvent` event subscription
+
+### Migration from 1.x
+
+**Before (callbacks):**
+```cpp
+ha.addSwitch("relay", "Relay", [](bool state) { digitalWrite(PIN, state); });
+```
+
+**After (EventBus):**
+```cpp
+ha.addSwitch("relay", "Relay");
+core.on<HACommandEvent>("ha/command", [](const HACommandEvent* evt) {
+    if (strcmp(evt->entityId, "relay") == 0) {
+        digitalWrite(PIN, evt->payload[0] == '1');
+    }
+});
+```
+
+### Bug Fixes
+
+- fix(examples): replace `char[]` direct assignment with setter calls for HAConfig
+- fix(ci): rewrite `clean_examples.py` to eliminate recursive `.pio` nesting
+- fix(ci): prevent recursive `.pio` nesting and sconsign corruption
+- fix(core,wifi,storage): resolve pre-existing test/build failures
+
+### Component Versions
+
+| Component | Version |
+|-----------|---------|
+| **DomoticsCore** (root) | 2.0.0 |
+| **DomoticsCore-HomeAssistant** | 2.0.0 |
+| All other components | unchanged from 1.9.0 |
+
+---
+
+## [1.9.0] - 2026-03-07
+
+### New Features
+
+- **HomeAssistant: Alarm Control Panel** — full MQTT discovery support with ARM/DISARM/PENDING/TRIGGERED states
+- **Storage: Change notifications** — `EVENT_CHANGED` + `StorageChangedEvent` emitted on value changes (M15)
+- **Core: `Core::emit()` sticky parameter** — parity with `IComponent::emit()` (M11)
+
+### Code Quality (Roadmap Remediation)
+
+#### Memory Safety (Constitution XIV)
+- fix(core): complete `EventBus::reset()` — now clears `wildcardTopicSubscriptions`, `lastByTopic`, `pendingByTopic` (M9)
+- fix(core): `unsubscribe()`/`unsubscribeOwner()` now cover wildcard subscriptions (M10)
+- fix(memory): `shrink_to_fit()` after all container `erase()`/`clear()` operations — EventBus, MQTT queue, RemoteConsole clients (R1, R2, R4)
+- fix(ha): replace String concatenation in topic generation with `snprintf()` zero-heap API (R5)
+- feat(ha): HAConfig migrated from `String` fields to fixed-size `char[]` arrays — zero heap fragmentation on ESP8266 (R6)
+- fix(system,rc,storage): replace String concatenation in log hot paths with `snprintf()` + static buffers (R7)
+
+#### HAL Isolation (Constitution IX)
+- fix(system): replace direct `millis()` with `HAL::Platform::getMillis()` (R8/M16)
+- fix(rc): replace blocking `HAL::delay(100)` in reboot handler with non-blocking reboot flag (R9)
+
+#### Dead Code Removal (Constitution IV)
+- fix(mqtt): remove unimplemented `isValidTopic()` declaration (R17)
+- fix(mqtt): enforce `maxQueueSize`, `publishRateLimit`, `maxSubscriptions` config fields (R18)
+- fix(ntp): remove unused `retryDelayMs` config field (R19)
+- fix(system): wire `otaPassword` config to OTAConfig (R20)
+- fix(rc): implement `requireAuth`/`password`/`allowCommands` enforcement (R21)
+- fix(led): remove dead `effectDirection` field (R22)
+- fix(storage): remove dead WebUI `#if` block (R23)
+
+#### Anti-Patterns (Constitution XIII)
+- docs: document MemoryManager singleton as accepted exception (R14)
+- docs: document MQTT static instance as accepted exception (R15)
+- docs: document System `__has_include()` as intentional deviation (R16)
+
+#### Bug Fixes
+- fix(ha): `HAEntityAddedEvent` struct used in all `addXxx()` methods — consistent event emission (M19, C21)
+- fix(led): `metadata.name` changed from `"LEDComponent"` to `"LED"` (M12)
+- fix(core): `ResetReason` enum class with type-safe operators (R25)
+
+### Component Versions
+
+| Component | Version |
+|-----------|---------|
+| **DomoticsCore** (root) | 1.9.0 |
+| **DomoticsCore-Core** | 1.5.2 |
+| **DomoticsCore-HomeAssistant** | 1.6.1 |
+| **DomoticsCore-LED** | 1.4.0 |
+| **DomoticsCore-Storage** | 1.4.2 |
+| **DomoticsCore-MQTT** | 1.4.1 |
+| **DomoticsCore-RemoteConsole** | 1.4.1 |
+| **DomoticsCore-System** | 1.4.1 |
+| **DomoticsCore-OTA** | 1.4.1 |
+| **DomoticsCore-NTP** | 1.3.0 |
+| **DomoticsCore-WiFi** | 1.4.1 |
+
+---
+
 ## [1.6.0] - 2026-02-11
 
 ### New Features

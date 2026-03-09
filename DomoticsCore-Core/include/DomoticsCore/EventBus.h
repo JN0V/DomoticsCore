@@ -170,7 +170,7 @@ public:
                         if (sub.handler) sub.handler(payloadPtr);
                     }
                 }
-                // Wildcard subscribers (prefix match e.g., "sensor.*")
+                // Wildcard subscribers (prefix match e.g., "sensor/*")
                 for (const auto& kv : wildcardTopicSubscriptions) {
                     if (matchesWildcard(qe.topic, kv.first)) {
                         const auto& handlers = kv.second;
@@ -231,7 +231,7 @@ private:
     }
 
     static bool isWildcard(const String& topic) {
-        // Support prefix wildcard: e.g., "sensor.*"
+        // Support prefix wildcard: e.g., "sensor/*"
         int idx = HAL::indexOf(topic, '*');
         return (idx >= 0);
     }

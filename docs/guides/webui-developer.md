@@ -108,7 +108,7 @@ public:
 
 ```cpp
 String getWebUIName() const override {
-    return component ? component->getName() : String("MyComponent");
+    return component ? String(component->metadata.name) : String("MyComponent");
 }
 
 String getWebUIVersion() const override {

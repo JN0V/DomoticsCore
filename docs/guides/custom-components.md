@@ -22,29 +22,30 @@ Every custom component must inherit from `IComponent` and implement the required
 
 class MyComponent : public DomoticsCore::Components::IComponent {
 public:
+    MyComponent() {
+        metadata.name = "MyComponent";
+        metadata.version = "1.0.0";
+    }
+
     ComponentStatus begin() override {
         // Initialize your hardware/state here
         pinMode(LED_PIN, OUTPUT);
-        
+
         DLOG_I("MyComponent", "Initialized successfully");
         return ComponentStatus::Success;
     }
-    
+
     void loop() override {
         // Your periodic logic here
         // This is called continuously in the main loop
     }
-    
+
     ComponentStatus shutdown() override {
         // Cleanup resources here
         digitalWrite(LED_PIN, LOW);
-        
+
         DLOG_I("MyComponent", "Shutdown complete");
         return ComponentStatus::Success;
-    }
-    
-    String getName() const override {
-        return "MyComponent";
     }
 };
 ```
@@ -124,13 +125,9 @@ public:
         }
     }
     
-    String getName() const override {
-        return "MyComponent";
-    }
-    
     // Declare dependencies for automatic initialization ordering
-    std::vector<String> getDependencies() const override {
-        return {"Storage", "NTP"};
+    std::vector<Dependency> getDependencies() const override {
+        return {{"Storage", false}, {"NTP", false}};  // Optional dependencies
     }
 };
 ```
@@ -307,10 +304,6 @@ public:
         detachInterrupt(digitalPinToInterrupt(PULSE_PIN));
         return ComponentStatus::Success;
     }
-    
-    String getName() const override {
-        return "MyComponent";
-    }
 };
 ```
 
@@ -466,7 +459,6 @@ public:
         return config;
     }
     
-    String getName() const override { return "MyComponent"; }
 };
 ```
 
@@ -586,7 +578,6 @@ public:
         }
     }
     
-    String getName() const override { return "Sensor"; }
 };
 ```
 
@@ -613,10 +604,10 @@ void loop() override {
     data.timestamp = millis();
     
     // Publish to other components
-    emit("sensor.data", data, false);  // Non-sticky
-    
+    emit("sensor/data", data, false);  // Non-sticky
+
     // Or publish sticky (last value cached for late subscribers)
-    emit("sensor.temperature", data.temperature, true);
+    emit("sensor/temperature", data.temperature, true);
 }
 ```
 
@@ -625,13 +616,13 @@ void loop() override {
 ```cpp
 ComponentStatus begin() override {
     // Subscribe to sensor data
-    on<SensorData>("sensor.data", [](const SensorData& data) {
+    on<SensorData>("sensor/data", [](const SensorData& data) {
         DLOG_I("MyComponent", "Temp: %.1f°C, Humidity: %d%%", 
                data.temperature, data.humidity);
     });
     
     // Subscribe to temperature only
-    on<float>("sensor.temperature", [](const float& temp) {
+    on<float>("sensor/temperature", [](const float& temp) {
         DLOG_D("MyComponent", "Temperature updated: %.1f°C", temp);
     }, true);  // Replay last value immediately
     
@@ -762,10 +753,6 @@ public:
     void publishData() {
         // Your publish logic
     }
-    
-    String getName() const override {
-        return "MyComponent";
-    }
 };
 ```
 
@@ -861,7 +848,7 @@ public:
         };
         
         UsageData data = {g_pulseCount, liters};
-        emit("watermeter.usage", data, true);  // Sticky for late subscribers
+        emit("watermeter/usage", data, true);  // Sticky for late subscribers
     }
     
     ComponentStatus shutdown() override {
@@ -870,12 +857,8 @@ public:
         return ComponentStatus::Success;
     }
     
-    String getName() const override {
-        return "WaterMeter";
-    }
-    
-    std::vector<String> getDependencies() const override {
-        return {"Storage"};
+    std::vector<Dependency> getDependencies() const override {
+        return {{"Storage", false}};  // Optional dependency
     }
 };
 ```

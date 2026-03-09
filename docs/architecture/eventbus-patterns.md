@@ -6,31 +6,51 @@ This document describes common patterns for using the DomoticsCore EventBus.
 
 The EventBus provides publish/subscribe messaging between components without direct coupling.
 
+## Dispatch Model
+
+The EventBus is **queue-based** with polling dispatch, NOT immediate:
+
+- Events are queued on `publish()` (not dispatched immediately)
+- `poll(maxPerPoll)` processes up to `maxPerPoll` events per call (default: 8)
+- **Backpressure**: Queue capped at 32 events; oldest dropped on overflow
+- `Core::loop()` calls `eventBus.poll()` automatically each cycle
+
 ## Basic Usage
 
 ### Publishing Events
 
 ```cpp
-// Simple event
-eventBus->publish("sensor/temperature", "25.5");
+// Simple event (queued, dispatched on next poll())
+eventBus().publish("sensor/temperature", tempData);
 
 // Sticky event (persists for late subscribers)
-eventBus->publish("system/status", "ready", true);
+eventBus().publishSticky("system/status", readyFlag);
 ```
 
 ### Subscribing to Events
 
+The raw EventBus API uses `std::function<void(const void*)>` callbacks:
+
 ```cpp
-// Exact topic match
-eventBus->subscribe("sensor/temperature", [](const String& topic, const String& payload) {
-    float temp = payload.toFloat();
-    Serial.printf("Temperature: %.1f\n", temp);
+// Raw API — exact topic match
+eventBus().subscribe("sensor/temperature", [](const void* payload) {
+    const float* temp = static_cast<const float*>(payload);
+    if (temp) Serial.printf("Temperature: %.1f\n", *temp);
 });
 
 // Wildcard subscription
-eventBus->subscribe("sensor/*", [](const String& topic, const String& payload) {
-    Serial.printf("Sensor event: %s = %s\n", topic.c_str(), payload.c_str());
+eventBus().subscribe("sensor/*", [](const void* payload) {
+    // Handle any sensor event
 });
+```
+
+The typed helper API (available on IComponent) uses `std::function<void(const T&)>`:
+
+```cpp
+// Typed API — from within a component
+on<float>("sensor/temperature", [](const float& temp) {
+    Serial.printf("Temperature: %.1f\n", temp);
+}, true);  // replayLast = true for sticky events
 ```
 
 ## Common Patterns
@@ -53,7 +73,7 @@ ComponentStatus begin() override {
 ```cpp
 ComponentStatus begin() override {
     if (__dc_eventBus) {
-        __dc_eventBus->subscribe(EVENT_NETWORK_READY, [this](const String&, const String&) {
+        __dc_eventBus->subscribe(EVENT_NETWORK_READY, [this](const void*) {
             onNetworkReady();
         });
     }
@@ -75,16 +95,16 @@ void setMode(const String& mode) {
 ### 4. Request/Response Pattern
 
 ```cpp
-// Requester
-eventBus->subscribe("sensor/response", [](const String&, const String& value) {
+// Requester — using typed helper (from within a component)
+on<String>("sensor/response", [](const String& value) {
     handleResponse(value);
 });
-eventBus->publish("sensor/request", "temperature");
+emit<String>("sensor/request", String("temperature"));
 
-// Responder
-eventBus->subscribe("sensor/request", [this](const String&, const String& param) {
+// Responder — using typed helper (from within a component)
+on<String>("sensor/request", [this](const String& param) {
     String value = getSensorValue(param);
-    eventBus->publish("sensor/response", value);
+    emit<String>("sensor/response", value);
 });
 ```
 
@@ -109,9 +129,10 @@ eventBus->subscribe("sensor/request", [this](const String&, const String& param)
 ## Event Flow Diagram
 
 ```
-┌─────────────┐     publish()     ┌───────────┐     callback()    ┌─────────────┐
-│  Publisher  │ ─────────────────▶│  EventBus │ ─────────────────▶│  Subscriber │
-└─────────────┘                   └───────────┘                   └─────────────┘
+┌─────────────┐     publish()     ┌───────────┐     poll()        ┌─────────────┐
+│  Publisher  │ ─────────────────▶│   Queue   │ ─────────────────▶│  Subscriber │
+└─────────────┘                   │ (max 32)  │   (up to 8/call)  └─────────────┘
+                                  └───────────┘
                                        │
                                        │ (if sticky)
                                        ▼
@@ -119,7 +140,7 @@ eventBus->subscribe("sensor/request", [this](const String&, const String& param)
                                   │  Cache  │
                                   └─────────┘
                                        │
-                                       │ (late subscriber)
+                                       │ (late subscriber with replayLast)
                                        ▼
                                   ┌─────────────┐
                                   │ New Sub gets│

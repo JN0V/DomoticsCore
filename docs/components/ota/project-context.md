@@ -73,6 +73,7 @@ Plain configuration struct with 13 fields. No methods. Passed by value to constr
 - Requires explicit `init(WebUIComponent*)` call after construction (route registration needs server access)
 - Uses `LazyState<OTAState>` for change detection
 - Registers both standard WebUI contexts and custom REST/upload routes
+- `handleWebUIRequest` accepts both `ota_unified` and `ota_manager` as context IDs
 
 ### `OTAEvents` (namespace)
 
@@ -129,19 +130,17 @@ All `#ifdef` platform branching is confined to `Update_HAL.h` and the platform-s
 
 ---
 
-## ESP8266 Dual-Partition Caveat
+## ESP8266 Update Strategy
 
-On ESP8266, the Update library cannot write to flash while handling HTTP requests on the same thread. The OTA component addresses this with a buffered-write strategy:
+On ESP8266, the OTA HAL uses `Update.runAsync(true)` to enable direct flash writes from AsyncWebServer callbacks without `__yield` panic. This eliminates the need for buffered writes.
 
-1. `acceptUploadChunk()` calls `HAL::OTAUpdate::write()`, which buffers data internally on ESP8266 (direct write on ESP32).
-2. `finalizeUpload()` calls `HAL::OTAUpdate::end(true)`, which on ESP8266 merely marks the buffer as "finalizing".
-3. In `loop()`, when `HAL::OTAUpdate::hasPendingData()` returns `true`, the component calls `HAL::OTAUpdate::processBuffer()` to flush data to flash incrementally.
-4. `processBuffer()` returns: `-1` for error, `0` for "continue next loop", `+1` for "done".
-5. On ESP32, `requiresBuffering()` returns `false`, and all writes and finalization are immediate.
+The buffering API functions still exist in the HAL for interface compatibility, but they are all no-ops:
+- `requiresBuffering()` returns `false`.
+- `hasPendingData()` returns `false`.
+- `hasBufferOverflow()` returns `false`.
+- `processBuffer()` is a no-op that returns `0`.
 
-Additionally, `HAL::OTAUpdate::hasBufferOverflow()` detects when upload data arrives faster than flash writes can process, which produces a specific error message.
-
-**AI agents must preserve this buffering flow when modifying upload logic.** Breaking the deferred-write pattern will cause ESP8266 crashes or corrupted firmware.
+Both ESP32 and ESP8266 now perform direct writes via `HAL::OTAUpdate::write()` and immediate finalization via `HAL::OTAUpdate::end()`.
 
 ---
 

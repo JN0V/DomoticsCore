@@ -1,12 +1,12 @@
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v1.6.0)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v2.0.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32%20|%20ESP32--C3%20|%20ESP8266-orange.svg)](https://platformio.org/)
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 1.6.0 Released!** Full ESP32-C3 support, MemoryManager, HeapTracker, SSE dual-mode WebUI, RemoteConsole WebUI, ESP8266 optimizations, memory leak fixes. See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
+> **🎉 Version 2.0.0 Released!** Breaking change: HomeAssistant callbacks removed in favor of EventBus `ha/command` events. Virtual dispatch for all HA entities, complete code remediation roadmap done. See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
 
 ## ✨ What Makes DomoticsCore Different
 
@@ -141,7 +141,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps =
-    jn0v/DomoticsCore@^1.6.0
+    jn0v/DomoticsCore@^2.0.0
 ```
 
 ### PlatformIO (GitHub)
@@ -155,7 +155,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps =
-    https://github.com/JN0V/DomoticsCore.git#v1.6.0
+    https://github.com/JN0V/DomoticsCore.git#v2.0.0
 ```
 
 ### Specific Components Only
@@ -171,17 +171,17 @@ lib_deps =
 
 | Component | Version | Description | Size | Status |
 |-----------|---------|-------------|------|--------|
-| **Core** | 1.5.0 | Framework, registry, event bus, MemoryManager, HeapTracker | ~50KB | ✅ Stable |
+| **Core** | 1.5.2 | Framework, registry, event bus, MemoryManager, HeapTracker | ~50KB | ✅ Stable |
 | **System** | 1.4.1 | High-level orchestration (batteries included) | ~100KB | ✅ Stable |
 | **WiFi** | 1.4.1 | Network connectivity with AP fallback | ~40KB | ✅ Stable |
-| **LED** | 1.3.0 | Visual status indicators (6 effects) | ~20KB | ✅ Stable |
-| **Storage** | 1.4.1 | NVS / LittleFS persistent data | ~30KB | ✅ Stable |
+| **LED** | 1.4.0 | Visual status indicators (6 effects) | ~20KB | ✅ Stable |
+| **Storage** | 1.4.2 | NVS / LittleFS persistent data | ~30KB | ✅ Stable |
 | **RemoteConsole** | 1.4.1 | Telnet debugging console with WebUI integration | ~25KB | ✅ Stable |
 | **WebUI** | 1.5.0 | Web interface with WebSocket + SSE dual-mode | ~150KB | ✅ Stable |
-| **MQTT** | 1.4.0 | Message broker with auto-reconnect | ~40KB | ✅ Stable |
+| **MQTT** | 1.4.1 | Message broker with auto-reconnect | ~40KB | ✅ Stable |
 | **NTP** | 1.3.0 | Time synchronization | ~15KB | ✅ Stable |
 | **OTA** | 1.4.1 | Over-the-air updates | ~30KB | ✅ Stable |
-| **HomeAssistant** | 1.4.0 | Auto-discovery integration | ~20KB | ✅ Stable |
+| **HomeAssistant** | 2.0.0 | Auto-discovery integration | ~20KB | ✅ Stable |
 | **SystemInfo** | 1.4.0 | Real-time monitoring with charts | ~25KB | ✅ Stable |
 
 **Total with everything:** ~545KB flash, ~50KB RAM
@@ -366,7 +366,7 @@ Inter-component messaging:
 
 ### All Examples
 
-See [`examples/README.md`](examples/README.md) for the complete list of 30+ examples across all components.
+See [`examples/README.md`](examples/README.md) for the complete list of 19 working examples across all components.
 
 ## 🔧 Key Features Deep Dive
 
@@ -392,8 +392,8 @@ Components declare dependencies, framework initializes in correct order:
 
 ```cpp
 class MyComponent : public IComponent {
-    std::vector<String> getDependencies() const override {
-        return {"Storage", "Wifi"};  // Will init after these
+    std::vector<Dependency> getDependencies() const override {
+        return {{"Storage", false}, {"Wifi", false}};  // Will init after these
     }
 };
 ```
@@ -414,15 +414,14 @@ LED shows system state without serial console:
 Decouple components with topic-based messaging:
 
 ```cpp
-// Publisher
+// Publisher (from within a component)
 struct TempData { float celsius; };
-eventBus().publish("sensor.temperature", TempData{22.5});
+emit("sensor/temperature", TempData{22.5}, true);  // sticky
 
-// Subscriber
-eventBus().subscribe("sensor.temperature", [](const void* data) {
-    auto* temp = static_cast<const TempData*>(data);
-    Serial.printf("Temp: %.1f°C\n", temp->celsius);
-}, this);
+// Subscriber (typed API, from within a component)
+on<TempData>("sensor/temperature", [](const TempData& temp) {
+    Serial.printf("Temp: %.1f°C\n", temp.celsius);
+}, true);  // replayLast = true
 ```
 
 ### Chunked HTTP Responses
