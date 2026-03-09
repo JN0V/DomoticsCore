@@ -82,7 +82,7 @@ public:
     }
 
     String getWebUIName() const override { return wifi ? wifi->metadata.name : String("Wifi"); }
-    String getWebUIVersion() const override { return wifi ? wifi->metadata.version : String("1.4.0"); }
+    String getWebUIVersion() const override { return wifi ? wifi->metadata.version : String("1.4.1"); }
 
 protected:
     // CachingWebUIProvider: build contexts once, they're cached

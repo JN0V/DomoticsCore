@@ -59,7 +59,7 @@ void test_wifi_component_creation_default(void) {
     auto wifi = std::make_unique<WifiComponent>();
 
     TEST_ASSERT_EQUAL_STRING("Wifi", wifi->metadata.name);
-    TEST_ASSERT_EQUAL_STRING("1.4.0", wifi->metadata.version);
+    TEST_ASSERT_EQUAL_STRING("1.4.1", wifi->metadata.version);
 }
 
 void test_wifi_component_creation_with_credentials(void) {

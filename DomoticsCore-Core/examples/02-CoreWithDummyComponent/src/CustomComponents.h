@@ -115,10 +115,9 @@ public:
     
     
     std::vector<Dependency> getDependencies() const override {
-        // Convert String vector to Dependency vector (implicit conversion per element)
         std::vector<Dependency> deps;
         for (const auto& dep : dependencies) {
-            deps.push_back(dep);  // Implicit conversion String -> Dependency
+            deps.push_back(Dependency(dep.c_str()));
         }
         return deps;
     }

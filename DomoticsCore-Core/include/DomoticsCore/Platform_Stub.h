@@ -371,10 +371,12 @@ inline uint64_t getChipId() {
 }
 
 /**
- * @brief Get free heap memory (stub - always 0)
+ * @brief Get free heap memory (stub - returns realistic value)
+ * Returns 65536 to avoid triggering low-heap guards in components
+ * like WifiComponent that gate functionality on heap thresholds.
  */
 inline uint32_t getFreeHeap() {
-    return 0;
+    return 65536;
 }
 
 /**
