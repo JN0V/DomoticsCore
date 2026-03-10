@@ -40,7 +40,7 @@ The main component class. It creates the async web server, discovers providers, 
 WebUIComponent(const WebUIConfig& cfg = WebUIConfig());
 ```
 
-Constructs the component with the given configuration. Sets `metadata.name = "WebUI"` and `metadata.version = "1.5.0"`. Internally creates a `ProviderRegistry`, `WebServerManager`, and `WebSocketHandler`.
+Constructs the component with the given configuration. Sets `metadata.name = "WebUI"`, `metadata.version = "1.5.0"`, `metadata.author = "DomoticsCore"`, and `metadata.description = "Web dashboard and API component"`. Internally creates a `ProviderRegistry`, `WebServerManager`, and `WebSocketHandler`.
 
 ### IComponent Lifecycle
 
@@ -644,8 +644,24 @@ The following files exceed the Constitution VII 800-line file size limit. These 
 
 | File | Lines | Status |
 |------|-------|--------|
-| `WebUI.h` | 951 | Planned split into smaller units (server setup, API routes, self-provider) |
-| `StreamingContextSerializer.h` | 922 | Planned split (state machine is inherently sequential, but field sub-states could be extracted) |
+| `WebUI.h` | 950 | Planned split into smaller units (server setup, API routes, self-provider) |
+| `StreamingContextSerializer.h` | 921 | Planned split (state machine is inherently sequential, but field sub-states could be extracted) |
 | `Wifi.h` | 881 | Belongs to DomoticsCore-Wifi; tracked here as cross-component awareness per Constitution VII |
 
 These deviations are accepted under Constitution VII's roadmap provision. Refactoring is planned but deferred to avoid destabilizing the streaming serializer's pause/resume logic and the tightly coupled WebUI server setup.
+
+---
+
+## Known Issue: SSE Broadcast Log Severity
+
+In `WebUI.h`, the `sendWebSocketUpdates()` method logs every successful SSE broadcast at WARNING level (`DLOG_W`). This fires every `wsUpdateInterval` milliseconds (default 5000 ms) whenever at least one SSE client is connected, producing ~1560 bytes of log output every ~5.4 seconds.
+
+**Location**: `WebUI.h`, line 939 in `sendWebSocketUpdates()`.
+
+**Impact**: Pollutes serial output with non-actionable warnings; may trigger false alerts in log monitoring.
+
+**Root cause**: The log call uses `DLOG_W` where `DLOG_D` (DEBUG) is appropriate. The nearby low-heap guard (line 933) correctly uses `DLOG_W` for the genuinely abnormal case.
+
+**Workaround**: Increase `wsUpdateInterval` in `WebUIConfig` to reduce frequency, or filter WARNING-level `LOG_WEB` messages in the log sink.
+
+**Fix**: Change `DLOG_W` to `DLOG_D` on line 939 of `WebUI.h`.

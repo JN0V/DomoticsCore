@@ -76,10 +76,8 @@ void test_mqtt_configuration() {
  * @brief Test: Vérifier la configuration Home Assistant
  */
 void test_home_assistant_configuration() {
-    TEST_ASSERT_TRUE_MESSAGE(testConfig.enableHomeAssistant, 
+    TEST_ASSERT_TRUE_MESSAGE(testConfig.enableHomeAssistant,
                              "Home Assistant should be enabled");
-    TEST_ASSERT_EQUAL_STRING_MESSAGE("homeassistant", testConfig.haDiscoveryPrefix.c_str(),
-                                    "HA discovery prefix should be 'homeassistant'");
 }
 
 /**

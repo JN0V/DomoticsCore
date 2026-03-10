@@ -108,16 +108,13 @@ struct MQTTConfig {
     String broker;              // MQTT broker address
     uint16_t port;              // Port (1883 for plain, 8883 for TLS)
     bool useTLS;                // Use TLS/SSL encryption
-    
+    uint16_t keepAlive;         // Keep-alive interval (seconds)
+
     // Authentication
     String username;            // Optional username
     String password;            // Optional password
     String clientId;            // Auto-generated if empty
-    
-    // Session
-    bool cleanSession;          // Start with clean session
-    uint16_t keepAlive;         // Keep-alive interval (seconds)
-    
+
     // Last Will Testament
     bool enableLWT;             // Enable LWT
     String lwtTopic;            // LWT topic (defaults to {clientId}/status)
@@ -136,12 +133,7 @@ struct MQTTConfig {
     
     // Subscriptions
     uint8_t maxSubscriptions;   // Max number of subscriptions
-    bool resubscribeOnConnect;  // Re-subscribe after reconnect
-    
-    // Timeouts
-    uint32_t connectTimeout;    // Connection timeout (ms)
-    uint32_t operationTimeout;  // Operation timeout (ms)
-    
+
     // Component
     bool enabled;               // Enable/disable component
 };
@@ -153,7 +145,6 @@ struct MQTTConfig {
 |---------|---------|-------------|
 | `port` | 1883 | Standard MQTT port |
 | `useTLS` | false | Plain connection |
-| `cleanSession` | true | No session persistence |
 | `keepAlive` | 60 | 60 second keep-alive |
 | `enableLWT` | true | LWT enabled |
 | `lwtQoS` | 1 | At-least-once delivery |
@@ -349,7 +340,6 @@ Configure all MQTT parameters:
 - Username and password
 - Client ID
 - TLS/SSL toggle
-- Session settings
 - Last Will Testament
 - Connect/Disconnect buttons
 
@@ -466,6 +456,10 @@ Serial.printf("Queued messages: %d\n", mqtt->getQueuedMessageCount());
 
 Optional:
 - **DomoticsCore-WebUI** (for web interface)
+
+## Migration Notes
+
+Four dead fields have been removed from `MQTTConfig`: the clean-session flag, the resubscribe-on-connect flag, and both timeout fields (connect and operation). Users who set these fields in their sketches should simply delete those lines — the settings never had any runtime effect.
 
 ## License
 

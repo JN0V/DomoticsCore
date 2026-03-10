@@ -34,9 +34,12 @@ All paths are relative to the repository root.
 | `DomoticsCore-LED/include/DomoticsCore/LED.h` | Main header: `LEDEffect`, `LEDColor`, `LEDConfig`, `LEDState`, `LEDComponent` |
 | `DomoticsCore-LED/include/DomoticsCore/LEDWebUI.h` | WebUI provider: `LEDWebUI` (extends `CachingWebUIProvider`) |
 | `DomoticsCore-LED/test/test_led_types/test_led_types.cpp` | Unity tests for `LEDColor`, `LEDEffect`, `LEDConfig`, `LEDState` |
+| `DomoticsCore-LED/test/test_led_component/test_led_component.cpp` | Unity tests for `LEDComponent` metadata and Core lookup |
 | `DomoticsCore-LED/examples/BasicLED/src/main.cpp` | Standalone demo cycling six effects |
+| `DomoticsCore-LED/examples/BasicLED/platformio.ini` | PlatformIO config for the BasicLED example |
 | `DomoticsCore-LED/examples/BasicLED/README.md` | Hardware wiring guide and expected output |
 | `DomoticsCore-LED/examples/LEDWithWebUI/src/main.cpp` | Browser-controlled LED via WiFi AP |
+| `DomoticsCore-LED/examples/LEDWithWebUI/platformio.ini` | PlatformIO config for the LEDWithWebUI example |
 
 **Note**: This component is header-only. There is no `src/` directory; all implementation lives in the header files under `include/DomoticsCore/`.
 
@@ -59,7 +62,9 @@ All paths are relative to the repository root.
 
 | Dependency | Version | Purpose |
 |------------|---------|---------|
-| `DomoticsCore-Core` | `^1.3.0` | Provides `IComponent`, `Core`, `NonBlockingDelay`, `Platform_HAL`, `Logger` |
+| `DomoticsCore-Core` | `^1.3.0` | Provides `IComponent`, `Core`, `Timer` (contains `NonBlockingDelay`), `Platform_HAL`, `Logger` |
+
+`LED.h` includes `<DomoticsCore/IComponent.h>`, `<DomoticsCore/Timer.h>`, `<DomoticsCore/Platform_HAL.h>`, and `<vector>`.
 
 `LEDWebUI.h` additionally depends on headers from Core's WebUI subsystem (`IWebUIProvider.h`, `BaseWebUIComponents.h`) and `ArduinoJson`. These are transitive through Core.
 

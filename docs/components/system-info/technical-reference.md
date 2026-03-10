@@ -26,6 +26,8 @@ This document is the complete API reference for the DomoticsCore-SystemInfo comp
    - [Data Methods](#data-methods)
    - [Device Name Persistence](#device-name-persistence)
    - [Change Detection](#change-detection)
+   - [Internal: SystemInfoState](#internal-systeminfostate-private-struct)
+   - [Internal: buildContexts](#internal-buildcontexts-protected-override)
 8. [Header Includes](#header-includes)
 
 ---
@@ -322,7 +324,7 @@ Returns `"{}"` for unknown context IDs or if the component pointer is null.
 
 #### `String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params)`
 
-Handles POST requests to `system_settings`. Expects `field` and `value` parameters. Currently supports only the `device_name` field.
+Handles POST requests to `system_settings`. Expects `field` and `value` parameters. Currently supports only the `device_name` field. The `endpoint` parameter is accepted for interface compliance but is not used by this implementation.
 
 On a successful device name change:
 1. Reads current config via `getConfig()`.
@@ -351,6 +353,26 @@ Used by the WebUI framework to determine whether data should be pushed over WebS
 | `system_info` | Always returns `false` (static hardware data). |
 | `system_settings` | Uses `LazyState<SystemInfoState>` to detect changes in `deviceName`, `manufacturer`, or `firmwareVersion`. |
 | `system_metrics` | Always returns `true` (real-time data that changes every cycle). |
+
+### Internal: SystemInfoState (Private Struct)
+
+Used internally by `SystemInfoWebUI` for `LazyState`-based change detection on the `system_settings` context. Not accessible to callers.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `deviceName` | `String` | Tracks device name for change detection. |
+| `manufacturer` | `String` | Tracks manufacturer for change detection. |
+| `firmwareVersion` | `String` | Tracks firmware version for change detection. |
+
+Equality operators (`==`, `!=`) compare all three fields. A state change triggers an immediate WebSocket push to connected clients.
+
+### Internal: buildContexts (Protected Override)
+
+```cpp
+void buildContexts(std::vector<WebUIContext>& contexts) override;
+```
+
+Overrides `CachingWebUIProvider::buildContexts()` to register the three contexts (`system_info`, `system_metrics`, `system_settings`). Called once lazily by the caching layer; results are stored and reused. Returns early without registering contexts if the `sys` pointer is null.
 
 ---
 

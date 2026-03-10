@@ -4,6 +4,8 @@
 
 This document is the exhaustive API and behavior reference for the `DomoticsCore-System` component (v1.4.1). It covers every public class, struct, enum, method, configuration field, LED pattern, state transition, persistence key, event orchestration rule, and WebUI integration detail.
 
+**Last verified against source:** 2026-03-10
+
 ---
 
 ## Table of Contents
@@ -102,7 +104,6 @@ All fields have sensible defaults. Fields are grouped by functional area.
 | `wifiPassword` | `String` | `""` | Station mode password |
 | `wifiAPSSID` | `String` | `""` | AP SSID. Auto-generated as `{deviceName}-{chipIdHex}` if empty |
 | `wifiAPPassword` | `String` | `""` | AP password. Empty creates an open access point |
-| `wifiTimeout` | `uint32_t` | `30000` | WiFi connection timeout in milliseconds |
 
 ### LED
 
@@ -126,7 +127,6 @@ All fields have sensible defaults. Fields are grouped by functional area.
 |-------|------|---------|-------------|
 | `enableWebUI` | `bool` | `false` | Enable the web interface |
 | `webUIPort` | `uint16_t` | `80` | HTTP port for the web server |
-| `webUIEnableAPI` | `bool` | `true` | Enable REST API endpoints |
 
 ### MQTT
 
@@ -144,7 +144,6 @@ All fields have sensible defaults. Fields are grouped by functional area.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enableHomeAssistant` | `bool` | `false` | Enable HA auto-discovery (requires MQTT) |
-| `haDiscoveryPrefix` | `String` | `"homeassistant"` | MQTT discovery prefix |
 
 ### NTP
 
@@ -179,6 +178,16 @@ All fields have sensible defaults. Fields are grouped by functional area.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `defaultLogLevel` | `LogLevel` | `LOG_LEVEL_INFO` | Default log verbosity for the console sink |
+
+### Removed Fields (v1.4.1)
+
+The following fields previously existed in `SystemConfig` but have been removed. They are no longer present in the source and must not be used:
+
+| Former Field | Reason for Removal |
+|--------------|--------------------|
+| `haDiscoveryPrefix` | HA discovery prefix is now set exclusively via `HAConfig.discoveryPrefix` (loaded from Storage key `ha_disc_prefix`). |
+| `webUIEnableAPI` | The WebUI REST API is always enabled when WebUI is active; the toggle was unnecessary. |
+| `wifiTimeout` | WiFi connection timeout is managed internally by `WifiComponent`; no user-facing config field is needed. |
 
 ---
 
@@ -378,10 +387,12 @@ Keys are organized by component group:
 | | `ha_mfg` | `s` | Manufacturer |
 | | `ha_model` | `s` | Model |
 | | `ha_sw_ver` | `s` | Software version |
-| **Boot Diag** | `boot_count` | `i` | Persisted boot counter |
+| **Boot Diag** (not registered*) | `boot_count` | `i` | Persisted boot counter |
 | | `last_reset` | `i` | Last reset reason code |
 | | `last_heap` | `i` | Heap at last boot |
 | | `last_minheap` | `i` | Minimum heap at last boot |
+
+\* Boot Diag keys are used directly via `storage->getInt()`/`storage->putInt()` in `initBootDiagnosticsPersistence()` but are **not** registered with `storage->registerKeys()`. They will not appear in Storage key enumeration.
 
 ### WiFi Config Loading Note
 
@@ -516,7 +527,7 @@ These commands are automatically registered when the RemoteConsole is enabled:
 |---------|-------------|--------|
 | `status` | System status summary | Device name, version, uptime, free heap, current state |
 | `wifi` | WiFi detailed status | Delegates to `WifiComponent::getDetailedStatus()` |
-| `storage` | Storage contents dump | Delegates to `StorageComponent::dumpContents()` |
+| `storage` | Storage contents dump | Delegates to `StorageComponent::dumpContents()`. Accepts an argument string but currently ignores it. |
 | `bootdiag` | Boot diagnostics | Boot count, reset reason, boot heap, min heap, and persisted history |
 
 These are in addition to commands provided by the RemoteConsole component itself (e.g., `help`, `level`, `info`, `heap`, `reboot`).

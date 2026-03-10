@@ -40,7 +40,7 @@ Each effect uses a phase variable (`0.0` to `1.0`) that advances according to `e
 |--------|----------------------|-------|
 | Blink | `phase < 0.5 ? brightness : 0` | Hard on/off |
 | Fade | `brightness * (sin(phase * 2PI) + 1) / 2` | Smooth sine wave |
-| Pulse | Two sine bumps in first 50 % of cycle, off for remainder | Heartbeat feel |
+| Pulse | First sine bump over 0-30 % of cycle, second bump over 30-50 %, off for 50-100 % | Heartbeat feel |
 | Rainbow | Phase mapped to 0-360 hue, simple HSV-to-RGB | Only affects RGB LEDs |
 | Breathing | `brightness * (1 - cos(phase * 2PI)) / 2` | Perceptually smooth |
 
@@ -224,6 +224,43 @@ LED 'MainRGB': Enabled, Color: RGB(0,0,255), Brightness: 200, Effect: Breathing
 
 Maps an `LEDEffect` enum value to its display string (`"Solid"`, `"Blink"`, `"Fade"`, `"Pulse"`, `"Rainbow"`, `"Breathing"`, or `"Unknown"`).
 
+### Private Helper Methods
+
+These methods are internal implementation details but are documented here for completeness.
+
+#### `bool validateLEDPins()`
+
+Iterates over all `ledConfigs` and verifies that single-color LEDs have `pin >= 0` and RGB LEDs have all three channel pins `>= 0`. Logs an error via `DLOG_E` and returns `false` on the first invalid entry.
+
+#### `void initializePins()`
+
+Sets all configured GPIO pins to `OUTPUT` mode via `HAL::pinMode()` and writes an initial PWM value of `0` (respecting `invertLogic`).
+
+#### `void setPWMOutput(int pin, uint8_t value, bool invert)`
+
+Low-level helper that writes a single PWM value to a pin. If `invert` is `true`, the output is `255 - value`. Guards against `pin < 0`.
+
+#### `void setLEDOutput(size_t ledIndex, const LEDColor& color, uint8_t brightness)`
+
+Applies the two-stage brightness scaling pipeline (see PWM Control Details below), then writes the computed PWM values to the appropriate pins.
+
+#### `void updateEffects()`
+
+Called by `loop()` at 20 Hz. For each enabled LED with a non-Solid effect, advances `effectPhase` based on elapsed time and `effectSpeed`, computes the output brightness/color per the effect formula, and calls `setLEDOutput()`. Solid-effect LEDs are written once per tick without phase advancement.
+
+---
+
+## Test Coverage
+
+Two test suites exist:
+
+| Test File | Scope |
+|-----------|-------|
+| `test/test_led_types/test_led_types.cpp` | Pure data-type tests: `LEDColor` constructors and predefined colors, `LEDEffect` enum values, `LEDConfig` default values and field assignment, `LEDState` defaults. 17 test cases. |
+| `test/test_led_component/test_led_component.cpp` | Component integration tests: verifies `metadata.name` is `"LED"` and that `Core::getComponent<LEDComponent>("LED")` succeeds after registration. 2 test cases. |
+
+Tests run on the `native` platform using the Unity framework (`platformio.ini` at the component root).
+
 ---
 
 ## PWM Control Details
@@ -287,13 +324,17 @@ The provider registers two contexts:
 
 ### Overridden Methods
 
+#### `void buildContexts(std::vector<WebUIContext>& contexts)` (protected)
+
+Registers the two WebUI contexts (`led_status` and `led_dashboard`) with their field definitions and real-time update intervals. Calls `ensureInitialized()` to push the initial state to hardware on first invocation.
+
 #### `String getWebUIName() const`
 
 Returns `metadata.name` from the linked `LEDComponent` (`"LED"`).
 
 #### `String getWebUIVersion() const`
 
-Returns `metadata.version` from the linked `LEDComponent` (typically `"1.4.0"`).
+Returns `metadata.version` from the linked `LEDComponent` (typically `"1.4.0"`). Falls back to `"1.3.0"` if the component pointer is null.
 
 #### `String getWebUIData(const String& contextId)`
 
@@ -313,6 +354,24 @@ The WebUI maintains a mirrored state to synchronize the UI with hardware:
 - `initialApplied` -- flag to ensure initial state is pushed to hardware once.
 
 LED name lookups are cached via `getCachedNames()` to avoid repeated vector allocations.
+
+### Private Helpers
+
+#### `static String effectToString(LEDEffect e)`
+
+Maps an `LEDEffect` enum to its display string. Used by `getWebUIData()` to serialize the current effect into JSON. Returns `"Solid"` for unknown values (unlike `LEDComponent::getEffectName()` which returns `"Unknown"`).
+
+#### `static LEDEffect stringToEffect(const String& s)`
+
+Parses a display string back into an `LEDEffect` enum. Used by `handleWebUIRequest()` to deserialize the effect field from POST params. Defaults to `LEDEffect::Solid` for unrecognized strings.
+
+#### `void ensureInitialized()`
+
+Called once (guarded by `initialApplied` flag) during the first `buildContexts()` invocation. Applies the initial mirrored state to the hardware: if `enabled` is true, sets the LED to white at the current brightness with the current effect; otherwise forces the LED off.
+
+#### `const std::vector<String>& getCachedNames() const`
+
+Lazy-loads and caches LED names from `LEDComponent::getLEDNames()`. If the component returns an empty list, generates synthetic names (`"LED_0"`, `"LED_1"`, ...). The cache is populated once and never invalidated, which means LEDs added after the first WebUI context build will not appear.
 
 ---
 

@@ -1,8 +1,8 @@
 # EventBus Architecture - DomoticsCore
 
-**Version**: 1.0  
-**Date**: 2025-11-14  
-**Status**: ✅ Production
+**Version**: 2.0
+**Date**: 2026-03-10
+**Status**: Production
 
 ---
 

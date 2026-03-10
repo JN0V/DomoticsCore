@@ -161,10 +161,12 @@ All entity types follow the same pattern:
 
 1. MQTT message arrives on `{prefix}/+/{nodeId}/+/set`.
 2. `HomeAssistantComponent::handleCommand()` extracts entity ID from topic.
-3. `entity->handleCommand(payload)` is called via virtual dispatch -- each entity type validates and stores state internally.
-4. If `handleCommand()` returns `true`, an `HACommandEvent` is emitted on `ha/command`.
-5. If `handleCommand()` returns `false` (invalid payload), no event is emitted.
-6. Consumers subscribe to `ha/command` to react to commands.
+3. `stats.commandsReceived` is incremented (before validation -- invalid commands are counted too).
+4. `entity->handleCommand(payload)` is called via virtual dispatch -- each entity type validates and stores state internally.
+5. If `handleCommand()` returns `true`, an `HACommandEvent` is emitted on `ha/command`.
+6. If `handleCommand()` returns `false` (invalid payload), no event is emitted.
+7. For switches with `autoPublishState && !optimistic`, state is auto-published back.
+8. Consumers subscribe to `ha/command` to react to commands.
 
 ### Adding a New Entity Type
 

@@ -102,6 +102,8 @@ Optional (for WebUI integration):
 - **Logger integration**: Uses `LoggerCallbacks::addCallback()` to tap into the `DLOG_*` macro system without redefining any macros.
 - **Client management**: Each client has a per-client-ID command buffer (`std::map<uint32_t, String>`), authentication state (`std::map<uint32_t, bool>`), and connection timestamp (`std::map<uint32_t, unsigned long>`). Telnet negotiation bytes and non-printable characters are silently discarded.
 - **WebUI state caching**: `RemoteConsoleWebUI` uses `LazyState<ConsoleUIState>` to avoid reserializing JSON when the underlying data has not changed.
+- **Non-blocking reboot**: The `reboot` command sets a `rebootPending` flag and records the timestamp. The actual `HAL::restart()` call happens at the top of the next `loop()` iteration after a 100 ms delay, ensuring the "Rebooting..." message is flushed to all clients before the device restarts.
+- **Same-port early return**: `setPort()` returns `true` immediately if the requested port matches the current port, avoiding unnecessary server restart.
 
 ---
 
@@ -119,13 +121,16 @@ Optional (for WebUI integration):
 
 Tests reside in `test/test_remoteconsole_component/test_remoteconsole_component.cpp` and use the Unity test framework. The test suite runs on the `native` platform.
 
-Test categories:
-- **Creation** -- Default and custom config construction.
-- **Config defaults** -- Verifies all `RemoteConsoleConfig` default values.
-- **Lifecycle** -- `begin()`, `loop()`, `shutdown()` sequences.
-- **Dependencies** -- Confirms no hard dependencies (WiFi is optional at init time).
-- **Edge cases** -- Zero buffer size, zero max clients, empty password, disabled color/commands.
-- **Memory leak** -- Rotates 5000 log entries through a 100-entry buffer and asserts less than 1 byte leaked per entry. Also tests rapid fill/clear cycles (100 iterations).
+Test categories (30 tests total):
+- **Creation** (2 tests) -- Default and custom config construction.
+- **Config defaults** (2 tests) -- Verifies all `RemoteConsoleConfig` default values and custom overrides.
+- **Lifecycle** (4 tests) -- `begin()`, `loop()`, `shutdown()` sequences; enabled and disabled paths.
+- **Dependencies** (1 test) -- Confirms no hard dependencies (WiFi is optional at init time).
+- **Configuration** (5 tests) -- Port, buffer size, max clients, authentication, and log level configs.
+- **Edge cases** (6 tests) -- Zero buffer size, zero max clients, empty password, disabled color/commands, multiple config changes.
+- **Authentication** (7 tests) -- Auth config defaults, custom auth, timeout=0, auth+password lifecycle, commands-disabled lifecycle, full auth protocol flow (simulated client: welcome, blocked commands, wrong password, correct password, post-auth commands), auth combined with commands-disabled.
+- **Memory leak** (2 tests) -- Rotates 5000 log entries through a 100-entry buffer and asserts less than 1 byte leaked per entry. Also tests rapid fill/clear cycles (100 iterations).
+- **Memory stability** (2 tests) -- Uses `HeapTracker` to verify `setPort()` cycles (single and multi) release memory via `shrink_to_fit()` with tight tolerance (512 bytes single, 2048 bytes multi).
 
 ---
 
@@ -138,3 +143,9 @@ This component adheres to the DomoticsCore Constitution:
 - **Memory safety**: Circular buffer with lazy growth prevents OOM. `clearBuffer()` uses `shrink_to_fit()` to release memory. Memory leak tests validate long-running stability.
 - **Component lifecycle**: Implements `begin()`, `loop()`, `shutdown()`, and `onComponentsReady()` as required by `IComponent`.
 - **Logging**: Uses `DLOG_*` macros with the `LOG_CONSOLE` tag throughout.
+
+---
+
+## Known Issues
+
+- **WebUI version mismatch**: `RemoteConsoleWebUI::getWebUIVersion()` returns a hardcoded `"1.4.0"` fallback string instead of `"1.4.1"` (line 65 of `RemoteConsoleWebUI.h`). The primary path uses `console->metadata.version` which is correct, so this only triggers if the `console` pointer is null.

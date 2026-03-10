@@ -1,485 +1,537 @@
-# DomoticsCore — Code Remediation Roadmap
+# DomoticsCore — Code Remediation Roadmap v2
 
-> Generated from adversarial documentation review (2026-03-04).
-> Each item is a separate commit/PR. Priority order follows the constitution.
+> Generated from adversarial code review of all 12 components + root (2026-03-10).
+> 13 parallel review agents — 196 total findings: 6 CRITICAL, 54 HIGH, 79 MEDIUM, 57 LOW.
+> Priority order follows the constitution. Each item is a separate commit/PR.
 >
-> **Status (2026-03-09): ALL ITEMS COMPLETE.** Priorities P1 through P8 are done. R24 (virtual dispatch), R25 (enum class), and R26 (ha/command EventBus event) are all complete. The v2.0.0 breaking change (HA callback removal) is the culmination of R24 + R26.
+> **Previous roadmap (v1, 2026-03-04 → 2026-03-09): ALL 10 PRIORITIES COMPLETE.** Archived at bottom.
 
 ---
 
-## Priority 1: Memory Safety (Constitution XIV — ABSOLUTE PRIORITY)
+## Priority 1: Security (CRITICAL — OTA & WebUI)
 
-These items violate the constitution's highest-priority principle. IoT devices run 24/7 — any memory leak will eventually crash the device.
+Unenforced security configurations are the most dangerous class of defect — users believe they are protected when they are not.
 
-### R1 — EventBus: missing `shrink_to_fit()` after container operations
+### SEC-1 — OTA: security config fields never enforced [CRITICAL]
 
-- **File**: `DomoticsCore-Core/include/DomoticsCore/EventBus.h`
-- **Problem**: `unsubscribe()`, `unsubscribeOwner()`, and `reset()` erase/clear vectors but never call `shrink_to_fit()`. Over time, the internal vector capacity grows but never shrinks, causing silent memory waste.
-- **Fix**: Add `shrink_to_fit()` after every `erase()` or `clear()` call on subscription vectors (`topicSubscriptions`, `wildcardTopicSubscriptions`).
-- **Test**: HeapTracker checkpoint before/after 100 subscribe+unsubscribe cycles — assert heap delta < tolerance.
+- **Ref**: OTA-F1
+- **File**: `DomoticsCore-OTA/include/DomoticsCore/OTA.h`
+- **Problem**: `requireTLS`, `bearerToken`, `basicAuthUser`, `basicAuthPassword`, `rootCA`, and `signaturePublicKey` are declared in `OTAConfig` but **never checked** by any code path. A user setting `requireTLS = true` believes HTTPS is enforced — it isn't. Firmware can be replaced by any network client via plain HTTP.
+- **Fix**: Implement TLS validation, bearer token / basic auth checks in upload handler, or remove fields and document that OTA is unsecured.
 
-### R2 — MQTT: missing `shrink_to_fit()` on message queue
+### SEC-2 — OTA: SHA256 failure doesn't rollback firmware [CRITICAL]
 
-- **File**: `DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h`
-- **Problem**: `processMessageQueue()` calls `messageQueue.erase()` but never `shrink_to_fit()`. After a burst of offline messages, the vector retains its peak capacity forever.
-- **Fix**: Add `messageQueue.shrink_to_fit()` after the erase loop in `processMessageQueue()`.
-- **Test**: Queue 50 messages offline, reconnect, verify heap returns to baseline after processing.
+- **Ref**: OTA-F2
+- **File**: `DomoticsCore-OTA/include/DomoticsCore/OTA.h`
+- **Problem**: After `HAL::OTAUpdate::end(true)` succeeds and SHA256 verification fails, the code transitions to `State::Error` but does NOT call `HAL::OTAUpdate::abort()`. Corrupted firmware may persist in the OTA partition.
+- **Fix**: Call `abort()` (or equivalent rollback) when SHA256 verification fails, before transitioning to Error state.
 
-### R3 — Storage: missing `shrink_to_fit()` on cache operations
+### SEC-3 — OTA: upload endpoint has no authentication [HIGH]
 
-- **File**: `DomoticsCore-Storage/include/DomoticsCore/Storage.h`
-- **Problem**: `cache.clear()` in `shutdown()`/`clear()` and `cache.erase()` in `remove()` never call `shrink_to_fit()`.
-- **Fix**: Add `cache.shrink_to_fit()` (or equivalent for `std::map`) after each operation that reduces container size.
-- **Test**: Store 20 keys, clear, verify heap recovery.
+- **Ref**: OTA-F5
+- **File**: `DomoticsCore-OTA` — `/api/ota/upload` route handler
+- **Problem**: Any network client can POST firmware to the upload endpoint with zero authentication.
+- **Fix**: Gate the upload handler behind the WebUI authentication system, or add a dedicated OTA token check.
 
-### R4 — RemoteConsole: missing `shrink_to_fit()` on client disconnect
+### SEC-4 — RemoteConsole: no brute-force protection on auth [MEDIUM]
 
-- **File**: `DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsole.h`
-- **Problem**: `clients.erase()` on disconnect never calls `shrink_to_fit()`. Multiple connect/disconnect cycles grow internal capacity.
-- **Fix**: Add `clients.shrink_to_fit()` after removing a disconnected client.
-- **Test**: Connect/disconnect 10 telnet clients, verify heap recovery.
+- **Ref**: RC-F5
+- **Problem**: Plain-text password comparison with no rate-limiting. Attackable via rapid telnet reconnections.
+- **Fix**: Add exponential backoff after N failed attempts, or IP-based lockout.
 
-### R5 — HomeAssistant: String concatenation in discovery topics
+### SEC-5 — WebUI: GET for state-changing operations [MEDIUM]
 
-- **File**: `DomoticsCore-HomeAssistant/include/DomoticsCore/HAEntity.h`
-- **Problem**: MQTT discovery topic generation uses 4 String concatenations per entity (e.g., `prefix + "/" + component + "/" + nodeId + "/" + objectId + "/config"`). With N entities, this creates 4×N temporary String allocations during discovery.
-- **Fix**: Use `snprintf()` with a static buffer:
-  ```cpp
-  char topic[128];
-  snprintf(topic, sizeof(topic), "%s/%s/%s/%s/config",
-           prefix, component, nodeId, objectId);
+- **Ref**: WEB-F9
+- **File**: `WebUI.h` — `/api/ui/action` endpoint
+- **Problem**: HTTP GET used for mutations (enable/disable, password changes). Passwords appear in query strings, browser history, and server logs.
+- **Fix**: At minimum add `Cache-Control: no-store` and document the security trade-off. Ideally use POST for mutations.
+
+### SEC-6 — WebUI: CORS `Access-Control-Allow-Origin: *` with auth enabled [MEDIUM]
+
+- **Ref**: WEB-F10
+- **File**: `WebUI.h:429`
+- **Problem**: Any website can make authenticated API requests to the device (CSRF/data exfiltration). Especially dangerous when `enableAuth` is true.
+- **Fix**: Restrict CORS origin when auth is enabled, or disable wildcard CORS entirely.
+
+---
+
+## Priority 2: Memory Safety (Constitution XIV — ABSOLUTE PRIORITY)
+
+IoT devices run 24/7. Any memory leak eventually causes OOM crash.
+
+### MEM-1 — Missing `shrink_to_fit()` across 6 components [HIGH]
+
+Multiple `clear()`/`erase()` operations without `shrink_to_fit()`, violating Constitution XIV.
+
+| Location | Container | Operation |
+|----------|-----------|-----------|
+| `ComponentRegistry.h:212,216,258` | `initializationOrder`, `components`, `listeners` | `erase(remove(...))` |
+| `EventBus.h:146` | `lastByTopic[topic]` | `clear()` in `publishSticky` |
+| `EventBus.h` (reset) | all subscription maps | `clear()` in `reset()` |
+| `IWebUIProvider.h:632` | `cachedContexts_` | `clear()` in `invalidateContextCache()` |
+| `RemoteConsole.h` | `clients`, `clientBuffers`, `clientAuthenticated`, `clientConnectTime` maps | `erase()` on disconnect |
+| `Wifi.h` | `scanNetworks` result vector | never shrunk |
+| `System.h:99` | `stateCallbacks` | unbounded `push_back()`, no size limit |
+
+- **Refs**: CORE-F1, CORE-F5, CORE-F11, WEB-F4, RC-F8, RC-F9, WIFI-F4, SYS-F3
+- **Fix**: Add `shrink_to_fit()` after every size-reducing operation. Add bounds check on `stateCallbacks` (max 8).
+
+### MEM-2 — String concatenation in hot paths across 9 components [HIGH]
+
+Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprintf()` with static buffers.
+
+| Component | Location | Hot path? | Description |
+|-----------|----------|-----------|-------------|
+| **HomeAssistant** | `HomeAssistant.h:150` | YES (every MQTT msg) | `String(ev.topic)` + `String(ev.payload)` in mqtt/message handler |
+| **HomeAssistant** | `HomeAssistant.h:623-690` | YES | `topic.substring()` in handleCommand |
+| **SystemInfo** | formatBytes/getFormattedUptime | YES (every 5s) | String concat in metrics formatting |
+| **WiFi** | scan loop, `getDetailedStatus()` | Moderate | `summary += ...` in for loop |
+| **LED** | `getLEDStatus()` | Moderate | 6+ String concats |
+| **RemoteConsole** | `help` handler, telnet negotiation | Cold | Character-by-character String building |
+| **NTP** | `getFormattedUptime()` | Cold | `result += String(days) + "d "...` |
+| **OTA** | `transition()`, `broadcastProgress()` | Moderate | String concat + JsonDocument per broadcast |
+| **System** | NTP server parsing/saving | Cold (boot) | String operations in loop |
+| **Storage** | `dumpContents()` | Cold | `String +=` in loop |
+| **WebUI** | BaseWebUIComponents methods | Cold (setup) | String concat in selectDropdown/radioGroup loops |
+
+- **Refs**: HA-F1, HA-F6, SI-F1, WIFI-F2, WIFI-F3, LED-F3, RC-F1, RC-F2, NTP-F8, OTA-F8, OTA-F9, SYS-F8, SYS-F9, STOR-F8, WEB-F7
+- **Fix**: Replace with `snprintf()` + stack buffers, or `String::reserve()` before loops. Priority: hot-path items first (HA, SystemInfo).
+
+### MEM-3 — HomeAssistant entity String properties should be `char[]` [MEDIUM]
+
+- **Ref**: HA-F5
+- **File**: `HAEntity.h:28-32`
+- **Problem**: 5 `String` members per entity (`id`, `name`, `component`, `icon`, `deviceClass`) fragment heap. With many entities, significant pressure on ESP8266.
+- **Fix**: Convert to `char[]` fixed-size buffers, consistent with `HAConfig`/`HACommandEvent` approach.
+
+### MEM-4 — WebUI: permanent static 8KB buffer [MEDIUM]
+
+- **Ref**: WEB-F5
+- **File**: `WebUI.h:60`
+- **Problem**: `static char wsBuffer_[WEBUI_WS_BUFFER_SIZE]` (8KB ESP32, 1KB ESP8266) permanently allocated even when no clients connected.
+- **Fix**: Lazy allocation on first use, or document rationale for permanent allocation.
+
+---
+
+## Priority 3: Code Safety & Critical Bugs
+
+### BUG-1 — Core: `reinterpret_cast` without trivially_copyable check [HIGH]
+
+- **Ref**: CORE-F4
+- **File**: `EventBus.h:101-107`
+- **Problem**: `publish()` template uses `reinterpret_cast` to byte-copy payloads. Publishing a `std::string` or `String` results in dangling pointers in the event queue.
+- **Fix**: Add `static_assert(std::is_trivially_copyable<PayloadT>::value, ...)`.
+
+### BUG-2 — Core: unsafe `static_cast` downcast [HIGH]
+
+- **Ref**: CORE-F2
+- **File**: `Core.h:104`
+- **Problem**: `getComponent<T>()` uses `static_cast<T*>` with no runtime type check. Wrong type = undefined behavior.
+- **Fix**: Add type-key verification before cast, or use `dynamic_cast` (if RTTI enabled).
+
+### BUG-3 — Core: `removeCallback()` nukes ALL callbacks [MEDIUM]
+
+- **Ref**: CORE-F6
+- **Problem**: `LoggerCallbacks::removeCallback()` calls `getCallbacks().clear()` instead of removing the specific callback.
+- **Fix**: Find and erase only the target callback.
+
+### BUG-4 — NTP: use-after-free with `sntp_setservername` pointers [HIGH]
+
+- **Ref**: NTP-F4
+- **File**: NTP HAL implementation
+- **Problem**: `sntp_setservername()` stores the raw `const char*` pointer. If the source `String` is destroyed or reallocated, the pointer dangles. SNTP will dereference freed memory on next sync.
+- **Fix**: Use static `char[]` buffers for server names, or ensure `String` lifetime exceeds SNTP usage.
+
+### BUG-5 — NTP: inconsistent sync thresholds [HIGH]
+
+- **Ref**: NTP-F3
+- **Problem**: Component uses `now > 1000000000` (2001) while HAL uses year 2020 threshold. Duplicate, inconsistent logic.
+- **Fix**: Single source of truth — delegate to HAL's `isSynced()`.
+
+### BUG-6 — NTP: `uint32_t` vs `unsigned long` mismatch [HIGH]
+
+- **Ref**: NTP-F1
+- **Problem**: `bootTime` is `uint32_t` but `HAL::Platform::getMillis()` returns `unsigned long`. On ESP32, `unsigned long` is 32-bit so it works, but on platforms where `unsigned long` is 64-bit, truncation occurs. Wrap-around bug after ~49 days.
+- **Fix**: Use `unsigned long` consistently, or document wrap-around handling.
+
+### BUG-7 — MQTT: ODR violation — static member in header [HIGH]
+
+- **Ref**: MQTT-F3
+- **File**: `MQTT_impl.h:8`
+- **Problem**: `MQTTComponent* MQTTComponent::instance = nullptr;` defined in header. Multiple TU inclusion = linker error. Needs `inline` (C++17) or `.cpp` file.
+- **Fix**: Add `inline` keyword or move to a `.cpp` compilation unit.
+
+### BUG-8 — MQTT: dangling broker pointer [MEDIUM]
+
+- **Ref**: MQTT-F12
+- **Problem**: `setBroker()` passes `broker.c_str()` to PubSubClient which stores the raw pointer. If the `String` is later destroyed, the pointer dangles.
+- **Fix**: Use a persistent `char[]` buffer for the broker address.
+
+### BUG-9 — MQTT: no QoS validation [HIGH]
+
+- **Ref**: MQTT-F4
+- **Problem**: `publish()`, `subscribe()`, and `MQTTConfig.lwtQoS` accept `uint8_t` with no range check. Values > 2 are invalid per MQTT spec.
+- **Fix**: Clamp or reject values > 2.
+
+### BUG-10 — HA: `mqttPublish()` always returns true [HIGH]
+
+- **Ref**: HA-F2
+- **Problem**: Fire-and-forget publish with a misleading `bool` return. Callers log "Published successfully" on a value that is always `true`.
+- **Fix**: Make `void` and remove conditional checks, or implement real acknowledgment.
+
+### BUG-11 — HA: `volatile bool publishing` is dead code [HIGH]
+
+- **Ref**: HA-F3
+- **Problem**: Set and cleared but never read. Not thread-safe on dual-core ESP32.
+- **Fix**: Remove entirely, or implement actual re-entrancy guard with `std::atomic<bool>`.
+
+### BUG-12 — HA: ODR violation in HAEvents.h [HIGH]
+
+- **Ref**: HA-F4
+- **Problem**: `static constexpr const char*` creates separate storage per TU in C++14. Pointer comparison in EventBus would fail across TUs.
+- **Fix**: Use `inline constexpr` (C++17) or extern linkage.
+
+### BUG-13 — HA: `HA_TOPIC_BUF_SIZE` too small [MEDIUM]
+
+- **Ref**: HA-F8
+- **Problem**: 128-byte buffer can be exceeded with long discovery prefixes + `alarm_control_panel` component + long entity IDs. Silent truncation breaks HA discovery.
+- **Fix**: Increase to 256, or add truncation detection with `DLOG_W`.
+
+### BUG-14 — Storage: `putBlob()` nullptr dereference [HIGH]
+
+- **Ref**: STOR-F3
+- **Problem**: No null check on `data` pointer. `nullptr` with `length > 0` = crash.
+- **Fix**: Add null guard at entry point.
+
+### BUG-15 — Storage: cache never consulted by getters [HIGH]
+
+- **Ref**: STOR-F4
+- **Problem**: `getString()`, `getInt()`, etc. always go to HAL storage, bypassing the cache entirely. Cache only used for dirty-checking in `put*()`.
+- **Fix**: Check cache first, fall through to HAL on miss.
+
+### BUG-16 — Storage: RAMOnlyStorage truncates uint64 [MEDIUM]
+
+- **Ref**: STOR-F6
+- **Problem**: `putULong64` stores via `String((unsigned long)value)`, losing upper 32 bits.
+- **Fix**: Use proper uint64 serialization.
+
+### BUG-17 — Storage: RAMOnlyStorage putBytes discards data [MEDIUM]
+
+- **Ref**: STOR-F7
+- **Problem**: Only stores the length, not the actual byte data. `getBytes` always returns 0.
+- **Fix**: Store actual bytes (e.g., base64-encoded or raw vector).
+
+### BUG-18 — LED: phase calculation loses accumulated time [MEDIUM]
+
+- **Ref**: LED-F6
+- **Problem**: When `effectPhase > 1.0`, reset to `0.0` instead of wrapping (`fmod`). Causes effect stuttering.
+- **Fix**: Use `effectPhase = fmod(effectPhase, 1.0f)`.
+
+### BUG-19 — LED: `addLED()` after `begin()` causes vector desync [MEDIUM]
+
+- **Ref**: LED-F8
+- **Problem**: `begin()` calls `ledStates.resize()` once. Adding LEDs after `begin()` grows `ledConfigs` but not `ledStates`.
+- **Fix**: Guard `addLED()` against post-begin calls, or auto-resize `ledStates`.
+
+### BUG-20 — OTA: static variables in header files [HIGH]
+
+- **Ref**: OTA-F4
+- **Problem**: `s_bytesWritten`, `s_updateActive`, `s_stubBytesWritten` are `static` in headers. Each TU gets its own copy.
+- **Fix**: Add `inline` (C++17) or move to `.cpp`.
+
+### BUG-21 — OTA: `EVENT_START` / `EVENT_END` never emitted [HIGH]
+
+- **Ref**: OTA-F3
+- **Problem**: Declared in `OTAEvents.h` but never emitted by any code path.
+- **Fix**: Emit at appropriate lifecycle points, or remove.
+
+### BUG-22 — RemoteConsole: unbounded client read [HIGH]
+
+- **Ref**: RC-F3
+- **Problem**: `while (client.available())` with no upper bound. Continuous byte stream = infinite loop.
+- **Fix**: Add per-iteration byte limit (e.g., 512 bytes max per `loop()` call).
+
+### BUG-23 — System: Early-Init anti-pattern [HIGH]
+
+- **Ref**: SYS-F4
+- **File**: `System.h:224`
+- **Problem**: `registerLEDComponent()` calls `led->begin()` manually before `core.begin()`. Constitution XIII explicitly forbids this.
+- **Fix**: Remove manual `begin()` call, let ComponentRegistry handle init order. Document if early LED is truly needed.
+
+### BUG-24 — WiFi: dead config fields [MEDIUM]
+
+- **Ref**: WIFI-F6
+- **Problem**: `connectionTimeout` and `CONNECTION_TIMEOUT` static const are both declared. `WifiConfig::connectionTimeout` may shadow the static constant, creating confusion.
+- **Fix**: Remove one, standardize on a single timeout source.
+
+### BUG-25 — WebUI: blocking component lifecycle in HTTP handler [MEDIUM]
+
+- **Ref**: WEB-F11
+- **File**: `ProviderRegistry.h:204-263`
+- **Problem**: `enableComponent()` calls `component->shutdown()` or `begin()` directly inside an async HTTP handler. Blocking I/O in ESPAsyncWebServer context causes watchdog resets.
+- **Fix**: Queue enable/disable action, process in `loop()`.
+
+### BUG-26 — WebUI: OptionLabelPair serialization bug [MEDIUM]
+
+- **Ref**: WEB-F12
+- **File**: `StreamingContextSerializer.h:849-879`
+- **Problem**: Key+colon+value written in one iteration. Partial value writes with small buffer cause malformed JSON because `optionIndex` not incremented but key already consumed.
+- **Fix**: Split key, colon, value into separate states for correct pause/resume.
+
+---
+
+## Priority 4: Test Coverage (Constitution II — NON-NEGOTIABLE)
+
+TDD with 100% coverage is a constitutional mandate. These components have critical gaps.
+
+### TEST-1 — System: zero tests [CRITICAL]
+
+- **Ref**: SYS-F1
+- **Problem**: No `test/` directory exists. Complex branching logic (heap guards, state machine, event orchestration) completely untested.
+- **Fix**: Create comprehensive test suite covering all public methods and state transitions.
+
+### TEST-2 — LED: grossly inadequate coverage [CRITICAL]
+
+- **Ref**: LED-F5
+- **Problem**: Only tests LED type definitions. Zero coverage for effects, PWM output, state management, WebUI interactions.
+- **Fix**: Add tests for all effects, brightness calculations, multi-LED scenarios, WebUI handlers.
+
+### TEST-3 — OTA: superficial coverage [HIGH]
+
+- **Ref**: OTA-F6
+- **Problem**: Critical gaps: no test for upload flow, SHA256 validation, state machine transitions, security enforcement, progress callbacks.
+
+### TEST-4 — WiFi: superficial coverage [HIGH]
+
+- **Ref**: WIFI-F13
+- **Problem**: Key untested paths: STA fallback timer, AP mode, scan failure handling, reconnection logic.
+
+### TEST-5 — NTP: inadequate coverage [MEDIUM]
+
+- **Ref**: NTP-F9
+- **Problem**: Missing: DST transitions, timezone edge cases, multi-server failover, wrap-around scenarios.
+
+### TEST-6 — WebUI-related tests: zero coverage [HIGH]
+
+- **Refs**: SI-F4, STOR-F16, LED-F14, HA-F17
+- **Problem**: `SystemInfoWebUI`, `StorageWebUI`, `LEDWebUI`, and `HomeAssistantWebUI` have zero tests. WebUI providers handle user input (device name, settings, config mutations) with no validation testing.
+
+### TEST-7 — Core: MemoryManager + ComponentConfig untested [MEDIUM]
+
+- **Ref**: CORE-F17
+- **Problem**: Zero tests for MemoryManager singleton and ComponentConfig validation logic.
+
+---
+
+## Priority 5: Known Bug — SSE Broadcast Warning Spam
+
+### SSE-1 — WebUI: `DLOG_W` should be `DLOG_D` for routine broadcast [HIGH]
+
+- **Refs**: WEB-F1, R-F2 (user-reported)
+- **File**: `DomoticsCore-WebUI/include/DomoticsCore/WebUI.h:939`
+- **Problem**: Every ~5.4 seconds, the RemoteConsole is flooded with:
   ```
-- **Test**: HeapTracker around `publishDiscovery()` with 5+ entities — assert no growth.
-
-### R6 — HomeAssistant: String fields cause ESP8266 fragmentation
-
-- **File**: `DomoticsCore-HomeAssistant/include/DomoticsCore/HAConfig.h` (or equivalent)
-- **Problem**: 9 `String` fields in HAConfig cause heap fragmentation on ESP8266 (~40KB free heap). Each String allocates dynamically.
-- **Fix**: Replace `String` fields with fixed `char[]` arrays (e.g., `char nodeId[33]`, `char discoveryPrefix[32]`).
-- **Test**: Monitor `getMaxFreeBlockSize()` vs `getFreeHeap()` — fragmentation ratio should stay below 20%.
-- **Note**: This is a larger refactor — may require API changes. Consider for a minor version bump.
-
-### R7 — Multiple: String concatenation in logging hot paths — DONE
-
-- **Files**: `RemoteConsole.h`, `Storage.h`, `System.h`
-- **Problem**: Log formatting uses String concatenation in hot paths (e.g., `String msg = "[" + tag + "] " + message`). Each concatenation allocates a new String on the heap.
-- **Fix**: Replaced with `snprintf()` + stack-allocated `char[]` buffers across 13 locations (RemoteConsole: 7, System: 4, Storage: 2). `formatLogEntry` uses dynamic fallback for long messages. Chained snprintf calls clamp `pos` to prevent OOB.
-- **Status**: DONE — implemented in batch1-quickwins tech-spec.
+  [W][WEB] SSE broadcast: 1561 bytes, clients=1
+  ```
+  This is routine operational behavior logged at WARNING level, making real warnings invisible.
+- **Fix**: Change `DLOG_W` to `DLOG_D` on line 939. Keep WARNING only for the heap-low skip case (line 933).
+- **Effort**: One-line fix.
 
 ---
 
-## Priority 2: Code Bugs Found During Review
+## Priority 6: File Size Violations (Constitution VII — 800 lines max)
 
-These are functional bugs or inconsistencies found while reviewing documentation against source code.
+### SIZE-1 — WebUI.h (950 lines) [HIGH]
 
-### M9 — EventBus::reset() incomplete
+- **Refs**: WEB-F2, R-F1
+- **Fix**: Extract route setup + SSE broadcasting into `WebUIRoutes.h` / `BroadcastManager.h`.
 
-- **File**: `DomoticsCore-Core/include/DomoticsCore/EventBus.h`
-- **Problem**: `reset()` clears the main subscription maps but does NOT clear `wildcardTopicSubscriptions`, `lastByTopic`, or `pendingByTopic`. After `reset()`, wildcard handlers still fire and sticky events replay stale data.
-- **Fix**: Add `wildcardTopicSubscriptions.clear()`, `lastByTopic.clear()`, `pendingByTopic.clear()` to `reset()`, each followed by `shrink_to_fit()`.
-- **Test**: Subscribe wildcard, reset, publish — handler must NOT fire.
+### SIZE-2 — StreamingContextSerializer.h (921 lines) [HIGH]
 
-### M10 — EventBus unsubscribe skips wildcards
+- **Ref**: WEB-F3
+- **Fix**: Unify duplicated `writeJsonString` overloads (const char* vs String&), extract field serialization helpers.
 
-- **File**: `DomoticsCore-Core/include/DomoticsCore/EventBus.h`
-- **Problem**: `unsubscribe()` and `unsubscribeOwner()` only scan `topicSubscriptions`, skipping `wildcardTopicSubscriptions`. Wildcard subscriptions can never be cleaned up.
-- **Fix**: Extend both methods to also scan and remove from `wildcardTopicSubscriptions`.
-- **Test**: Subscribe wildcard, unsubscribe by ID, publish — handler must NOT fire.
+### SIZE-3 — Wifi.h (880 lines) [MEDIUM]
 
-### M11 — Core::emit() missing sticky parameter — DONE
+- **Refs**: WIFI-F1, R-F11
+- **Fix**: Extract AP-mode logic or WebUI provider code into separate header.
 
-- **File**: `DomoticsCore-Core/include/DomoticsCore/Core.h`
-- **Problem**: `Core::emit()` does not have a `sticky` parameter, unlike `IComponent::emit()`.
-- **Fix**: Sticky param added in commit `ab026e2` (batch R9/R17/R19/R22/R23/R25).
-- **Status**: DONE.
+### SIZE-4 — test_mqtt_component.cpp (899 lines) [MEDIUM]
 
-### M12 — LED metadata.name inconsistency
+- **Ref**: MQTT-F1
+- **Fix**: Split test file by feature area (connection, publish, subscribe, queue, WebUI).
 
-- **File**: `DomoticsCore-LED/include/DomoticsCore/LED.h`
-- **Problem**: `metadata.name = "LEDComponent"` — all other components use short names (`"MQTT"`, `"Wifi"`, `"NTP"`, etc.). This means `core.getComponent<LEDComponent>("LED")` fails; you must use `"LEDComponent"`.
-- **Fix**: Change to `metadata.name = "LED"`.
-- **Impact**: Breaking change for anyone using `getComponent("LEDComponent")`. Requires minor version bump.
+### SIZE-5 — test_ha_component.cpp (989 lines) [MEDIUM]
 
-### M15 — Storage: no change events — DONE
+- **Ref**: HA-F10
+- **Fix**: Split into `test_ha_config.cpp`, `test_ha_entity_management.cpp`, `test_ha_switch_integration.cpp`, `test_ha_publish_overloads.cpp`.
 
-- **File**: `DomoticsCore-Storage/include/DomoticsCore/Storage.h`, `StorageEvents.h`
-- **Problem**: Constitution XI requires storage changes to emit events, but only `storage/ready` is emitted. `putString()`, `putInt()`, `remove()`, `clear()` never emit change events.
-- **Fix**: Added `EVENT_CHANGED` constant + `StorageChangedEvent` POD struct (`char key[64]`). All 6 `put*` methods emit with type-safe dirty check (compare cache before writing). `remove()` emits with key, `clear()` emits with key="*". Fixed `putULong64` cache gap (added `UInt64` to enum + `uint64Value` field). 19 unit tests added.
-- **Status**: DONE — implemented in batch1-quickwins tech-spec.
+### SIZE-6 — test_webui_component.cpp (2520 lines) [LOW]
 
-### M16 — System: direct millis() call
-
-- **File**: `DomoticsCore-System/include/DomoticsCore/System.h` (~line 530)
-- **Problem**: `getSystemStatus()` calls `millis()` directly instead of `HAL::Platform::getMillis()`. Violates constitution IX (HAL isolation).
-- **Fix**: Replace `millis()` with `HAL::Platform::getMillis()`.
-
-### M19 — HomeAssistant: inconsistent `ha/entity_added` event emission — DONE
-
-- **File**: `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h`
-- **Problem**: Only `addSensor()` emitted `ha/entity_added`. The 5 other registration methods did not.
-- **Fix**: All 6 `add*` methods now emit `HAEntityAddedEvent` via commit `ab026e2` (batch R9/R17/R19/R22/R23/R25).
-- **Status**: DONE.
+- **Ref**: WEB-F16
+- **Fix**: Split into config tests, field tests, context tests, registry tests, serializer tests (3x over limit).
 
 ---
 
-## Priority 3: HAL Isolation (Constitution IX — NON-NEGOTIABLE)
+## Priority 7: Architecture / God Objects (Constitution I, XIII)
 
-### R8 — System.h: direct millis() call
+### ARCH-1 — System: God Object with 6+ responsibilities [HIGH]
 
-- Same as M16 above. Single-line fix.
+- **Ref**: SYS-F6
+- **Problem**: Orchestrates 10 components, handles registration, persistence, events, state, console commands, boot diagnostics.
+- **Fix**: Extract `SystemComponentRegistrar`, `SystemEventOrchestrator`, `SystemConsoleCommands`.
 
-### R9 — RemoteConsole: blocking delay in reboot handler
+### ARCH-2 — LED: God Object [HIGH]
 
-- **File**: `DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsole.h`
-- **Problem**: Reboot handler uses `HAL::delay(100)` — blocking call in non-boot code. Violates constitution X (no `delay()` except boot sequences).
-- **Fix**: Set a `rebootPending` flag + timestamp. In `loop()`, check if 100ms elapsed since flag was set, then reboot.
+- **Ref**: LED-F1
+- **Problem**: Combines config management, hardware pin control, PWM, effect calculations, state management, WebUI in one class.
+- **Fix**: Extract effect engine and WebUI into separate classes.
 
-### R10 — Storage.h: #ifdef in business logic
+### ARCH-3 — System: `__has_include` count comment wrong [MEDIUM]
 
-- **File**: `DomoticsCore-Storage/include/DomoticsCore/Storage.h` (~line 588)
-- **Problem**: `#if DOMOTICSCORE_WEBUI_ENABLED` guard in a business logic file. Constitution IX forbids platform/feature `#ifdef` outside HAL files.
-- **Fix**: Extract the WebUI-conditional block to a separate file or use the component registration pattern to make it optional at link time.
-
----
-
-## Priority 4: File Size Violations (Constitution VII — 800 lines max)
-
-### R11 — WebUI.h (951 lines)
-
-- **File**: `DomoticsCore-WebUI/include/DomoticsCore/WebUI.h`
-- **Suggested split**:
-  - `WebUI.h` — Component class, provider registry, lifecycle (~400 lines)
-  - `WebUIServer.h` — HTTP server setup, route handlers (~300 lines)
-  - `WebUISelfProvider.h` — Self-provider implementation (~250 lines)
-
-### R12 — StreamingContextSerializer.h (922 lines)
-
-- **File**: `DomoticsCore-WebUI/include/DomoticsCore/StreamingContextSerializer.h`
-- **Suggested split**:
-  - `StreamingContextSerializer.h` — Core serializer (~500 lines)
-  - `FieldSerializer.h` — Field type serialization helpers (~400 lines)
-
-### R13 — Wifi.h (881 lines)
-
-- **File**: `DomoticsCore-Wifi/include/DomoticsCore/Wifi.h`
-- **Suggested split**:
-  - `Wifi.h` — Component class, config, lifecycle (~450 lines)
-  - `WifiConnection.h` — Connection management, reconnection logic (~430 lines)
+- **Ref**: SYS-F5
+- **Problem**: Comment says "20 directives" but actual count is 54 across 3 files.
+- **Fix**: Correct the comment.
 
 ---
 
-## Priority 5: Dead Code / YAGNI (Constitution IV)
+## Priority 8: CI / Infrastructure
 
-Each of these is a decision point: **implement** the feature or **remove** the dead code.
+### CI-1 — No unit test CI workflow [HIGH]
 
-### R17 — MQTT: `isValidTopic()` declared but never implemented
+- **Ref**: R-F4
+- **Problem**: GitHub Actions never runs native unit tests. Only compile test for ESP32.
+- **Fix**: Create `test.yml` workflow running `pio test -e native`.
 
-- **Decision needed**: Implement topic validation or remove the declaration.
-- **If implementing**: Add body to `MQTT_impl.h` — validate topic per MQTT spec (no `#`/`+` unless `allowWildcards`, no empty segments, max length 65535).
-- **If removing**: Delete declaration from `MQTT.h`, remove doc references.
+### CI-2 — ESP8266 not tested in CI [HIGH]
 
-### R18 — MQTT: unenforced config limits
+- **Ref**: R-F5
+- **Problem**: Only ESP32 compilation tested. ESP8266 regressions go undetected.
+- **Fix**: Add ESP8266 to build matrix.
 
-- **Fields**: `maxQueueSize`, `publishRateLimit`, `maxSubscriptions`
-- **If implementing**:
-  - `maxQueueSize`: Check `messageQueue.size() >= config.maxQueueSize` before pushing.
-  - `publishRateLimit`: Track timestamps, throttle in `publish()`.
-  - `maxSubscriptions`: Check count in `subscribe()`.
-- **If removing**: Delete fields from `MQTTConfig`, remove doc references.
+### CI-3 — Missing `DomoticsCore-Core` dependency in 3 library.json [HIGH]
 
-### R19 — NTP: `retryDelayMs` unused
+- **Ref**: R-F3
+- **Files**: `DomoticsCore-Storage/library.json`, `DomoticsCore-SystemInfo/library.json`, `DomoticsCore-OTA/library.json`
+- **Problem**: These include Core headers but don't declare the dependency.
+- **Fix**: Add `{ "name": "DomoticsCore-Core", "version": ">=1.4.0" }` to each.
 
-- **If implementing**: Use in the sync retry loop to control backoff between attempts.
-- **If removing**: Delete field from `NTPConfig`.
+### CI-4 — Wifi vs WiFi naming inconsistency [MEDIUM]
 
-### R20 — System: `otaPassword` disconnected from OTA
+- **Ref**: R-F6
+- **Problem**: Library name is `DomoticsCore-Wifi` but docs use `DomoticsCore-WiFi`.
+- **Fix**: Standardize all documentation to match `library.json` name.
 
-- **If wiring**: Pass `systemConfig.otaPassword` to `OTAConfig.bearerToken` (or appropriate field) during System assembly.
-- **If removing**: Delete from `SystemConfig`.
+### CI-5 — Outdated GitHub Actions versions [MEDIUM]
 
-### R21 — RemoteConsole: unenforced security config
+- **Ref**: R-F7
+- **Fix**: Update `version-check.yml` and `test-github-install.yml` to `actions/checkout@v4` and `actions/setup-python@v5`.
 
-- **Fields**: `requireAuth`, `password`, `allowCommands`
-- **Security concern**: These fields imply security but provide none. Anyone connecting via Telnet has full access.
-- **If implementing**: Add authentication handshake before allowing commands. Check `allowCommands` before executing.
-- **If removing**: Delete fields. Add clear security warning to docs.
-- **Recommendation**: Implement — Telnet without auth on IoT devices is a real security risk.
+### CI-6 — Missing `depends` in `library.properties` [MEDIUM]
 
-### R22 — LED: `effectDirection` dead field
+- **Ref**: R-F8
+- **Fix**: Add `depends=ArduinoJson,ESPAsyncWebServer,AsyncTCP,PubSubClient`.
 
-- **File**: `DomoticsCore-LED/include/DomoticsCore/LED.h`
-- **Fix**: Remove the field from the config struct. No code reads or writes it.
+### CI-7 — `local_ci.sh` counts total lines, not code lines [LOW]
 
-### R23 — Storage.h: dead WebUI conditional block
-
-- **File**: `DomoticsCore-Storage/include/DomoticsCore/Storage.h`
-- **Fix**: Remove the `#if DOMOTICSCORE_WEBUI_ENABLED` block (also fixes R10).
+- **Ref**: R-F10
+- **Problem**: Constitution says exclude blanks/comments, but tool uses `wc -l`.
+- **Fix**: Use `grep -cvE '^\s*(//.*)?$'` or update constitution to match tool behavior.
 
 ---
 
-## Priority 6: Anti-Patterns (Constitution XIII)
+## Priority 9: Dead Code / YAGNI (Constitution IV)
 
-### R14 — MemoryManager singleton
-
-- **Current**: `MemoryManager::instance()` — classic singleton.
-- **Constitution says**: Singleton abuse is forbidden.
-- **Recommendation**: Document as an **accepted exception** — MemoryManager needs global access for buffer sizing decisions. Add a comment in the code explaining why this is justified.
-
-### R15 — MQTT static instance pointer
-
-- **Current**: Static `instance` pointer for callback routing from PubSubClient.
-- **Root cause**: PubSubClient's C-style callback doesn't support user data.
-- **Recommendation**: Document as an **accepted exception** driven by external library constraint. Consider wrapping with `std::function` if PubSubClient is ever replaced.
-
-### R16 — System.h: 21 `__has_include()` directives
-
-- **Current**: Used for optional component detection at compile time.
-- **Constitution says**: `#ifdef` only in HAL files.
-- **Recommendation**: Document as **intentional deviation** — `__has_include()` enables the zero-config "just add components" experience that is a core product feature. Not platform-specific.
+| ID | Component | Dead Item | Action |
+|----|-----------|-----------|--------|
+| DC-1 | SystemInfo | `enableDetailedInfo`, `enableMemoryInfo` config flags — never enforced | Implement or remove |
+| DC-2 | Storage | `StorageConfig::readOnly` — accepted but never checked by put/remove/clear | Implement or remove |
+| DC-3 | HA | Residual `static_cast` in handleCommand despite virtual dispatch (R24) | Complete migration to virtual dispatch |
+| DC-3b | HA | `volatile bool publishing` set/cleared but never read — dead code | Remove or implement guard (see BUG-11) |
+| DC-4 | LED | `effectDirection` — confirmed dead, may have been missed in v1 cleanup | Remove if still present |
+| DC-5 | LED | `shutdown()` doesn't clear internal vectors | Add cleanup |
+| DC-6 | OTA | `EVENT_COMPLETE` vs `EVENT_COMPLETED` — confusing duplicate names | Consolidate to one |
+| DC-7 | OTA | `signaturePublicKey` — documented but never used | Implement or remove |
+| DC-8 | WebUI | Pointless `doc.shrinkToFit()` after serialization is complete | Remove |
+| DC-9 | MQTT | `topicMatches()` allocates 2 vectors per call — use char* parsing | Refactor to zero-alloc |
+| DC-10 | WebUI | `const_cast` in `onComponentsReady` — change API to accept non-const ref | Fix signature |
 
 ---
 
-## Priority 7: Progressive Refactoring (Constitution VIII)
+## Priority 10: Minor Issues (LOW)
 
-### R24 — HomeAssistant: `handleCommand()` virtual override in existing entities
-
-- **Files**: `HASwitch.h`, `HALight.h`, `HAButton.h`
-- **Problem**: `HAEntity` now declares `virtual void handleCommand(const String&)` (added for `HAAlarmControlPanel`), but the 3 existing entities still have non-virtual `handleCommand()` that **shadows** the base virtual. Calling `handleCommand()` via `HAEntity*` on switch/light/button invokes the empty base, not the derived method. Existing routing uses `static_cast` so behavior is unchanged today, but this is a maintenance trap.
-- **Fix**: Add `override` keyword to `handleCommand()` in `HASwitch`, `HALight`, `HAButton` (already done — see current diff). Then progressively replace `static_cast` routing with virtual dispatch in `HomeAssistantComponent::handleCommand()`.
-- **Inline TODO**: `HAEntity.h:84`
-- **Note**: The `override` keyword was already added in the current changeset. The remaining work is replacing `static_cast` routing with `entity->handleCommand(payload)` for all entity types, which would allow removing the `if/else` component string matching entirely.
-
-### R25 — HomeAssistant: `AlarmFeature` enum → `enum class`
-
-- **File**: `DomoticsCore-HomeAssistant/include/DomoticsCore/HAAlarmControlPanel.h`
-- **Problem**: `enum AlarmFeature : uint8_t` is unscoped — leaks `ArmHome`, `ArmAway`, `Trigger`, etc. into the `HomeAssistant` namespace. `Trigger` is a particularly dangerous name to pollute.
-- **Fix**: Change to `enum class AlarmFeature : uint8_t`, add `constexpr` bitwise operator overloads (`|`, `&`) returning `uint8_t`, and add `static_cast<uint8_t>(AlarmFeature::ArmAway)` in the `addAlarmControlPanel()` default parameter.
-- **Trade-off**: Improves type safety but adds verbosity at call sites. Consistent with modern C++ but less common in Arduino ecosystem.
-
----
-
-## Tracking
-
-| Priority | Items | Constitution | Status |
-|----------|-------|-------------|--------|
-| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5: DONE. R6: DONE — char[] migration. R7: DONE |
-| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | M11: DONE. M12: DONE — metadata.name = "LED". M15: DONE. M16: DONE. M19: DONE |
-| 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | R8: DONE. R9: DONE — non-blocking reboot. R10: DONE — dead WebUI block removed |
-| 4. File Splits | R11-R13 | VII (800 lines) | N/A — files already compliant (excluding blanks/comments: WebUI.h=767, StreamingContextSerializer.h=745, Wifi.h=671) |
-| 5. Dead Code | R17-R23 | IV (YAGNI) | R17: DONE. R18: DONE — limits enforced. R19: DONE. R20: DONE — wired to OTAConfig. R21: DONE — auth implemented. R22: DONE. R23: DONE |
-| 6. Anti-Patterns | R14-R16 | XIII | DONE — documented as accepted exceptions |
-| 7. Progressive Refactoring | R24-R25 | VIII, XIII | R24: DONE — virtual dispatch replaces static_cast routing. R25: DONE — enum class with type-safe operators |
-
----
-
-## Priority 8: Architecture — EventBus Command Emission (Constitution VI)
-
-> **Architectural debt affecting ALL HA entity types.** This is a cross-cutting concern, not an entity-specific change.
-
-### R26 — HomeAssistant: emit `ha/command` EventBus event on incoming HA commands
-
-- **Files impacted**: `HomeAssistant.h`, `HAEvents.h`, all consumer code
-- **Current architecture**: When HA sends a command (e.g., `ARM_AWAY`, `ON`, button press), `HomeAssistantComponent::handleCommand()` routes it by component type string matching (`if (entity->component == "switch") ... else if ...`) and invokes a `std::function` callback stored in each entity. Consumers receive commands via closures passed at `addXxx()` time.
-- **Problem**: This violates Constitution VI (EventBus Architecture) — components should communicate via EventBus events, not direct callbacks. The callback pattern:
-  1. **Tight coupling** — consumer code must live in the same compilation unit as the `addXxx()` call (typically `main.cpp`), preventing true component separation.
-  2. **No observability** — no other component can observe or react to HA commands (logging, analytics, inter-component coordination).
-  3. **Inconsistency** — state publishing goes through EventBus (`mqtt/publish`), but command reception does not. The data flow is asymmetric.
-  4. **Prevents component-level testing** — consumers cannot be tested in isolation because their logic is embedded in lambdas.
-
-#### What needs to be done
-
-##### 1. Define `HACommandEvent` struct in `HAEvents.h`
-
-```cpp
-struct HACommandEvent {
-    char entityId[64];       // Entity that received the command
-    char component[32];      // Entity component type ("switch", "alarm_control_panel", etc.)
-    char command[128];       // Command payload (e.g., "ON", "ARM_AWAY", JSON for lights)
-    char code[32];           // Optional PIN code (alarm_control_panel only, empty otherwise)
-};
-```
-
-Total struct size: **~256 bytes** (fixed-size, zero heap allocation).
-
-##### 2. Add event constant in `HAEvents.h`
-
-```cpp
-static constexpr const char* EVENT_COMMAND = "ha/command";
-```
-
-##### 3. Modify `HomeAssistantComponent::handleCommand()` in `HomeAssistant.h`
-
-After the existing callback invocation (or replacing it), emit the event:
-
-```cpp
-HACommandEvent ev{};
-strncpy(ev.entityId, entityId.c_str(), sizeof(ev.entityId) - 1);
-strncpy(ev.component, entity->component.c_str(), sizeof(ev.component) - 1);
-strncpy(ev.command, payload.c_str(), sizeof(ev.command) - 1);
-// ev.code populated only for alarm_control_panel
-emit(HAEvents::EVENT_COMMAND, ev);
-```
-
-##### 4. Decide on callback deprecation strategy
-
-Two options:
-
-- **Option A — Dual mode (recommended for v1.x)**: Keep existing callbacks AND emit the event. Consumers can use either mechanism. Callbacks deprecated in v2.0. Zero breaking change.
-- **Option B — Replace**: Remove callback parameters from `addXxx()` methods. All consumers subscribe to `ha/command` via EventBus. Breaking change requiring major version bump.
-
-##### 5. Update all entity types
-
-This affects ALL controllable entities, not just `alarm_control_panel`:
-
-| Entity | Current callback | EventBus equivalent |
-|--------|-----------------|---------------------|
-| `HASwitch` | `std::function<void(bool)>` | `ev.command = "ON"/"OFF"` |
-| `HALight` | `std::function<void(bool, uint8_t)>` | `ev.command = JSON payload` |
-| `HAButton` | `std::function<void()>` | `ev.command = "PRESS"` |
-| `HAAlarmControlPanel` | `std::function<void(const String&, const String&)>` | `ev.command = "ARM_AWAY"`, `ev.code = "1234"` |
-
-##### 6. Update examples and tests
-
-- `BasicHA/src/main.cpp`: Add EventBus subscription example alongside existing callback usage.
-- New test: Verify `ha/command` event is emitted with correct fields for each entity type.
-- New test: Verify dual-mode (callback + event) both fire.
-
-##### 7. Simplify `handleCommand()` routing
-
-Once all entities use virtual `handleCommand()` (see R24), the `if/else` component string matching can be replaced with a single `entity->handleCommand(payload)` call. The EventBus emission becomes component-type-agnostic — every command emits `ha/command` regardless of entity type.
-
-#### Dependencies
-
-- **R24** (virtual dispatch) should be completed first — it simplifies the handleCommand routing that this change modifies.
-- **M19** (inconsistent `ha/entity_added` emission) — fix alongside this to ensure all EventBus emissions are consistent.
-
-#### Risks
-
-- **Memory impact on ESP8266** — See analysis below (R26-ANALYSIS).
-- **Behavioral change if consumers rely on callback ordering** — Dual mode mitigates this.
-- **Light JSON commands may exceed 128-byte `command` field** — Complex light payloads with color/effect may need a larger buffer or a separate `ha/command/light` event.
-
-### R26-ANALYSIS — Memory & Heap Impact Assessment
-
-> **Conclusion: LOW RISK on ESP8266 if implemented with fixed-size struct and Option A (dual mode).**
-
-#### Current memory baseline per command
-
-When an HA command arrives today, the flow is:
-
-1. PubSubClient receives MQTT packet → copies into internal buffer (**768 bytes on ESP8266**, 2048 on ESP32)
-2. MQTT component creates `MQTTMessageEvent` (~**828 bytes**) → emitted to EventBus queue
-3. EventBus copies the event data into `QueuedEvent::data` (`std::vector<uint8_t>`) → **828 bytes** heap allocation
-4. EventBus dispatches → `HomeAssistantComponent::handleCommand()` processes synchronously
-5. Callback invokes consumer lambda → **0 bytes** additional heap
-
-**Current cost per command: ~828 bytes** transient in EventBus queue (freed after dispatch).
-
-#### Proposed additional cost per command
-
-Adding `HACommandEvent` emission means:
-
-6. `HACommandEvent` created on stack → **256 bytes** stack (not heap)
-7. EventBus copies into `QueuedEvent::data` → **~256 bytes** heap allocation
-8. EventBus dispatches → consumer handler processes → freed
-
-**Additional cost: +256 bytes** transient in EventBus queue.
-
-#### Worst-case analysis on ESP8266
-
-| Parameter | Value |
-|-----------|-------|
-| ESP8266 total RAM | 80 KB |
-| Typical free heap after WiFi + MQTT + framework | ~35-40 KB |
-| MemoryManager MINIMAL profile threshold | 8 KB |
-| MemoryManager CRITICAL threshold | 4 KB |
-| EventBus max queue size | 32 events |
-| `MQTTMessageEvent` size | 828 bytes |
-| `HACommandEvent` size | 256 bytes |
-
-**Scenario: burst of N simultaneous commands**
-
-| N commands in queue | Current heap usage | Proposed heap usage | Delta |
-|--------------------:|-------------------:|--------------------:|------:|
-| 1 | 828 B | 1,084 B | +256 B |
-| 4 | 3,312 B | 4,336 B | +1,024 B |
-| 8 (max per poll) | 6,624 B | 8,672 B | +2,048 B |
-| 32 (theoretical max) | 26,496 B | 34,688 B | +8,192 B |
-
-**Realistic scenario**: HA commands are user-initiated (button presses, automations). Typical frequency: 1-5 commands per second maximum. With `maxPerPoll = 8` events processed per `loop()` cycle, the queue rarely exceeds 2-3 events. The +256 to +768 bytes transient cost is **negligible** relative to the 35-40 KB free heap.
-
-**Pathological scenario**: 32 commands queued simultaneously is unrealistic for HA interactions but could happen if a buggy automation sends a burst. Even then, +8 KB on top of the existing 26 KB usage stays within the ~35 KB available heap. The MemoryManager would transition from FULL to STANDARD profile but not reach CRITICAL.
-
-#### Fragmentation risk
-
-The `HACommandEvent` struct uses **fixed-size char arrays** (no `String`, no heap allocation inside the struct). The EventBus copies it via `std::vector<uint8_t>::assign()` which allocates a single contiguous block of 256 bytes. This is:
-
-- **Better** than String-based approaches (multiple small allocations)
-- **Same pattern** as existing `MQTTMessageEvent` (already proven stable)
-- **Freed immediately** after dispatch (no long-lived allocation)
-
-Fragmentation impact: **NONE** beyond what already exists from `MQTTMessageEvent` handling.
-
-#### Recommendation
-
-- **Proceed with implementation** using fixed-size `HACommandEvent` (256 bytes).
-- Use **Option A (dual mode)** — callbacks remain functional, EventBus emission added alongside. This avoids breaking changes and adds zero risk to existing consumers.
-- Consider reducing `command` field to 64 bytes on ESP8266 builds if light JSON payloads exceed 128 bytes (use `#ifdef` or a compile-time constant in the event struct — though this conflicts with Constitution IX HAL isolation; alternative: truncate with warning log).
-- Monitor with `MemoryManager::getCurrentFreeHeap()` during integration testing on real ESP8266 hardware.
+| ID | Component | Issue |
+|----|-----------|-------|
+| LO-1 | Multiple | Hardcoded fallback versions in `getWebUIVersion()` drift from actual version |
+| LO-2 | MQTT | `MQTTPublishEvent` is 832 bytes — consider reducing field sizes |
+| LO-3 | Core | `__dc_*` field names use reserved double-underscore prefix |
+| LO-4 | Core | `nextId` overflow after 4B subscribe/unsubscribe cycles (theoretical) |
+| LO-5 | Core | Backpressure silently drops oldest event with no logging |
+| LO-6 | NTP | `TIMEZONE_LOOKUP` static constexpr duplicated per TU |
+| LO-7 | NTP | `setSyncInterval()` is no-op on ESP8266 — not documented |
+| LO-8 | RC | `nextClientId` wraps after 4B connections |
+| LO-9 | WiFi | Member shadowing (`ssid`/`password` vs constructor params) |
+| LO-10 | WiFi | Magic numbers for WiFi status codes |
+| LO-11 | LED | French comment in test file ("Tests unitaires") |
+| LO-12 | System | French comment in FullStack test |
+| LO-13 | SI | Unicode emoji in log message (non-ASCII) |
+| LO-14 | SI | `calculateCpuLoad()` uses unreliable heap-churn heuristic |
+| LO-15 | MQTT | Unicode checkmark/cross in log messages |
+| LO-16 | CHANGELOG | Missing version reference links |
+| LO-17 | Storage | `nameStr_` backing String — move-safety risk |
+| LO-18 | HA | `shutdown()` emits MQTT events without checking `mqttConnected` — wasted EventBus traffic |
+| LO-19 | HA | EventBus subscriptions from `begin()` never unsubscribed in `shutdown()` — restart causes duplicates |
+| LO-20 | HA | `HASwitch`/`HABinarySensor` payloadOn/Off are `String` holding "ON"/"OFF" — should be `const char*` |
+| LO-21 | HA | `HAAlarmControlPanel::code` is `String` while sibling fields are `char[]` — inconsistent |
+| LO-22 | HA | `HAButton::buildDiscoveryPayload` duplicates base class logic instead of calling super |
+| LO-23 | HA | `HALight.h`, `HAButton.h`, `HAAlarmControlPanel.h` rely on transitive `Logger.h` include |
+| LO-24 | WebUI | `volatile int pollingClients` — use `std::atomic<int>` or remove `volatile` |
+| LO-25 | WebUI | Admitted tech debt: duplicated `serializeContext()` with "until I move it" comment |
+| LO-26 | WebUI | Magic string `"wifi/ap/enabled"` instead of centralized event constant |
+| LO-27 | WebUI | Zero tests for WebSocketHandler, route handlers, auth flow, SSE broadcast |
+| LO-28 | Root | CHANGELOG references `docs/migration/` which doesn't exist |
+| LO-29 | LED | `library.json` uses `^1.3.0` dep constraint while all others use `>=` — will break at Core 2.0 |
+| LO-30 | Root | Root `examples/` only has README — Arduino Library Manager shows 0 examples |
+| LO-31 | Root | `check_versions.py` doesn't enforce Constitution XV propagation rules |
+| LO-32 | WebUI | `wsBuffer_[]` static member defined in header — ODR violation risk in multi-TU builds |
 
 ---
 
-## Tracking
+## Tracking Summary
 
-| Priority | Items | Constitution | Status |
-|----------|-------|-------------|--------|
-| 1. Memory Safety | R1-R7, M9-M10 | XIV (ABSOLUTE) | M9, M10: DONE (functional fix + shrink_to_fit). R1: DONE. R2: DONE. R3: N/A (std::map — no shrink_to_fit equivalent). R4: DONE. R5: DONE. R6: DONE — char[] migration. R7: DONE |
-| 2. Code Bugs | M11-M12, M15-M16, M19 | Multiple | M11: DONE. M12: DONE — metadata.name = "LED". M15: DONE. M16: DONE. M19: DONE |
-| 3. HAL Isolation | R8-R10 | IX (NON-NEGOTIABLE) | R8: DONE. R9: DONE — non-blocking reboot. R10: DONE — dead WebUI block removed |
-| 4. File Splits | R11-R13 | VII (800 lines) | N/A — files already compliant (excluding blanks/comments: WebUI.h=767, StreamingContextSerializer.h=745, Wifi.h=671) |
-| 5. Dead Code | R17-R23 | IV (YAGNI) | R17: DONE. R18: DONE — limits enforced. R19: DONE. R20: DONE — wired to OTAConfig. R21: DONE — auth implemented. R22: DONE. R23: DONE |
-| 6. Anti-Patterns | R14-R16 | XIII | DONE — documented as accepted exceptions |
-| 7. Progressive Refactoring | R24-R25 | VIII, XIII | R24: DONE — virtual dispatch replaces static_cast routing. R25: DONE — enum class with type-safe operators |
-| 8. EventBus Commands | R26 | VI (EventBus Architecture) | DONE — ha/command EventBus event, callbacks removed (v2.0.0 breaking change) |
-| 9. Documentation Debt | D1-D12 | — | In progress — see below |
-| 10. Dead Config Fields | C1-C3 | IV (YAGNI) | Open — see below |
-
----
-
-## Priority 9: Documentation Debt (D1-D12)
-
-> Identified during exhaustive documentation verification pass (2026-03-09).
-> Items marked DONE were fixed inline during the verification.
-
-| ID | Scope | Description | Status |
-|----|-------|-------------|--------|
-| D1 | `docs/components/led/` | LED version was 1.3.0 in README.md and technical-reference.md (should be 1.4.0) | DONE |
-| D2 | `DomoticsCore-Core/include/DomoticsCore/IComponent.h` | Stale Doxygen comment on `getDependencies()` still references removed `getDependenciesEx()` | DONE |
-| D3 | `docs/guides/webui-developer.md` | Surviving `getName()` reference (method was removed) | DONE |
-| D4 | `docs/components/core/project-context.md`, `technical-reference.md` | `wifi/connected` topic (should be `wifi/status`) | DONE |
-| D5 | `docs/technical-reference.md` | Wildcard example using dots (`sensor.*`) instead of slashes (`sensor/*`) | DONE |
-| D6 | `DomoticsCore-Core/include/DomoticsCore/EventBus.h` | Source comment still uses dot separator in topic example | DONE |
-| D7 | `docs/architecture/eventbus-patterns.md` | Old `std::function<EventCallback>` subscribe signatures in "Waiting for Dependencies" examples | DONE |
-| D8 | Generated Doxygen HTML | HTML docs are stale; regenerate after all source-level fixes | DONE |
-| D9 | `CHANGELOG.md` | Missing entries for versions 1.7.0 through 2.0.0 | DONE |
-| D10 | `docs/architecture.md` | Section numbering inconsistent (jumps from 3 to 5) | DONE |
-| D11 | `docs/REVIEW-FINDINGS.md` | Should be archived or marked superseded — all findings resolved | DONE |
-| D12 | `docs/architecture/component-configuration-pattern.md` | `getXxxConfig` naming contradiction (actual pattern is `getConfig`) | DONE |
-
-## Priority 10: Dead Config Fields (C1-C3)
-
-> Config fields declared/documented but never read by the runtime. These waste RAM on constrained devices and mislead users.
-
-| ID | Component | Dead Fields | Notes |
-|----|-----------|-------------|-------|
-| C1 | **MQTT** (`MQTTConfig`) | `resubscribeOnConnect`, `cleanSession`, `connectTimeout`, `operationTimeout` | Declared in config struct, settable via WebUI, but never read by `MQTT.cpp` connection/subscribe logic |
-| C2 | **System** (`SystemConfig`) | `haDiscoveryPrefix`, `webUIEnableAPI`, `wifiTimeout` | Set in config but not consumed by any runtime code path |
-| C3 | **Storage** (`StorageConfig`) | `autoCommit` | Field exists, always `true`, never checked — all writes commit immediately |
-
-### Recommendation
-
-- **C1-C3**: Either wire these fields to actual behavior (implement the feature) or remove them from the config structs and WebUI forms. Removing is preferred per Constitution IV (YAGNI) unless the feature is planned for a near-term release.
+| Priority | Items | Constitution | Count |
+|----------|-------|-------------|-------|
+| 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 2C, 1H, 3M |
+| 2. Memory Safety | MEM-1 to MEM-4 | XIV (ABSOLUTE) | 0C, 2H, 2M |
+| 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 14H, 12M |
+| 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 2C, 3H, 2M |
+| 5. SSE Bug | SSE-1 | — | 0C, 1H |
+| 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
+| 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 1M |
+| 8. CI/Infrastructure | CI-1 to CI-7 | II, XII | 0C, 3H, 3M, 1L |
+| 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 11M |
+| 10. Minor | LO-1 to LO-27 | Various | 0C, 0H, 0M, 27L |
+| **Total** | **97 items** | | **4C, 28H, 37M, 28L** |
 
 ---
 
-*Generated from adversarial review findings. Each item should be addressed in a separate commit.*
+## Archived: Roadmap v1 (2026-03-04 → 2026-03-09) — ALL COMPLETE
+
+| Priority | Items | Status |
+|----------|-------|--------|
+| 1. Memory Safety (R1-R7, M9-M10) | shrink_to_fit, String→snprintf, char[] migration | DONE |
+| 2. Code Bugs (M11-M12, M15-M16, M19) | Core::emit sticky, LED name, Storage events, millis HAL, HA events | DONE |
+| 3. HAL Isolation (R8-R10) | millis(), delay(), #ifdef in Storage | DONE |
+| 4. File Splits (R11-R13) | Already compliant (excluding blanks/comments) | N/A |
+| 5. Dead Code (R17-R23) | isValidTopic, config limits, retryDelayMs, otaPassword, RC auth, effectDirection, Storage WebUI | DONE |
+| 6. Anti-Patterns (R14-R16) | Documented as accepted exceptions | DONE |
+| 7. Progressive Refactoring (R24-R25) | Virtual dispatch, enum class | DONE |
+| 8. EventBus Commands (R26) | ha/command event, callback removal (v2.0.0 breaking) | DONE |
+| 9. Documentation Debt (D1-D12) | All 12 doc items resolved | DONE |
+| 10. Dead Config Fields (C1-C3) | 8 fields removed from MQTT, System, Storage | DONE |
+
+**Breaking change pending**: 8 dead config fields removed (C1-C3) + callback removal (R26) require MAJOR version bump.
+
+---
+
+*Generated from 13 parallel adversarial review agents cross-referencing all source code against the constitution v1.6.0.*

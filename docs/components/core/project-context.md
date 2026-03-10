@@ -40,14 +40,14 @@ This document provides the context an AI coding agent needs to understand, navig
 | `Platform_ESP32.h` | ESP32-specific HAL implementation |
 | `Platform_ESP8266.h` | ESP8266-specific HAL implementation (PROGMEM-optimized logging) |
 | `Platform_Stub.h` | Native/test stub implementation |
-| `Platform_Arduino.h` | Arduino-specific helpers (if present) |
+| `Platform_Arduino.h` | Shared Arduino utilities (time, string, GPIO, math, logging) included by `Platform_ESP32.h` and `Platform_ESP8266.h` to avoid code duplication |
 | `Filesystem_HAL.h` | Filesystem HAL routing header |
 | `Filesystem_ESP32.h` | ESP32 filesystem implementation |
 | `Filesystem_ESP8266.h` | ESP8266 filesystem implementation |
 | `Filesystem_Stub.h` | Native/test filesystem stub |
-| `ArduinoJsonString.h` | ArduinoJson/String compatibility helper |
+| `ArduinoJsonString.h` | ArduinoJson 7 converter functions for stub `String` class (native tests only; no-op on Arduino platforms) |
 | `DocMainpage.h` | Doxygen main page documentation |
-| `Testing.h` | Umbrella header for testing utilities |
+| `Testing.h` | Umbrella header for testing utilities (currently includes HeapTracker; StabilityTestRunner planned) |
 | `Testing/HeapTracker.h` | `HeapTracker` class -- checkpoint-based heap monitoring for leak detection |
 | `Testing/HeapTracker_HAL.h` | HeapTracker platform routing |
 | `Testing/HeapTracker_Native.h` | Native platform heap tracking (mallinfo) |
@@ -86,7 +86,13 @@ This document provides the context an AI coding agent needs to understand, navig
 | `NativeAllocTracker` | Per-allocation heap tracking for native tests (singleton) | "Track individual allocations for leak diagnosis" |
 | `ScopedAllocTracking` | RAII helper that enables/disables `NativeAllocTracker` around a test | "Scope allocation tracking to a test" |
 | `AllocationRecord` | Record of a single allocation (ptr, size, source location, freed flag) | "Describe one allocation event" |
-| `LoggerCallbacks` | Broadcast log messages to registered listeners | "Route log output" |
+| `LoggerCallbacks` | Broadcast log messages to registered listeners (note: `removeCallback` currently clears ALL callbacks) | "Route log output" |
+| `MemoryThresholds` | Configurable heap thresholds for profile detection | "Define profile boundaries" |
+| `ProfileBufferSizes` | Buffer size configuration per profile | "Size buffers per profile" |
+| `ProfileIntervals` | Timing intervals per profile (WS update, heap check) | "Configure profile-specific timing" |
+| `ProfileLimits` | Resource limits per profile (WS clients, providers, chart points) | "Constrain resources per profile" |
+| `HeapCheckpoint` | Named checkpoint wrapping a `HeapSnapshot` | "Label a heap measurement" |
+| `MemoryTestResult` | Pass/fail result from heap stability assertions | "Report heap test outcome" |
 
 ---
 
@@ -154,6 +160,10 @@ Every DomoticsCore component depends on Core. Based on `library.json` dependency
 
 8. **`static_cast` for component retrieval.** `Core::getComponent<T>(name)` uses `static_cast`, not `dynamic_cast`. If you request the wrong type, you get undefined behavior. Ensure the name matches the expected type.
 
+9. **`Platform_Stub.h` `String` class.** The native stub `String` class mimics Arduino's `String` but has subtle differences (e.g., `toFloat()` uses `std::stof`, which may throw). Always test edge cases on the target platform too.
+
+10. **`LoggerCallbacks::removeCallback()` clears ALL callbacks.** The current implementation is simplified and does not perform targeted removal. If multiple listeners are registered, removing one removes all. This is a known limitation.
+
 ---
 
 ## 7. Constitution Compliance Reminders
@@ -180,9 +190,12 @@ The following constitution principles are especially relevant to Core developmen
 ### File Size Limits (Section VII)
 - Target: 200-500 lines per file.
 - Hard limit: 800 lines.
-- `ComponentRegistry.h` is currently ~375 lines. Watch for growth.
-- `EventBus.h` is currently ~267 lines.
+- `ComponentRegistry.h` is currently ~378 lines. Watch for growth.
+- `EventBus.h` is currently ~283 lines.
 - `ComponentConfig.h` is currently ~341 lines.
+- `MemoryManager.h` is currently ~347 lines.
+- `Platform_HAL.h` is currently ~368 lines.
+- `Platform_Stub.h` is currently ~630 lines (includes full `String` class stub). Watch the 800-line limit.
 
 ### SOLID Principles (Section I)
 - `IComponent` is the interface (ISP, DIP).
@@ -218,10 +231,12 @@ The following constitution principles are especially relevant to Core developmen
 
 ### Adding a New HAL Function
 
-1. Add the function signature to `Platform_ESP32.h`, `Platform_ESP8266.h`, and `Platform_Stub.h` in the `DomoticsCore::Platform` namespace.
-2. Add a forwarding inline function in `Platform_HAL.h` in the `DomoticsCore::HAL` namespace.
-3. Never add `#ifdef` outside of HAL files.
-4. Write native tests using the stub implementation.
+1. If the function is common to Arduino platforms (ESP32 + ESP8266), implement it once in `Platform_Arduino.h` in the `DomoticsCore::HAL::Platform` namespace.
+2. If the function is platform-specific (e.g., uses `esp_*` API), implement it separately in `Platform_ESP32.h` and `Platform_ESP8266.h`.
+3. Always add a stub in `Platform_Stub.h`.
+4. Add a forwarding inline function in `Platform_HAL.h` in the `DomoticsCore::HAL` namespace.
+5. Never add `#ifdef` outside of HAL files.
+6. Write native tests using the stub implementation.
 
 ### Extending the ComponentConfig Validation
 

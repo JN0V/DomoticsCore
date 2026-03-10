@@ -30,13 +30,14 @@ All paths are relative to `DomoticsCore-Storage/`.
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `Storage.h` | Main component: `StorageComponent`, `StorageConfig`, `StorageEntry`, `StorageKeyDef`, `StorageValueType` | ~651 |
-| `Storage_HAL.h` | HAL routing header: `IStorage` abstract interface, platform `#ifdef` dispatch | ~70 |
-| `Storage_ESP32.h` | ESP32 implementation: `PreferencesStorage` wrapping `<Preferences.h>` | ~129 |
-| `Storage_ESP8266.h` | ESP8266 implementation: `LittleFSStorage` using LittleFS + ArduinoJson | ~203 |
-| `Storage_Stub.h` | Stub implementation: `RAMOnlyStorage` for native/test builds | ~158 |
-| `StorageEvents.h` | Event constants: `EVENT_READY`, `EVENT_CHANGED`; POD struct `StorageChangedEvent` | ~27 |
-| `StorageWebUI.h` | WebUI provider: `StorageWebUI` extending `CachingWebUIProvider` | ~66 |
+| `Storage.h` | Main component: `StorageComponent`, `StorageConfig`, `StorageEntry`, `StorageKeyDef`, `StorageValueType` | 655 |
+| `Storage_HAL.h` | HAL routing header: `IStorage` abstract interface, platform `#ifdef` dispatch | 70 |
+| `Storage_ESP32.h` | ESP32 implementation: `PreferencesStorage` wrapping `<Preferences.h>` | 128 |
+| `Storage_ESP8266.h` | ESP8266 implementation: `LittleFSStorage` using LittleFS + ArduinoJson | 202 |
+| `Storage_Stub.h` | Stub implementation: `RAMOnlyStorage` for native/test builds | 157 |
+| `StorageEvents.h` | Event constants: `EVENT_READY`, `EVENT_CHANGED`; POD struct `StorageChangedEvent` | 26 |
+| `StorageWebUI.h` | WebUI provider: `StorageWebUI` extending `CachingWebUIProvider` | 65 |
+| `DocMainpage.h` | Doxygen `\mainpage` definition for generated API docs | 13 |
 
 ### Configuration
 
@@ -52,6 +53,14 @@ All paths are relative to `DomoticsCore-Storage/`.
 | `BasicStorage/` | Headless demo: all data types, lifecycle, session counting, blob storage |
 | `NamespaceDemo/` | Two `StorageComponent` instances with separate namespaces (`config`, `appdata`) |
 | `StorageWithWebUI/` | Storage + WebUI provider registration for browser-based monitoring |
+
+### Tests (`test/`)
+
+| Test Suite | Description |
+|------------|-------------|
+| `test_storage_api/` | Unit tests for the `StorageComponent` public API (put/get/remove/clear, key registration) |
+| `test_storage_events/` | Tests for event emission (`storage/ready`, `storage/changed`) |
+| `test_heap_esp8266/` | ESP8266-specific heap stability test for `LittleFSStorage` |
 
 ### Source (`src/`)
 
@@ -141,6 +150,8 @@ No `.cpp` source files. The component is header-only.
 - Non-blocking timers only; `delay()` is forbidden (constitution Section X).
 - `#ifdef` platform guards appear exclusively in HAL files (constitution Section IX).
 - Header-only component (no `.cpp` files in `src/`).
+- **Write deduplication**: `put*` methods (except `putBlob`) check the in-memory cache before writing. If the key already exists with the same type and value, the call returns `true` without touching the backend or emitting an event. This reduces flash wear.
+- **Immediate persistence**: The `autoCommit` configuration field has been removed. All writes are committed to the backend immediately.
 
 ---
 
@@ -153,7 +164,7 @@ This section maps DomoticsCore-Storage design decisions to specific constitution
 | I. SOLID | SRP, DIP, ISP | `StorageComponent` handles storage only; depends on `IStorage` abstraction; `IStorage` interface is minimal |
 | V. Performance | Memory budget, no busy-wait | Cache uses `std::map` (bounded by `maxEntries`); timers are non-blocking |
 | VI. EventBus | Decoupled communication | Emits `storage/ready` and `storage/changed` events; no direct references to other components |
-| VII. File Size | < 800 lines per file | `Storage.h` is ~651 lines; all other files are well under 200 lines |
+| VII. File Size | < 800 lines per file | `Storage.h` is 655 lines; all other files are well under 210 lines |
 | IX. HAL Isolation | `#ifdef` only in HAL files | Platform guards in `Storage_HAL.h`, `Storage_ESP32.h`, `Storage_ESP8266.h`, `Storage_Stub.h` only |
 | X. Non-Blocking Timer | No `delay()` | Uses `Utils::NonBlockingDelay` for status and maintenance timers |
 | XI. Centralized Storage | All persistence via Storage component | This IS the centralized storage component; other components must use it |
@@ -167,7 +178,8 @@ This section maps DomoticsCore-Storage design decisions to specific constitution
 
 These observations are provided for AI assistants planning future work:
 
-1. **Cache read-through**: `get*` methods currently bypass the cache and always read from the backend. A cache-first strategy could reduce HAL calls.
+1. **Cache read-through for `get*` methods**: Write deduplication is already in place (`put*` checks the cache and skips unchanged writes), but `get*` methods still bypass the cache and always read from the backend. A cache-first read strategy could reduce HAL calls for frequently read keys.
 2. **getKeys scope**: `getKeys()` only returns registered keys that exist. Unregistered keys in the backend are invisible.
-4. **WebUI write support**: `StorageWebUI::handleWebUIRequest` currently returns `{"success":false}` for all requests. The commented-out section in `Storage.h` shows intended CRUD operations.
-5. **File size of Storage.h**: At ~651 lines it approaches the 800-line hard limit. If new features are added, consider extracting the cache or key-registration logic into separate headers.
+3. **WebUI write support**: `StorageWebUI::handleWebUIRequest` currently returns `{"success":false}` for all requests. No CRUD operations are exposed through the WebUI.
+4. **File size of Storage.h**: At 655 lines it approaches the 800-line hard limit. If new features are added, consider extracting the cache or key-registration logic into separate headers.
+5. **Blob deduplication**: Unlike other `put*` methods, `putBlob` does not check the cache before writing. Adding blob comparison would reduce unnecessary flash writes for unchanged binary data.

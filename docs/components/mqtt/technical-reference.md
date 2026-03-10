@@ -20,7 +20,8 @@
 12. [Static Utility Methods](#static-utility-methods)
 13. [Statistics and Diagnostics](#statistics-and-diagnostics)
 14. [HAL Architecture](#hal-architecture)
-15. [Thread Safety](#thread-safety)
+15. [Connection Internals](#connection-internals)
+16. [Thread Safety](#thread-safety)
 
 ---
 
@@ -58,8 +59,10 @@ ComponentStatus shutdown() override;
 1. Registers EventBus listeners for `mqtt/publish` and `mqtt/subscribe` (always, even if broker is unconfigured).
 2. Sets the PubSubClient message callback.
 3. If `config.broker` is empty or `config.enabled` is false, returns `ComponentStatus::Success` without connecting (inactive but ready).
-4. Configures the HAL client (server, keep-alive).
+4. Configures the HAL client (server, keep-alive). Buffer size is set later, at connection time.
 5. If `config.autoReconnect` is true, calls `connect()`.
+
+**Note on buffer size**: The buffer is set to `MQTT_MAX_PACKET_SIZE` inside `connectInternal()` before every connection attempt, not in `begin()`. This ensures the buffer is always correctly sized after reconnections, since PubSubClient may reset it internally on disconnect.
 
 **`loop()`**:
 
@@ -188,7 +191,6 @@ All fields with their types, defaults, and descriptions:
 | `username` | `String` | `""` | Authentication username (optional) |
 | `password` | `String` | `""` | Authentication password (optional) |
 | `clientId` | `String` | `""` | Client identifier (auto-generated if empty) |
-| `cleanSession` | `bool` | `true` | Start with a clean MQTT session |
 | `keepAlive` | `uint16_t` | `60` | Keep-alive interval in seconds |
 | `enableLWT` | `bool` | `true` | Enable Last Will and Testament |
 | `lwtTopic` | `String` | `""` | LWT topic (defaults to `{clientId}/status`) |
@@ -201,9 +203,6 @@ All fields with their types, defaults, and descriptions:
 | `maxQueueSize` | `uint16_t` | `100` | Maximum offline message queue size (0 = unlimited). Enforced: queue size is checked before adding; excess messages are dropped with a warning log. |
 | `publishRateLimit` | `uint8_t` | `10` | Max messages per second (0 = unlimited). Enforced: uses a tumbling 1-second window; messages exceeding the limit are dropped with a warning log. |
 | `maxSubscriptions` | `uint8_t` | `50` | Maximum number of subscriptions (0 = unlimited). Enforced: subscription count is checked before subscribing; excess subscriptions are rejected with a warning log. |
-| `resubscribeOnConnect` | `bool` | `true` | Re-subscribe to all topics after reconnect |
-| `connectTimeout` | `uint32_t` | `10000` | Connection attempt timeout in ms |
-| `operationTimeout` | `uint32_t` | `5000` | Generic operation timeout in ms |
 | `enabled` | `bool` | `true` | Master enable/disable flag |
 
 **Enforcement details for resource-protection fields**:
@@ -373,8 +372,8 @@ public:
     explicit MQTTWebUI(MQTTComponent* component);
     void setConfigSaveCallback(std::function<void(const MQTTConfig&)> callback);
 
-    String getWebUIName() const override;   // Returns "MQTT"
-    String getWebUIVersion() const override; // Returns "1.4.0"
+    String getWebUIName() const override;   // Returns "MQTT" (from metadata.name)
+    String getWebUIVersion() const override; // Returns metadata.version (currently "1.4.1")
 
     String getWebUIData(const String& contextId) override;
     bool hasDataChanged(const String& contextId) override;
@@ -413,7 +412,7 @@ if (webui && mqtt) {
 
 - **Location**: Settings tab
 - **API endpoint**: `/api/mqtt/settings`
-- **Editable fields**: `enabled`, `broker`, `port`, `username`, `password`, `client_id`, `use_tls`, `clean_session`, `lwt_enabled`, `lwt_topic`, `lwt_message`
+- **Editable fields**: `enabled`, `broker`, `port`, `username`, `password`, `client_id`, `use_tls`, `lwt_enabled`, `lwt_topic`, `lwt_message`
 - **POST handling**: Updates config field-by-field; calls `setConfig()`, optionally invokes `onConfigSaved` callback. Toggling `enabled` triggers `connect()` or `disconnect()`.
 
 #### `mqtt_detail` -- Component Detail Card
@@ -600,6 +599,18 @@ Each platform defines `MQTT_MAX_PACKET_SIZE` before including PubSubClient:
 | ESP32 | 2048 | ~520KB RAM allows larger buffers |
 | ESP8266 | 768 | ~80KB RAM; sized for HA discovery payloads (~600 bytes) |
 | Native | 1024 | Moderate size for testing |
+
+---
+
+## Connection Internals
+
+The private `connectInternal()` method handles the actual TCP+MQTT handshake. It performs the following before each attempt:
+
+1. **Refreshes the PubSubClient server pointer** -- defensive measure against dangling `const char*` after config changes.
+2. **Sets buffer size** to `MQTT_MAX_PACKET_SIZE` -- prevents silent buffer downgrades after reconnections.
+3. **Calls `HAL::Platform::yield()`** before and after the blocking PubSubClient `connect()` call to prevent ESP watchdog timer resets.
+
+The method branches into four code paths depending on whether LWT and authentication credentials are configured, all delegating to the HAL `connect()` interface.
 
 ---
 

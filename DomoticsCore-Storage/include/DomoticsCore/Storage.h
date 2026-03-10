@@ -55,7 +55,6 @@ struct StorageConfig {
     String componentName = "";  // Optional: custom component name for multi-instance support
     bool readOnly = false;
     size_t maxEntries = 100;
-    bool autoCommit = true;
 };
 
 // Key definition for registration
@@ -72,7 +71,7 @@ struct StorageKeyDef {
  * @class DomoticsCore::Components::StorageComponent
  * @brief Key-value storage manager with HAL abstraction for multi-platform support.
  *
- * Opens a storage namespace, provides typed getters/setters, optional auto-commit,
+ * Opens a storage namespace, provides typed getters/setters with write deduplication,
  * and periodic maintenance/status reporting. Uses HAL::PlatformStorage which maps to
  * Preferences (ESP32), LittleFS (ESP8266), or RAM-only storage (other platforms).
  */

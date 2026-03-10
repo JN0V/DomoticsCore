@@ -73,7 +73,7 @@ stateDiagram-v2
 - Send MQTT CONNECT packet
 - Apply Last Will Testament (if enabled)
 - Apply authentication (if configured)
-- Timeout after `connectTimeout` ms (default: 10s)
+- Timeout is handled internally by PubSubClient
 
 **Exit Conditions:**
 - **Success:** Broker sends CONNACK → Connected
@@ -94,7 +94,7 @@ stateDiagram-v2
 - **Publish** messages to broker
 - **Process** incoming messages
 - **Maintain** keep-alive (PINGREQ/PINGRESP)
-- **Re-subscribe** to topics (if `resubscribeOnConnect = true`)
+- **Re-subscribe** to all tracked topics
 - **Process message queue** (send buffered messages)
 - **Call connect callbacks**
 - **Update statistics** (uptime, message counts)
@@ -208,14 +208,7 @@ if (now - lastConnectAttempt >= currentReconnectDelay) {
 
 ### On Connect
 
-**If `resubscribeOnConnect = true`:**
-```
-Connected State Entry
-  ↓
-For each subscription in subscriptions[]:
-  → mqttClient.subscribe(topic, qos)
-  → Log: "Re-subscribed to {topic}"
-```
+On every successful connect/reconnect, all tracked topics are unconditionally resubscribed.
 
 ### On Subscribe
 
@@ -370,7 +363,7 @@ Time    Component           Network              Broker
 - ✅ Set appropriate `maxQueueSize` based on RAM availability
 - ✅ Use `publishRateLimit` to avoid overwhelming broker
 - ✅ Enable LWT for connection status monitoring
-- ✅ Use `cleanSession = false` for persistent subscriptions
+- ✅ Clean session behavior is managed at the PubSubClient/broker level
 
 ### 2. Error Handling
 - ✅ Monitor `getLastError()` for debugging

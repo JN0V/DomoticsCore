@@ -64,8 +64,7 @@ struct SystemConfig {
     String wifiPassword = "";
     String wifiAPSSID = "";         // Auto-generated if empty (DeviceName-XXXX)
     String wifiAPPassword = "";     // Empty = open AP
-    uint32_t wifiTimeout = 30000;   // 30 seconds
-    
+
     // LED (optional)
     bool enableLED = true;
     uint8_t ledPin = 2;
@@ -79,7 +78,6 @@ struct SystemConfig {
     // WebUI (optional)
     bool enableWebUI = false;
     uint16_t webUIPort = 80;
-    bool webUIEnableAPI = true;
     
     // MQTT (optional)
     bool enableMQTT = false;
@@ -91,7 +89,6 @@ struct SystemConfig {
     
     // Home Assistant (optional, requires MQTT)
     bool enableHomeAssistant = false;
-    String haDiscoveryPrefix = "homeassistant";
     
     // NTP (optional)
     bool enableNTP = false;

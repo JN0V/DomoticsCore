@@ -6,7 +6,7 @@ Telnet-based remote console for real-time log streaming and command execution on
 
 - ✅ **Telnet Server** - Standard telnet protocol (port 23)
 - ✅ **Real-time Log Streaming** - See logs as they happen
-- ✅ **Circular Buffer** - Configurable log history (default 500 entries)
+- ✅ **Circular Buffer** - Configurable log history (platform-dependent default: ESP32=100, ESP8266=5)
 - ✅ **Runtime Log Level** - Change log verbosity without reboot
 - ✅ **Tag Filtering** - Filter logs by component tag
 - ✅ **Command Processor** - Built-in and custom commands
@@ -35,9 +35,11 @@ using namespace DomoticsCore::Components;
 Core core;
 
 void setup() {
-    // Connect to WiFi first
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) delay(500);
+    // Connect to WiFi first (using HAL abstraction)
+    HAL::WiFiHAL::init();
+    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
+    HAL::WiFiHAL::connect(ssid, password);
+    while (!HAL::WiFiHAL::isConnected()) HAL::Platform::delayMs(500);
     
     // Configure RemoteConsole
     RemoteConsoleConfig config;
@@ -60,16 +62,17 @@ void loop() {
 
 ```cpp
 struct RemoteConsoleConfig {
-    bool enabled = true;                    // Enable/disable
-    uint16_t port = 23;                     // Telnet port
-    bool requireAuth = false;               // Password authentication
-    String password = "";                   // Auth password
-    uint32_t bufferSize = 500;              // Log buffer size
-    bool allowCommands = true;              // Enable commands
-    std::vector<IPAddress> allowedIPs;      // IP whitelist (empty = all)
-    bool colorOutput = true;                // ANSI colors
-    uint32_t maxClients = 3;                // Max connections
-    LogLevel defaultLogLevel = LOG_LEVEL_INFO;  // Initial log level
+    bool enabled = true;                              // Enable/disable
+    uint16_t port = 23;                               // Telnet port
+    bool requireAuth = false;                         // Password authentication
+    String password = "";                             // Auth password
+    uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;   // Platform-specific (ESP32=100, ESP8266=5)
+    bool allowCommands = true;                        // Enable commands
+    uint32_t authTimeoutMs = 10000;                   // Auth timeout (10s, 0 = no timeout)
+    std::vector<HAL::IPAddress> allowedIPs;           // IP whitelist (empty = all)
+    bool colorOutput = true;                          // ANSI colors
+    uint32_t maxClients = 3;                          // Max connections
+    LogLevel defaultLogLevel = LOG_LEVEL_INFO;        // Initial log level
 };
 ```
 
@@ -89,6 +92,7 @@ telnet 192.168.1.100 23
 - **`filter <tag>`** - Filter logs by tag (empty = show all)
 - **`info`** - System information (uptime, heap, WiFi, etc.)
 - **`heap`** - Memory usage
+- **`auth <password>`** - Authenticate (when `requireAuth` is `true`)
 - **`reboot`** - Restart device
 - **`quit`** - Disconnect
 
@@ -230,13 +234,14 @@ When `colorOutput = true`:
 - **Yellow** - Warnings
 - **Green** - Info
 - **Cyan** - Debug
-- **White** - Verbose
+- **Default** - Verbose (no color code applied)
 
 ## Memory Usage
 
 - **Flash:** ~60KB (component + WiFiServer)
 - **RAM:** ~5KB base + (bufferSize * ~100 bytes per entry)
-- **Default buffer (500 entries):** ~50KB RAM
+- **Default ESP32 buffer (100 entries):** ~10KB RAM
+- **Default ESP8266 buffer (5 entries):** ~500 bytes RAM
 
 ## Use Cases
 
@@ -249,8 +254,7 @@ When `colorOutput = true`:
 ## Examples
 
 - **BasicRemoteConsole** - Simple telnet console with custom commands
-- **RemoteConsoleWithAuth** - Password-protected console (coming soon)
-- **RemoteConsoleFiltering** - Advanced log filtering (coming soon)
+- **RemoteConsoleWithWebUI** - Full example with WebUI integration and AP fallback
 
 ## Limitations
 
@@ -261,7 +265,6 @@ When `colorOutput = true`:
 ## Future Enhancements
 
 - SSH support for encrypted connections
-- Web-based console UI
 - Log export to file/SD card
 - Command history and tab completion
 - Regex-based log filtering

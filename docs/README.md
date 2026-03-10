@@ -54,6 +54,11 @@ Welcome to the DomoticsCore documentation. DomoticsCore is a modular, production
 
 - [Storage & Boot Diagnostics](reliability/storage-verbosity-and-boot-diagnostics.md) — Persistent boot diagnostics
 
+### Project Health
+
+- [Code Remediation Roadmap](CODE-ROADMAP.md) — All P1-P8 items completed
+- [Review Findings](REVIEW-FINDINGS.md) — Code review findings and resolutions
+
 ---
 
 ## Component Documentation
@@ -237,6 +242,6 @@ docs/
 
 ---
 
-**DomoticsCore Version:** 2.0.0 | **Documentation Last Updated:** 2026-03-09
+**DomoticsCore Version:** 2.0.0 | **Documentation Last Updated:** 2026-03-10
 
 **License:** See main repository [LICENSE](../LICENSE) file.

@@ -83,7 +83,15 @@ Platform-specific code is isolated in `*_HAL.h` files with compile-time routing:
 - `*_Stub.h` — Native platform stub for testing
 
 ### EventBus
-Instance-based, queue-based publish/subscribe messaging. Components publish events without knowing who listens. Events are queued on `publish()` and dispatched during `poll()` (called automatically by `Core::loop()`). Supports sticky events for late subscribers, wildcard subscriptions (`*` prefix matching), and backpressure (queue capped at 32 events). Topics use slash separators (e.g., `wifi/sta/connected`, `mqtt/message`).
+Instance-based, queue-based publish/subscribe messaging (`DomoticsCore::Utils::EventBus`). Components publish events without knowing who listens. Events are queued on `publish()` and dispatched during `poll()` (called automatically by `Core::loop()` via `ComponentRegistry::loopAll()`). Key features:
+- **Queued dispatch**: `poll(maxPerPoll=8)` processes up to 8 events per call
+- **Backpressure**: Queue capped at 32 events; oldest dropped on overflow
+- **Sticky events**: `publishSticky()` stores the last payload; late subscribers with `replayLast=true` receive it immediately
+- **Wildcard subscriptions**: `sensor/*` matches `sensor/temperature`, `sensor/humidity`, etc.
+- **Owner-based cleanup**: `unsubscribeOwner(ptr)` removes all subscriptions for a component (called automatically on shutdown)
+- **Topics use slash separators**: e.g., `wifi/sta/connected`, `mqtt/message`, `component/ready`
+- **Typed helpers on IComponent**: `on<T>(topic, cb)` and `emit<T>(topic, payload)` for type-safe pub/sub
+- **Thread safety**: Single-threaded assumption; subscribe/unsubscribe must NOT be called during `poll()` (guarded by assert in debug builds)
 
 ### WebUI Provider Pattern
 Each component optionally provides a `*WebUI` class implementing `IWebUIProvider`. Providers register with the `WebUIComponent` and contribute to 6 UI locations: `Dashboard`, `ComponentDetail`, `HeaderStatus`, `QuickControls`, `Settings`, `HeaderInfo`.
@@ -100,11 +108,20 @@ Each component optionally provides a `*WebUI` class implementing `IWebUIProvider
 ## Build System
 
 - **PlatformIO** is the primary build system
-- `library.json` at root defines the library metadata and build flags
+- `library.json` at root (v2.0.0) defines the library metadata, build flags, include paths, source filters, and external dependencies
 - Each component has its own `library.json` for standalone use
-- Build script: `build_all_examples.sh`
-- Test runner: `run_all_tests.sh`
-- CI: GitHub Actions (`.github/workflows/`)
+- No root `platformio.ini` -- each example has its own
+- **Build scripts:**
+  - `build_all_examples.sh` -- Compiles all examples
+  - `run_all_tests.sh` -- Runs native platform tests
+  - `check_everything.sh` -- Full build + test
+  - `tools/local_ci.sh` -- Local CI simulation
+  - `tools/bump_version.py` -- Semantic version bumping
+  - `tools/check_versions.py` -- Version consistency validation
+- **CI**: GitHub Actions (`.github/workflows/`)
+  - `version-check.yml` -- Version consistency on push/PR
+  - `test-github-install.yml` -- Test installation from GitHub
+  - `release.yml` -- GitHub Release + PlatformIO publish on `v*` tags
 
 ## Testing Strategy
 

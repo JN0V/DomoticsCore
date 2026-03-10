@@ -113,7 +113,7 @@ Components track their state via `isActive()` (boolean) and `getLastStatus()` (C
 
 ## Core Runtime
 
-### Core Class (`DomoticsCore-Core/include/Core.h`)
+### Core Class (`DomoticsCore-Core/include/DomoticsCore/Core.h`)
 
 The `Core` class is the central runtime:
 
@@ -140,6 +140,8 @@ auto* mqtt = core.getComponent<MQTTComponent>("MQTT");
 ```
 
 Components are registered by name (without "Component" suffix by convention).
+
+**Important**: `Core::loop()` drives two things: (1) calls `loop()` on all active components in dependency order, and (2) calls `eventBus.poll()` to dispatch queued events. Both happen on every iteration.
 
 ### NonBlockingDelay (`DomoticsCore-Core/include/DomoticsCore/Timer.h`)
 
@@ -266,17 +268,19 @@ Each HAL file uses preprocessor detection:
 
 ### HAL Files in the Project
 
-| HAL | Component | Platforms |
-|-----|-----------|-----------|
-| `Platform_HAL.h` | Core | ESP32, ESP8266, Stub |
-| `Filesystem_HAL.h` | Core | ESP32, ESP8266, Stub |
-| `Wifi_HAL.h` | Wifi | ESP32, ESP8266, Stub |
-| `WiFiServer_HAL.h` | Wifi | ESP32, ESP8266, Stub |
-| `WebUI_HAL.h` | WebUI | ESP32, ESP8266, Stub |
-| `MQTT_HAL.h` | MQTT | ESP32, ESP8266, Stub |
-| `NTP_HAL.h` | NTP | ESP32, ESP8266, Stub |
-| `Storage_HAL.h` | Storage | ESP32, ESP8266, Stub |
-| `Update_HAL.h` | OTA | ESP32, ESP8266, Stub |
+| HAL | Component | Location | Platforms |
+|-----|-----------|----------|-----------|
+| `Platform_HAL.h` | Core | `DomoticsCore-Core/include/DomoticsCore/` | ESP32, ESP8266, Stub |
+| `Filesystem_HAL.h` | Core | `DomoticsCore-Core/include/DomoticsCore/` | ESP32, ESP8266, Stub |
+| `Wifi_HAL.h` | Wifi | `DomoticsCore-Wifi/include/DomoticsCore/` | ESP32, ESP8266, Stub |
+| `WiFiServer_HAL.h` | Wifi | `DomoticsCore-Wifi/include/DomoticsCore/` | ESP32, ESP8266, Stub |
+| `WebUI_HAL.h` | WebUI | `DomoticsCore-WebUI/include/DomoticsCore/` | ESP32, ESP8266, Stub |
+| `MQTT_HAL.h` | MQTT | `DomoticsCore-MQTT/include/DomoticsCore/` | ESP32, ESP8266, Stub |
+| `NTP_HAL.h` | NTP | `DomoticsCore-NTP/include/DomoticsCore/` | ESP32, ESP8266, Stub |
+| `Storage_HAL.h` | Storage | `DomoticsCore-Storage/include/DomoticsCore/` | ESP32, ESP8266, Stub |
+| `Update_HAL.h` | OTA | `DomoticsCore-OTA/include/DomoticsCore/` | ESP32, ESP8266, Stub |
+
+`Platform_HAL.h` serves as the root platform detection header. It defines feature-availability macros (`DOMOTICS_HAS_WIFI`, `DOMOTICS_HAS_PREFERENCES`, etc.) and delegates to `Platform_ESP32.h`, `Platform_ESP8266.h`, or `Platform_Stub.h`. The `DomoticsCore::HAL` namespace provides a backward-compatible API that delegates to `DomoticsCore::Platform`.
 
 ### Adding a New Platform
 
@@ -422,8 +426,11 @@ enum LogLevel {
 };
 ```
 
-- Compile-time level set via `CORE_DEBUG_LEVEL` (default: `LOG_LEVEL_INFO`)
-- Macros below the configured level are compiled out entirely (zero overhead)
+- Compile-time level set via `CORE_DEBUG_LEVEL` build flag (default: `LOG_LEVEL_INFO`)
+- Macros delegate to platform-level `log_e()`, `log_w()`, `log_i()`, `log_d()`, `log_v()` functions
+- On ESP8266, `DLOG_SNPRINTF` uses PROGMEM format strings (saves ~11KB DRAM) with 128-byte buffer (`DOMOTICS_DLOG_BUF_SIZE`)
+- On ESP32 and other platforms, standard `snprintf` with 256-byte buffer
+- All `DLOG_*` macros also broadcast via `LoggerCallbacks::broadcast()` for Telnet streaming
 
 ### Standard Tags
 
@@ -469,12 +476,21 @@ enum class MemoryProfile {
 };
 ```
 
-| Profile | WebSocket Buffer | JSON Doc | HTTP Response |
-|---------|-----------------|----------|---------------|
-| FULL | 8192 | 8192 | 4096 |
-| STANDARD | 4096 | 4096 | 2048 |
-| MINIMAL | 2048 | 2048 | 1024 |
-| CRITICAL | 1024 | 1024 | 512 |
+| Profile | WebSocket Buffer | JSON Doc | HTTP Response | Log Buffer |
+|---------|-----------------|----------|---------------|------------|
+| FULL | 8192 | 8192 | 4096 | 200 |
+| STANDARD | 4096 | 4096 | 2048 | 100 |
+| MINIMAL | 2048 | 2048 | 1024 | 50 |
+| CRITICAL | 1024 | 1024 | 512 | 20 |
+
+**Additional Profile Limits:**
+
+| Profile | Max WS Clients | Max Providers | Chart History Points | WS Update Interval |
+|---------|---------------|---------------|---------------------|-------------------|
+| FULL | 8 | 32 | 60 | 2s |
+| STANDARD | 4 | 16 | 30 | 5s |
+| MINIMAL | 2 | 8 | 10 | 10s |
+| CRITICAL | 1 | 4 | 0 | disabled |
 
 ### HeapTracker (`DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h`)
 
@@ -543,33 +559,52 @@ for (auto& s : sensors) {
 
 ### PlatformIO Configuration
 
-Root `library.json` defines:
-- Include paths for all components (`-IDomoticsCore-*/include`)
-- Source filter (`+<DomoticsCore-*/src/*>`)
-- External dependencies (ArduinoJson, ESPAsyncWebServer, AsyncTCP, PubSubClient)
-- WebUI build script (`embed_webui.py`)
+**Root `library.json`** (version 2.0.0) defines:
+- **Include paths** for all 12 components (`-IDomoticsCore-*/include`)
+- **Source filter** (`+<DomoticsCore-*/src/*>`) to collect `.cpp` files
+- **External dependencies**: ArduinoJson ^7.0.0, ESPAsyncWebServer ^3.8.0, AsyncTCP ^3.4.8, PubSubClient ^2.8
+- **WebUI build script**: `DomoticsCore-WebUI/embed_webui.py` (compiles HTML/CSS/JS into gzip-compressed C++ headers)
+- **`lib_archive: false`**: Required for monorepo structure
+- **Frameworks**: Arduino
+- **Platforms**: espressif32, espressif8266
+
+**Note:** There is no root `platformio.ini`. Each example has its own `platformio.ini`. The root `library.json` is what PlatformIO uses when the library is consumed as a dependency.
 
 ### Build Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `build_all_examples.sh` | Compiles all component examples |
-| `run_all_tests.sh` | Runs all native platform tests |
-| `check_everything.sh` | Full validation (build + test) |
-| `clean_examples.py` | Cleans build artifacts |
+| Script | Location | Purpose |
+|--------|----------|---------|
+| `build_all_examples.sh` | Root | Compiles all component examples across all environments |
+| `run_all_tests.sh` | Root | Runs all native platform tests |
+| `check_everything.sh` | Root | Full validation (build + test combined) |
+| `tools/local_ci.sh` | `tools/` | Local CI simulation (mirrors GitHub Actions pipeline) |
+| `tools/bump_version.py` | `tools/` | Semantic version bumping across all `library.json` files |
+| `tools/check_versions.py` | `tools/` | Validates version consistency across all components |
 
 ### CI/CD
 
 GitHub Actions in `.github/workflows/`:
-- Build validation on push/PR
-- Test execution on native platform
-- Release creation on tagged commits
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `version-check.yml` | Push/PR to main, master, develop | Runs `check_versions.py` to validate version consistency |
+| `test-github-install.yml` | Push/PR | Creates a test project, installs DomoticsCore from the current commit, and verifies compilation on ESP32 |
+| `release.yml` | Push tag `v*` | Runs version check, extracts changelog, creates GitHub Release, publishes to PlatformIO Registry |
+
+**Release process:**
+1. Tag a commit with `v*` (e.g., `v2.0.0`)
+2. `release.yml` runs `check_versions.py --check-tag` to validate the tag matches `library.json`
+3. Extracts the corresponding section from `CHANGELOG.md`
+4. Creates a GitHub Release with the changelog as release notes
+5. Publishes to PlatformIO Registry via `pio pkg publish`
 
 ---
 
 ## Testing Infrastructure
 
 ### Test Structure
+
+Framework-level tests are in `tests/`. Component-level tests are in each `DomoticsCore-*/test/` directory.
 
 ```
 tests/
@@ -579,14 +614,17 @@ tests/
 │   ├── 05-storage-namespace/       # Storage namespace isolation
 │   └── 06-webui-refactor/          # WebUI refactoring validation
 ├── mocks/
-│   ├── MockWifiHAL.h              # WiFi mock
-│   ├── MockMQTTClient.h           # MQTT client mock
+│   ├── MockWifiHAL.h              # WiFi HAL mock
+│   ├── MockMQTTClient.h           # MQTT PubSubClient mock
 │   ├── MockEventBus.h             # EventBus mock
 │   ├── MockStorage.h              # Storage mock
 │   ├── MockNTPClient.h            # NTP mock
-│   └── MockAsyncWebServer.h       # Web server mock
+│   ├── MockAsyncWebServer.h       # ESPAsyncWebServer mock
+│   └── README.md                  # Mock usage guide
 └── README.md
 ```
+
+Each unit test has its own `platformio.ini` with `[env:native]` targeting the native platform (no hardware required). HAL stub files (`*_Stub.h`) provide the platform layer for native testing.
 
 ### Running Tests
 

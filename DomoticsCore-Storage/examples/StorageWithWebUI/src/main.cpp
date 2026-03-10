@@ -27,7 +27,7 @@ void setup() {
     core.addComponent(std::make_unique<WebUIComponent>(webCfg));
 
     // Storage component
-    StorageConfig scfg; scfg.namespace_name = "domotics"; scfg.maxEntries = 100; scfg.autoCommit = true;
+    StorageConfig scfg; scfg.namespace_name = "domotics"; scfg.maxEntries = 100;
     core.addComponent(std::make_unique<StorageComponent>(scfg));
 
     // Register provider

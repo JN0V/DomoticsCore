@@ -12,8 +12,8 @@ On ESP32, data is persisted to NVS (Non-Volatile Storage) via the Preferences li
 
 - **Typed key-value storage** -- String, int32, float, bool, uint64 (UInt64), and binary blob support
 - **Namespace isolation** -- each StorageComponent instance operates within its own namespace, preventing key collisions between components
-- **In-memory cache** -- write-through cache keeps recently stored entries in RAM for fast reads
-- **Auto-commit** -- changes are flushed to the backend immediately by default
+- **Write-through cache with deduplication** -- all `put*` calls check the in-memory cache first and skip the backend write when the value is unchanged, reducing flash wear
+- **Immediate persistence** -- writes are always committed to the backend immediately (the `autoCommit` configuration field has been removed)
 - **Read-only mode** -- open a namespace for diagnostic reads without risk of accidental writes
 - **Key registration** -- components declare their storage keys with type and description metadata
 - **Change notifications** -- emits `storage/changed` events (with a `StorageChangedEvent` POD struct containing the key name) on every `put*`, `remove`, or `clear` operation
@@ -36,7 +36,6 @@ void setup() {
     StorageConfig cfg;
     cfg.namespace_name = "myapp";   // max 15 characters on ESP32
     cfg.maxEntries = 100;
-    cfg.autoCommit = true;
 
     core.addComponent(std::make_unique<StorageComponent>(cfg));
 

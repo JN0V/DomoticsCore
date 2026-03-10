@@ -86,16 +86,13 @@ struct MQTTConfig {
     String broker = "";                     ///< MQTT broker address
     uint16_t port = 1883;                   ///< MQTT broker port (1883 for plain, 8883 for TLS)
     bool useTLS = false;                    ///< Use TLS/SSL encryption
-    
+    uint16_t keepAlive = 60;                ///< Keep-alive interval in seconds
+
     // Authentication
     String username = "";                   ///< MQTT username (optional)
     String password = "";                   ///< MQTT password (optional)
     String clientId = "";                   ///< MQTT client ID (auto-generated if empty)
-    
-    // Session
-    bool cleanSession = true;               ///< Start with clean session
-    uint16_t keepAlive = 60;                ///< Keep-alive interval in seconds
-    
+
     // Last Will and Testament
     bool enableLWT = true;                  ///< Enable Last Will Testament
     String lwtTopic = "";                   ///< LWT topic (defaults to {clientId}/status)
@@ -114,12 +111,7 @@ struct MQTTConfig {
 
     // Subscriptions
     uint8_t maxSubscriptions = 50;          ///< Maximum number of subscriptions (0 = unlimited)
-    bool resubscribeOnConnect = true;       ///< Re-subscribe after reconnection
-    
-    // Timeouts
-    uint32_t connectTimeout = 10000;        ///< Connection timeout (ms)
-    uint32_t operationTimeout = 5000;       ///< Operation timeout (ms)
-    
+
     // Component
     bool enabled = true;                    ///< Enable MQTT component
 };

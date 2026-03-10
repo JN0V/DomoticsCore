@@ -299,6 +299,14 @@ Validation includes: required-field check, integer range, float format, boolean 
 
 A queued, single-threaded publish/subscribe bus supporting both `EventType`-based and topic-string-based subscriptions.
 
+### EventType Enum
+
+```cpp
+enum class EventType : uint8_t { Custom = 1 };
+```
+
+A minimal enum kept in `EventBus.h` for typed (non-topic) subscriptions. Currently only `Custom` is defined; topic-based subscriptions are the preferred approach.
+
 ### Key Types
 
 ```cpp
@@ -339,6 +347,7 @@ struct QueuedEvent {
 - **Single-threaded assumption.** `subscribe()`, `unsubscribe()`, and `unsubscribeOwner()` must NOT be called during `poll()` dispatch. An `assert` guards this in debug builds.
 - **Backpressure.** The internal queue is capped at 32 events. When full, the oldest event is dropped.
 - **Wildcard matching.** Topics containing `*` are matched as prefix patterns (e.g., `"sensor/*"` matches `"sensor/temperature"` and `"sensor/humidity"`).
+- **Sticky deduplication.** The EventBus tracks `pendingByTopic` counters to avoid replaying a sticky event to a new subscriber when an equivalent event is already queued and will arrive shortly. This prevents a subscriber from receiving the same state value twice on registration.
 
 ---
 
@@ -347,6 +356,21 @@ struct QueuedEvent {
 **Header:** `DomoticsCore/Logger.h`
 
 Macro-based, platform-agnostic logging system with component tags and multiple severity levels.
+
+### LogLevel Enum (Global Namespace)
+
+```cpp
+enum LogLevel {
+    LOG_LEVEL_NONE    = 0,
+    LOG_LEVEL_ERROR   = 1,
+    LOG_LEVEL_WARN    = 2,
+    LOG_LEVEL_INFO    = 3,
+    LOG_LEVEL_DEBUG   = 4,
+    LOG_LEVEL_VERBOSE = 5
+};
+```
+
+**Note:** This enum is in the **global namespace** (not `DomoticsCore`), as it is used by the C-style logging macros and `LoggerCallbacks`.
 
 ### Log Macros
 
@@ -380,6 +404,8 @@ public:
 ```
 
 Every log macro calls `LoggerCallbacks::broadcast()` after serial output, enabling RemoteConsole streaming, file logging, alert systems, etc.
+
+**Important caveat:** `removeCallback()` currently uses a simplified implementation that **clears ALL registered callbacks**, not just the specified one. This is a known limitation; a future update will use a handle/ID-based system for targeted removal.
 
 ### Platform Adaptation
 
@@ -436,6 +462,35 @@ Singleton that detects available heap at boot and provides adaptive configuratio
 
 `WebSocketUpdates`, `ChartHistory`, `SettingsLazyLoad`, `SchemaCompression`, `FullDashboard`
 
+### Supporting Structs
+
+```cpp
+struct MemoryThresholds {
+    uint32_t fullMin      = 30 * 1024;  // 30 KB
+    uint32_t standardMin  = 15 * 1024;  // 15 KB
+    uint32_t minimalMin   = 8 * 1024;   // 8 KB
+    // Below minimalMin = CRITICAL
+};
+
+struct ProfileBufferSizes {
+    size_t webSocket;
+    size_t httpResponse;
+    size_t jsonDocument;
+    size_t logBuffer;
+};
+
+struct ProfileIntervals {
+    uint32_t wsUpdateInterval;   // WebSocket update interval (ms)
+    uint32_t heapCheckInterval;  // How often to recheck heap (ms)
+};
+
+struct ProfileLimits {
+    uint8_t maxWsClients;        // Max WebSocket clients
+    uint8_t maxProviders;        // Max WebUI providers
+    uint8_t chartHistoryPoints;  // Chart history depth
+};
+```
+
 ### Public Methods
 
 | Method | Signature | Description |
@@ -467,12 +522,12 @@ Singleton that detects available heap at boot and provides adaptive configuratio
 
 ### Profile Limits
 
-| Profile | Max WS Clients | Max Providers | Chart Points | WS Interval |
-|---------|---------------|---------------|-------------|-------------|
-| FULL | 8 | 32 | 60 | 2s |
-| STANDARD | 4 | 16 | 30 | 5s |
-| MINIMAL | 2 | 8 | 10 | 10s |
-| CRITICAL | 1 | 4 | 0 | disabled |
+| Profile | Max WS Clients | Max Providers | Chart Points | WS Interval | Heap Check Interval |
+|---------|---------------|---------------|-------------|-------------|---------------------|
+| FULL | 8 | 32 | 60 | 2s | 60s |
+| STANDARD | 4 | 16 | 30 | 5s | 30s |
+| MINIMAL | 2 | 8 | 10 | 10s | 15s |
+| CRITICAL | 1 | 4 | 0 | disabled | 10s |
 
 ---
 
@@ -495,6 +550,17 @@ struct HeapSnapshot {
     float getFragmentation() const;  // 0-100%
 };
 ```
+
+### HeapCheckpoint
+
+```cpp
+struct HeapCheckpoint {
+    String name;
+    HeapSnapshot snapshot;
+};
+```
+
+Named wrapper used internally by `HeapTracker` to associate a label with a `HeapSnapshot`.
 
 ### HeapTracker Methods
 
@@ -621,6 +687,23 @@ The HAL routing header detects the platform at compile time and includes the app
 | `HAL::SHA256` | Type alias | Alias for `Platform::SHA256`. Provides SHA-256 hash computation (uses mbedtls on ESP32). Methods: `begin()`, `update(data, len)`, `finish(digest)`, `abort()`, `toHex(digest, len)`. |
 | `HAL::PI` | `constexpr double` | Mathematical constant PI for platform-independent trigonometry (e.g., LED effects). |
 
+### Shared Arduino Utilities (`Platform_Arduino.h`)
+
+**Header:** `DomoticsCore/Platform_Arduino.h`
+**Namespace:** `DomoticsCore::HAL::Platform`
+
+This file contains common implementations shared between `Platform_ESP32.h` and `Platform_ESP8266.h` to avoid code duplication. It is **not** included directly by user code; it is included by the platform-specific headers.
+
+Functions provided: `getMillis`, `delayMs`, `yield`, `toUpperCase`, `substring`, `indexOf`, `startsWith`, `endsWith`, `digitalWrite`, `pinMode`, `analogWrite`, `digitalRead`, `map`, `constrain`, `isLoggerReady`, `digestToHex`.
+
+#### Additional HAL::Platform Functions (not forwarded to HAL::)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| **yield** | `void yield()` | Yield execution to background tasks (Arduino `yield()` on real hardware, `std::this_thread::yield()` on native). |
+| **constrain** | `template<T> T constrain(T value, T min_val, T max_val)` | Constrain a value between min and max. Replaces the Arduino macro with a type-safe template. |
+| **digestToHex** | `String digestToHex(const uint8_t* digest, size_t len = 32)` | Convert raw digest bytes to a lowercase hexadecimal string. |
+
 ### Platform-Only Functions (`HAL::Platform::`)
 
 The following functions are available in the `DomoticsCore::HAL::Platform` namespace but are **not** forwarded to the top-level `HAL::` namespace. Access them explicitly via `HAL::Platform::`.
@@ -689,6 +772,15 @@ The Filesystem HAL provides a platform-agnostic interface to the on-chip filesys
 | **format** | `bool format()` | Format (erase) the entire filesystem. Returns `true` on success. |
 | **totalBytes** | `size_t totalBytes()` | Total filesystem capacity in bytes. |
 | **usedBytes** | `size_t usedBytes()` | Bytes currently used on the filesystem. |
+
+### ArduinoJson Compatibility (`ArduinoJsonString.h`)
+
+**Header:** `DomoticsCore/ArduinoJsonString.h`
+
+This header provides ArduinoJson 7 converter functions for the stub `String` class used in native tests. It defines `canConvertFromJson`, `convertFromJson`, and `convertToJson` ADL functions in the global namespace.
+
+- **When to include:** After `ArduinoJson.h`, only when building with `Platform_Stub.h` (native tests).
+- **On real Arduino platforms:** This header is a no-op (guarded by `#if !defined(ARDUINO)`), because Arduino's native `String` class is already supported by ArduinoJson.
 
 ---
 

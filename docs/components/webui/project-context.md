@@ -13,7 +13,7 @@ This document provides structured context for AI assistants working on the Domot
 | **Name** | DomoticsCore-WebUI |
 | **Version** | 1.5.0 |
 | **Role** | Web dashboard, REST API, and real-time update server |
-| **Size** | ~3,900 lines across 14 header files (largest single component in the framework) |
+| **Size** | ~3,894 lines across 15 header files (largest single component in the framework) |
 | **Platforms** | ESP32, ESP8266, ESP32-S2/S3/C3, native/stub |
 | **License** | MIT |
 | **Namespace** | `DomoticsCore::Components` (main), `DomoticsCore::Components::WebUI` (sub-modules) |
@@ -26,7 +26,7 @@ This document provides structured context for AI assistants working on the Domot
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `WebUI.h` | 951 | Main `WebUIComponent` class -- server setup, API routes, SSE/polling loop, self-provider |
+| `WebUI.h` | 950 | Main `WebUIComponent` class -- server setup, API routes, SSE/polling loop, self-provider |
 | `IWebUIProvider.h` | 682 | `IWebUIProvider` interface, `CachingWebUIProvider` base class, `WebUIContext`, `WebUIField`, enums, `LazyState<T>` |
 | `BaseWebUIComponents.h` | 384 | Static HTML widget generators (progress bar, toggle, button, slider, etc.) and `createLineChart` |
 | `WebUI_HAL.h` | 25 | Platform routing header (`#if` dispatches to ESP32/ESP8266/Stub) |
@@ -40,7 +40,7 @@ This document provides structured context for AI assistants working on the Domot
 | File | Lines | Purpose |
 |------|-------|---------|
 | `ProviderRegistry.h` | 345 | Context-to-provider map, provider discovery, enable/disable, schema chunk state |
-| `StreamingContextSerializer.h` | 922 | State-machine JSON serializer for chunked HTTP responses (zero intermediate allocation) |
+| `StreamingContextSerializer.h` | 921 | State-machine JSON serializer for chunked HTTP responses (zero intermediate allocation) |
 | `WebServerManager.h` | 149 | AsyncWebServer lifecycle, static asset serving, route registration |
 | `WebSocketHandler.h` | 154 | SSE/polling dual-mode handler, broadcast, client tracking |
 | `WebUIConfig.h` | 91 | Configuration struct with fixed-size `char[]` fields |
@@ -160,7 +160,7 @@ This section maps WebUI implementation decisions to specific constitution princi
 | **III. KISS** | Dual-mode SSE/polling decided by a single heap threshold, no complex negotiation. |
 | **V. Performance First** | Streaming serializer avoids full-buffer allocation. PROGMEM for static assets. Adaptive buffer sizes per platform. Low-heap guards throughout. |
 | **VI. EventBus** | Subscribes to `wifi/ap/enabled` via `on<bool>()`. No direct dependency on Wifi module. |
-| **VII. File Size** | `WebUI.h` (951 lines) and `StreamingContextSerializer.h` (922 lines) exceed the 800-line limit. Both are candidates for further splitting. See Known Compliance Gaps below. |
+| **VII. File Size** | `WebUI.h` (950 lines) and `StreamingContextSerializer.h` (921 lines) exceed the 800-line limit. Both are candidates for further splitting. See Known Compliance Gaps below. |
 | **IX. HAL** | All `#ifdef` platform detection is isolated in `WebUI_HAL.h`, `WebUI_ESP32.h`, `WebUI_ESP8266.h`, `WebUI_Stub.h`, and `WebResponse_HAL.h`. Business logic is platform-agnostic. |
 | **X. Non-Blocking** | `loop()` completes quickly: checks timers, pumps SSE, builds JSON only when interval elapses. No `delay()`. |
 | **XII. Multi-Registry** | `library.json` declares PlatformIO dependencies. Include path uses `DomoticsCore/` prefix. |
@@ -170,10 +170,20 @@ This section maps WebUI implementation decisions to specific constitution princi
 ### Known Compliance Gaps
 
 - **VII. File Size**: Three files exceed the 800-line Constitution VII limit and are tracked as roadmap items:
-  - `WebUI.h` -- 951 lines. Planned split into server setup, API routes, and self-provider modules.
-  - `StreamingContextSerializer.h` -- 922 lines. Planned extraction of field sub-state machine.
+  - `WebUI.h` -- 950 lines. Planned split into server setup, API routes, and self-provider modules.
+  - `StreamingContextSerializer.h` -- 921 lines. Planned extraction of field sub-state machine.
   - `Wifi.h` (DomoticsCore-Wifi) -- 881 lines. Cross-component awareness; tracked here for visibility.
 - **II. TDD**: The component has limited unit test coverage due to its dependency on `ESPAsyncWebServer` which is difficult to mock. Contract tests for the provider interface exist.
+
+### Known Issue: Excessive SSE Broadcast WARNING Logs
+
+The `sendWebSocketUpdates()` method in `WebUI.h` (line 939) logs every SSE broadcast at `DLOG_W` (WARNING) level:
+
+```cpp
+DLOG_W(LOG_WEB, "SSE broadcast: %d bytes, clients=%d", len, webSocket->getClientCount());
+```
+
+With the default `wsUpdateInterval` of 5000 ms, this produces a WARNING log of approximately 1560 bytes every ~5.4 seconds during normal operation with at least one SSE client connected. This is a severity mismatch: routine SSE broadcasts are not warnings. The log level should be `DLOG_D` (DEBUG) to avoid polluting the serial output and triggering false alarms in monitoring systems. The low-heap skip case on line 933 correctly uses `DLOG_W` since that *is* an abnormal condition worth flagging.
 
 ---
 
@@ -205,3 +215,19 @@ Extend `CachingWebUIProvider`, implement `buildContexts()`, `getWebUIName()`, `g
 - The `ESPAsyncWebServer` dependency makes full integration testing require a real or emulated ESP target.
 - Unit tests for `StreamingContextSerializer`, `ProviderRegistry`, and `WebUIConfig` can run natively without hardware dependencies.
 - The `LazyState<T>` template is fully testable in isolation.
+
+### Test Suites
+
+| Suite | File | Target | Purpose |
+|-------|------|--------|---------|
+| `test_streaming_serializer` | `test/test_streaming_serializer/test/` | native | Pause/resume correctness, JSON validity, chunked output |
+| `test_webui_component` | `test/test_webui_component/test_webui_component.cpp` | native / ESP32 | API routes, provider lifecycle, config persistence |
+| `test_schema_memory` | `test/test_schema_memory/test_schema_memory.cpp` | ESP32 | Heap profiling during schema generation (has own `platformio.ini`) |
+| `test_heap_esp8266` | `test/test_heap_esp8266/test_heap_esp8266.cpp` | ESP8266 | Low-heap behavior, combined asset mode, fragmentation |
+
+### Examples
+
+| Example | Path | Description |
+|---------|------|-------------|
+| `HeadlessAPI` | `examples/HeadlessAPI/` | Pure REST API server without serving web assets |
+| `WebUIOnly` | `examples/WebUIOnly/` | Minimal dashboard with self-provider only |

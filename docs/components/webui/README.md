@@ -102,6 +102,21 @@ ptr->registerApiRoute("/api/sensor", HTTP_GET, [](AsyncWebServerRequest* req) {
 | `/api/components/enable` | POST | Enable/disable a provider at runtime |
 | `/api/system/info` | GET | Uptime, heap, and client count |
 
+## Known Issues
+
+### SSE Broadcast WARNING Log Noise
+
+The `sendWebSocketUpdates()` method logs every routine SSE broadcast at WARNING level (`DLOG_W`), producing ~1560 bytes of log output approximately every 5.4 seconds when at least one SSE client is connected. This is a log-severity mismatch -- the message should use DEBUG level. See the [Technical Reference](./technical-reference.md#known-issue-sse-broadcast-log-severity) for details and workarounds.
+
+## Test Suites
+
+| Test | Path | Scope |
+|------|------|-------|
+| `test_streaming_serializer` | `test/test_streaming_serializer/` | Unit tests for `StreamingContextSerializer` pause/resume and JSON correctness |
+| `test_webui_component` | `test/test_webui_component/` | Integration tests for `WebUIComponent` API routes, provider registration, and config |
+| `test_schema_memory` | `test/test_schema_memory/` | Memory-profiling tests for schema generation on constrained targets |
+| `test_heap_esp8266` | `test/test_heap_esp8266/` | Heap fragmentation and low-memory behavior on ESP8266 |
+
 ## Further Reading
 
 - [Technical Reference](./technical-reference.md) -- Full API documentation for all classes and methods

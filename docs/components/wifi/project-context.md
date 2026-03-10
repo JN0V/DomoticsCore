@@ -14,11 +14,12 @@ This document provides structured context for AI coding agents working on the Do
 | **Version** | 1.4.1 |
 | **metadata.name** | `"Wifi"` |
 | **metadata.version** | `"1.4.1"` |
+| **metadata.description** | `"Wifi connectivity management component"` |
 | **Namespace** | `DomoticsCore::Components` (component), `DomoticsCore::HAL::WiFiHAL` (HAL) |
 | **License** | MIT |
 | **Platforms** | espressif32, espressif8266 |
 | **Frameworks** | Arduino |
-| **Author** | JN0V |
+| **metadata.author** | `"DomoticsCore"` (in-code), `"JN0V"` (library.json) |
 
 ---
 
@@ -99,6 +100,9 @@ Mock support is provided by `tests/mocks/MockWifiHAL.h` in the project root `tes
 - **Purpose**: Exposes WiFi settings via browser interface
 - **State tracking**: Uses `LazyState<T>` for efficient delta-based WebSocket updates
 - **Context IDs**: `wifi_status`, `wifi_component`, `wifi_settings`
+- **Additional state**: `pendingSsid`, `pendingPassword`, `pendingApSsid`, `lastScanSummary`
+- **Optional callback**: `setConfigSaveCallback()` for unified config persistence
+- **Accessors**: `getWebUIName()` returns `metadata.name`, `getWebUIVersion()` returns `metadata.version`
 
 ---
 
@@ -180,10 +184,12 @@ This section maps DomoticsCore-Wifi patterns to specific constitution principles
 
 ### Changing Connection Behavior
 
-All connection logic flows through `updateWifiMode()`. The method has four branches:
-- `wifiEnabled && apEnabled` -- dual mode with heap-aware strategies
+All connection logic flows through `updateWifiMode()`. The method has guards followed by four branches:
+- **Stale config guard**: If `wifiEnabled` but `ssid` is empty, disables STA (prevents useless connection attempts from corrupted config)
+- **Ultra-low heap guard** (< 2KB): Disables STA entirely, saves config with `autoConnect=false`
+- `wifiEnabled && apEnabled` -- dual mode with heap-aware strategies (10KB+: direct, 3.5-10KB: channel sync, < 3.5KB: reboot-to-STA)
 - `wifiEnabled && !apEnabled` -- STA only
-- `!wifiEnabled && apEnabled` -- AP only
+- `!wifiEnabled && apEnabled` -- AP only (skips restart if AP already active with correct SSID)
 - `!wifiEnabled && !apEnabled` -- all off
 
 Reconnection is driven by `loop()` polling. Never add blocking waits.

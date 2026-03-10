@@ -196,7 +196,7 @@ Stops connection attempts, calls `HAL::WiFiHAL::disconnectAndOff()`, and returns
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `getConfig()` | `WifiConfig getConfig() const` | Returns current config constructed from internal state |
-| `setConfig()` | `void setConfig(const WifiConfig& cfg)` | Applies new config, schedules deferred mode update |
+| `setConfig()` | `void setConfig(const WifiConfig& cfg)` | Applies new config, syncs `wifiEnabled` with `autoConnect`, schedules deferred mode update |
 | `setCredentials()` | `void setCredentials(const String& ssid, const String& password, bool reconnectNow = true)` | Update STA credentials and optionally reconnect |
 | `setSTACredentials()` | `void setSTACredentials(const String& ssid, const String& password, bool enable)` | Lightweight credential setter avoiding WifiConfig allocation |
 | `setConfigSaveCallback()` | `void setConfigSaveCallback(std::function<void(const WifiConfig&)> callback)` | Set persistence callback (used by SystemWebUISetup) |
@@ -232,11 +232,15 @@ Abstract interface allowing components (MQTT, WebUI, etc.) to depend on network 
 | `getSignalStrength()` | virtual (default 0) | Signal strength in dBm |
 | `getMacAddress()` | virtual (default "") | MAC address |
 
-`WifiComponent` implements all pure virtual methods and provides actual signal strength and MAC address.
+`WifiComponent` implements all pure virtual methods and provides actual signal strength and MAC address. The `setConnectionCallback()` and `getSignalStrength()` virtual methods use the default implementations (no-op and 0 respectively); signal strength is available through `getRSSI()` on the component directly.
 
 ---
 
 ## Connection Modes
+
+### Stale Config Guard
+
+Before entering any mode, `updateWifiMode()` validates that `wifiEnabled = true` with a non-empty SSID. If the SSID is empty (e.g., from a crash that corrupted config), STA is disabled and `shouldConnect` is set to `false` to prevent useless connection attempts.
 
 ### STA Mode (Station)
 
@@ -374,19 +378,39 @@ Optional WebUI integration providing browser-based WiFi configuration.
 
 `WifiWebUI` uses `LazyState<T>` helpers for efficient delta detection. Only changed contexts are pushed to the browser, minimizing bandwidth on constrained devices. Tracked states:
 
-- `wifiStatusState` (bool): STA or AP active
-- `staComponentState` (struct): connected, ssid, ip
-- `staSettingsState` (struct): enabled, ssid
-- `apSettingsState` (struct): enabled, ssid
+- `wifiStatusState` (bool): STA or AP active (for `wifi_status` badge)
+- `apStatusState` (bool): AP active (separate badge tracker)
+- `staComponentState` (struct): connected, ssid, ip (for `wifi_component` card)
+- `staSettingsState` (struct): enabled, ssid (for `wifi_settings` STA section)
+- `apSettingsState` (struct): enabled, ssid (for `wifi_settings` AP section)
+
+### Additional Methods
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `getWebUIName()` | `String getWebUIName() const override` | Returns `wifi->metadata.name` (or `"Wifi"` if null) |
+| `getWebUIVersion()` | `String getWebUIVersion() const override` | Returns `wifi->metadata.version` (or `"1.4.1"` if null) |
+| `setConfigSaveCallback()` | `void setConfigSaveCallback(std::function<void(const WifiConfig&)>)` | Optional callback for unified config persistence |
+
+### Pending State
+
+`WifiWebUI` maintains pending values that buffer user input before applying:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pendingSsid` | String | SSID typed in the UI, applied when `wifi_enabled` toggles on |
+| `pendingPassword` | String | Password from UI, cleared after applying credentials |
+| `pendingApSsid` | String | AP SSID typed while AP is disabled, applied on next AP enable |
+| `lastScanSummary` | String | Cached comma-separated scan results for display |
 
 ### POST Handling
 
-All settings changes go through `handleWebUIRequest()` with `contextId = "wifi_settings"` and `method = "POST"`. Key behaviors:
+All settings changes go through `handleWebUIRequest()` with `contextId = "wifi_settings"` and `method = "POST"`. The legacy context ID `"wifi_sta_settings"` is also accepted for backward compatibility. Key behaviors:
 
 - **wifi_enabled = true**: Validates SSID is not empty, uses lightweight `setSTACredentials()` path, schedules deferred mode update and config save.
 - **wifi_enabled = false**: Disables STA via `setSTACredentials()`.
 - **ap_enabled toggle**: Uses full Get/Override/Set pattern on `WifiConfig`.
-- **ap_ssid change**: Applied immediately if AP is running; stored as pending if AP is disabled.
+- **ap_ssid change**: Applied immediately if AP is running (Get/Override/Set pattern); stored as `pendingApSsid` if AP is disabled.
 - **scan_networks**: Triggers `startScanAsync()`.
 
 ---

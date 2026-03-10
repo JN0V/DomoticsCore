@@ -49,7 +49,7 @@ if (webui && sys) {
 
 ## Examples
 
-- `DomoticsCore-SystemInfo/examples/SystemInfoNoWebUI` – console logging only.
+- `DomoticsCore-SystemInfo/examples/BasicSystemInfo` – console logging only.
 - `DomoticsCore-SystemInfo/examples/SystemInfoWithWebUI` – dashboard integration demo.
 
 ## License

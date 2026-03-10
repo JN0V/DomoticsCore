@@ -967,15 +967,15 @@ When HA sends a command (e.g., turning a switch ON), the flow is:
 2. The MQTT component emits an `mqtt/message` event via the EventBus.
 3. `HomeAssistantComponent` receives the event and extracts the `entityId` from the topic.
 4. The entity is looked up by ID. If not found, the command is ignored with a warning log.
-5. `entity->handleCommand(payload)` is called via **virtual dispatch** (v2.0.0). Each entity type validates the command and stores state internally:
+5. `stats.commandsReceived` is incremented (note: this happens before validation, so invalid commands are counted too).
+6. `entity->handleCommand(payload)` is called via **virtual dispatch** (v2.0.0). Each entity type validates the command and stores state internally:
    - **`HASwitch`**: Sets `state = (payload == payloadOn)`. Returns `true`.
    - **`HALight`**: Parses JSON or simple ON/OFF. Sets `state` and `brightness`. Returns `true` for valid payloads, `false` for garbage.
    - **`HAButton`**: Returns `true` only if `payload == payloadPress`, `false` otherwise.
    - **`HAAlarmControlPanel`**: Parses `"COMMAND"` or `"COMMAND CODE"` format into `lastCommand`/`lastCode`. Returns `true`.
-6. If `handleCommand()` returns `true`, an `HACommandEvent` is emitted on the `ha/command` EventBus topic.
-7. If `handleCommand()` returns `false`, the event is suppressed (invalid command).
-8. For switches with `autoPublishState == true` and `optimistic == false`, the received payload is immediately published back as state.
-9. `stats.commandsReceived` is incremented.
+7. If `handleCommand()` returns `true`, an `HACommandEvent` is emitted on the `ha/command` EventBus topic.
+8. If `handleCommand()` returns `false`, the event is suppressed (invalid command).
+9. For switches with `autoPublishState == true` and `optimistic == false`, the received payload is immediately published back as state.
 
 ### Re-Entrancy Guard
 

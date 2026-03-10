@@ -57,7 +57,6 @@ StorageConfig config;
 config.namespace_name = "demo_app";    // Max 15 characters
 config.readOnly = false;               // Allow write operations
 config.maxEntries = 50;                // Application limit
-config.autoCommit = true;              // Auto-commit changes
 ```
 
 ## Build and Upload
@@ -211,7 +210,7 @@ size_t read = storage->getBlob("config", (uint8_t*)&loadedConfig, sizeof(loadedC
 4. Check read-only mode settings
 
 ### Data Persistence
-1. Ensure `autoCommit` is enabled or call commit manually
+1. Writes are committed immediately — no manual commit needed
 2. Verify data types match between store/retrieve operations
 3. Check key name consistency (case-sensitive)
 

@@ -48,6 +48,11 @@ All source files reside under `DomoticsCore-MQTT/include/DomoticsCore/`:
 | `DomoticsCore-MQTT/README.md` | Component-level README with usage examples and full API reference |
 | `DomoticsCore-MQTT/SPECIFICATIONS.md` | Functional specification document |
 | `DomoticsCore-MQTT/STATE_MACHINE.md` | Detailed state machine documentation with timing diagrams |
+| `DomoticsCore-MQTT/platformio.ini` | PlatformIO project configuration for examples |
+| `DomoticsCore-MQTT/examples/BasicMQTT/` | Minimal MQTT publish/subscribe example |
+| `DomoticsCore-MQTT/examples/MQTTWithWebUI/` | MQTT with WebUI dashboard integration example |
+| `DomoticsCore-MQTT/examples/MQTTWifiWithWebUI/` | MQTT + WiFi provisioning with full WebUI example |
+| `DomoticsCore-MQTT/test/test_mqtt_component/` | Native unit tests using MQTT_Stub |
 
 ---
 
@@ -154,6 +159,21 @@ EventBus event structures use `char[128]` for topics and `char[700]` for payload
 
 Unlike `publish()` (string) and `publishJSON()`, `publishBinary()` returns `false` immediately when disconnected. It does not buffer binary data in the offline queue.
 
+### Removed Dead Config Fields (v1.4.x cleanup)
+
+The following four `MQTTConfig` fields were removed as dead code -- they were declared but never read by any logic in the component:
+
+- `cleanSession` -- MQTT clean-session flag (PubSubClient does not expose this; the broker always sees a clean session)
+- `resubscribeOnConnect` -- redundant because the component always resubscribes from its internal subscription list on connect
+- `connectTimeout` -- PubSubClient manages its own TCP timeout; the field was unused
+- `operationTimeout` -- no per-operation timeout logic existed
+
+**Agent guidance**: Do not re-add these fields. If clean-session control is needed in the future, it must be plumbed through the HAL `connect()` method, which would require a PubSubClient API change or replacement.
+
+### Buffer Size Refresh on Reconnect
+
+`connectInternal()` calls `mqttClient->setBufferSize(MQTT_MAX_PACKET_SIZE)` before every connection attempt. This is defensive -- PubSubClient may reset its internal buffer on disconnect. Without this call, reconnections could silently revert to the default 256-byte buffer, causing large messages (e.g., Home Assistant discovery payloads) to be dropped.
+
 ---
 
 ## Constitution Compliance Reminders
@@ -170,7 +190,7 @@ When working on DomoticsCore-MQTT, the following Constitution principles are esp
 
 5. **Principle XV (Semantic Versioning)**: Version changes must use `tools/bump_version.py`. The version in `library.json` must match `metadata.version` in the constructor (`MQTT_impl.h` line 34).
 
-6. **Principle VII (File Size Limits)**: `MQTT_impl.h` is the largest file at approximately 520 lines (including comments and blank lines). Monitor this if adding features -- it may need splitting if it approaches 800 lines of code.
+6. **Principle VII (File Size Limits)**: `MQTT_impl.h` is the largest file at approximately 557 lines (including comments and blank lines). Monitor this if adding features -- it may need splitting if it approaches 800 lines of code.
 
 7. **Principle II (TDD)**: All new features must have corresponding tests. The `MQTT_Stub.h` mock supports `simulateMessage()` for testing incoming message flows without a real broker.
 

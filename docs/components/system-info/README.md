@@ -13,11 +13,12 @@ When paired with the optional `SystemInfoWebUI` provider, these metrics are expo
 | Metric | Description |
 |--------|-------------|
 | Free / Total / Min Heap | RAM usage and fragmentation tracking |
+| Max Alloc Heap | Largest contiguous free block (fragmentation indicator) |
 | Uptime | Seconds since boot, with human-readable formatting |
 | CPU Frequency | Clock speed in MHz |
 | CPU Load (estimated) | Heuristic based on heap activity, smoothed with EMA |
 | Chip Model / Revision | Hardware identification |
-| Flash / Sketch Size | Firmware storage usage |
+| Flash / Sketch / Free Sketch Space | Firmware storage and OTA update capacity |
 | Boot Diagnostics | Reset reason, boot count, heap at boot |
 
 ## Quick Start

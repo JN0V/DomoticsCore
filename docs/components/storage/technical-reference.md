@@ -15,13 +15,12 @@
 7. [Caching Layer](#caching-layer)
 8. [Namespace Isolation](#namespace-isolation)
 9. [Read-Only Mode](#read-only-mode)
-10. [Auto-Commit](#auto-commit)
-11. [Events](#events)
-12. [WebUI Provider](#webui-provider)
-13. [Hardware Abstraction Layer (HAL)](#hardware-abstraction-layer-hal)
-14. [Platform Implementations](#platform-implementations)
-15. [Supporting Types](#supporting-types)
-16. [Lifecycle](#lifecycle)
+10. [Events](#events)
+11. [WebUI Provider](#webui-provider)
+12. [Hardware Abstraction Layer (HAL)](#hardware-abstraction-layer-hal)
+13. [Platform Implementations](#platform-implementations)
+14. [Supporting Types](#supporting-types)
+15. [Lifecycle](#lifecycle)
 
 ---
 
@@ -35,7 +34,6 @@ struct StorageConfig {
     String componentName  = "";          // Custom component name for multi-instance support
     bool   readOnly       = false;       // Open namespace in read-only mode
     size_t maxEntries     = 100;         // Logical entry cap (1--500)
-    bool   autoCommit     = true;        // Flush writes immediately
 };
 ```
 
@@ -133,6 +131,9 @@ struct StorageKeyDef {
     String key;
     char   type;         // 's'=string, 'b'=bool, 'i'=int, 'f'=float, 'u'=uint64
     String description;
+
+    StorageKeyDef(const String& k, char t, const String& desc = "")
+        : key(k), type(t), description(desc) {}
 };
 ```
 
@@ -212,7 +213,15 @@ String getStorageInfo();          // Multi-line human-readable status string
 
 ## Caching Layer
 
-`StorageComponent` maintains an in-memory `std::map<String, StorageEntry>` cache. Every successful `put*` call (including `putULong64`) writes through to the backend and simultaneously updates the cache. The cache is consulted for `getEntryCount()` and `getFreeEntries()` but is **not** consulted for `get*` reads -- those always go to the backend. The cache is cleared on `shutdown()`, `clear()`, and individual entries are evicted on `remove()`.
+`StorageComponent` maintains an in-memory `std::map<String, StorageEntry>` cache.
+
+**Write deduplication**: Before every `put*` call (String, Int, Float, Bool, ULong64), the cache is checked. If the key already exists in the cache with the same type and value, the call returns `true` immediately without touching the backend or emitting an event. This reduces flash wear and unnecessary event traffic. `putBlob` does **not** perform this deduplication and always writes through.
+
+**Write-through**: When a value has actually changed (or is new), the backend write is performed first. On success, the cache is updated and a `storage/changed` event is emitted.
+
+**Read path**: `get*` methods always read from the backend; the cache is **not** consulted for reads. The cache is only used for `getEntryCount()` and `getFreeEntries()`.
+
+**Eviction**: The cache is cleared on `shutdown()` and `clear()`. Individual entries are evicted on `remove()`.
 
 ---
 
@@ -230,11 +239,7 @@ When running multiple `StorageComponent` instances, set `StorageConfig::componen
 
 Set `StorageConfig::readOnly = true` to open the namespace without write permission. On ESP32, this maps directly to `Preferences::begin(name, true)`. All `put*` calls will fail because the HAL backend rejects writes when opened read-only.
 
----
-
-## Auto-Commit
-
-When `StorageConfig::autoCommit` is `true` (the default), the HAL backend flushes data to persistent storage on every write. On ESP32, NVS commits are inherent per-call. On ESP8266, the LittleFS JSON file is rewritten after every `put*` call when the dirty flag is set.
+> **Migration note**: The `autoCommit` field has been removed from `StorageConfig`. Writes are always committed to the backend immediately. No configuration is needed.
 
 ---
 
@@ -381,10 +386,14 @@ struct StorageEntry {
     uint64_t              uint64Value;
     std::vector<uint8_t>  blobValue;
     size_t                size;
+
+    StorageEntry()
+        : type(StorageValueType::String), intValue(0), floatValue(0.0f),
+          boolValue(false), uint64Value(0), size(0) {}
 };
 ```
 
-Used internally by the caching layer. Each `put*` call constructs a `StorageEntry` and stores it in the cache map.
+Used internally by the caching layer. Each `put*` call constructs a `StorageEntry` and stores it in the cache map. The default constructor zero-initializes all numeric fields.
 
 ---
 

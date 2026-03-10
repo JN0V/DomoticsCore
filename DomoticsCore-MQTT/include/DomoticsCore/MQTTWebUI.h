@@ -75,7 +75,6 @@ protected:
                 .withField(WebUIField("password", "Password", WebUIFieldType::Text, ""))
                 .withField(WebUIField("client_id", "Client ID", WebUIFieldType::Text, ""))
                 .withField(WebUIField("use_tls", "Use TLS/SSL", WebUIFieldType::Boolean, "false"))
-                .withField(WebUIField("clean_session", "Clean Session", WebUIFieldType::Boolean, "true"))
                 .withField(WebUIField("lwt_enabled", "Last Will Enabled", WebUIFieldType::Boolean, "false"))
                 .withField(WebUIField("lwt_topic", "LWT Topic", WebUIFieldType::Text, ""))
                 .withField(WebUIField("lwt_message", "LWT Message", WebUIFieldType::Text, ""))
@@ -132,7 +131,6 @@ public:
             doc["username"] = cfg.username;
             doc["client_id"] = cfg.clientId;
             doc["use_tls"] = cfg.useTLS;
-            doc["clean_session"] = cfg.cleanSession;
             doc["lwt_enabled"] = cfg.enableLWT;
             doc["lwt_topic"] = cfg.lwtTopic;
             doc["lwt_message"] = cfg.lwtMessage;
@@ -238,8 +236,6 @@ public:
                     cfg.clientId = value;
                 } else if (field == "use_tls") {
                     cfg.useTLS = (value == "true" || value == "1");
-                } else if (field == "clean_session") {
-                    cfg.cleanSession = (value == "true" || value == "1");
                 } else if (field == "lwt_enabled") {
                     cfg.enableLWT = (value == "true" || value == "1");
                 } else if (field == "lwt_topic") {

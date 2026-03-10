@@ -89,6 +89,16 @@ emit("mqtt/publish", ev);
 
 Optional: **DomoticsCore-WebUI** for the web configuration interface.
 
+## Examples
+
+Three ready-to-use examples are included:
+
+| Example | Description |
+|---------|-------------|
+| `BasicMQTT` | Minimal MQTT publish/subscribe without WebUI |
+| `MQTTWithWebUI` | MQTT with WebUI dashboard integration |
+| `MQTTWifiWithWebUI` | MQTT + WiFi provisioning with WebUI |
+
 ## Detailed Documentation
 
 - **[Technical Reference](./technical-reference.md)** -- full API, state machine, configuration details, event system, and WebUI provider

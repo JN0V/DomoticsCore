@@ -57,14 +57,19 @@ on<float>("sensor/temperature", [](const float& temp) {
 
 ### 1. Component Ready Notification
 
+The `EVENT_COMPONENT_READY` event is published **automatically** by the `ComponentRegistry` after each successful `begin()` call. You do NOT need to publish it manually:
+
 ```cpp
 ComponentStatus begin() override {
-    // Initialization logic...
-    
-    if (__dc_eventBus) {
-        __dc_eventBus->publish(EVENT_COMPONENT_READY, metadata.name, true);
-    }
+    // Just return Success -- ComponentRegistry publishes EVENT_COMPONENT_READY for you
     return ComponentStatus::Success;
+}
+
+// To react to another component becoming ready:
+void afterAllComponentsReady() override {
+    on<const char*>("component/ready", [](const char* name) {
+        DLOG_I("APP", "Component ready: %s", name);
+    });
 }
 ```
 
@@ -72,11 +77,10 @@ ComponentStatus begin() override {
 
 ```cpp
 ComponentStatus begin() override {
-    if (__dc_eventBus) {
-        __dc_eventBus->subscribe(EVENT_NETWORK_READY, [this](const void*) {
-            onNetworkReady();
-        });
-    }
+    // Subscribe to WiFi connected event (defined in WifiEvents.h)
+    on<bool>("wifi/sta/connected", [this](const bool&) {
+        onNetworkReady();
+    }, true);  // replayLast=true in case WiFi connected before this component
     return ComponentStatus::Success;
 }
 ```
@@ -110,13 +114,29 @@ on<String>("sensor/request", [this](const String& param) {
 
 ## Lifecycle Events
 
-| Event Constant | Topic | Payload | Sticky |
+Core lifecycle events are defined in `DomoticsCore-Core/include/DomoticsCore/Events.h`:
+
+| Event Constant | Topic | Payload | Source |
 |---------------|-------|---------|--------|
-| `EVENT_COMPONENT_READY` | `system/component/ready` | Component name | Yes |
-| `EVENT_SYSTEM_READY` | `system/ready` | - | Yes |
-| `EVENT_STORAGE_READY` | `system/storage/ready` | - | Yes |
-| `EVENT_NETWORK_READY` | `system/network/ready` | IP address | Yes |
-| `EVENT_SHUTDOWN_START` | `system/shutdown` | - | No |
+| `EVENT_COMPONENT_READY` | `component/ready` | `const char*` (component name) | Core (ComponentRegistry) |
+| `EVENT_COMPONENT_ERROR` | `component/error` | Component name | Core |
+| `EVENT_SYSTEM_READY` | `system/ready` | `String("")` | Core (ComponentRegistry) |
+| `EVENT_SYSTEM_REBOOT` | `system/reboot` | - | System |
+| `EVENT_SHUTDOWN_START` | `shutdown/start` | `String("")` | Core (ComponentRegistry) |
+
+Component-specific events are defined in their respective `*Events.h` files:
+
+| Event | Topic | Defined In |
+|-------|-------|-----------|
+| WiFi connected | `wifi/sta/connected` | `WifiEvents.h` |
+| WiFi AP enabled | `wifi/ap/enabled` | `WifiEvents.h` |
+| Network ready | `network/ready` | `WifiEvents.h` |
+| MQTT connected | `mqtt/connected` | `MQTTEvents.h` |
+| MQTT message | `mqtt/message` | `MQTTEvents.h` |
+| NTP synced | `ntp/synced` | `NTPEvents.h` |
+| OTA events | `ota/start`, `ota/progress`, etc. | `OTAEvents.h` |
+| HA discovery | `ha/discovery_published` | `HAEvents.h` |
+| Storage ready | `storage/ready` | `StorageEvents.h` |
 
 ## Best Practices
 

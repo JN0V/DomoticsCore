@@ -230,8 +230,7 @@ struct SystemConfig {
     // WiFi (required for network features)
     String wifiSSID = "";
     String wifiPassword = "";
-    uint32_t wifiTimeout = 30000;  // 30 seconds
-    
+
     // LED (automatic status visualization)
     bool enableLED = true;
     uint8_t ledPin = 2;
@@ -364,6 +363,10 @@ For advanced/custom usage:
 - `DomoticsCore-Coordinator/examples/BasicCoordinator/` - Manual state management
 - `DomoticsCore-RemoteConsole/examples/BasicRemoteConsole/` - Console-only
 - See individual component READMEs
+
+## Migration Notes
+
+Three dead fields have been removed from `SystemConfig`: the HA discovery-prefix string, the WebUI enable-API flag, and the WiFi timeout field. Users who set these fields should delete those lines. HA discovery prefix is managed via `HAConfig.discoveryPrefix`. WiFi timeout is managed via `WifiConfig.connectionTimeout`.
 
 ## License
 

@@ -66,8 +66,10 @@ This file provides structured context for AI assistants and developers working o
 - Core responsibility: collect and cache system metrics at a configurable interval.
 - Header-only implementation; all logic resides in `SystemInfo.h`.
 - Protected nested struct `SystemMetrics` stores cached values.
-- CPU load estimated via heap-activity heuristic with EMA smoothing.
+- Protected EMA state: `lastHeapCheck`, `lastHeapValue`, `cpuLoadEma` support the CPU load heuristic.
+- CPU load estimated via heap-activity heuristic with EMA smoothing (alpha = 0.3).
 - Boot diagnostics (volatile) captured in `begin()`; boot count set externally by `System`.
+- Private methods: `initBootDiagnostics()` (boot-time capture) and `updateMetrics()` (periodic refresh).
 
 ### `SystemInfoConfig` (struct)
 
@@ -169,7 +171,7 @@ The `loop()` method uses `HAL::Platform::getMillis()` with interval comparison. 
 | IV. YAGNI | Compliant | No speculative features. Only metrics that are actually used. |
 | V. Performance First | Compliant | Cached metrics with configurable interval. EMA avoids allocation. `formatBytes` uses stack-local Strings. |
 | VI. EventBus | N/A | No inter-component events emitted (read-only diagnostic data). |
-| VII. File Size | Compliant | `SystemInfo.h` is 265 lines. `SystemInfoWebUI.h` is 166 lines. Both well under the 800-line limit. |
+| VII. File Size | Compliant | `SystemInfo.h` is 264 lines. `SystemInfoWebUI.h` is 165 lines. Both well under the 800-line limit. |
 | VIII. Progressive Refactoring | Compliant | Evolved from v1.0 to v1.4.0 with incremental additions (boot diagnostics, CPU load, WebUI). |
 | IX. HAL Isolation | Compliant | Zero `#ifdef` in component code. All platform calls go through `HAL::Platform::*`. |
 | X. Non-Blocking Timer | Compliant | Uses `HAL::Platform::getMillis()` interval check. No `delay()` calls. |

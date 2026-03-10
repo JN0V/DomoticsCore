@@ -66,10 +66,11 @@ lib_deps =
 
 ## Dependencies
 
-| Dependency | Version | Required |
-|---|---|---|
-| DomoticsCore-Core | >= 1.0.0 | Yes |
-| DomoticsCore-WebUI | >= 0.1.0 | No (for WebUI only) |
+| Dependency | Version | Required | Purpose |
+|---|---|---|---|
+| DomoticsCore-Core | >= 1.0.0 | Yes | `IComponent`, `Logger`, `Timer`, `Platform_HAL`, EventBus |
+| DomoticsCore-WebUI | >= 0.1.0 | No | `CachingWebUIProvider`, `WebUIComponent`, `LazyState<T>` |
+| ArduinoJson | (transitive via WebUI) | No | JSON serialization in `NTPWebUI` |
 
 ## Examples
 
@@ -84,6 +85,22 @@ lib_deps =
 - [Project Context](project-context.md) -- AI-oriented context file with file inventory, dependency map, and constitution compliance notes.
 - [HAL Architecture](../../architecture/hal-architecture.md) -- how the NTP HAL fits into the DomoticsCore platform abstraction model.
 - [Component Lifecycle](../../architecture/component-lifecycle.md) -- `begin()` / `loop()` / `shutdown()` lifecycle contract.
+
+## Source File Summary
+
+| File | Lines | Role |
+|---|---|---|
+| `NTP.h` | 524 | `NTPConfig`, `NTPStatistics`, `Timezones`, `NTPComponent` |
+| `NTPEvents.h` | 21 | Event topic constants (`ntp/synced`, `ntp/sync_failed`) |
+| `NTP_HAL.h` | 95 | HAL routing header, backward-compatible API |
+| `NTP_ESP32.h` | 49 | ESP32 `esp_sntp` implementation |
+| `NTP_ESP8266.h` | 46 | ESP8266 `configTime`/`sntp` implementation |
+| `NTP_Stub.h` | 27 | No-op stubs for native/test builds |
+| `NTPWebUI.h` | 338 | WebUI provider, 29-entry timezone lookup table |
+
+## Testing
+
+33 native unit tests in `DomoticsCore-NTP/test/test_ntp_component/test_ntp_component.cpp` covering events, lifecycle, configuration, sync status, timezones, callbacks, uptime, edge cases, and memory stability.
 
 ## License
 

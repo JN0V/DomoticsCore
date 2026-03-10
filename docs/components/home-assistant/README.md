@@ -232,6 +232,7 @@ haPtr->publishState("relay", "ON");  // Calls const char* overload, not bool
 
 ## Further Reading
 
+- [Documentation Index](./index.md) -- Master entry point with quick reference tables and source tree.
 - [Technical Reference](./technical-reference.md) -- Full API documentation, MQTT topic details, and payload formats.
 - [Project Context](./project-context.md) -- AI context file with class inventory, dependencies, and conventions.
 - [Alarm Control Panel Deep-Dive](../../deep-dive-ha-alarm-control-panel.md) -- Exhaustive analysis of the alarm panel implementation.

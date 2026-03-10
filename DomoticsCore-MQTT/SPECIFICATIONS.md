@@ -16,7 +16,6 @@
 - **Connection state monitoring** (Disconnected, Connecting, Connected, Error)
 - **Persistent credentials** stored in ESP32 Preferences
 - **TLS/SSL support** (optional, for secure connections)
-- **Clean session** vs **persistent session** options
 - **Last Will and Testament (LWT)** support
 - **Keep-alive** interval configuration (default: 60s)
 
@@ -65,16 +64,13 @@ struct MQTTConfig {
     String broker;              // "mqtt.example.com" or IP
     uint16_t port;              // Default: 1883 (non-TLS), 8883 (TLS)
     bool useTLS;                // Default: false
-    
+    uint16_t keepAlive;         // Seconds, default: 60
+
     // Authentication
     String username;            // Optional
     String password;            // Optional
     String clientId;            // Auto-generated if empty
-    
-    // Session
-    bool cleanSession;          // Default: true
-    uint16_t keepAlive;         // Seconds, default: 60
-    
+
     // Last Will
     bool enableLWT;             // Default: true
     String lwtTopic;            // Default: "{clientId}/status"
@@ -93,11 +89,6 @@ struct MQTTConfig {
     
     // Subscriptions
     uint8_t maxSubscriptions;   // Default: 50
-    bool resubscribeOnConnect;  // Default: true
-    
-    // Timeouts
-    uint32_t connectTimeout;    // Milliseconds, default: 10000
-    uint32_t operationTimeout;  // Milliseconds, default: 5000
 };
 ```
 
@@ -111,7 +102,6 @@ struct MQTTConfig {
   - `mqtt_username`
   - `mqtt_password`
   - `mqtt_client_id`
-  - `mqtt_clean_ses`
   - `mqtt_keepalive`
   - `mqtt_lwt_topic`
   - `mqtt_lwt_msg`
@@ -233,7 +223,6 @@ class MQTTWebUI : public IWebUIProvider {
   - `password`: Password input - "Password" (optional)
   - `client_id`: Text input - "Client ID" (auto-generated if empty)
   - `use_tls`: Boolean toggle - "Use TLS/SSL"
-  - `clean_session`: Boolean toggle - "Clean Session"
   - `lwt_enabled`: Boolean toggle - "Last Will Enabled"
   - `lwt_topic`: Text input - "LWT Topic"
   - `lwt_message`: Text input - "LWT Message"

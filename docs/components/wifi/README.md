@@ -67,10 +67,47 @@ if (webui && wifi) {
 }
 ```
 
+## Source Tree
+
+```
+DomoticsCore-Wifi/
+├── include/DomoticsCore/
+│   ├── Wifi.h                  # WifiConfig + WifiComponent (business logic)
+│   ├── Wifi_HAL.h              # HAL routing: enums + inline delegates
+│   ├── Wifi_ESP32.h            # ESP32 WiFiImpl (WiFi.h wrapper)
+│   ├── Wifi_ESP8266.h          # ESP8266 WiFiImpl (ESP8266WiFi.h wrapper)
+│   ├── Wifi_Stub.h             # Native test stub (no-ops, controllable flags)
+│   ├── INetworkProvider.h      # Abstract network interface (DIP)
+│   ├── WifiEvents.h            # Event topic constants
+│   ├── WifiWebUI.h             # CachingWebUIProvider for browser config
+│   ├── WiFiServer_HAL.h        # WiFiServer routing header
+│   ├── WiFiServer_ESP32.h      # ESP32 WiFiServer type aliases
+│   ├── WiFiServer_ESP8266.h    # ESP8266 WiFiServer type aliases
+│   ├── WiFiServer_Stub.h       # Stub WiFiServer + WiFiClient with test helpers
+│   ├── IPAddress_Stub.h        # Stub IPAddress for native tests
+│   └── DocMainpage.h           # Doxygen mainpage (documentation only)
+├── examples/
+│   ├── BasicWifi/              # CLI-only demo (5 phases: connect, scan, AP, STA+AP, reconnect)
+│   └── WifiWithWebUI/          # WebUI integration demo (AP mode + browser config)
+├── test/
+│   ├── test_wifi_component/    # Unit tests for WifiComponent logic
+│   └── test_wifi_webui/        # Unit tests for WifiWebUI provider
+├── library.json                # PlatformIO metadata (v1.4.1)
+├── platformio.ini              # Build config (native test environment)
+└── README.md                   # Component README
+```
+
 ## Platform Notes
 
 - **ESP32**: AP and STA use separate radios. Simultaneous AP+STA works on different channels without disruption.
 - **ESP8266**: Single radio shared between AP and STA. The component handles channel synchronization by stopping the AP during STA connection, then restarting it on the STA channel.
+
+## Examples
+
+| Directory | Description |
+|-----------|-------------|
+| `DomoticsCore-Wifi/examples/BasicWifi/` | CLI-only WiFi control, status monitoring, scanning, AP mode switching |
+| `DomoticsCore-Wifi/examples/WifiWithWebUI/` | WebUI integration with settings card, async scanning, live status badges |
 
 ## Further Reading
 

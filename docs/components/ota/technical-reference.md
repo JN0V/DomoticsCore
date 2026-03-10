@@ -21,6 +21,8 @@ This document provides the complete API surface, configuration options, state ma
 11. [OTAWebUI Provider](#otawebui-provider)
 12. [REST Endpoints](#rest-endpoints)
 13. [Update HAL](#update-hal)
+14. [Internal Helpers (Private)](#internal-helpers-private)
+15. [Known Issues and Warnings](#known-issues-and-warnings)
 
 ---
 
@@ -208,6 +210,8 @@ ota->setDownloader([](const String& url, size_t& totalSize,
 
 If either provider is not set, the corresponding network features log an error and fail gracefully.
 
+**Watchdog safety**: During remote downloads, the `installFromUrl` chunk callback calls `HAL::Platform::yield()` after each chunk write to prevent watchdog timer resets on long transfers.
+
 ---
 
 ## TLS and Certificate Configuration
@@ -362,6 +366,11 @@ When `enableWebUIUpload` is `false`, the card omits the file upload field and us
 
 `OTAWebUI` uses `LazyState<OTAState>` to track `(state, progress, bytes)`. WebSocket updates are only pushed when these values change, reducing unnecessary traffic.
 
+### Internal Utility
+
+- `respondJson(request, fn)` -- static template helper that creates an `AsyncResponseStream`, builds a `JsonDocument` via the provided lambda, serializes, and sends. Used by all REST endpoint handlers.
+- `stateToString(state)` -- static method converting `OTAComponent::State` enum to lowercase strings (`"idle"`, `"checking"`, `"downloading"`, `"applying"`, `"reboot_pending"`, `"error"`). Note: a separate free function with the same name exists in the anonymous namespace of `OTA.cpp`.
+
 ### Supported WebUI Interactions (POST)
 
 | Field | Action |
@@ -395,11 +404,13 @@ Defined in `DomoticsCore/Update_HAL.h`. This is a routing header that includes t
 
 | Platform | Implementation Header | Notes |
 |----------|-----------------------|-------|
-| ESP32 | `Update_ESP32.h` | Direct flash write via ESP32 Update library |
-| ESP8266 | `Update_ESP8266.h` | Direct flash write using `Update.runAsync(true)` for async-safe writes |
-| Other | `Update_Stub.h` | No-op stub for native testing |
+| ESP32 | `Update_ESP32.h` (100 lines) | Direct flash write via ESP32 `Update` library |
+| ESP8266 | `Update_ESP8266.h` (120 lines) | Direct flash write using `Update.runAsync(true)` for async-safe writes |
+| Other | `Update_Stub.h` (48 lines) | No-op stub for native testing (all writes succeed) |
 
 ### Key HAL Functions Used
+
+All three platform implementations expose the same interface in `DomoticsCore::HAL::OTAUpdate`:
 
 | Function | Description |
 |----------|-------------|
@@ -408,9 +419,48 @@ Defined in `DomoticsCore/Update_HAL.h`. This is a routing header that includes t
 | `HAL::OTAUpdate::end(true)` | Finalize flash write |
 | `HAL::OTAUpdate::abort()` | Cancel in-progress update |
 | `HAL::OTAUpdate::errorString()` | Last error description |
+| `HAL::OTAUpdate::hasError()` | Error flag |
 | `HAL::OTAUpdate::hasPendingData()` | Always returns `false` (legacy buffering API, now unused on all platforms) |
 | `HAL::OTAUpdate::processBuffer(error)` | No-op on all platforms (returns `0`). Retained for interface compatibility. |
 | `HAL::OTAUpdate::requiresBuffering()` | Returns `false` on all platforms (ESP8266 now uses `Update.runAsync(true)` for direct writes) |
 | `HAL::OTAUpdate::hasBufferOverflow()` | Always returns `false` (no buffering on any platform) |
 | `HAL::OTAUpdate::getBytesWritten()` | Total bytes committed to flash |
 | `HAL::SHA256` | SHA-256 context for download integrity verification |
+
+### Platform-Specific Notes
+
+- **ESP32**: Uses the standard `Update` library. `UPDATE_SIZE_UNKNOWN` is `0xFFFFFFFF`.
+- **ESP8266**: `Update.runAsync(true)` disables `yield()` inside `Update.write()`, preventing `__yield` panic in async callbacks. When size is `0`, calculates available space via `ESP.getFreeSketchSpace()`. `UPDATE_SIZE_UNKNOWN` is `0`. Abort explicitly calls `Update.runAsync(false)` and `Update.clearError()`.
+- **Stub**: All operations succeed. `errorString()` returns `"Update not supported on this platform"`. `UPDATE_SIZE_UNKNOWN` is `0xFFFFFFFF`.
+
+---
+
+## Internal Helpers (Private)
+
+These private methods of `OTAComponent` are documented for maintainers and AI agents.
+
+| Method | Signature | Purpose |
+|--------|-----------|---------|
+| `scheduleNextCheck` | `void scheduleNextCheck(uint32_t delayMs = 0)` | Sets `nextCheckMillis` for periodic auto-check. Uses `config.checkIntervalMs` if `delayMs` is 0. No-op if both are 0. |
+| `transition` | `void transition(State next, const String& reason = "")` | Changes state, resets `stateChangeMillis` and `lastProgressPublishMillis`, logs the transition. |
+| `shouldCheckNow` | `bool shouldCheckNow() const` | Returns `true` if `checkIntervalMs > 0` and the timer has elapsed. |
+| `performCheck` | `bool performCheck(bool force)` | Orchestrates manifest fetch, version comparison, and `installFromUrl`. |
+| `fetchManifest` | `ManifestInfo fetchManifest()` | Calls `manifestFetcher` callback, parses JSON into `ManifestInfo`. |
+| `installFromUrl` | `bool installFromUrl(const String& url, const String& expectedSha256, bool allowDowngrade)` | Downloads firmware via `downloader` callback, writes chunks through HAL, computes SHA-256, calls `finalizeUpdateOperation`. |
+| `finalizeUpdateOperation` | `bool finalizeUpdateOperation(const String& source, bool autoRebootPending)` | Sets progress to 100%, emits `EVENT_COMPLETE` and `EVENT_COMPLETED` (sticky), transitions to `RebootPending` or `Idle`. |
+| `verifySha256` | `bool verifySha256(const uint8_t* digest, const String& expectedHex)` | Compares computed digest against expected hex (case-insensitive, strips spaces and colons). |
+| `isNewerVersion` | `bool isNewerVersion(const String& candidate) const` | Semantic version comparison (major.minor.patch) against `metadata.version`. |
+| `broadcastProgress` | `void broadcastProgress()` | **Dead code**: defined but never called. Emits a progress event with `percent`, `downloaded`, `total`, `state`. All actual progress events use `publishStatusEvent()` instead. |
+| `publishStatusEvent` | `void publishStatusEvent(const String& topic, fn, bool sticky)` | Builds JSON payload via callback, auto-injects `state`, `progress`, `lastResult`, serializes and emits via EventBus. |
+
+---
+
+## Known Issues and Warnings
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| C14 | Minor | `EVENT_START` and `EVENT_END` are defined in `OTAEvents.h` but never emitted by `OTAComponent`. |
+| C15 | Minor | `State::Applying` exists in the enum but `transition(State::Applying, ...)` is never called. |
+| BUG-1 | Minor | `OTAWebUI::getWebUIVersion()` returns hardcoded `"1.4.0"` instead of `"1.4.1"`. |
+| DEAD-1 | Cosmetic | `broadcastProgress()` is defined but never called (607 lines in OTA.cpp). |
+| LEGACY-1 | Cosmetic | `loop()` checks `hasPendingData()` / `processBuffer()` which are no-ops on all platforms since buffering was removed. |

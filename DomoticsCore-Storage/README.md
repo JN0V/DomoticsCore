@@ -44,13 +44,17 @@ if (storage) {
 Main behaviors:
 - Opens ESP32 Preferences namespace defined in `StorageConfig` (default `domotics`).
 - Maintains an in-memory cache and periodic maintenance timers.
-- Respects `autoCommit` flag for automatic flush.
+- Writes are committed immediately to persistent storage.
 - Can be opened in read-only mode for diagnostics.
 
 ## Examples
 
 - `DomoticsCore-Storage/examples/StorageNoWebUI` – headless storage usage.
 - `DomoticsCore-Storage/examples/StorageWithWebUI` – adds the WebUI provider wrapper.
+
+## Migration Notes
+
+The auto-commit flag has been removed from `StorageConfig`. Writes are always committed immediately — no configuration needed.
 
 ## License
 

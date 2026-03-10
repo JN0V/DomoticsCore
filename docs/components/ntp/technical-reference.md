@@ -293,13 +293,19 @@ The HAL provides a platform-independent interface. The routing header selects th
 | `getTime` | `time_t getTime()` | Returns current `time(nullptr)`. |
 | `getFormattedTime` | `bool getFormattedTime(const char* format, char* buffer, size_t bufferSize)` | Format current local time into buffer. Returns `false` if not synced. |
 
+### HAL Internal Architecture
+
+The public `HAL::NTP` namespace delegates to a platform-specific `HAL::NTPImpl` namespace. The routing header `NTP_HAL.h` selects the implementation at compile time using `DOMOTICS_PLATFORM_ESP32` and `DOMOTICS_PLATFORM_ESP8266` macros. Each platform file provides five inline functions in `NTPImpl`: `init`, `setTimezone`, `setSyncInterval`, `stop`, `forceSync`.
+
+The `HAL::NTP` namespace adds three additional functions not delegated to `NTPImpl`: `isSynced()` (uses threshold `1577836800` / 2020-01-01), `getTime()` (returns `time(nullptr)`), and `getFormattedTime()` (formats via `localtime_r` + `strftime`).
+
 ### Platform Notes
 
-**ESP32**: `forceSync()` calls `sntp_restart()`, which reinitializes the SNTP client and triggers an immediate poll. `setSyncInterval()` calls `sntp_set_sync_interval()`.
+**ESP32** (`NTP_ESP32.h`): Uses the `esp_sntp` API. `init()` sets POLL operating mode and configures up to 3 servers. `forceSync()` calls `sntp_restart()`, which reinitializes the SNTP client and triggers an immediate poll. `setSyncInterval()` calls `sntp_set_sync_interval()`.
 
-**ESP8266**: `forceSync()` stops and reinitializes SNTP (`sntp_stop()` + `sntp_init()`). `setSyncInterval()` is a no-op because the ESP8266 SNTP library does not expose interval control.
+**ESP8266** (`NTP_ESP8266.h`): Uses `configTime()` for initialization and the `sntp` library for stop/restart. `forceSync()` stops and reinitializes SNTP (`sntp_stop()` + `sntp_init()`). `setSyncInterval()` is a no-op because the ESP8266 SNTP library does not expose interval control.
 
-**Stub**: All functions are no-ops, suitable for native unit testing.
+**Stub** (`NTP_Stub.h`): All five functions are no-ops. Guard macro: `!DOMOTICS_PLATFORM_ESP32 && !DOMOTICS_PLATFORM_ESP8266`. Suitable for native unit testing.
 
 ---
 
@@ -379,6 +385,10 @@ Accepts field-by-field configuration updates via `field` and `value` parameters:
 
 After any successful settings update, a `syncNow()` is triggered automatically if NTP is enabled. If a config save callback is registered, it is also invoked.
 
+**Server parsing detail**: The `servers` field value is split on commas. Each segment is trimmed and empty strings are discarded. Example: `"pool.ntp.org, time.google.com"` produces a two-element vector.
+
+**Error responses**: Unknown fields return `{"success":false,"error":"Unknown field"}`. Non-POST methods other than GET return `{"success":false,"error":"Method not allowed"}`.
+
 ### Timezone Lookup Table
 
 The `TIMEZONE_LOOKUP` constexpr array contains 29 entries mapping POSIX TZ strings to user-friendly city/region names. It is stored in flash (not RAM) to conserve approximately 3-4 KB of heap on ESP8266.
@@ -455,3 +465,39 @@ The internal buffer is 128 bytes. Formats producing output exceeding this length
 | Typical sync time | 1-5 seconds |
 | CPU impact | Minimal (SNTP runs in background) |
 | `loop()` overhead | Negligible (two `time()` calls + timer check) |
+
+---
+
+## Test Coverage
+
+The component ships with 33 native unit tests in `DomoticsCore-NTP/test/test_ntp_component/test_ntp_component.cpp`, using the Unity test framework. Test categories:
+
+| Category | Tests | What They Cover |
+|---|---|---|
+| Events | 1 | `NTPEvents` constants are defined and have correct values |
+| Component creation | 2 | Default construction, construction with custom config |
+| Config | 3 | Default values, get/set round-trip, timezone config |
+| Timezone presets | 1 | All 8 preset strings verified against expected POSIX values |
+| Sync status | 3 | Initial state, `syncNow()` disabled, `syncNow()` enabled + double-call guard |
+| Statistics | 1 | Initial zero values for all counters |
+| Lifecycle | 4 | `begin()`/`shutdown()` return values, disabled begin, full lifecycle with Core |
+| Non-blocking | 2 | `loop()` throughput, `NonBlockingDelay` integration |
+| Time methods | 5 | Timezone get/set, formatted time when not synced, ISO 8601 when not synced, Unix time |
+| Uptime | 2 | `getUptimeMs()` non-negative, formatted uptime contains "s" |
+| Callbacks | 1 | Callback registration without invocation |
+| Next sync | 2 | Returns 0 when not synced, returns 0 when disabled |
+| Config updates | 2 | Server list update, timeout update |
+| Edge cases | 3 | Empty server list, multiple timezone changes, no dependencies |
+| Memory stability | 2 | Lifecycle leak test via `HeapTracker`, config change leak test |
+
+**Note**: `NTPWebUI` has no dedicated unit tests. WebUI behavior is validated only through integration testing.
+
+---
+
+## Known Issues and Errata
+
+1. **Stale class docstring in `NTPWebUI.h`**: Lines 67-71 reference four UI contexts (`ntp_status`, `ntp_dashboard`, `ntp_settings`, `ntp_detail`), but only `ntp_time` and `ntp_settings` are implemented in `buildContexts()`.
+
+2. **Version fallback mismatch**: `NTPWebUI::getWebUIVersion()` returns `"1.0.2"` when the NTP pointer is null (line 145), which does not match the current component version `1.3.0`.
+
+3. **SPECIFICATIONS.md is outdated**: The specifications file is pinned at v0.1.0 and describes an older API surface (e.g., `getName()`/`getVersion()` virtual methods, a `NTPStatistics` struct without `lastFailTime`/`consecutiveFailures`, four WebUI contexts). It should be treated as historical reference only.

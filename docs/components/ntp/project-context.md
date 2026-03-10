@@ -26,16 +26,20 @@ This document provides structured context for AI assistants working on the Domot
 ```
 DomoticsCore-NTP/
   library.json                              # PlatformIO package manifest (v1.3.0)
+  platformio.ini                            # Build configuration for component tests
   README.md                                 # Component README with usage examples
-  SPECIFICATIONS.md                         # Design specifications document
+  SPECIFICATIONS.md                         # Design specifications document (v0.1.0, partially outdated)
   include/DomoticsCore/
-    NTP.h                                   # NTPConfig, NTPStatistics, NTPComponent class
-    NTPEvents.h                             # Event constants: ntp/synced, ntp/sync_failed
-    NTP_HAL.h                               # HAL routing header (selects platform impl)
-    NTP_ESP32.h                             # ESP32 implementation using esp_sntp
-    NTP_ESP8266.h                           # ESP8266 implementation using configTime/sntp
-    NTP_Stub.h                              # No-op stubs for native/test builds
-    NTPWebUI.h                              # WebUI provider, timezone lookup table
+    NTP.h                      (524 lines)  # NTPConfig, NTPStatistics, NTPComponent class
+    NTPEvents.h                 (21 lines)  # Event constants: ntp/synced, ntp/sync_failed
+    NTP_HAL.h                   (95 lines)  # HAL routing header (selects platform impl)
+    NTP_ESP32.h                 (49 lines)  # ESP32 implementation using esp_sntp
+    NTP_ESP8266.h               (46 lines)  # ESP8266 implementation using configTime/sntp
+    NTP_Stub.h                  (27 lines)  # No-op stubs for native/test builds
+    NTPWebUI.h                 (338 lines)  # WebUI provider, timezone lookup table
+  test/
+    test_ntp_component/
+      test_ntp_component.cpp   (571 lines)  # 33 Unity tests (events, lifecycle, config, memory)
   examples/
     BasicNTP/                               # Minimal time sync example
     NTPWithWebUI/                           # Full WebUI integration example
@@ -95,6 +99,12 @@ HAL namespace providing platform-independent inline functions: `init`, `setTimez
 
 WebUI provider extending `CachingWebUIProvider`. Holds a non-owning pointer to `NTPComponent`. Exposes two UI contexts (`ntp_time`, `ntp_settings`) and registers the `/api/ntp/timezones` endpoint. Contains a 29-entry constexpr timezone lookup table stored in flash.
 
+**Note**: The class docstring in `NTPWebUI.h` (lines 67-71) references four UI contexts (`ntp_status`, `ntp_dashboard`, `ntp_settings`, `ntp_detail`), but only two are implemented in `buildContexts()`. The docstring is stale and inherited from the original `SPECIFICATIONS.md` design.
+
+### `DomoticsCore::Components::WebUI::TimezoneLookupEntry`
+
+Plain struct with two `const char*` fields (`posix`, `friendly`) used in the flash-stored `TIMEZONE_LOOKUP` constexpr array (29 entries).
+
 ---
 
 ## Dependencies
@@ -134,7 +144,7 @@ WebUI provider extending `CachingWebUIProvider`. Holds a non-owning pointer to `
 
 ### Component Registration
 
-The component registers itself with `metadata.name = "NTP"` and `metadata.version = "1.3.0"` in the constructor. This must match `library.json` version per constitution Principle XV.
+The component registers itself with `metadata.name = "NTP"`, `metadata.version = "1.3.0"`, `metadata.author = "DomoticsCore"`, and `metadata.description = "Network Time Protocol synchronization component"` in the constructor. Version must match `library.json` per constitution Principle XV.
 
 ### Event Topics
 
@@ -170,8 +180,10 @@ This section maps the NTP component's design to specific constitution principles
 
 ### Areas for Future Attention
 
-- **Principle II (TDD)**: The mock file `tests/mocks/MockNTPClient.h` exists, but test coverage for the NTP component should be verified for completeness.
+- **Principle II (TDD)**: The component has 33 native unit tests (`test/test_ntp_component/test_ntp_component.cpp`) covering events, lifecycle, config, sync status, timezones, callbacks, uptime, edge cases, and memory stability via `HeapTracker`. The mock file `tests/mocks/MockNTPClient.h` also exists. However, `NTPWebUI` has no dedicated unit tests.
 - **Principle XI (Centralized Storage)**: Configuration persistence is handled via a callback (`setConfigSaveCallback`), which is the correct decoupled pattern. The callback should delegate to the Storage component, not directly to Preferences.
+- **Stale code comment**: `NTPWebUI` class docstring lists four UI contexts but only two (`ntp_time`, `ntp_settings`) are implemented.
+- **Version fallback**: `NTPWebUI::getWebUIVersion()` returns `"1.0.2"` as a fallback when the NTP pointer is null, which does not match the current component version `1.3.0`. This is cosmetic but should be updated.
 
 ---
 

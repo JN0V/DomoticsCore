@@ -41,7 +41,6 @@ public:
         config.namespace_name = "demo_app";
         config.readOnly = false;
         config.maxEntries = 50;
-        config.autoCommit = true;
         
         // Create storage manager
         storageManager.reset(new StorageComponent(config));

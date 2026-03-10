@@ -18,6 +18,7 @@ DomoticsCore-RemoteConsole is a Telnet-based remote debugging component for ESP3
 - **Password Authentication** -- Optional per-client authentication with configurable timeout (`requireAuth`, `password`, `authTimeoutMs`).
 - **IP Whitelist** -- Restrict access to specific IP addresses.
 - **Multi-client** -- Up to 3 concurrent Telnet connections (configurable).
+- **Non-blocking Reboot** -- The `reboot` command uses a deferred restart (100 ms delay) to ensure the "Rebooting..." message is flushed to clients before the device restarts.
 - **WebUI Integration** -- Optional `RemoteConsoleWebUI` provider for browser-based monitoring.
 
 ## Quick Start

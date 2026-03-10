@@ -2,6 +2,8 @@
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**
 
+**Last verified against source:** 2026-03-10
+
 ## What is DomoticsCore-System?
 
 DomoticsCore-System is the meta-orchestrator of the DomoticsCore IoT framework. It is the "batteries included" component that assembles all other DomoticsCore components into a cohesive, ready-to-use system. Instead of manually creating, configuring, and wiring dozens of components, you provide a single `SystemConfig` struct and call `begin()` -- System handles the rest.
@@ -10,7 +12,7 @@ The component manages automatic WiFi connection (with AP fallback), LED status v
 
 ## Key Features
 
-- **Automatic WiFi** -- STA connection with configurable timeout, automatic AP fallback with auto-generated SSID
+- **Automatic WiFi** -- STA connection with automatic AP fallback and auto-generated SSID
 - **LED status patterns** -- visual feedback mapped to each system state (no LED code required)
 - **State management** -- eight-state lifecycle enum (`SystemState`) with observer callbacks
 - **Component orchestration** -- WiFi-to-MQTT, NTP sync, and Home Assistant discovery wiring

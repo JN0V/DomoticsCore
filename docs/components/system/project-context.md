@@ -4,6 +4,8 @@
 
 This document is optimized for AI coding agents. It provides the file inventory, key classes, dependency graph, naming conventions, and constitution compliance notes needed to work on the DomoticsCore-System component effectively.
 
+**Last verified against source:** 2026-03-10
+
 ---
 
 ## Identity
@@ -138,6 +140,16 @@ The following aspects of DomoticsCore-System align with the project constitution
 - **Namespace isolation:** All code resides within the `DomoticsCore` namespace hierarchy.
 - **Graceful degradation:** Missing optional libraries produce warnings (not errors). Heap exhaustion skips non-critical steps rather than crashing.
 - **Storage key registration:** All NVS keys are registered with `registerKeys()` before use, enabling enumeration and documentation.
+
+---
+
+## Removed Config Fields (v1.4.1 cleanup)
+
+The following fields were removed from `SystemConfig` and no longer exist in the source code. They should not be referenced in new code:
+
+- `haDiscoveryPrefix` -- HA discovery prefix is now set exclusively via `HAConfig.discoveryPrefix` (default `"homeassistant"`), loaded from Storage key `ha_disc_prefix`.
+- `webUIEnableAPI` -- The WebUI API is always enabled when WebUI is active; there is no toggle.
+- `wifiTimeout` -- WiFi connection timeout is managed internally by `WifiComponent`; no user-facing config field exists in `SystemConfig`.
 
 ---
 

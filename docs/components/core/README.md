@@ -21,6 +21,7 @@ Core has **zero external dependencies** -- it only requires the Arduino-ESP32 (o
 | **MemoryManager** | Runtime memory profiling that auto-detects heap profile (FULL / STANDARD / MINIMAL / CRITICAL) |
 | **HeapTracker** | Testing utility for detecting memory leaks across checkpoints |
 | **Platform HAL** | Hardware Abstraction Layer routing so business code never contains `#ifdef` |
+| **Platform Arduino** | Shared Arduino utilities (time, string, GPIO, math) factored out of ESP32/ESP8266 HAL files |
 | **Filesystem HAL** | Platform-agnostic filesystem access (`begin`, `exists`, `getFS`, `format`, `totalBytes`, `usedBytes`) |
 | **Configuration** | `ComponentConfig` class with typed parameters and built-in validation |
 

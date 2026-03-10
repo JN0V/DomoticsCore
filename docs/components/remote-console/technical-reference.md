@@ -9,7 +9,7 @@
 - [LogEntry](#logentry)
 - [CommandHandler](#commandhandler)
 - [RemoteConsoleComponent](#remoteconsolecomponent)
-  - [Constructor](#constructor)
+  - [Constructor and Destructor](#constructor-and-destructor)
   - [Lifecycle Methods](#lifecycle-methods)
   - [Public Methods](#public-methods)
 - [Built-in Commands](#built-in-commands)
@@ -113,13 +113,14 @@ Inherits from `IComponent`. Metadata:
 | `category`    | `"Debug"`                                       |
 | `tags`        | `{"telnet", "console", "debug", "logging"}`     |
 
-### Constructor
+### Constructor and Destructor
 
 ```cpp
 RemoteConsoleComponent(const RemoteConsoleConfig& cfg = RemoteConsoleConfig());
+~RemoteConsoleComponent();
 ```
 
-Accepts an optional configuration. Registers all built-in commands during construction.
+The constructor accepts an optional configuration and registers all built-in commands. The destructor deletes the `WiFiServer` instance if it was allocated.
 
 ### Lifecycle Methods
 
@@ -129,7 +130,7 @@ These methods are called by the DomoticsCore `Core` engine and should not be inv
 |---------------------------------------------------------|----------------------------------------------------------------------------------------------|
 | `ComponentStatus begin()`                               | Registers the logger callback, creates the `WiFiServer`, and begins listening.               |
 | `void onComponentsReady(const ComponentRegistry&)`      | Called after all components are initialized. Displays the connection info (IP + port) if WiFi is connected. |
-| `void loop()`                                           | Processes pending reboot requests, accepts new clients (with IP whitelist and max-client checks), enforces authentication timeouts for unauthenticated clients, handles input from existing clients, and cleans up disconnected clients. |
+| `void loop()`                                           | Processes pending reboot requests (non-blocking, 100 ms after flag set), accepts new clients (with IP whitelist and max-client checks), enforces authentication timeouts for unauthenticated clients, handles input from existing clients, and cleans up disconnected clients. Calls `clients.shrink_to_fit()` after any client disconnection to release memory. |
 | `ComponentStatus shutdown()`                            | Sends a shutdown message to all connected clients, stops the server, and releases resources.  |
 
 ### Public Methods
@@ -148,7 +149,7 @@ Returns the current runtime log level.
 
 #### `bool setPort(uint16_t port)`
 
-Changes the Telnet port at runtime. Disconnects all clients, stops the old server, and restarts on the new port. Returns `false` if `port` is `0`.
+Changes the Telnet port at runtime. Returns `true` immediately without side effects if the new port matches the current port. Otherwise disconnects all clients (with a notification message), clears all per-client state, stops the old server, and restarts on the new port. Returns `false` if `port` is `0`. Also returns `true` without restarting the server if the component is disabled or the server has not been started yet.
 
 #### `void log(LogLevel level, const char* tag, const char* message)`
 
@@ -189,7 +190,7 @@ All commands are case-insensitive. Arguments are separated from the command by a
 | `info`            | (none)            | Displays system information: uptime, free heap, chip model/revision, CPU frequency, WiFi SSID, IP, and RSSI. |
 | `heap`            | (none)            | Displays the current free heap in bytes.                                 |
 | `auth`            | `<password>`      | Authenticates the client session. If `requireAuth` is `false`, responds with "Authentication not required." If the password matches, the client becomes authenticated and receives log output. Otherwise responds with "Authentication failed." |
-| `reboot`          | (none)            | Sends "Rebooting..." to all clients, waits 100 ms, then restarts the device via `HAL::restart()`. |
+| `reboot`          | (none)            | Sends "Rebooting..." to all clients, then sets a non-blocking reboot flag. The device restarts via `HAL::restart()` on the next `loop()` iteration after a 100 ms delay, allowing the message to flush. |
 | `quit`            | (none)            | Sends "Goodbye!" and closes the client connection.                       |
 
 Custom commands registered via `registerCommand()` also appear in the `help` output.

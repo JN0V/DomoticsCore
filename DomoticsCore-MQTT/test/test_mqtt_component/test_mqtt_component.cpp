@@ -81,7 +81,6 @@ void test_mqtt_config_defaults() {
     TEST_ASSERT_EQUAL_STRING("", config.broker.c_str());
     TEST_ASSERT_EQUAL_UINT16(1883, config.port);
     TEST_ASSERT_FALSE(config.useTLS);
-    TEST_ASSERT_TRUE(config.cleanSession);
     TEST_ASSERT_EQUAL_UINT16(60, config.keepAlive);
     TEST_ASSERT_TRUE(config.enableLWT);
     TEST_ASSERT_EQUAL_STRING("offline", config.lwtMessage.c_str());

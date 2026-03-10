@@ -81,8 +81,8 @@ The WebUI provider offers LED selection, enable/disable toggle, brightness slide
 
 - [Technical Reference](technical-reference.md) -- full API documentation, struct definitions, and PWM details.
 - [Project Context (AI Agent)](project-context.md) -- file inventory, dependencies, conventions, and constitution compliance notes.
-- [BasicLED Example](../../../DomoticsCore-LED/examples/BasicLED/) -- standalone demo cycling through all six effects.
-- [LEDWithWebUI Example](../../../DomoticsCore-LED/examples/LEDWithWebUI/) -- browser-controlled LED via WiFi AP.
+- [BasicLED Example](../../../DomoticsCore-LED/examples/BasicLED/) -- standalone demo cycling through all six effects with single and RGB LEDs.
+- [LEDWithWebUI Example](../../../DomoticsCore-LED/examples/LEDWithWebUI/) -- browser-controlled LED via WiFi AP at `http://192.168.4.1`.
 
 ## License
 

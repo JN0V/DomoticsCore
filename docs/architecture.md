@@ -235,51 +235,43 @@ DomoticsCore/
 - Documentation fragmentation
 - Release coordination nightmares
 
-### Top-Level library.json Analysis
+### Top-Level library.json
 
-**Current Status:** ✅ **CORRECT - Keep It**
+**Current Status:** ✅ **CORRECT - Fully functional meta-package**
 
 ```json
 {
   "name": "DomoticsCore",
-  "version": "1.0.0",
-  "description": "ESP32 domotics framework...",
-  "dependencies": []
+  "version": "2.0.0",
+  "description": "ESP32/ESP8266 domotics framework with WiFi, MQTT, web interface, Home Assistant integration, and persistent storage",
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32", "espressif8266"],
+  "dependencies": [
+    { "owner": "bblanchon", "name": "ArduinoJson", "version": "^7.0.0" },
+    { "owner": "ESP32Async", "name": "ESPAsyncWebServer", "version": "^3.8.0" },
+    { "owner": "ESP32Async", "name": "AsyncTCP", "version": "^3.4.8" },
+    { "owner": "knolleary", "name": "PubSubClient", "version": "^2.8" }
+  ]
 }
 ```
 
 **Purpose:**
 1. **Meta-package** - Represents the entire framework
-2. **PlatformIO Registry** - Searchable package name
-3. **Version Coordination** - Single version for the framework
+2. **PlatformIO Registry** - Searchable package name (`jn0v/DomoticsCore`)
+3. **Version Coordination** - Single version for the framework (currently 2.0.0)
 4. **Documentation Landing** - Entry point for users
 
-**Recommendation:** 
-- ✅ Keep the top-level `library.json`
-- ✅ It acts as the "umbrella" package
-- ✅ Individual components can still be used independently
-- ✅ Users can reference either:
-  - `DomoticsCore` (gets everything, if we add dependencies)
-  - `DomoticsCore-Core` (just the core)
-  - `DomoticsCore-MQTT` (specific component)
+**Build Configuration:**
+The root `library.json` also defines:
+- **Include paths**: `-IDomoticsCore-*/include` for all 12 components
+- **Source filter**: `+<DomoticsCore-*/src/*>` collects all `.cpp` files
+- **Extra script**: `DomoticsCore-WebUI/embed_webui.py` for WebUI asset compilation
+- **`lib_archive: false`**: Prevents PlatformIO from archiving the library (needed for monorepo)
 
-**Enhancement:**
-Consider adding dependencies to make it a true meta-package:
-
-```json
-{
-  "name": "DomoticsCore",
-  "version": "1.0.0",
-  "description": "ESP32 domotics framework...",
-  "dependencies": [
-    { "name": "DomoticsCore-Core", "version": "^1.0.0" },
-    { "name": "DomoticsCore-MQTT", "version": "^1.0.0" },
-    { "name": "DomoticsCore-WebUI", "version": "^1.0.0" }
-  ]
-}
-```
-
-This would allow users to install the entire suite with one dependency.
+**Users can reference either:**
+- `jn0v/DomoticsCore` (gets everything via the meta-package)
+- `DomoticsCore-Core` (just the core)
+- `DomoticsCore-MQTT` (specific component with its own dependencies)
 
 ---
 
@@ -330,19 +322,28 @@ pio pkg publish DomoticsCore-HomeAssistant
 **Recommendation:** Synchronized major/minor, independent patches
 
 ```
-DomoticsCore          v1.0.0
-├── Core              v1.0.0
-├── MQTT              v1.0.0
-├── WebUI             v1.0.0
-├── HomeAssistant     v1.0.0
-└── NTP               v1.0.0
+DomoticsCore          v2.0.0
+├── Core              v1.5.2
+├── System            v1.4.1
+├── Wifi              v1.4.1
+├── WebUI             v1.5.0
+├── MQTT              v1.4.1
+├── HomeAssistant     v2.0.0
+├── NTP               v1.3.0
+├── OTA               v1.4.1
+├── Storage           v1.4.2
+├── LED               v1.4.0
+├── RemoteConsole     v1.4.1
+└── SystemInfo        v1.4.0
 ```
 
 **Rules:**
-1. **Major versions** synchronized across all components (currently v1.0.0)
-2. **Minor versions** synchronized for breaking changes
-3. **Patch versions** can diverge for bug fixes
+1. **Root version** (2.0.0) represents the framework release
+2. **Component versions** are independently maintained
+3. **Patch versions** diverge for bug fixes
 4. Use semantic versioning strictly
+5. Use `tools/bump_version.py` for version changes (never manual edits)
+6. `tools/check_versions.py` validates consistency across all `library.json` files
 
 ---
 
@@ -392,14 +393,12 @@ The `System` component provides a high-level API that handles common setup autom
 | Coordinator Component | Removed, merged into System | ✅ Done |
 | System Component | Batteries included approach | ✅ Implemented |
 
-**Component Count:**
-- **Before:** 13 components (including Coordinator)
-- **After:** 12 components (Coordinator removed, System added)
+**Component Count:** 12 components (Core, System, WiFi, WebUI, MQTT, HomeAssistant, NTP, OTA, Storage, LED, RemoteConsole, SystemInfo)
 
-**Next Steps:**
-1. ✅ Keep current monorepo structure
-2. ✅ Optionally enhance top-level library.json with dependencies
-3. ✅ Publish individual components to registry
-4. ✅ Synchronize all components to v1.0.0
-4. ✅ Document component interdependencies clearly
-5. ✅ Maintain CHANGELOG.md at root and per-component
+**Current Status:**
+1. Monorepo structure maintained
+2. Root `library.json` acts as meta-package with external dependencies
+3. Individual components publishable to PlatformIO registry
+4. Version tooling via `tools/bump_version.py` and `tools/check_versions.py`
+5. Component interdependencies documented in each component's `library.json`
+6. `CHANGELOG.md` maintained at root level
