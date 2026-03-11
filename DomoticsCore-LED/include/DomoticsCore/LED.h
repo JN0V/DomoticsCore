@@ -12,6 +12,7 @@
 #include <DomoticsCore/Timer.h>
 #include <DomoticsCore/Platform_HAL.h>
 #include <vector>
+#include <cmath>
 
 namespace DomoticsCore {
 namespace Components {
@@ -91,7 +92,7 @@ public:
     LEDComponent() : updateTimer(50) {  // 20Hz update rate
         // Set component metadata
         metadata.name = "LED";
-        metadata.version = "1.4.0";
+        metadata.version = "1.4.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Multi-LED management with PWM control and effects";
         metadata.category = "Hardware";
@@ -420,8 +421,8 @@ private:
             float deltaTime = (currentTime - state.lastUpdate) / (float)state.effectSpeed;
             state.effectPhase += deltaTime;
             
-            if (state.effectPhase > 1.0) {
-                state.effectPhase = 0.0;
+            if (state.effectPhase > 1.0f) {
+                state.effectPhase = fmod(state.effectPhase, 1.0f);
             }
             
             state.lastUpdate = currentTime;

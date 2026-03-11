@@ -39,7 +39,7 @@ const char* stateToString(OTAComponent::State state) {
 // Restore constructor and helper methods outside anonymous namespace
 OTAComponent::OTAComponent(const OTAConfig& cfg) : config(cfg) {
     metadata.name = "OTA";
-    metadata.version = "1.4.1";
+    metadata.version = "1.4.2";
     metadata.description = "Secure over-the-air firmware updates";
     metadata.author = "DomoticsCore";
     metadata.category = "system";
@@ -501,7 +501,13 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
     if (!expectedSha256.isEmpty()) {
         if (!verifySha256(digest, expectedSha256)) {
             lastError = "SHA256 mismatch";
+            HAL::OTAUpdate::abort();  // Rollback corrupted firmware from OTA partition
             transition(State::Error, lastError);
+            publishStatusEvent(DomoticsCore::OTAEvents::EVENT_ERROR, [this](JsonDocument& doc){
+                doc["success"] = false;
+                doc["error"] = lastError.c_str();
+                doc["source"] = "download";
+            }, false);
             return false;
         }
     }

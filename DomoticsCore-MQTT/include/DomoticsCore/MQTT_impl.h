@@ -5,7 +5,7 @@ namespace DomoticsCore {
 namespace Components {
 
 // Static members
-MQTTComponent* MQTTComponent::instance = nullptr;
+inline MQTTComponent* MQTTComponent::instance = nullptr;
 
 // Constructor
 inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
@@ -28,10 +28,14 @@ inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
     if (config.enableLWT && config.lwtTopic.isEmpty()) {
         config.lwtTopic = config.clientId + "/status";
     }
+    if (config.lwtQoS > 2) {
+        DLOG_W(LOG_MQTT, "Invalid lwtQoS %u, clamping to 2", config.lwtQoS);
+        config.lwtQoS = 2;
+    }
 
     // Initialize metadata
     metadata.name = "MQTT";
-    metadata.version = "1.4.1";
+    metadata.version = "1.4.2";
     metadata.author = "DomoticsCore";
     metadata.description = "MQTT client with auto-reconnection";
 }
@@ -207,6 +211,10 @@ inline String MQTTComponent::getStateString() const {
 
 // Publishing
 inline bool MQTTComponent::publish(const String& topic, const String& payload, uint8_t qos, bool retain) {
+    if (qos > 2) {
+        DLOG_W(LOG_MQTT, "Invalid QoS %u for publish, clamping to 2", qos);
+        qos = 2;
+    }
     // Rate limit guard (tumbling window: reset counter every 1000ms)
     if (config.publishRateLimit > 0) {
         unsigned long now = HAL::getMillis();
@@ -276,6 +284,10 @@ inline bool MQTTComponent::publishBinary(const String& topic, const uint8_t* dat
 
 // Subscribing
 inline bool MQTTComponent::subscribe(const String& topic, uint8_t qos) {
+    if (qos > 2) {
+        DLOG_W(LOG_MQTT, "Invalid QoS %u for subscribe, clamping to 2", qos);
+        qos = 2;
+    }
     // Check if already subscribed
     for (const auto& sub : subscriptions) {
         if (sub.topic == topic) {

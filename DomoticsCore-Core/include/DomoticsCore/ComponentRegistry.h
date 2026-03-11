@@ -210,10 +210,12 @@ public:
         componentMap.erase(itMap);
         // Remove from initialization order
         initializationOrder.erase(std::remove(initializationOrder.begin(), initializationOrder.end(), comp), initializationOrder.end());
+        initializationOrder.shrink_to_fit();
         // Remove from components vector
         for (auto it = components.begin(); it != components.end(); ++it) {
             if (it->get() == comp) {
                 components.erase(it);
+                components.shrink_to_fit();
                 break;
             }
         }
@@ -256,6 +258,7 @@ public:
     
     void removeListener(IComponentLifecycleListener* listener) {
         listeners.erase(std::remove(listeners.begin(), listeners.end(), listener), listeners.end());
+        listeners.shrink_to_fit();
     }
     
     /**

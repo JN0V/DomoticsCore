@@ -24,7 +24,7 @@ namespace HAL {
 namespace OTAUpdate {
 
 // Track bytes written for progress reporting
-static size_t s_bytesWritten = 0;
+inline size_t s_bytesWritten = 0;
 
 inline bool begin(size_t size = UPDATE_SIZE_UNKNOWN) {
     s_bytesWritten = 0;

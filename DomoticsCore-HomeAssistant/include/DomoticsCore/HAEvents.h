@@ -12,13 +12,13 @@ namespace DomoticsCore {
 namespace HAEvents {
 
 /// Published when discovery payload is sent to HA
-static constexpr const char* EVENT_DISCOVERY_PUBLISHED = "ha/discovery_published";
+inline constexpr const char* EVENT_DISCOVERY_PUBLISHED = "ha/discovery_published";
 
 /// Published when a new entity is added
-static constexpr const char* EVENT_ENTITY_ADDED = "ha/entity_added";
+inline constexpr const char* EVENT_ENTITY_ADDED = "ha/entity_added";
 
 /// Published when an entity receives a command from Home Assistant
-static constexpr const char* EVENT_COMMAND = "ha/command";
+inline constexpr const char* EVENT_COMMAND = "ha/command";
 
 /**
  * @brief Event data for HA command received via MQTT

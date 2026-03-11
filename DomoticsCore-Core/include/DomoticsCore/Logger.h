@@ -4,6 +4,7 @@
 #include "Platform_HAL.h"
 #include <vector>
 #include <functional>
+#include <algorithm>
 
 // Log levels enum
 enum LogLevel {
@@ -18,28 +19,47 @@ enum LogLevel {
 // Logger callback system for RemoteConsole and other listeners
 class LoggerCallbacks {
 public:
-    static void addCallback(std::function<void(LogLevel, const char*, const char*)> cb) {
-        getCallbacks().push_back(cb);
+    using CallbackFn = std::function<void(LogLevel, const char*, const char*)>;
+    using CallbackId = uint8_t;
+
+    static CallbackId addCallback(CallbackFn cb) {
+        CallbackId id = nextId()++;
+        getEntries().push_back({id, std::move(cb)});
+        return id;
     }
-    
-    static void removeCallback(std::function<void(LogLevel, const char*, const char*)> cb) {
-        // Note: This is a simplified version. For production, use a handle/ID system
-        getCallbacks().clear();
+
+    static void removeCallback(CallbackId id) {
+        auto& entries = getEntries();
+        entries.erase(
+            std::remove_if(entries.begin(), entries.end(),
+                           [id](const Entry& e) { return e.id == id; }),
+            entries.end());
+        entries.shrink_to_fit();
     }
-    
+
     static void broadcast(LogLevel level, const char* tag, const char* message) {
-        for (auto& cb : getCallbacks()) {
-            if (cb) {
-                cb(level, tag, message);
+        for (auto& e : getEntries()) {
+            if (e.cb) {
+                e.cb(level, tag, message);
             }
         }
     }
-    
+
 private:
+    struct Entry {
+        CallbackId id;
+        CallbackFn cb;
+    };
+
+    static uint8_t& nextId() {
+        static uint8_t id = 0;
+        return id;
+    }
+
     // Use Meyer's singleton to avoid static initialization order issues
-    static std::vector<std::function<void(LogLevel, const char*, const char*)>>& getCallbacks() {
-        static std::vector<std::function<void(LogLevel, const char*, const char*)>> callbacks;
-        return callbacks;
+    static std::vector<Entry>& getEntries() {
+        static std::vector<Entry> entries;
+        return entries;
     }
 };
 

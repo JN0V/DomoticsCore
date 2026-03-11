@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-WebUI",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "DomoticsCore WebUI component with AsyncWebServer and WebSocket UI",
   "keywords": ["esp32", "esp8266", "domotics", "webui", "websocket"],
   "repository": {"type": "git", "url": "https://github.com/JN0V/DomoticsCore.git"},

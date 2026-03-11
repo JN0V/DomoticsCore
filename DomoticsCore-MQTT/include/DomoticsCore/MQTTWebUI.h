@@ -162,7 +162,6 @@ public:
         if (serializeJson(doc, json) == 0) {
             return "{}";
         }
-        doc.shrinkToFit();  // ArduinoJson 7: Release over-allocated memory
         return json;
     }
     

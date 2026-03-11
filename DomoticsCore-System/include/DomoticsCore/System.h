@@ -188,6 +188,10 @@ public:
     Components::WifiComponent* getWiFi() { return wifi; }
     
     void onStateChange(std::function<void(SystemState, SystemState)> callback) {
+        if (stateCallbacks.size() >= 8) {
+            DLOG_W(LOG_SYSTEM, "Max state callbacks reached (8), ignoring");
+            return;
+        }
         stateCallbacks.push_back(callback);
     }
     

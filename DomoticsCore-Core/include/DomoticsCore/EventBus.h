@@ -6,6 +6,7 @@
 #include <queue>
 #include <algorithm>
 #include <cassert>
+#include <type_traits>
 #include <DomoticsCore/Platform_HAL.h>
 
 // Minimal core event enum kept here to avoid extra headers.
@@ -100,6 +101,8 @@ public:
     // Publish an event with an arbitrary payload type (copy).
     template<typename PayloadT>
     void publish(EventType type, const PayloadT& payload) {
+        static_assert(std::is_trivially_copyable<PayloadT>::value,
+                      "EventBus payload must be trivially copyable");
         QueuedEvent qe;
         qe.type = type;
         const uint8_t* p = reinterpret_cast<const uint8_t*>(&payload);
@@ -144,6 +147,7 @@ public:
     void publishSticky(const String& topic) {
         if (topic.length() == 0) return;
         lastByTopic[topic].clear();
+        lastByTopic[topic].shrink_to_fit();
         publish(topic);
     }
 

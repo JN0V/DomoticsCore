@@ -117,7 +117,7 @@ public:
         rebootTimer_.disable();       // Only enabled when reboot-to-STA is pending
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "Wifi";
-        metadata.version = "1.4.1";
+        metadata.version = "1.4.2";
         metadata.author = "DomoticsCore";
         metadata.description = "Wifi connectivity management component";
     }
@@ -497,12 +497,14 @@ public:
     bool scanNetworks(std::vector<String>& networks) {
         int n = HAL::WiFiHAL::scanNetworks(false);
         networks.clear();
-        
+        networks.shrink_to_fit();
+
         if (n == -1) {
             DLOG_E(LOG_WIFI, "Wifi scan failed");
             return false;
         }
-        
+
+        networks.reserve(static_cast<size_t>(n));
         DLOG_I(LOG_WIFI, "Found %d Wifi networks", n);
         for (int i = 0; i < n; i++) {
             String network = HAL::WiFiHAL::getScannedSSID(i) + " (" + String(HAL::WiFiHAL::getScannedRSSI(i)) + " dBm)";

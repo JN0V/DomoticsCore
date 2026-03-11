@@ -103,7 +103,7 @@ public:
         } else {
             metadata.name = "Storage";
         }
-        metadata.version = "1.4.2";
+        metadata.version = "1.4.3";
         metadata.author = "DomoticsCore";
         metadata.description = "Key-value storage component for preferences and app data";
         metadata.category = "Storage";
@@ -319,7 +319,11 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return false;
         }
-        
+        if (data == nullptr && length > 0) {
+            DLOG_E(LOG_STORAGE, "putBlob: null data with length %zu", length);
+            return false;
+        }
+
         size_t written = storage.putBytes(key.c_str(), data, length);
         if (written == length) {
             StorageEntry entry;

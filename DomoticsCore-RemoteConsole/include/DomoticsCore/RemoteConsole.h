@@ -65,6 +65,7 @@ class RemoteConsoleComponent : public IComponent {
 private:
     RemoteConsoleConfig config;
     HAL::WiFiServer* telnetServer = nullptr;
+    LoggerCallbacks::CallbackId loggerCallbackId_ = 0;
     uint32_t nextClientId = 1;
     std::vector<std::pair<uint32_t, HAL::WiFiClient>> clients;
     
@@ -88,7 +89,7 @@ public:
         : config(cfg), currentLogLevel(cfg.defaultLogLevel) {
         
         metadata.name = "RemoteConsole";
-        metadata.version = "1.4.1";
+        metadata.version = "1.4.2";
         metadata.author = "DomoticsCore";
         metadata.description = "Telnet-based remote console with log streaming";
         metadata.category = "Debug";
@@ -156,7 +157,7 @@ public:
         }
         
         // Register logger callback
-        LoggerCallbacks::addCallback([this](LogLevel level, const char* tag, const char* msg) {
+        loggerCallbackId_ = LoggerCallbacks::addCallback([this](LogLevel level, const char* tag, const char* msg) {
             this->log(level, tag, msg);
         });
         
@@ -258,6 +259,7 @@ public:
     }
     
     ComponentStatus shutdown() override {
+        LoggerCallbacks::removeCallback(loggerCallbackId_);
         if (telnetServer) {
             // Disconnect all clients
             for (auto& [cid, client] : clients) {

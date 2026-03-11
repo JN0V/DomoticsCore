@@ -23,7 +23,7 @@ void tearDown(void) {
         testCore = nullptr;
     }
     // Clear static logger callbacks to prevent dangling pointers from deleted components
-    LoggerCallbacks::removeCallback(nullptr);
+    // Note: callbacks are now properly removed via ID in shutdown()
 }
 
 // ============================================================================

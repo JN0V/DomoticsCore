@@ -86,7 +86,7 @@ public:
         : config(cfg) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "WebUI";
-        metadata.version = "1.5.0";
+        metadata.version = "1.5.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Web dashboard and API component";
 
@@ -324,7 +324,6 @@ public:
             doc["uptime"] = uptimeStr;
             String json;
             serializeJson(doc, json);
-            doc.shrinkToFit();  // ArduinoJson 7: Release over-allocated memory
             return json;
         }
 
@@ -337,7 +336,6 @@ public:
             doc["password"] = ""; // Never send password back
             String json;
             serializeJson(doc, json);
-            doc.shrinkToFit();  // ArduinoJson 7: Release over-allocated memory
             return json;
         }
         return "{}";
@@ -936,7 +934,7 @@ private:
 
         int len = buildUpdateJson(false);
         if (len > 0) {
-            DLOG_W(LOG_WEB, "SSE broadcast: %d bytes, clients=%d", len, webSocket->getClientCount());
+            DLOG_D(LOG_WEB, "SSE broadcast: %d bytes, clients=%d", len, webSocket->getClientCount());
             webSocket->broadcast(wsBuffer_, len);
             forceNextUpdate = false;
         }

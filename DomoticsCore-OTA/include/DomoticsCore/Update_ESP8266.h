@@ -23,8 +23,8 @@ namespace HAL {
 namespace OTAUpdate {
 
 // Track state for progress reporting
-static size_t s_bytesWritten = 0;
-static bool s_updateActive = false;
+inline size_t s_bytesWritten = 0;
+inline bool s_updateActive = false;
 
 inline bool begin(size_t size = UPDATE_SIZE_UNKNOWN) {
     s_bytesWritten = 0;

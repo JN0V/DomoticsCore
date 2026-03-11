@@ -104,7 +104,7 @@ public:
         : config(config) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "HomeAssistant";
-        metadata.version = "2.0.0";
+        metadata.version = "2.0.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
         if (this->config.availabilityTopic[0] == '\0') {
@@ -325,14 +325,11 @@ public:
             return;
         }
         
-        // Set guard before MQTT publish to prevent re-entrant callbacks
-        publishing = true;
         char topic[HA_TOPIC_BUF_SIZE];
         entity->getStateTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
         DLOG_D(LOG_HA, "Publishing state: %s = %s", id.c_str(), state.c_str());
         mqttPublish(topic, state, 0, entity->retained);
         stats.stateUpdates++;
-        publishing = false;
     }
     
     /**
@@ -368,15 +365,12 @@ public:
             return;
         }
         
-        // Set guard before MQTT publish to prevent re-entrant callbacks
-        publishing = true;
         String payload;
         serializeJson(doc, payload);
         char topic[HA_TOPIC_BUF_SIZE];
         entity->getStateTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
         mqttPublish(topic, payload, 0, entity->retained);
         stats.stateUpdates++;
-        publishing = false;
     }
     
     /**
@@ -404,13 +398,9 @@ public:
         DLOG_I(LOG_HA, "  Topic: %s", config.availabilityTopic);
         DLOG_I(LOG_HA, "  Payload: %s", payload.c_str());
         
-        bool published = mqttPublish(config.availabilityTopic, payload, 0, true);
-        if (published) {
-            DLOG_I(LOG_HA, "  ✓ Availability published");
-            availabilityPublished = available;  // Fix: track availability state for isReady()
-        } else {
-            DLOG_E(LOG_HA, "  ✗ Failed to publish availability!");
-        }
+        mqttPublish(config.availabilityTopic, payload, 0, true);
+        DLOG_I(LOG_HA, "  Availability published");
+        availabilityPublished = available;
     }
     
     // ========== Discovery ==========
@@ -514,7 +504,6 @@ private:
     HAConfig config;
     std::vector<std::unique_ptr<HAEntity>> entities;
     HAStatistics stats;
-    volatile bool publishing = false;  // Re-entrancy guard (volatile to prevent optimization)
     bool availabilityPublished = false;  // Track if initial availability sent
     bool mqttConnected = false;  // Track MQTT connection state via EventBus
     char commandTopicFilter[HA_TOPIC_BUF_SIZE] = {};  // Stored to keep pointer valid for EventBus
@@ -534,7 +523,7 @@ private:
     /**
      * @brief Publish MQTT message via EventBus
      */
-    bool mqttPublish(const char* topic, const String& payload, uint8_t qos = 0, bool retain = false) {
+    void mqttPublish(const char* topic, const String& payload, uint8_t qos = 0, bool retain = false) {
         using namespace DomoticsCore::Components;
         MQTTPublishEvent ev{};
 
@@ -547,7 +536,6 @@ private:
         ev.retain = retain;
 
         emit(DomoticsCore::MQTTEvents::EVENT_PUBLISH, ev);
-        return true;
     }
     
     /**
@@ -589,12 +577,8 @@ private:
         DLOG_I(LOG_HA, "  Payload size: %d bytes", payload.length());
         DLOG_D(LOG_HA, "  Payload: %s", payload.c_str());
         
-        bool published = mqttPublish(topic, payload, 0, config.retainDiscovery);
-        if (published) {
-            DLOG_I(LOG_HA, "  ✓ Published successfully");
-        } else {
-            DLOG_E(LOG_HA, "  ✗ Failed to publish!");
-        }
+        mqttPublish(topic, payload, 0, config.retainDiscovery);
+        DLOG_I(LOG_HA, "  Discovery published");
     }
     
     /**

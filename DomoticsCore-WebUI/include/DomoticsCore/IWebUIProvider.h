@@ -630,6 +630,7 @@ public:
      */
     void invalidateContextCache() {
         cachedContexts_.clear();
+        cachedContexts_.shrink_to_fit();
         contextsCached_ = false;
     }
 

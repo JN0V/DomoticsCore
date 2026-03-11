@@ -18,7 +18,7 @@ namespace DomoticsCore {
 namespace HAL {
 namespace OTAUpdate {
 
-static size_t s_stubBytesWritten = 0;
+inline size_t s_stubBytesWritten = 0;
 
 inline bool begin(size_t = UPDATE_SIZE_UNKNOWN) {
     s_stubBytesWritten = 0;
