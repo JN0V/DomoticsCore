@@ -104,9 +104,9 @@ ptr->registerApiRoute("/api/sensor", HTTP_GET, [](AsyncWebServerRequest* req) {
 
 ## Known Issues
 
-### SSE Broadcast WARNING Log Noise
+### ~~SSE Broadcast WARNING Log Noise~~ (Resolved in v2.0.1)
 
-The `sendWebSocketUpdates()` method logs every routine SSE broadcast at WARNING level (`DLOG_W`), producing ~1560 bytes of log output approximately every 5.4 seconds when at least one SSE client is connected. This is a log-severity mismatch -- the message should use DEBUG level. See the [Technical Reference](./technical-reference.md#known-issue-sse-broadcast-log-severity) for details and workarounds.
+Fixed: SSE broadcast log level changed from `DLOG_W` to `DLOG_D`. Routine broadcasts no longer pollute WARNING-level output.
 
 ## Test Suites
 

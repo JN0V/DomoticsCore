@@ -652,16 +652,6 @@ These deviations are accepted under Constitution VII's roadmap provision. Refact
 
 ---
 
-## Known Issue: SSE Broadcast Log Severity
+## Resolved (v2.0.1): SSE Broadcast Log Severity
 
-In `WebUI.h`, the `sendWebSocketUpdates()` method logs every successful SSE broadcast at WARNING level (`DLOG_W`). This fires every `wsUpdateInterval` milliseconds (default 5000 ms) whenever at least one SSE client is connected, producing ~1560 bytes of log output every ~5.4 seconds.
-
-**Location**: `WebUI.h`, line 939 in `sendWebSocketUpdates()`.
-
-**Impact**: Pollutes serial output with non-actionable warnings; may trigger false alerts in log monitoring.
-
-**Root cause**: The log call uses `DLOG_W` where `DLOG_D` (DEBUG) is appropriate. The nearby low-heap guard (line 933) correctly uses `DLOG_W` for the genuinely abnormal case.
-
-**Workaround**: Increase `wsUpdateInterval` in `WebUIConfig` to reduce frequency, or filter WARNING-level `LOG_WEB` messages in the log sink.
-
-**Fix**: Change `DLOG_W` to `DLOG_D` on line 939 of `WebUI.h`.
+Fixed in v2.0.1: SSE broadcast log level changed from `DLOG_W` to `DLOG_D` (DEBUG). Routine broadcasts no longer pollute WARNING-level output. The low-heap guard (line 933) still correctly uses `DLOG_W`.

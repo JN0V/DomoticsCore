@@ -175,15 +175,9 @@ This section maps WebUI implementation decisions to specific constitution princi
   - `Wifi.h` (DomoticsCore-Wifi) -- 881 lines. Cross-component awareness; tracked here for visibility.
 - **II. TDD**: The component has limited unit test coverage due to its dependency on `ESPAsyncWebServer` which is difficult to mock. Contract tests for the provider interface exist.
 
-### Known Issue: Excessive SSE Broadcast WARNING Logs
+### Resolved (v2.0.1): SSE Broadcast Log Severity
 
-The `sendWebSocketUpdates()` method in `WebUI.h` (line 939) logs every SSE broadcast at `DLOG_W` (WARNING) level:
-
-```cpp
-DLOG_W(LOG_WEB, "SSE broadcast: %d bytes, clients=%d", len, webSocket->getClientCount());
-```
-
-With the default `wsUpdateInterval` of 5000 ms, this produces a WARNING log of approximately 1560 bytes every ~5.4 seconds during normal operation with at least one SSE client connected. This is a severity mismatch: routine SSE broadcasts are not warnings. The log level should be `DLOG_D` (DEBUG) to avoid polluting the serial output and triggering false alarms in monitoring systems. The low-heap skip case on line 933 correctly uses `DLOG_W` since that *is* an abnormal condition worth flagging.
+The SSE broadcast log was changed from `DLOG_W` to `DLOG_D` in v2.0.1 (SSE-1). Routine broadcasts no longer pollute WARNING-level logs. The low-heap skip case on line 933 still correctly uses `DLOG_W` for the genuinely abnormal condition.
 
 ---
 

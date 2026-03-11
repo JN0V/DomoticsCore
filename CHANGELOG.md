@@ -5,6 +5,54 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-03-11
+
+### Bug Fixes (Roadmap v2 Batch Remediation — 20 items)
+
+**Security**
+- fix(ota): SHA256 mismatch now calls `abort()` to rollback corrupted firmware (SEC-2) [CRITICAL]
+
+**Memory Safety (Constitution XIV)**
+- fix(core,webui,wifi): add `shrink_to_fit()` after size-reducing operations (MEM-1)
+- fix(system): bound `stateCallbacks` to max 8 entries
+- fix(wifi): `scanNetworks` uses `reserve(n)` for exact allocation
+
+**ODR Violations**
+- fix(mqtt): `inline` on `MQTTComponent::instance` static member (BUG-7)
+- fix(ha): `inline constexpr` on HAEvents topic strings (BUG-12)
+- fix(ota): `inline` on static variables in Update headers (BUG-20)
+
+**Code Safety**
+- fix(core): `static_assert(is_trivially_copyable)` on EventBus publish (BUG-1)
+- fix(core): `LoggerCallbacks` now uses ID-based add/remove — was clearing ALL (BUG-3)
+- fix(mqtt): clamp QoS values >2 in publish, subscribe, and lwtQoS (BUG-9)
+- fix(storage): null guard on `putBlob()` (BUG-14)
+- fix(led): `fmod()` wrapping for effectPhase instead of reset to 0 (BUG-18)
+- fix(webui): SSE broadcast log level WARNING → DEBUG (SSE-1)
+
+**Dead Code Removal**
+- fix(ha): remove dead `volatile bool publishing` (BUG-11/DC-3b)
+- fix(ha): `mqttPublish()` → `void` — always returned true (BUG-10)
+- fix(webui,mqtt): remove pointless `doc.shrinkToFit()` after serialization (DC-8)
+
+### Component Versions
+
+| Component | Version |
+|-----------|---------|
+| **DomoticsCore** (root) | 2.0.1 |
+| Core | 1.5.3 |
+| WebUI | 1.5.1 |
+| LED | 1.4.1 |
+| Storage | 1.4.3 |
+| MQTT | 1.4.2 |
+| HomeAssistant | 2.0.1 |
+| OTA | 1.4.2 |
+| RemoteConsole | 1.4.2 |
+| Wifi | 1.4.2 |
+| System | 1.4.2 |
+
+---
+
 ## [2.0.0] - 2026-03-09
 
 ### Breaking Changes

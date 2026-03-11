@@ -497,21 +497,46 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 
 ---
 
+## Resolved in v2.0.1 (2026-03-11) — 20 items
+
+| Item | Severity | Fix |
+|------|----------|-----|
+| **SEC-2** | CRITICAL | `abort()` + error event on SHA256 mismatch after OTA download |
+| **MEM-1** | HIGH | `shrink_to_fit()` in ComponentRegistry, EventBus, IWebUIProvider, Wifi; bounded System stateCallbacks (max 8); Wifi reserve(n) |
+| **BUG-1** | HIGH | `static_assert(is_trivially_copyable)` on EventBus publish |
+| **BUG-3** | MEDIUM | LoggerCallbacks ID-based add/remove (was clearing all) |
+| **BUG-7** | HIGH | `inline` on MQTTComponent::instance |
+| **BUG-9** | HIGH | QoS >2 clamping in MQTT publish/subscribe/lwtQoS |
+| **BUG-10** | HIGH | `mqttPublish()` → void (always returned true) |
+| **BUG-11** | HIGH | Removed dead `volatile bool publishing` from HA |
+| **BUG-12** | HIGH | `inline constexpr` on HAEvents topic strings |
+| **BUG-14** | HIGH | Null guard on Storage::putBlob() |
+| **BUG-18** | MEDIUM | LED effectPhase wrapping with fmod() |
+| **BUG-20** | HIGH | `inline` on OTA static variables (ESP32/ESP8266/Stub) |
+| **SSE-1** | HIGH | SSE broadcast log level WARN → DEBUG |
+| **DC-3b** | MEDIUM | (same as BUG-11) |
+| **DC-4** | MEDIUM | Already removed in v1 — confirmed absent |
+| **DC-8** | MEDIUM | Removed pointless doc.shrinkToFit() (WebUI, MQTTWebUI) |
+
+**Commit**: `e081940` — 580 unit tests pass across 11 components.
+
+---
+
 ## Tracking Summary
 
-| Priority | Items | Constitution | Count |
-|----------|-------|-------------|-------|
-| 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 2C, 1H, 3M |
-| 2. Memory Safety | MEM-1 to MEM-4 | XIV (ABSOLUTE) | 0C, 2H, 2M |
-| 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 14H, 12M |
+| Priority | Items | Constitution | Remaining |
+|----------|-------|-------------|-----------|
+| 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 1C, 1H, 3M (**SEC-2 done**) |
+| 2. Memory Safety | MEM-1 to MEM-4 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done**) |
+| 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 6H, 10M (**8 done**) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 2C, 3H, 2M |
-| 5. SSE Bug | SSE-1 | — | 0C, 1H |
+| 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 1M |
 | 8. CI/Infrastructure | CI-1 to CI-7 | II, XII | 0C, 3H, 3M, 1L |
-| 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 11M |
-| 10. Minor | LO-1 to LO-27 | Various | 0C, 0H, 0M, 27L |
-| **Total** | **97 items** | | **4C, 28H, 37M, 28L** |
+| 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 8M (**DC-3b, DC-4, DC-8 done**) |
+| 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
+| **Total** | **97 items** | | **3C, 18H, 32M, 34L** (20 resolved) |
 
 ---
 

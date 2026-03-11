@@ -162,7 +162,7 @@ Every DomoticsCore component depends on Core. Based on `library.json` dependency
 
 9. **`Platform_Stub.h` `String` class.** The native stub `String` class mimics Arduino's `String` but has subtle differences (e.g., `toFloat()` uses `std::stof`, which may throw). Always test edge cases on the target platform too.
 
-10. **`LoggerCallbacks::removeCallback()` clears ALL callbacks.** The current implementation is simplified and does not perform targeted removal. If multiple listeners are registered, removing one removes all. This is a known limitation.
+10. **`LoggerCallbacks` uses ID-based add/remove.** `addCallback()` returns a `CallbackId` (uint8_t) that must be passed to `removeCallback(id)` for targeted removal. This was fixed in v2.0.1 — the previous implementation cleared ALL callbacks on any remove call.
 
 ---
 
