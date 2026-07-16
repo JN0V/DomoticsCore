@@ -183,6 +183,44 @@ void test_field_with_options(void) {
     TEST_ASSERT_EQUAL_STRING("Blink", options[1].as<const char*>());
 }
 
+// Regression: an option-label key/value pair may span any HTTP response chunk.
+void test_option_labels_across_chunk_boundaries(void) {
+    WebUIContext ctx("option_labels", "Option Labels", "icon",
+                     WebUILocation::Settings, WebUIPresentation::Card);
+    WebUIField field("mode", "Mode", WebUIFieldType::Select, "option_b");
+    field.addOption("option_a", "First Option")
+         .addOption("option_b", "Second Option")
+         .addOption("option_c", "Third Option");
+    ctx.withField(field);
+
+    for (size_t chunkSize = 2; chunkSize <= 32; ++chunkSize) {
+        StreamingContextSerializer serializer;
+        serializer.begin(ctx);
+        std::string json;
+        std::vector<uint8_t> buffer(chunkSize);
+        size_t iterations = 0;
+
+        while (!serializer.isComplete() && iterations++ < 4096) {
+            const size_t written = serializer.write(buffer.data(), buffer.size());
+            json.append(reinterpret_cast<const char*>(buffer.data()), written);
+        }
+
+        TEST_ASSERT_TRUE_MESSAGE(serializer.isComplete(),
+                                 "Serializer must complete for every chunk size");
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, json);
+        TEST_ASSERT_EQUAL_MESSAGE(DeserializationError::Ok,
+                                  error.code(),
+                                  "Failed to deserialize JSON after streaming option labels across chunk boundaries");
+        TEST_ASSERT_EQUAL_STRING("First Option",
+                                 doc["fields"][0]["optionLabels"]["option_a"].as<const char*>());
+        TEST_ASSERT_EQUAL_STRING("Second Option",
+                                 doc["fields"][0]["optionLabels"]["option_b"].as<const char*>());
+        TEST_ASSERT_EQUAL_STRING("Third Option",
+                                 doc["fields"][0]["optionLabels"]["option_c"].as<const char*>());
+    }
+}
+
 // Test CachingWebUIProvider returns same cached contexts
 class TestCachingProvider : public CachingWebUIProvider {
 protected:
@@ -351,6 +389,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_json_escaping);
     RUN_TEST(test_large_custom_content);
     RUN_TEST(test_field_with_options);
+    RUN_TEST(test_option_labels_across_chunk_boundaries);
     RUN_TEST(test_caching_provider_caches_contexts);
     RUN_TEST(test_serialize_multiple_contexts);
     RUN_TEST(test_chunked_serialization);

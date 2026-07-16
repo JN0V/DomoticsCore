@@ -91,7 +91,9 @@ private:
         MaxValue, MaxValueValue, MaxValueComma,
         Endpoint, EndpointValue,
         OptionsCheck, OptionsKey, OptionsArrayOpen, OptionValue, OptionComma, OptionsArrayClose, OptionsComma,
-        OptionLabelsCheck, OptionLabelsKey, OptionLabelsOpen, OptionLabelPair, OptionLabelComma, OptionLabelsClose,
+        OptionLabelsCheck, OptionLabelsKey, OptionLabelsOpen,
+        OptionLabelKey, OptionLabelColon, OptionLabelValue, OptionLabelComma,
+        OptionLabelsClose,
         CloseBrace,
         Complete
     };
@@ -546,13 +548,10 @@ private:
      * @return Bytes written
      */
     size_t writeJsonString(uint8_t* buffer, size_t maxLen, const char* str) {
-        // Handle nullptr as empty string
-        if (str == nullptr || str[0] == '\0') {
-            if (maxLen < 2) return 0;
-            buffer[0] = '"';
-            buffer[1] = '"';
-            stringOffset = 0;  // Reset
-            return 2;
+        // Normalize null and empty inputs, then let the resumable logic below
+        // write the quotes across chunk boundaries when necessary.
+        if (str == nullptr) {
+            str = "";
         }
         
         size_t written = 0;
@@ -843,35 +842,38 @@ private:
 
                 case FieldState::OptionLabelsOpen:
                     n = writeLiteral(buffer + written, remaining, "{");
-                    if (isLiteralComplete()) fieldState = FieldState::OptionLabelPair;
+                    if (isLiteralComplete()) fieldState = FieldState::OptionLabelKey;
                     break;
 
-                case FieldState::OptionLabelPair: {
-                    // Write key:value pairs from optionLabels map
+                case FieldState::OptionLabelKey: {
                     auto it = field.optionLabels.begin();
                     std::advance(it, optionIndex);
                     if (it != field.optionLabels.end()) {
-                        // Write "key":"value"
                         n = writeJsonString(buffer + written, remaining, it->first);
                         if (stringOffset == 0) {
-                            // Key written, need colon + value
-                            // Use a simple state machine within this state
-                            // For simplicity, we'll write colon and value in next iterations
-                            if (written + n < maxLen) {
-                                buffer[written + n] = ':';
-                                n++;
-                                // Now write value
-                                size_t vn = writeJsonString(buffer + written + n, remaining - n, it->second);
-                                n += vn;
-                                if (stringOffset == 0) {
-                                    optionIndex++;
-                                    if (optionIndex < field.optionLabels.size()) {
-                                        fieldState = FieldState::OptionLabelComma;
-                                    } else {
-                                        fieldState = FieldState::OptionLabelsClose;
-                                    }
-                                }
-                            }
+                            fieldState = FieldState::OptionLabelColon;
+                        }
+                    } else {
+                        fieldState = FieldState::OptionLabelsClose;
+                    }
+                    break;
+                }
+
+                case FieldState::OptionLabelColon:
+                    n = writeLiteral(buffer + written, remaining, ":");
+                    if (isLiteralComplete()) fieldState = FieldState::OptionLabelValue;
+                    break;
+
+                case FieldState::OptionLabelValue: {
+                    auto it = field.optionLabels.begin();
+                    std::advance(it, optionIndex);
+                    if (it != field.optionLabels.end()) {
+                        n = writeJsonString(buffer + written, remaining, it->second);
+                        if (stringOffset == 0) {
+                            optionIndex++;
+                            fieldState = optionIndex < field.optionLabels.size()
+                                ? FieldState::OptionLabelComma
+                                : FieldState::OptionLabelsClose;
                         }
                     } else {
                         fieldState = FieldState::OptionLabelsClose;
@@ -881,7 +883,7 @@ private:
 
                 case FieldState::OptionLabelComma:
                     n = writeLiteral(buffer + written, remaining, ",");
-                    if (isLiteralComplete()) fieldState = FieldState::OptionLabelPair;
+                    if (isLiteralComplete()) fieldState = FieldState::OptionLabelKey;
                     break;
 
                 case FieldState::OptionLabelsClose:
