@@ -128,6 +128,17 @@ public:
         enqueue(std::move(qe));
     }
 
+    // Topic-based publish with a variable-length payload copy.
+    // The caller retains ownership; the queued event owns its byte copy.
+    void publish(const String& topic, const void* payload, size_t payloadSize) {
+        if (topic.length() == 0 || payload == nullptr || payloadSize == 0) return;
+        QueuedEvent qe;
+        qe.topic = topic;
+        const uint8_t* p = static_cast<const uint8_t*>(payload);
+        qe.data.assign(p, p + payloadSize);
+        enqueue(std::move(qe));
+    }
+
     // Topic-based publish without payload
     void publish(const String& topic) {
         if (topic.length() == 0) return;
@@ -143,6 +154,12 @@ public:
         const uint8_t* p = reinterpret_cast<const uint8_t*>(&payload);
         lastByTopic[topic] = std::vector<uint8_t>(p, p + sizeof(PayloadT));
         publish(topic, payload);
+    }
+    void publishSticky(const String& topic, const void* payload, size_t payloadSize) {
+        if (topic.length() == 0 || payload == nullptr || payloadSize == 0) return;
+        const uint8_t* p = static_cast<const uint8_t*>(payload);
+        lastByTopic[topic] = std::vector<uint8_t>(p, p + payloadSize);
+        publish(topic, payload, payloadSize);
     }
     void publishSticky(const String& topic) {
         if (topic.length() == 0) return;

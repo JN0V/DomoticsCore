@@ -225,6 +225,13 @@ public:
         if (sticky) __dc_eventBus->publishSticky(topic, payload);
         else __dc_eventBus->publish(topic, payload);
     }
+
+    // Publish a variable-length payload. EventBus deep-copies payloadSize bytes.
+    void emit(const String& topic, const void* payload, size_t payloadSize, bool sticky) {
+        if (!__dc_eventBus || topic.length() == 0) return;
+        if (sticky) __dc_eventBus->publishSticky(topic, payload, payloadSize);
+        else __dc_eventBus->publish(topic, payload, payloadSize);
+    }
 };
 
 } // namespace Components

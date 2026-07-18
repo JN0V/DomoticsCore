@@ -166,6 +166,13 @@ public:
         if (sticky) componentRegistry.getEventBus().publishSticky(topic, payload);
         else componentRegistry.getEventBus().publish(topic, payload);
     }
+
+    // Publish a variable-length payload. EventBus deep-copies payloadSize bytes.
+    void emit(const String& topic, const void* payload, size_t payloadSize, bool sticky) {
+        if (topic.length() == 0) return;
+        if (sticky) componentRegistry.getEventBus().publishSticky(topic, payload, payloadSize);
+        else componentRegistry.getEventBus().publish(topic, payload, payloadSize);
+    }
     
     /**
      * @brief Emit/publish an event on a topic without payload
