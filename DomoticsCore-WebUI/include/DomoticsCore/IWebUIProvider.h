@@ -128,7 +128,8 @@ enum class WebUIFieldType {
     Status,            // Status indicator
     Progress,          // Progress value
     Password,          // Password input
-    File               // File upload input
+    File,              // File upload input
+    Multiselect        // Multi-line multiple selection
 };
 
 /**
@@ -157,6 +158,7 @@ struct WebUIField {
     float minValue = 0;
     float maxValue = 100;
     std::vector<String> options;    // For select fields (option values)
+    std::vector<String> selectedValues; // For multiselect fields
     std::map<String, String> optionLabels;  // Option value -> label mapping
     String endpoint;                // API endpoint for updates (dynamic storage)
 
@@ -184,7 +186,7 @@ struct WebUIField {
           valuePtr(other.valuePtr), unitPtr(other.unitPtr),
           endpointPtr(other.endpointPtr),
           minValue(other.minValue), maxValue(other.maxValue),
-          options(other.options), optionLabels(other.optionLabels),
+          options(other.options), selectedValues(other.selectedValues), optionLabels(other.optionLabels),
           endpoint(other.endpoint) {
         if (other.config) {
             config = std::make_unique<JsonDocument>(*other.config);
@@ -208,6 +210,7 @@ struct WebUIField {
             minValue = other.minValue;
             maxValue = other.maxValue;
             options = other.options;
+            selectedValues = other.selectedValues;
             optionLabels = other.optionLabels;
             endpoint = other.endpoint;
             if (other.config) {
@@ -233,6 +236,10 @@ struct WebUIField {
     // Fluent interface
     WebUIField& range(float min, float max) { minValue = min; maxValue = max; return *this; }
     WebUIField& choices(const std::vector<String>& opts) { options = opts; return *this; }
+    WebUIField& values(const std::vector<String>& vals) {
+        selectedValues = vals;
+        return *this;
+    }
     WebUIField& addOption(const String& val, const String& lbl) {
         options.push_back(val);
         optionLabels[val] = lbl;

@@ -171,10 +171,14 @@ void test_webui_field_all_types() {
     WebUIField f12("l", "L", WebUIFieldType::Progress);
     WebUIField f13("m", "M", WebUIFieldType::Password);
     WebUIField f14("n", "N", WebUIFieldType::File);
+    WebUIField f15("o", "O", WebUIFieldType::Multiselect);
+
+    TEST_ASSERT_EQUAL(14, static_cast<int>(f15.type));
 
     TEST_ASSERT_EQUAL(WebUIFieldType::Text, f1.type);
     TEST_ASSERT_EQUAL(WebUIFieldType::Number, f2.type);
     TEST_ASSERT_EQUAL(WebUIFieldType::File, f14.type);
+    TEST_ASSERT_EQUAL(WebUIFieldType::Multiselect, f15.type);
 }
 
 // ============================================================================

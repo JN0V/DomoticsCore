@@ -8,7 +8,7 @@ class DomoticsApp {
 
         // Enum mappings from C++ backend
         this.WebUILocation = { Dashboard: 0, ComponentDetail: 1, HeaderStatus: 2, QuickControls: 3, Settings: 4, HeaderInfo: 5 };
-        this.WebUIFieldType = { Text: 0, Number: 1, Float: 2, Boolean: 3, Select: 4, Slider: 5, Color: 6, Button: 7, Display: 8, Chart: 9, Status: 10, Progress: 11, Password: 12, File: 13 };
+        this.WebUIFieldType = { Text: 0, Number: 1, Float: 2, Boolean: 3, Select: 4, Slider: 5, Color: 6, Button: 7, Display: 8, Chart: 9, Status: 10, Progress: 11, Password: 12, File: 13, Multiselect: 14 };
 
         // Chart history storage (contextId_fieldName -> array of values)
         this.chartData = new Map();
@@ -313,23 +313,27 @@ class DomoticsApp {
                 }
                 break;
             case this.WebUIFieldType.Select:
+            case this.WebUIFieldType.Multiselect:
                 {
-                    const current = String(field.value || '');
+                    const multiple = field.type === this.WebUIFieldType.Multiselect;
+                    const current = multiple ? (Array.isArray(field.value) ? field.value : []) : String(field.value || '');
+                    const selectedValues = new Set(multiple ? current.map(String) : [current]);
+                    const selectAttributes = multiple ? 'multiple size="5"' : '';
                     // Check if options should be loaded from endpoint
                     if (field.endpoint && field.endpoint.length > 0) {
                         // Create select with loading placeholder, fetch options async
-                        fieldHtml = `<select id="${fieldId}" ${field.readOnly ? 'disabled' : ''} data-endpoint="${field.endpoint}" data-current="${current}"><option value="">Loading...</option></select>`;
+                        fieldHtml = `<select id="${fieldId}" ${selectAttributes} ${field.readOnly ? 'disabled' : ''} data-endpoint="${field.endpoint}"><option value="">Loading...</option></select>`;
                         // Queue async load after render
                         setTimeout(() => this.loadSelectOptions(fieldId, field.endpoint, current), 0);
                     } else {
                         const options = (field.options || []).length ? field.options : (typeof field.unit === 'string' && field.unit.includes(',')) ? field.unit.split(',') : [];
                         const labels = field.optionLabels || {};
                         const optsHtml = options.map(opt => {
-                            const sel = (String(opt) === current) ? 'selected' : '';
+                            const sel = selectedValues.has(String(opt)) ? 'selected' : '';
                             const label = labels[opt] || opt;  // Use label if available, fallback to value
                             return `<option value="${opt}" ${sel}>${label}</option>`;
                         }).join('');
-                        fieldHtml = `<select id="${fieldId}" ${field.readOnly ? 'disabled' : ''}>${optsHtml}</select>`;
+                        fieldHtml = `<select id="${fieldId}" ${selectAttributes} ${field.readOnly ? 'disabled' : ''}>${optsHtml}</select>`;
                     }
                 }
                 break;
@@ -397,8 +401,11 @@ class DomoticsApp {
                 break;
         }
 
+        const rowClass = field.type === this.WebUIFieldType.Multiselect
+            ? 'field-row field-row-multiselect'
+            : 'field-row';
         return `
-            <div class="field-row">
+            <div class="${rowClass}">
                 <span class="field-label">${field.label}:</span>
                 ${fieldHtml}
             </div>`;
@@ -414,10 +421,11 @@ class DomoticsApp {
             if (!select) return;
             
             // Build options HTML - expects [{value, label}] format
+            const selectedValues = new Set(select.multiple ? (Array.isArray(currentValue) ? currentValue.map(String) : []) : [String(currentValue)]);
             const optsHtml = options.map(opt => {
                 const val = opt.value || opt;
                 const label = opt.label || val;
-                const sel = (String(val) === String(currentValue)) ? 'selected' : '';
+                const sel = selectedValues.has(String(val)) ? 'selected' : '';
                 return `<option value="${val}" ${sel}>${label}</option>`;
             }).join('');
             
@@ -663,6 +671,11 @@ class DomoticsApp {
                                     // Trigger UI update listeners (e.g., custom JS updating bulbs)
                                     inputEl.dispatchEvent(new Event('change', { bubbles: true }));
                                 }
+                            } else if (inputEl.multiple) {
+                                const selectedValues = new Set(Array.isArray(value) ? value.map(String) : []);
+                                Array.from(inputEl.options).forEach(option => {
+                                    option.selected = selectedValues.has(option.value);
+                                });
                             } else {
                                 // Do not overwrite if user is currently editing this input
                                 if (document.activeElement === inputEl) return;
@@ -995,7 +1008,8 @@ class DomoticsApp {
                 if (field.type === this.WebUIFieldType.Button) {
                     value = 'clicked';
                 } else {
-                    value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+                    value = e.target.type === 'checkbox' ? e.target.checked :
+                        e.target.multiple ? Array.from(e.target.selectedOptions, option => option.value) : e.target.value;
                 }
                 if (card.dataset.editing === 'true' && field.type !== this.WebUIFieldType.Button) {
                     this.bufferFieldChange(card, field.name, value);
@@ -1205,7 +1219,7 @@ class DomoticsApp {
         const params = new URLSearchParams({
             contextId: contextId,
             field: fieldName,
-            value: String(value)
+            value: Array.isArray(value) ? JSON.stringify(value) : String(value)
         });
         try {
             const resp = await fetch('/api/ui/action?' + params.toString());

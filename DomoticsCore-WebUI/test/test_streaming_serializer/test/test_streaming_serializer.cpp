@@ -221,6 +221,22 @@ void test_option_labels_across_chunk_boundaries(void) {
     }
 }
 
+void test_multiselect_value_is_json_array(void) {
+    WebUIField field("networks", "Networks", WebUIFieldType::Multiselect);
+    field.choices({"office,5g", "guest"}).values({"office,5g", "guest"});
+    WebUIContext ctx = WebUIContext::settings("network_test", "Network Test")
+        .withField(field);
+
+    std::string json = serializeContextToStdString(ctx);
+    JsonDocument doc;
+    TEST_ASSERT_EQUAL(DeserializationError::Ok, deserializeJson(doc, json).code());
+
+    JsonArray values = doc["fields"][0]["value"].as<JsonArray>();
+    TEST_ASSERT_EQUAL(2, values.size());
+    TEST_ASSERT_EQUAL_STRING("office,5g", values[0].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("guest", values[1].as<const char*>());
+}
+
 // Test CachingWebUIProvider returns same cached contexts
 class TestCachingProvider : public CachingWebUIProvider {
 protected:
@@ -390,6 +406,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_large_custom_content);
     RUN_TEST(test_field_with_options);
     RUN_TEST(test_option_labels_across_chunk_boundaries);
+    RUN_TEST(test_multiselect_value_is_json_array);
     RUN_TEST(test_caching_provider_caches_contexts);
     RUN_TEST(test_serialize_multiple_contexts);
     RUN_TEST(test_chunked_serialization);

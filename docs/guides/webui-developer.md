@@ -404,7 +404,10 @@ enum class WebUIFieldType {
     Display,           // Read-only display (most common)
     Chart,             // Chart data
     Status,            // Status indicator
-    Progress           // Progress value
+    Progress,          // Progress value
+    Password,          // Password input
+    File,              // File upload input
+    Multiselect        // Multi-line multiple selection (JSON array value)
 };
 ```
 

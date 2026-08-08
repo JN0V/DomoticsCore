@@ -698,8 +698,18 @@ private:
                     break;
 
                 case FieldState::ValueValue:
-                    n = writeJsonString(buffer + written, remaining, field.getValueCStr());
-                    if (stringOffset == 0) fieldState = FieldState::ValueComma;
+                    if (field.type == WebUIFieldType::Multiselect) {
+                        JsonDocument valuesDoc;
+                        JsonArray values = valuesDoc.to<JsonArray>();
+                        for (const String& value : field.selectedValues) values.add(value);
+                        String serializedValues;
+                        serializeJson(valuesDoc, serializedValues);
+                        n = writeLiteral(buffer + written, remaining, serializedValues.c_str());
+                        if (isLiteralComplete()) fieldState = FieldState::ValueComma;
+                    } else {
+                        n = writeJsonString(buffer + written, remaining, field.getValueCStr());
+                        if (stringOffset == 0) fieldState = FieldState::ValueComma;
+                    }
                     break;
 
                 case FieldState::ValueComma:
