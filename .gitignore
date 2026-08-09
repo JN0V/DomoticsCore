@@ -67,8 +67,8 @@ Roadmap.md
 # Release archives
 *.tar.gz
 
-# BMAD tooling — memory is session-specific, framework + output are tracked
-_bmad/_memory/
+# BMAD framework — reinstall it, don't track it. Only _bmad-output/ is tracked.
+_bmad/
 
 # Windsurf IDE
 .windsurf/
