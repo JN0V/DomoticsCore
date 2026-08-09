@@ -6,19 +6,31 @@ jobs:
   test-install:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
+      - uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      
+
       - name: Install PlatformIO
         run: |
           pip install platformio
-      
+
       - name: Create test project
+        env:
+          # On pull_request, GITHUB_SHA is the ephemeral refs/pull/N/merge commit.
+          # It exists only as a GitHub-side ref, so PlatformIO's `git clone` +
+          # `git reset --hard <sha>` cannot resolve it and every PR fails with
+          # "Could not parse object". Install the PR head commit from the repo it
+          # actually lives in (the fork, for external contributions) instead.
+          PR_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          INSTALL_REPO="${PR_REPO:-$GITHUB_REPOSITORY}"
+          INSTALL_SHA="${PR_SHA:-$GITHUB_SHA}"
+          echo "Installing from https://github.com/${INSTALL_REPO}.git#${INSTALL_SHA}"
+
           mkdir test-install
           cd test-install
           cat > platformio.ini << EOF
@@ -27,14 +39,14 @@ jobs:
           board = esp32dev
           framework = arduino
           board_build.partitions = min_spiffs.csv
-          lib_deps = 
-              https://github.com/JN0V/DomoticsCore.git#${GITHUB_SHA}
-          build_unflags = 
+          lib_deps =
+              https://github.com/${INSTALL_REPO}.git#${INSTALL_SHA}
+          build_unflags =
               -std=gnu++11
-          build_flags = 
+          build_flags =
               -std=gnu++14
           EOF
-          
+
           mkdir src
           cat > src/main.cpp << 'EOF'
           #include <DomoticsCore/System.h>
@@ -48,7 +60,7 @@ jobs:
           }
           void loop() { sys->loop(); }
           EOF
-      
+
       - name: Test compilation
         run: |
           cd test-install
