@@ -75,3 +75,6 @@ _bmad/_memory/
 
 # Specs (local working docs)
 specs/
+
+# Doxygen generated documentation — regenerate with: doxygen docs/Doxyfile
+docs/html/
