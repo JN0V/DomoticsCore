@@ -16,11 +16,11 @@ namespace HAL {
 namespace NTPImpl {
 
 inline void init(const char* server1, const char* server2, const char* server3) {
-    sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    sntp_setservername(0, server1);
-    if (server2) sntp_setservername(1, server2);
-    if (server3) sntp_setservername(2, server3);
-    sntp_init();
+    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, server1);
+    if (server2) esp_sntp_setservername(1, server2);
+    if (server3) esp_sntp_setservername(2, server3);
+    esp_sntp_init();
 }
 
 inline void setTimezone(const char* tz) {
@@ -29,15 +29,15 @@ inline void setTimezone(const char* tz) {
 }
 
 inline void setSyncInterval(uint32_t intervalMs) {
-    sntp_set_sync_interval(intervalMs);
+    esp_sntp_set_sync_interval(intervalMs);
 }
 
 inline void stop() {
-    sntp_stop();
+    esp_sntp_stop();
 }
 
 inline void forceSync() {
-    sntp_restart();
+    esp_sntp_restart();
 }
 
 } // namespace NTPImpl
