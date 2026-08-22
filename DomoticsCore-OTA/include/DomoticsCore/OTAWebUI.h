@@ -190,6 +190,7 @@ private:
     struct UploadState {
         bool active = false;
         bool success = false;
+        bool authFailed = false;  ///< SEC-3: Track auth failure to skip upload chunks
         String error;
         String filename;
         size_t total = 0;
@@ -334,12 +335,35 @@ private:
                     "</form>"
                     "<p>After a successful upload, the device may reboot automatically.</p>"
                     "</div></body></html>";
-            webui->registerApiRoute("/ota/upload", HTTP_GET, [](AsyncWebServerRequest* request){
+            // SEC-3: Gate upload HTML page behind WebUI auth
+            webui->registerApiRoute("/ota/upload", HTTP_GET, [this](AsyncWebServerRequest* request){
+                // NOTE: WebUIConfig.username is char[32] and .password is char[48] (not String)
+                if (webui && webui->getConfig().enableAuth) {
+                    if (!request->authenticate(
+                            webui->getConfig().username,
+                            webui->getConfig().password)) {
+                        request->requestAuthentication();
+                        return;
+                    }
+                }
                 request->send(200, "text/html", OTA_UPLOAD_HTML);
             });
             webui->registerApiUploadRoute(
                 "/api/ota/upload",
                 [this](AsyncWebServerRequest* request) {
+                    // SEC-3: Check authentication before processing upload result.
+                    // NOTE: WebUIComponent::authenticate() is private, so we inline the
+                    // auth check using getConfig() fields directly. This mirrors the same
+                    // logic authenticate() uses internally.
+                    // NOTE: WebUIConfig.username is char[32] and .password is char[48] (not String)
+                    if (webui && webui->getConfig().enableAuth) {
+                        if (!request->authenticate(
+                                webui->getConfig().username,
+                                webui->getConfig().password)) {
+                            request->requestAuthentication();
+                            return;
+                        }
+                    }
                     respondJson(request, [this](JsonDocument& doc) {
                         doc["success"] = uploadState.success;
                         if (!uploadState.success) {
@@ -350,15 +374,32 @@ private:
                     });
                 },
                 [this](AsyncWebServerRequest* request, const String& filename, uint32_t index, uint8_t* data, size_t len, bool final) {
+                    // SEC-3: Reset state FIRST at index == 0, THEN check auth.
+                    // This prevents a stale authFailed flag from a previous failed upload
+                    // from causing the current upload to be silently rejected.
+                    // NOTE: WebUIConfig.username is char[32] and .password is char[48] (not String)
                     if (index == 0) {
-                        uploadState = UploadState{};
+                        uploadState = UploadState{};  // Reset ALL state (clears stale authFailed)
+                        if (webui && webui->getConfig().enableAuth) {
+                            if (!request->authenticate(
+                                    webui->getConfig().username,
+                                    webui->getConfig().password)) {
+                                uploadState.success = false;
+                                uploadState.error = "Authentication required";
+                                uploadState.authFailed = true;
+                                // Abort any in-progress OTA to prevent flash writes
+                                ota->abortUpload("Authentication required");
+                                return;
+                            }
+                        }
                         uploadState.active = true;
                         uploadState.filename = filename;
                         uploadState.total = 0;
-                        // Get content length from request for progress tracking
                         size_t expectedSize = request->contentLength();
                         ota->beginUpload(expectedSize);
                     }
+                    // Skip all chunks if auth failed
+                    if (uploadState.authFailed) return;
                     if (data && len > 0) {
                         uploadState.total += len;
                         if (!ota->acceptUploadChunk(data, len)) {
