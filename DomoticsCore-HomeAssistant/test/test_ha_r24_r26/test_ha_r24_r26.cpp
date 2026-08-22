@@ -245,6 +245,22 @@ void test_command_event_heap_stability() {
 
     simulateMqttConnect(core);
 
+    // Warm-up pass, deliberately outside the measured window. What this test
+    // means to assert is that handling a command leaks nothing per command --
+    // not that the very first command allocates nothing, which is a different
+    // and much weaker claim. Buffers sized on first use and lazily built lookup
+    // tables are paid once and never again, and measuring from a cold start
+    // charges them to the loop.
+    //
+    // On the host that distinction is the difference between passing and
+    // failing: on glibc 2.43 a cold measurement came to zero bytes, while the
+    // ubuntu-latest runner's allocator put it at 384, over the 256 tolerance.
+    // The loop itself is clean either way -- with the tolerance forced to zero,
+    // 10, 100 and 1000 iterations all measured exactly zero bytes of growth.
+    for (int i = 0; i < 10; i++) {
+        simulateEntityCommand(core, "switch", "test_node", "sw1", (i % 2 == 0) ? "ON" : "OFF");
+    }
+
     HeapTracker tracker;
     HEAP_CHECKPOINT(tracker, "before");
 
