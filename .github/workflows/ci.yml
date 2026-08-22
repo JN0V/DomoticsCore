@@ -1,0 +1,133 @@
+name: CI
+
+# What the other two workflows prove, and what they leave uncovered:
+#   test-github-install.yml — the library installs from GitHub and compiles,
+#                             for esp32dev only, from a witness project.
+#   version-check.yml       — library.json versions agree with metadata.version.
+#
+# Neither runs a single test, and neither compiles the two other targets every
+# example declares. This workflow closes both gaps.
+#
+# What it still does not cover, so that a green tick is not read for more than
+# it is worth: the install-from-GitHub path remains esp32dev-only. Building the
+# witness project for esp8266 would first need the root library.json to stop
+# pulling AsyncTCP unconditionally, which is ESP32-only — a separate change.
+# And a host build proves compilation, not behaviour on a board.
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The unit-test suites. Every component carries its own platformio.ini with a
+  # `native` environment; there is no top-level project that runs them all, so
+  # the projects are discovered rather than listed. Discovery walks the tracked
+  # platformio.ini files, which finds both the eleven component projects and
+  # DomoticsCore-WebUI/test/test_streaming_serializer — a native project nested
+  # a level deeper that a component-level loop would have missed — and picks up
+  # any project added later without editing this file.
+  #
+  # One job rather than a matrix: the whole set takes about ninety seconds, and
+  # a single job shares one PlatformIO cache instead of twelve. Failures are
+  # accumulated rather than fatal, so one broken component does not hide the
+  # state of the others.
+  # ---------------------------------------------------------------------------
+  native-tests:
+    name: Unit tests (native)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-native-6.1.19-${{ hashFiles('DomoticsCore-*/platformio.ini', 'DomoticsCore-*/test/*/platformio.ini') }}
+          restore-keys: pio-native-
+
+      - name: Install PlatformIO
+        run: pip install platformio==6.1.19
+
+      - name: Run every native suite
+        run: |
+          failed=""
+          found=0
+          # DomoticsCore-System declares no native environment: it is
+          # orchestration-only and carries no suites. Skipping is the point of
+          # testing the file rather than hard-coding a list.
+          for ini in $(git ls-files '*platformio.ini'); do
+            grep -q '^\[env:native\]' "$ini" || continue
+            project=$(dirname "$ini")
+            found=$((found + 1))
+            echo "::group::${project}"
+            (cd "$project" && pio test -e native) || failed="${failed} ${project}"
+            echo "::endgroup::"
+          done
+          # A discovery loop that silently matches nothing would report success
+          # while running no test at all — the exact failure this job exists to
+          # end. Refuse to pass on an empty run.
+          if [ "$found" -eq 0 ]; then
+            echo "::error::no native project found — discovery is broken"
+            exit 1
+          fi
+          echo "ran ${found} native projects"
+          if [ -n "$failed" ]; then
+            echo "::error::native suites failed:${failed}"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Cross-compilation for the three targets every example declares, and that
+  # library.json promises through `platforms: [espressif32, espressif8266]`.
+  #
+  # FullStack is the witness: of the twenty-nine examples it is the only one
+  # that pulls all twelve components, so it is the only one whose esp8266dev
+  # build reaches all ten ESP8266-specific headers (Platform, Filesystem,
+  # HeapTracker, Wifi, WiFiServer, Storage, WebUI, MQTT, NTP, Update). Building
+  # it for the three targets buys that coverage for three builds instead of
+  # eighty-seven.
+  #
+  # Note for anyone extending this to several examples: clean_examples.py wipes
+  # .pio/ from the component source directories on every build, so concurrent
+  # builds sharing a checkout corrupt each other. Matrix legs run on separate
+  # runners, which is why this is safe as written.
+  # ---------------------------------------------------------------------------
+  build-targets:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [esp32dev, esp8266dev, esp32c3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ matrix.target }}-6.1.19-${{ hashFiles('DomoticsCore-System/examples/FullStack/platformio.ini') }}
+          restore-keys: pio-${{ matrix.target }}-
+
+      - name: Install PlatformIO
+        run: pip install platformio==6.1.19
+
+      - name: Build FullStack example
+        working-directory: DomoticsCore-System/examples/FullStack
+        run: pio run -e ${{ matrix.target }}
