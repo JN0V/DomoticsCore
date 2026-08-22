@@ -8,6 +8,48 @@
 
 ---
 
+## Delivery — how these items land
+
+The remaining items are grouped into lots, one pull request per lot, rather than
+landed one at a time. They come from a single oversized commit that mixed
+unrelated concerns; splitting it by component is the point of the exercise.
+
+No version bumps inside the lots — `library.json` versions and the CHANGELOG
+move once, at the end, when the series is complete. That is why component
+versions may sit still while fixes land.
+
+| Lot | Items | State |
+|---|---|---|
+| **CI** | CI-1, CI-2 | **Merged** — PR #2, 2026-08-22 |
+| **NTP** | BUG-4, BUG-5, BUG-6 | PR #1 open — first, because it touches code being rewritten on `esp32-ethernet` |
+| OTA | SEC-3, DC-7 | not started |
+| Storage | BUG-15, BUG-16, BUG-17 | not started |
+| Isolated | BUG-8, BUG-22, BUG-23 | not started |
+| CI (remainder) | CI-3, CI-5 | not started |
+
+`main` requires six checks: `test-install`, `check-versions`,
+`Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
+plus an up-to-date branch and resolved conversations.
+
+### What CI proves, and what it does not
+
+Worth knowing before a green tick is read for more than it is worth.
+
+| | |
+|---|---|
+| ✅ | The 12 native projects run — 550 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
+| ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
+| ✅ | `library.json` versions agree with `metadata.version` |
+| ❌ | **The install-from-GitHub path is still `esp32dev`-only.** Building the witness project for ESP8266 needs the root `library.json` to stop pulling `AsyncTCP` unconditionally — that package is ESP32-only. See CI-3 |
+| ❌ | **No test runs on hardware.** A host build proves compilation, not behaviour on a board |
+
+That last line is not a formality. BUG-4, the SNTP server-name use-after-free,
+**compiles cleanly and passes the native suites**; it only shows itself on a
+board, after a configuration change. It was found by reading the code. Native
+tests and cross-compilation cover what breaks most often, not what costs most.
+
+---
+
 ## Priority 1: Security (CRITICAL — OTA & WebUI)
 
 Unenforced security configurations are the most dangerous class of defect — users believe they are protected when they are not.
@@ -397,17 +439,32 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 
 ## Priority 8: CI / Infrastructure
 
-### CI-1 — No unit test CI workflow [HIGH]
+### CI-1 — No unit test CI workflow [HIGH] — **DONE (2026-08-22, PR #2)**
 
 - **Ref**: R-F4
 - **Problem**: GitHub Actions never runs native unit tests. Only compile test for ESP32.
-- **Fix**: Create `test.yml` workflow running `pio test -e native`.
+- **Fixed**: `.github/workflows/ci.yml`, job `native-tests`. Projects are discovered
+  from the tracked `platformio.ini` files rather than listed, which also picked up
+  `DomoticsCore-WebUI/test/test_streaming_serializer` — a native project nested a
+  level below the components, that nothing had ever run. An empty discovery is a
+  failure, so the job cannot pass by testing nothing.
+- **What it caught on first run**: three suites asserting their own component version
+  as a stale literal, and one heap-stability test measuring the allocator rather than
+  the code (it charged the first command's one-off cost to the loop, which passed on
+  glibc 2.43 and failed at 384 bytes on the runner). Both fixed in the same PR.
 
-### CI-2 — ESP8266 not tested in CI [HIGH]
+### CI-2 — ESP8266 not tested in CI [HIGH] — **DONE (2026-08-22, PR #2)**
 
 - **Ref**: R-F5
 - **Problem**: Only ESP32 compilation tested. ESP8266 regressions go undetected.
-- **Fix**: Add ESP8266 to build matrix.
+- **Fixed**: `.github/workflows/ci.yml`, job `build-targets` — a matrix over
+  `esp32dev`, `esp8266dev` and `esp32c3` building the FullStack example, the only one
+  of the 29 examples pulling all twelve components and therefore the only one whose
+  ESP8266 build reaches all ten ESP8266-specific headers.
+- **Result**: the ten files compile clean. The platform the library had been promising
+  without ever checking was sound — there was nothing to repair, only something to
+  prove. `esp8266dev` RAM 61.7% / Flash 68.1%.
+- **Not covered**: the install-from-GitHub witness stays `esp32dev`-only until CI-3.
 
 ### CI-3 — Missing `DomoticsCore-Core` dependency in 3 library.json [HIGH]
 
@@ -533,10 +590,10 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 1M |
-| 8. CI/Infrastructure | CI-1 to CI-7 | II, XII | 0C, 3H, 3M, 1L |
+| 8. CI/Infrastructure | CI-1 to CI-7 | II, XII | 0C, 1H, 3M, 1L (**CI-1, CI-2 done**) |
 | 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 8M (**DC-3b, DC-4, DC-8 done**) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
-| **Total** | **97 items** | | **3C, 18H, 32M, 34L** (20 resolved) |
+| **Total** | **97 items** | | **3C, 16H, 32M, 34L** (22 resolved) |
 
 ---
 
