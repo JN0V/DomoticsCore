@@ -59,7 +59,11 @@ void test_wifi_component_creation_default(void) {
     auto wifi = std::make_unique<WifiComponent>();
 
     TEST_ASSERT_EQUAL_STRING("Wifi", wifi->metadata.name);
-    TEST_ASSERT_EQUAL_STRING("1.4.1", wifi->metadata.version);
+    // The exact version is enforced by tools/check_versions.py, which compares
+    // library.json against every metadata.version in the component's sources.
+    // Repeating the literal here only makes the test stale at the next release.
+    TEST_ASSERT_NOT_NULL(wifi->metadata.version);
+    TEST_ASSERT_NOT_EQUAL('\0', wifi->metadata.version[0]);
 }
 
 void test_wifi_component_creation_with_credentials(void) {
