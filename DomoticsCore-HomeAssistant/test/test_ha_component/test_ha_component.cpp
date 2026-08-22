@@ -46,7 +46,11 @@ void test_ha_component_creation_default() {
 
     TEST_ASSERT_EQUAL_STRING("HomeAssistant", ha.metadata.name);
     TEST_ASSERT_EQUAL_STRING("DomoticsCore", ha.metadata.author);
-    TEST_ASSERT_EQUAL_STRING("2.0.0", ha.metadata.version);
+    // The exact version is enforced by tools/check_versions.py, which compares
+    // library.json against every metadata.version in the component's sources.
+    // Repeating the literal here only makes the test stale at the next release.
+    TEST_ASSERT_NOT_NULL(ha.metadata.version);
+    TEST_ASSERT_NOT_EQUAL('\0', ha.metadata.version[0]);
 }
 
 void test_ha_component_creation_with_config() {

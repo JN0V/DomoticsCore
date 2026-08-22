@@ -34,7 +34,11 @@ void test_remoteconsole_component_creation_default(void) {
     auto console = std::make_unique<RemoteConsoleComponent>();
 
     TEST_ASSERT_EQUAL_STRING("RemoteConsole", console->metadata.name);
-    TEST_ASSERT_EQUAL_STRING("1.4.1", console->metadata.version);
+    // The exact version is enforced by tools/check_versions.py, which compares
+    // library.json against every metadata.version in the component's sources.
+    // Repeating the literal here only makes the test stale at the next release.
+    TEST_ASSERT_NOT_NULL(console->metadata.version);
+    TEST_ASSERT_NOT_EQUAL('\0', console->metadata.version[0]);
 }
 
 void test_remoteconsole_component_creation_with_config(void) {

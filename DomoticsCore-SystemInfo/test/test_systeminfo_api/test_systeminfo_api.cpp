@@ -31,7 +31,11 @@ void test_systeminfo_creation_default(void) {
     SystemInfoComponent sysinfo;
 
     TEST_ASSERT_EQUAL_STRING("System Info", sysinfo.metadata.name);
-    TEST_ASSERT_EQUAL_STRING("1.4.0", sysinfo.metadata.version);
+    // The exact version is enforced by tools/check_versions.py, which compares
+    // library.json against every metadata.version in the component's sources.
+    // Repeating the literal here only makes the test stale at the next release.
+    TEST_ASSERT_NOT_NULL(sysinfo.metadata.version);
+    TEST_ASSERT_NOT_EQUAL('\0', sysinfo.metadata.version[0]);
     TEST_ASSERT_EQUAL_STRING("system_info", sysinfo.getTypeKey());
 }
 
