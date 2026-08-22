@@ -3,6 +3,7 @@
 // Includes HeapTracker integration for memory leak detection
 
 #include <DomoticsCore/Storage_HAL.h>
+#include <DomoticsCore/Storage.h>
 #include <DomoticsCore/Testing/HeapTracker.h>
 #include <unity.h>
 
@@ -232,7 +233,30 @@ void test_storage_memory_stability_namespace_lifecycle(void) {
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
 }
 
-// ===== RAM-only backend (BUG-16, BUG-17) =====
+void test_storage_memory_no_growth_repeated_reads(void) {
+    HeapTracker tracker;
+    
+    // Setup: store some data
+    storage.putString("persistent", "some_value");
+    storage.putInt("number", 42);
+    
+    tracker.checkpoint("baseline");
+    
+    // Perform many read operations
+    for (int i = 0; i < 100; i++) {
+        String val = storage.getString("persistent");
+        int num = storage.getInt("number");
+        (void)val; (void)num; // Suppress unused warnings
+    }
+    
+    // Verify no heap growth
+    MemoryTestResult result = tracker.assertNoGrowth("baseline", 256);
+    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+}
+
+// ============================================================================
+// UInt64 Round-Trip Tests (BUG-16)
+// ============================================================================
 
 void test_put_get_uint64_large_value(void) {
     // BUG-16: Values > 2^32 must round-trip correctly
@@ -256,6 +280,10 @@ void test_put_get_uint64_max(void) {
 void test_get_uint64_default(void) {
     TEST_ASSERT_EQUAL_UINT64(999, storage.getULong64("nonexistent", 999));
 }
+
+// ============================================================================
+// Bytes Round-Trip Tests (BUG-17)
+// ============================================================================
 
 void test_put_get_bytes_roundtrip(void) {
     // BUG-17: putBytes/getBytes must store and retrieve actual data
@@ -289,25 +317,69 @@ void test_put_bytes_single_byte(void) {
     TEST_ASSERT_EQUAL_UINT8(0xFF, out[0]);
 }
 
-void test_storage_memory_no_growth_repeated_reads(void) {
-    HeapTracker tracker;
-    
-    // Setup: store some data
-    storage.putString("persistent", "some_value");
-    storage.putInt("number", 42);
-    
-    tracker.checkpoint("baseline");
-    
-    // Perform many read operations
-    for (int i = 0; i < 100; i++) {
-        String val = storage.getString("persistent");
-        int num = storage.getInt("number");
-        (void)val; (void)num; // Suppress unused warnings
-    }
-    
-    // Verify no heap growth
-    MemoryTestResult result = tracker.assertNoGrowth("baseline", 256);
-    TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
+// ============================================================================
+// Cache-First Behavior Tests (BUG-15 via StorageComponent)
+// ============================================================================
+
+// These tests use StorageComponent to verify cache-first read behavior
+
+void test_cache_getString_hit(void) {
+    // Use StorageComponent to test cache behavior
+    DomoticsCore::Components::StorageComponent sc;
+    sc.begin();
+    sc.putString("ck", "cached_value");
+    // First read populates cache (or returns cached from put)
+    TEST_ASSERT_EQUAL_STRING("cached_value", sc.getString("ck").c_str());
+    // Second read should hit cache
+    TEST_ASSERT_EQUAL_STRING("cached_value", sc.getString("ck").c_str());
+    sc.shutdown();
+}
+
+void test_cache_getInt_hit(void) {
+    DomoticsCore::Components::StorageComponent sc;
+    sc.begin();
+    sc.putInt("ik", 42);
+    TEST_ASSERT_EQUAL_INT32(42, sc.getInt("ik"));
+    TEST_ASSERT_EQUAL_INT32(42, sc.getInt("ik"));
+    sc.shutdown();
+}
+
+void test_cache_invalidation_on_remove(void) {
+    DomoticsCore::Components::StorageComponent sc;
+    sc.begin();
+    sc.putString("rk", "value");
+    TEST_ASSERT_EQUAL_STRING("value", sc.getString("rk").c_str());
+    sc.remove("rk");
+    // After remove, should return default
+    TEST_ASSERT_EQUAL_STRING("default", sc.getString("rk", "default").c_str());
+    sc.shutdown();
+}
+
+void test_cache_invalidation_on_clear(void) {
+    DomoticsCore::Components::StorageComponent sc;
+    sc.begin();
+    sc.putString("a", "va");
+    sc.putInt("b", 10);
+    sc.clear();
+    // After clear, all getters should return defaults
+    TEST_ASSERT_EQUAL_STRING("def", sc.getString("a", "def").c_str());
+    TEST_ASSERT_EQUAL_INT32(-1, sc.getInt("b", -1));
+    sc.shutdown();
+}
+
+void test_getEntryCount_delegates_to_HAL(void) {
+    DomoticsCore::Components::StorageComponent sc;
+    sc.begin();
+    // F6: Assert exact count after F1 fix (maxEntries queried from HAL)
+    // RAMOnlyStorage MAX_ENTRIES = 32, initially 0 used
+    size_t countBefore = sc.getEntryCount();
+    TEST_ASSERT_EQUAL(0, countBefore);
+    sc.putString("ec1", "v1");
+    sc.putString("ec2", "v2");
+    size_t count = sc.getEntryCount();
+    // Should reflect exactly 2 entries in HAL
+    TEST_ASSERT_EQUAL(2, count);
+    sc.shutdown();
 }
 
 // ============================================================================
@@ -350,16 +422,26 @@ int main(int argc, char **argv) {
     RUN_TEST(test_namespace_isolation);
     RUN_TEST(test_namespace_switch);
 
-    // Memory leak detection tests (HeapTracker)
+    // UInt64 round-trip tests (BUG-16)
     RUN_TEST(test_put_get_uint64_large_value);
     RUN_TEST(test_put_get_uint64_zero);
     RUN_TEST(test_put_get_uint64_max);
     RUN_TEST(test_get_uint64_default);
+
+    // Bytes round-trip tests (BUG-17)
     RUN_TEST(test_put_get_bytes_roundtrip);
     RUN_TEST(test_get_bytes_length);
     RUN_TEST(test_get_bytes_nonexistent);
     RUN_TEST(test_put_bytes_single_byte);
 
+    // Cache-first behavior tests (BUG-15)
+    RUN_TEST(test_cache_getString_hit);
+    RUN_TEST(test_cache_getInt_hit);
+    RUN_TEST(test_cache_invalidation_on_remove);
+    RUN_TEST(test_cache_invalidation_on_clear);
+    RUN_TEST(test_getEntryCount_delegates_to_HAL);
+
+    // Memory leak detection tests (HeapTracker)
     RUN_TEST(test_storage_memory_stability_basic_ops);
     RUN_TEST(test_storage_memory_stability_namespace_lifecycle);
     RUN_TEST(test_storage_memory_no_growth_repeated_reads);

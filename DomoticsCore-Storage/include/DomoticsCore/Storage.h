@@ -15,6 +15,7 @@
  */
 
 #include "DomoticsCore/IComponent.h"
+#include "DomoticsCore/Logger.h"
 #include "DomoticsCore/Timer.h"
 #include "DomoticsCore/StorageEvents.h"
 #include "Storage_HAL.h"  // Hardware Abstraction Layer for Storage
@@ -78,9 +79,16 @@ struct StorageKeyDef {
 class StorageComponent : public IComponent {
 private:
     StorageConfig storageConfig;
-    HAL::PlatformStorage storage;  // HAL abstraction for multi-platform
+    mutable HAL::PlatformStorage storage;  // HAL abstraction for multi-platform (mutable for const accessors)
     Utils::NonBlockingDelay statusTimer;
     Utils::NonBlockingDelay maintenanceTimer;
+    /// @note Cache assumes sole-writer access. External modifications to the
+    /// storage backend (e.g., direct NVS writes) will NOT be reflected in the
+    /// cache until the entry is removed and re-read.
+    /// @note When a key is missing from both cache and HAL, the caller-supplied
+    /// default value is cached. Subsequent reads with a different default will
+    /// return the previously cached default, not the new one. Use explicit put()
+    /// to set canonical values; do not rely on get() defaults for initialization.
     std::map<String, StorageEntry> cache;
     std::vector<StorageKeyDef> registeredKeys;  // Keys registered by components
     bool isOpen;
@@ -161,13 +169,19 @@ public:
     
     ComponentStatus shutdown() override {
         DLOG_I(LOG_STORAGE, "Shutting down...");
-        
+
+        // F10: Shrink blobs and clear cache BEFORE storage.end() per spec
+        for (auto& [k, entry] : cache) {
+            entry.blobValue.clear();
+            entry.blobValue.shrink_to_fit(); // Constitution XIV — release blob capacity
+        }
+        cache.clear();
+
         if (isOpen) {
             storage.end();
             isOpen = false;
         }
-        cache.clear();
-        
+
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
     }
@@ -348,8 +362,20 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return defaultValue;
         }
-        
+        // BUG-15: Check cache first
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::String) {
+            DLOG_D(LOG_STORAGE, "Cache hit string '%s'", key.c_str());
+            return it->second.stringValue;
+        }
         String value = storage.getString(key.c_str(), defaultValue);
+        // Cache the HAL result for future reads
+        StorageEntry entry;
+        entry.key = key;
+        entry.type = StorageValueType::String;
+        entry.stringValue = value;
+        entry.size = value.length();
+        cache[key] = entry;
         DLOG_D(LOG_STORAGE, "Retrieved string '%s' = '%s'", key.c_str(), value.c_str());
         return value;
     }
@@ -359,8 +385,19 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return defaultValue;
         }
-        
+        // BUG-15: Check cache first
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::Integer) {
+            DLOG_D(LOG_STORAGE, "Cache hit int '%s'", key.c_str());
+            return it->second.intValue;
+        }
         int32_t value = storage.getInt(key.c_str(), defaultValue);
+        StorageEntry entry;
+        entry.key = key;
+        entry.type = StorageValueType::Integer;
+        entry.intValue = value;
+        entry.size = sizeof(int32_t);
+        cache[key] = entry;
         DLOG_D(LOG_STORAGE, "Retrieved int '%s' = %d", key.c_str(), value);
         return value;
     }
@@ -370,8 +407,19 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return defaultValue;
         }
-        
+        // BUG-15: Check cache first
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::Float) {
+            DLOG_D(LOG_STORAGE, "Cache hit float '%s'", key.c_str());
+            return it->second.floatValue;
+        }
         float value = storage.getFloat(key.c_str(), defaultValue);
+        StorageEntry entry;
+        entry.key = key;
+        entry.type = StorageValueType::Float;
+        entry.floatValue = value;
+        entry.size = sizeof(float);
+        cache[key] = entry;
         DLOG_D(LOG_STORAGE, "Retrieved float '%s' = %.2f", key.c_str(), value);
         return value;
     }
@@ -381,8 +429,19 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return defaultValue;
         }
-        
+        // BUG-15: Check cache first
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::Boolean) {
+            DLOG_D(LOG_STORAGE, "Cache hit bool '%s'", key.c_str());
+            return it->second.boolValue;
+        }
         bool value = storage.getBool(key.c_str(), defaultValue);
+        StorageEntry entry;
+        entry.key = key;
+        entry.type = StorageValueType::Boolean;
+        entry.boolValue = value;
+        entry.size = sizeof(bool);
+        cache[key] = entry;
         DLOG_D(LOG_STORAGE, "Retrieved bool '%s' = %s", key.c_str(), value ? "true" : "false");
         return value;
     }
@@ -392,8 +451,19 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return defaultValue;
         }
-        
+        // BUG-15: Check cache first
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::UInt64) {
+            DLOG_D(LOG_STORAGE, "Cache hit uint64 '%s'", key.c_str());
+            return it->second.uint64Value;
+        }
         uint64_t value = storage.getULong64(key.c_str(), defaultValue);
+        StorageEntry entry;
+        entry.key = key;
+        entry.type = StorageValueType::UInt64;
+        entry.uint64Value = value;
+        entry.size = sizeof(uint64_t);
+        cache[key] = entry;
         DLOG_D(LOG_STORAGE, "Retrieved uint64 '%s' = %llu", key.c_str(), (unsigned long long)value);
         return value;
     }
@@ -403,19 +473,39 @@ public:
             DLOG_E(LOG_STORAGE, "Not open");
             return 0;
         }
-        
+        // BUG-15: Check cache first
+        auto it = cache.find(key);
+        if (it != cache.end() && it->second.type == StorageValueType::Blob) {
+            size_t copyLen = it->second.blobValue.size();
+            if (copyLen > maxLength) copyLen = maxLength;
+            if (buffer && copyLen > 0) {
+                memcpy(buffer, it->second.blobValue.data(), copyLen);
+            }
+            DLOG_D(LOG_STORAGE, "Cache hit blob '%s' (%zu bytes)", key.c_str(), copyLen);
+            return copyLen;
+        }
+
         size_t length = storage.getBytesLength(key.c_str());
         if (length == 0) {
             DLOG_D(LOG_STORAGE, "Blob '%s' not found", key.c_str());
             return 0;
         }
-        
+
         if (length > maxLength) {
             DLOG_W(LOG_STORAGE, "Blob '%s' too large (%zu > %zu)", key.c_str(), length, maxLength);
             length = maxLength;
         }
-        
+
         size_t read = storage.getBytes(key.c_str(), buffer, length);
+        // Cache for future reads
+        if (read > 0 && buffer) {
+            StorageEntry entry;
+            entry.key = key;
+            entry.type = StorageValueType::Blob;
+            entry.blobValue.assign(buffer, buffer + read);
+            entry.size = read;
+            cache[key] = entry;
+        }
         DLOG_D(LOG_STORAGE, "Retrieved blob '%s' (%zu bytes)", key.c_str(), read);
         return read;
     }
@@ -428,7 +518,12 @@ public:
         
         bool success = storage.remove(key.c_str());
         if (success) {
-            cache.erase(key);
+            auto it = cache.find(key);
+            if (it != cache.end()) {
+                it->second.blobValue.clear();
+                it->second.blobValue.shrink_to_fit(); // Constitution XIV
+                cache.erase(it);
+            }
 
             StorageEvents::StorageChangedEvent ev{};
             snprintf(ev.key, sizeof(ev.key), "%s", key.c_str());
@@ -449,6 +544,10 @@ public:
         
         bool success = storage.clear();
         if (success) {
+            for (auto& [k, entry] : cache) {
+                entry.blobValue.clear();
+                entry.blobValue.shrink_to_fit(); // Constitution XIV
+            }
             cache.clear();
 
             StorageEvents::StorageChangedEvent ev{};
@@ -469,10 +568,15 @@ public:
     
     // Storage information
     bool isOpenStorage() const { return isOpen; }
-    size_t getEntryCount() const { return cache.size(); }
+    size_t getEntryCount() const {
+        if (!isOpen) return 0;
+        // F1: Query maxEntries from HAL to avoid constant mismatch
+        // freeEntries() returns FREE entries, not used entries.
+        return storage.maxEntries() - storage.freeEntries();
+    }
     size_t getFreeEntries() const {
-        size_t used = cache.size();
-        return storageConfig.maxEntries > used ? storageConfig.maxEntries - used : 0;
+        if (!isOpen) return 0;
+        return storage.freeEntries();
     }
     
     String getNamespace() const {

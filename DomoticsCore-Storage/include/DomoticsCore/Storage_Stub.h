@@ -194,6 +194,10 @@ public:
     size_t freeEntries() override {
         return MAX_ENTRIES - count;
     }
+
+    size_t maxEntries() override {
+        return MAX_ENTRIES;
+    }
 };
 
 using PlatformStorage = RAMOnlyStorage;
