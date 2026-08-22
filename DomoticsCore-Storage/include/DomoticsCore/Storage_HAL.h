@@ -50,6 +50,7 @@ public:
     virtual bool clear() = 0;
     
     virtual size_t freeEntries() = 0;
+    virtual size_t maxEntries() = 0;
 };
 
 } // namespace HAL

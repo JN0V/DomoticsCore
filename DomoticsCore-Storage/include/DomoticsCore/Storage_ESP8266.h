@@ -190,6 +190,10 @@ public:
     size_t freeEntries() override {
         return 1000;  // LittleFS doesn't have entry limit
     }
+
+    size_t maxEntries() override {
+        return 1000;  // LittleFS doesn't have entry limit; matches freeEntries baseline
+    }
 };
 
 using PlatformStorage = LittleFSStorage;

@@ -17,11 +17,19 @@ class PreferencesStorage : public IStorage {
 private:
     Preferences prefs;
     bool opened = false;
-    
+    size_t maxEntries_ = 0; ///< Total entries at begin() time (free + used)
+
 public:
     bool begin(const char* namespace_name, bool readOnly = false) override {
         if (opened) prefs.end();
         opened = prefs.begin(namespace_name, readOnly);
+        if (opened) {
+            // Capture total capacity = free entries at open time.
+            // On first open with 0 used entries, this equals true max.
+            // On subsequent opens, we take the larger of current and previous.
+            size_t currentFree = prefs.freeEntries();
+            if (currentFree > maxEntries_) maxEntries_ = currentFree;
+        }
         return opened;
     }
     
@@ -115,6 +123,10 @@ public:
     size_t freeEntries() override {
         if (!opened) return 0;
         return prefs.freeEntries();
+    }
+
+    size_t maxEntries() override {
+        return maxEntries_;
     }
 };
 
