@@ -25,7 +25,8 @@ versions may sit still while fixes land.
 | **NTP** | BUG-4, BUG-5, BUG-6 | **Merged** — PR #1 |
 | OTA | SEC-3, DC-7, DC-6 | **Merged** — PR #4 |
 | Storage | BUG-15, BUG-16, BUG-17, F1, F10 | **Merged** — PR #5 |
-| Isolated | BUG-8, BUG-22, BUG-23 | not started — overlaps the `esp32-ethernet` rewrite |
+| Isolated — System | BUG-23 | **Merged** — PR #7, 2026-08-22 |
+| Isolated — MQTT, RemoteConsole | BUG-8, BUG-22 | **held** — those files are being rewritten on `esp32-ethernet`; coordinating before touching them |
 
 `main` requires six checks: `test-install`, `check-versions`,
 `Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
@@ -293,12 +294,20 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 - **Problem**: `while (client.available())` with no upper bound. Continuous byte stream = infinite loop.
 - **Fix**: Add per-iteration byte limit (e.g., 512 bytes max per `loop()` call).
 
-### BUG-23 — System: Early-Init anti-pattern [HIGH]
+### BUG-23 — System: Early-Init anti-pattern [HIGH] — **DONE (2026-08-22, PR #7)**
 
 - **Ref**: SYS-F4
 - **File**: `System.h:224`
 - **Problem**: `registerLEDComponent()` calls `led->begin()` manually before `core.begin()`. Constitution XIII explicitly forbids this.
-- **Fix**: Remove manual `begin()` call, let ComponentRegistry handle init order. Document if early LED is truly needed.
+- **Fixed**: the manual `begin()` is gone; `core.begin()` initialises the component.
+- **Worse than the title suggested**: `ComponentRegistry::initializeAll()` skips any
+  component already initialised and active, and that skipped branch is the only place
+  `__dc_setEventBus()` and `__dc_setCore()` are ever called. The early call removed the
+  injection rather than merely reordering it: the LED ran with both framework pointers
+  null for the life of the device. Latent only because LEDComponent uses neither —
+  `eventBus()` dereferences with no null check, and `on<T>()` returns 0 instead of
+  subscribing.
+- **Verified by compilation only** — DomoticsCore-System has no test suite (TEST-1).
 
 ### BUG-24 — WiFi: dead config fields [MEDIUM]
 
@@ -606,17 +615,17 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
-| 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 1C, 1H, 3M (**SEC-2 done**) |
+| 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 1C, 0H, 3M (**SEC-2, SEC-3 done**) |
 | 2. Memory Safety | MEM-1 to MEM-4 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done**) |
-| 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 6H, 10M (**8 done**) |
+| 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 1H, 8M (**15 done**) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 2C, 3H, 2M |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 1M |
 | 8. CI/Infrastructure | CI-1 to CI-8 | II, XII | 0C, 1H, 2M, 1L (**CI-1, CI-2, CI-3, CI-5 done**; CI-8 filed) |
-| 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 8M (**DC-3b, DC-4, DC-8 done**) |
+| 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-6, DC-7, DC-8 done**) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
-| **Total** | **98 items** | | **3C, 16H, 31M, 34L** (24 resolved) |
+| **Total** | **98 items** | | **3C, 10H, 27M, 34L** (34 resolved) |
 
 ---
 
