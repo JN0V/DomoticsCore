@@ -21,11 +21,11 @@ versions may sit still while fixes land.
 | Lot | Items | State |
 |---|---|---|
 | **CI** | CI-1, CI-2 | **Merged** — PR #2, 2026-08-22 |
-| **NTP** | BUG-4, BUG-5, BUG-6 | PR #1 open — first, because it touches code being rewritten on `esp32-ethernet` |
-| OTA | SEC-3, DC-7 | not started |
-| Storage | BUG-15, BUG-16, BUG-17 | not started |
-| Isolated | BUG-8, BUG-22, BUG-23 | not started |
-| CI (remainder) | CI-3, CI-5 | not started |
+| **CI (deps + actions)** | CI-3, CI-5 | **Merged** — PR #6, 2026-08-22 |
+| **NTP** | BUG-4, BUG-5, BUG-6 | **Merged** — PR #1 |
+| OTA | SEC-3, DC-7, DC-6 | **Merged** — PR #4 |
+| Storage | BUG-15, BUG-16, BUG-17, F1, F10 | **Merged** — PR #5 |
+| Isolated | BUG-8, BUG-22, BUG-23 | not started — overlaps the `esp32-ethernet` rewrite |
 
 `main` requires six checks: `test-install`, `check-versions`,
 `Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
@@ -37,10 +37,10 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 12 native projects run — 550 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
+| ✅ | The 12 native projects run — 567 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
-| ❌ | **The install-from-GitHub path is still `esp32dev`-only.** Building the witness project for ESP8266 needs the root `library.json` to stop pulling `AsyncTCP` unconditionally — that package is ESP32-only. See CI-3 |
+| ❌ | **The install-from-GitHub path is still `esp32dev`-only.** Building the witness project for ESP8266 needs the root `library.json` to stop pulling `AsyncTCP` unconditionally — that package is ESP32-only. See CI-8 |
 | ❌ | **No test runs on hardware.** A host build proves compilation, not behaviour on a board |
 
 That last line is not a formality. BUG-4, the SNTP server-name use-after-free,
@@ -464,14 +464,17 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Result**: the ten files compile clean. The platform the library had been promising
   without ever checking was sound — there was nothing to repair, only something to
   prove. `esp8266dev` RAM 61.7% / Flash 68.1%.
-- **Not covered**: the install-from-GitHub witness stays `esp32dev`-only until CI-3.
+- **Not covered**: the install-from-GitHub witness stays `esp32dev`-only until CI-8.
 
-### CI-3 — Missing `DomoticsCore-Core` dependency in 3 library.json [HIGH]
+### CI-3 — Missing `DomoticsCore-Core` dependency in 3 library.json [HIGH] — **DONE (2026-08-22, PR #6)**
 
 - **Ref**: R-F3
 - **Files**: `DomoticsCore-Storage/library.json`, `DomoticsCore-SystemInfo/library.json`, `DomoticsCore-OTA/library.json`
 - **Problem**: These include Core headers but don't declare the dependency.
-- **Fix**: Add `{ "name": "DomoticsCore-Core", "version": ">=1.4.0" }` to each.
+- **Fixed**: `{ "name": "DomoticsCore-Core", "version": ">=1.4.0" }` added to each.
+  In-tree builds never noticed, because every example lists the components
+  explicitly as `file://` paths. Only someone installing a single component from
+  the registry would have hit it — which is the case the manifest exists for.
 
 ### CI-4 — Wifi vs WiFi naming inconsistency [MEDIUM]
 
@@ -479,10 +482,30 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Problem**: Library name is `DomoticsCore-Wifi` but docs use `DomoticsCore-WiFi`.
 - **Fix**: Standardize all documentation to match `library.json` name.
 
-### CI-5 — Outdated GitHub Actions versions [MEDIUM]
+### CI-5 — Outdated GitHub Actions versions [MEDIUM] — **DONE (2026-08-22, PR #6)**
 
 - **Ref**: R-F7
-- **Fix**: Update `version-check.yml` and `test-github-install.yml` to `actions/checkout@v4` and `actions/setup-python@v5`.
+- **Fixed**: `version-check.yml` moved to `actions/checkout@v4` and
+  `actions/setup-python@v5`. `test-github-install.yml` had already been updated
+  and was left untouched — it carries the fork workaround for `pull_request`
+  events, and rewriting it wholesale is how that gets lost.
+
+### CI-8 — Root `library.json` pulls `AsyncTCP` unconditionally [HIGH]
+
+- **Problem**: the root manifest declares `ESP32Async/AsyncTCP` as a plain
+  dependency. That package is ESP32-only; ESP8266 needs `ESP32Async/ESPAsyncTCP`.
+  Every in-tree example works around it by listing the right one and adding
+  `lib_ignore`, so nothing in this repository trips over it — but anyone
+  installing the library from GitHub or the registry for an ESP8266 target does.
+  It is also what keeps `test-github-install.yml` pinned to `esp32dev`: the
+  witness project cannot be built for ESP8266 while the manifest resolves this
+  way.
+- **Fix**: make the two TCP dependencies conditional on `platforms` in the
+  manifest, then extend the witness to `esp8266dev` so the install path is
+  actually proven rather than assumed.
+- **Note**: filed 2026-08-22. Earlier revisions of this file pointed at CI-3 for
+  this problem — that was wrong. CI-3 is about a missing `DomoticsCore-Core`
+  dependency and has nothing to do with TCP backends.
 
 ### CI-6 — Missing `depends` in `library.properties` [MEDIUM]
 
@@ -590,10 +613,10 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 1M |
-| 8. CI/Infrastructure | CI-1 to CI-7 | II, XII | 0C, 1H, 3M, 1L (**CI-1, CI-2 done**) |
+| 8. CI/Infrastructure | CI-1 to CI-8 | II, XII | 0C, 1H, 2M, 1L (**CI-1, CI-2, CI-3, CI-5 done**; CI-8 filed) |
 | 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 8M (**DC-3b, DC-4, DC-8 done**) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
-| **Total** | **97 items** | | **3C, 16H, 32M, 34L** (22 resolved) |
+| **Total** | **98 items** | | **3C, 16H, 31M, 34L** (24 resolved) |
 
 ---
 

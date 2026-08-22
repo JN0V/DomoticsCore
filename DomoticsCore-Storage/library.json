@@ -9,5 +9,7 @@
   "frameworks": ["arduino"],
   "platforms": ["espressif32", "espressif8266"],
   "build": {"includeDir": "include", "srcDir": "src", "lib_archive": false},
-  "dependencies": []
+  "dependencies": [
+    {"name": "DomoticsCore-Core", "version": ">=1.4.0"}
+  ]
 }
