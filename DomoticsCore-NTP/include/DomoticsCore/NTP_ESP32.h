@@ -9,6 +9,7 @@
 #if DOMOTICS_PLATFORM_ESP32
 
 #include <esp_sntp.h>
+#include <string.h>
 #include <time.h>
 
 namespace DomoticsCore {
@@ -16,10 +17,29 @@ namespace HAL {
 namespace NTPImpl {
 
 inline void init(const char* server1, const char* server2, const char* server3) {
+    // esp_sntp_setservername() stores the pointer it is given without copying,
+    // so the buffer must outlive the SNTP client. Callers pass String::c_str(),
+    // which does not: the String is a member of a config struct that can be
+    // reassigned, and its heap buffer moves. Copy into storage that persists.
+    static char serverBuf[3][64];
+
     esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, server1);
-    if (server2) esp_sntp_setservername(1, server2);
-    if (server3) esp_sntp_setservername(2, server3);
+
+    if (server1) {
+        strncpy(serverBuf[0], server1, sizeof(serverBuf[0]) - 1);
+        serverBuf[0][sizeof(serverBuf[0]) - 1] = '\0';
+        esp_sntp_setservername(0, serverBuf[0]);
+    }
+    if (server2) {
+        strncpy(serverBuf[1], server2, sizeof(serverBuf[1]) - 1);
+        serverBuf[1][sizeof(serverBuf[1]) - 1] = '\0';
+        esp_sntp_setservername(1, serverBuf[1]);
+    }
+    if (server3) {
+        strncpy(serverBuf[2], server3, sizeof(serverBuf[2]) - 1);
+        serverBuf[2][sizeof(serverBuf[2]) - 1] = '\0';
+        esp_sntp_setservername(2, serverBuf[2]);
+    }
     esp_sntp_init();
 }
 
