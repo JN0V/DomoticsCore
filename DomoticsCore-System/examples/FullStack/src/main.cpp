@@ -21,7 +21,6 @@
  * 
  * Requires:
  * - MQTT broker (e.g., Mosquitto)
- * - OTA password (for security)
  */
 
 #include <DomoticsCore/System.h>
@@ -45,9 +44,6 @@ const char* MQTT_BROKER = ""; // Leave empty to disable MQTT
 const uint16_t MQTT_PORT = 1883;
 const char* MQTT_USER = "";  // Optional
 const char* MQTT_PASSWORD = "";  // Optional
-
-// OTA password (required for security)
-const char* OTA_PASSWORD = "admin123";  // CHANGE THIS!
 
 // ============================================================================
 // GLOBAL VARIABLES
@@ -103,15 +99,12 @@ void setup() {
     config.mqttPassword = MQTT_PASSWORD;
     config.mqttClientId = config.deviceName;  // Use device name as client ID
     
-    // OTA configuration
-    config.otaPassword = OTA_PASSWORD;
-    
     // Note: FullStack includes EVERYTHING:
     // - WiFi, LED, Console (Minimal)
     // - WebUI, NTP, Storage (Standard)
     // - MQTT, Home Assistant, OTA (FullStack), SystemInfo
     //
-    // Requires MQTT broker and OTA password!
+    // Requires MQTT broker!
     
     // Create system
     domotics = new System(config);

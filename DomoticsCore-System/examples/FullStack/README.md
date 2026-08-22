@@ -54,8 +54,6 @@ const char* WIFI_PASSWORD = "";
 const char* MQTT_BROKER = "192.168.1.100";
 const uint16_t MQTT_PORT = 1883;
 
-// OTA (required for security)
-const char* OTA_PASSWORD = "admin123";  // CHANGE THIS!
 ```
 
 ## Quick Start
@@ -195,7 +193,7 @@ pio run -t upload --upload-port 192.168.1.215
 SystemConfig config = SystemConfig::fullStack();
 config.deviceName = "FullStackDevice";
 config.mqttBroker = "192.168.1.100";
-config.otaPassword = "secure123";
+// OTA security is configured via OTAComponent callbacks
 
 // 2. Create
 System domotics(config);
@@ -363,14 +361,16 @@ Flash: ~75-80% (with all features)
 
 ## Security Best Practices
 
-### OTA Password
+### OTA Security
+
+OTA transport security (TLS, authentication) is configured via
+`OTAComponent::setManifestFetcher()` and `setDownloader()` callbacks with HTTPS and auth headers.
+The WebUI upload endpoint is protected by WebUI authentication when `enableAuth` is true.
 
 ```cpp
-// ❌ DON'T
-config.otaPassword = "admin";
-
-// ✅ DO
-config.otaPassword = "MyStr0ng!P@ssw0rd";
+// Configure OTA security via callbacks:
+// ota->setManifestFetcher(mySecureFetcher);
+// ota->setDownloader(mySecureDownloader);
 ```
 
 ### MQTT Credentials
