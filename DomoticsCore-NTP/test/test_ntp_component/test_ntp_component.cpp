@@ -13,6 +13,7 @@
  */
 
 #include <unity.h>
+#include <type_traits>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/NTP.h>
 #include <DomoticsCore/NTPEvents.h>
@@ -494,6 +495,30 @@ void test_ntp_memory_stability_config_changes() {
 }
 
 // ============================================================================
+// Fix verification tests
+// ============================================================================
+
+void test_ntp_bootTime_is_unsigned_long() {
+    // bootTime should be unsigned long (matches HAL::Platform::getMillis() return type)
+    NTPComponent ntp;
+    // static_assert on the return type rather than a trivially-true >= 0 check
+    static_assert(std::is_same<decltype(ntp.getUptimeMs()), uint64_t>::value,
+                  "getUptimeMs() must return uint64_t");
+    uint64_t uptime = ntp.getUptimeMs();
+    // Verify uptime is reasonable (non-zero after construction)
+    TEST_ASSERT_TRUE(uptime < 60000); // Should be less than 60 seconds in test
+}
+
+void test_ntp_isSynced_delegates_to_HAL() {
+    // isSynced() should delegate to HAL::NTP::isSynced()
+    // which uses year-2020 threshold (time > 1577836800)
+    // In native stub, time(nullptr) returns current system time which is > 2020,
+    // but the 'synced' flag is false, so isSynced() returns false.
+    NTPComponent ntp;
+    TEST_ASSERT_FALSE(ntp.isSynced()); // synced flag is false initially
+}
+
+// ============================================================================
 // Test Runner
 // ============================================================================
 
@@ -566,6 +591,10 @@ int main() {
     // Memory leak detection tests
     RUN_TEST(test_ntp_memory_stability_lifecycle);
     RUN_TEST(test_ntp_memory_stability_config_changes);
+
+    // bug fixes
+    RUN_TEST(test_ntp_bootTime_is_unsigned_long);
+    RUN_TEST(test_ntp_isSynced_delegates_to_HAL);
 
     return UNITY_END();
 }

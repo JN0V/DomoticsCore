@@ -169,9 +169,10 @@ public:
     void loop() override {
         if (!config.enabled) return;
 
-        // Check if time has been synced
+        // Check if time has been synced. Delegates to the HAL so the threshold
+        // lives in exactly one place.
         time_t now = time(nullptr);
-        bool currentlySynced = (now > 1000000000);  // After 2001-09-09
+        bool currentlySynced = HAL::NTP::isSynced();
         
         // Detect sync completion (initial or subsequent)
         if (currentlySynced) {
@@ -276,7 +277,8 @@ public:
      * @return True if time has been synced at least once
      */
     bool isSynced() const {
-        return synced && (time(nullptr) > 1000000000);
+        // Delegate to the HAL: the year-2020 threshold is defined there, once.
+        return synced && HAL::NTP::isSynced();
     }
 
     /**
@@ -381,8 +383,12 @@ public:
      * @brief Get milliseconds since boot
      * @return Uptime in milliseconds
      */
+    /// @note On ESP32/ESP8266, millis() wraps at ~49.7 days (32-bit unsigned long).
+    /// The subtraction `HAL::Platform::getMillis() - bootTime` handles a single wrap
+    /// correctly due to unsigned arithmetic. On 64-bit native test platforms, unsigned
+    /// long is 64-bit and does not wrap. Return type is uint64_t to accommodate both.
     uint64_t getUptimeMs() const {
-        return HAL::Platform::getMillis() - bootTime;
+        return (uint64_t)(HAL::Platform::getMillis() - bootTime);
     }
 
     /**
@@ -515,7 +521,11 @@ private:
     NTPStatistics stats;
     bool synced;
     bool syncInProgress;
-    uint32_t bootTime;
+    /// @note On ESP32/ESP8266, unsigned long is 32-bit and wraps at ~49.7 days
+    /// (inherent millis() limitation). On 64-bit native test platforms, unsigned long
+    /// is 64-bit and does not wrap. This difference is acceptable for testing purposes
+    /// but should be considered if writing tests that simulate long uptimes.
+    unsigned long bootTime;
     SyncCallback syncCallback;
     Utils::NonBlockingDelay syncTimeoutTimer;  // Timer for sync timeout tracking
 };
