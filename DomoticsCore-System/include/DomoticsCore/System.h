@@ -361,7 +361,6 @@ private:
 #if __has_include(<DomoticsCore/OTA.h>)
         if (!config.enableOTA) return;
         Components::OTAConfig otaConfig;
-        otaConfig.bearerToken = config.otaPassword;
         core.addComponent(std::make_unique<Components::OTAComponent>(otaConfig));
         DLOG_I(LOG_SYSTEM, "✓ OTA component added");
 #else

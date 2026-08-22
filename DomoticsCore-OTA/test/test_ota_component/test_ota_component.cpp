@@ -30,13 +30,12 @@ using namespace DomoticsCore::Components;
 // ============================================================================
 
 void test_ota_events_constants_defined() {
-    // Verify event constants are defined and have expected values
+    // Verify non-deprecated event constants
     TEST_ASSERT_NOT_NULL(OTAEvents::EVENT_START);
     TEST_ASSERT_NOT_NULL(OTAEvents::EVENT_PROGRESS);
     TEST_ASSERT_NOT_NULL(OTAEvents::EVENT_END);
     TEST_ASSERT_NOT_NULL(OTAEvents::EVENT_ERROR);
     TEST_ASSERT_NOT_NULL(OTAEvents::EVENT_INFO);
-    TEST_ASSERT_NOT_NULL(OTAEvents::EVENT_COMPLETE);
     TEST_ASSERT_NOT_NULL(OTAEvents::EVENT_COMPLETED);
 
     TEST_ASSERT_EQUAL_STRING("ota/start", OTAEvents::EVENT_START);
@@ -44,7 +43,6 @@ void test_ota_events_constants_defined() {
     TEST_ASSERT_EQUAL_STRING("ota/end", OTAEvents::EVENT_END);
     TEST_ASSERT_EQUAL_STRING("ota/error", OTAEvents::EVENT_ERROR);
     TEST_ASSERT_EQUAL_STRING("ota/info", OTAEvents::EVENT_INFO);
-    TEST_ASSERT_EQUAL_STRING("ota/complete", OTAEvents::EVENT_COMPLETE);
     TEST_ASSERT_EQUAL_STRING("ota/completed", OTAEvents::EVENT_COMPLETED);
 }
 
@@ -95,13 +93,7 @@ void test_ota_config_defaults() {
 
     TEST_ASSERT_EQUAL_STRING("", config.updateUrl.c_str());
     TEST_ASSERT_EQUAL_STRING("", config.manifestUrl.c_str());
-    TEST_ASSERT_EQUAL_STRING("", config.bearerToken.c_str());
-    TEST_ASSERT_EQUAL_STRING("", config.basicAuthUser.c_str());
-    TEST_ASSERT_EQUAL_STRING("", config.basicAuthPassword.c_str());
-    TEST_ASSERT_EQUAL_STRING("", config.rootCA.c_str());
-    TEST_ASSERT_EQUAL_STRING("", config.signaturePublicKey.c_str());
     TEST_ASSERT_EQUAL_UINT32(3600000, config.checkIntervalMs);
-    TEST_ASSERT_TRUE(config.requireTLS);
     TEST_ASSERT_FALSE(config.allowDowngrades);
     TEST_ASSERT_TRUE(config.autoReboot);
     TEST_ASSERT_EQUAL(0, config.maxDownloadSize);
@@ -114,7 +106,6 @@ void test_ota_config_get_set() {
     OTAConfig newConfig;
     newConfig.updateUrl = "http://server/fw.bin";
     newConfig.checkIntervalMs = 1800000;
-    newConfig.requireTLS = false;
     newConfig.autoReboot = false;
     newConfig.allowDowngrades = true;
     newConfig.enableWebUIUpload = false;
@@ -124,37 +115,18 @@ void test_ota_config_get_set() {
     const OTAConfig& cfg = ota.getConfig();
     TEST_ASSERT_EQUAL_STRING("http://server/fw.bin", cfg.updateUrl.c_str());
     TEST_ASSERT_EQUAL_UINT32(1800000, cfg.checkIntervalMs);
-    TEST_ASSERT_FALSE(cfg.requireTLS);
     TEST_ASSERT_FALSE(cfg.autoReboot);
     TEST_ASSERT_TRUE(cfg.allowDowngrades);
     TEST_ASSERT_FALSE(cfg.enableWebUIUpload);
 }
 
-void test_ota_config_auth_options() {
+void test_ota_config_max_download_size() {
     OTAConfig config;
-    config.bearerToken = "my-token-123";
-    config.basicAuthUser = "admin";
-    config.basicAuthPassword = "secret";
-
-    OTAComponent ota(config);
-
-    const OTAConfig& cfg = ota.getConfig();
-    TEST_ASSERT_EQUAL_STRING("my-token-123", cfg.bearerToken.c_str());
-    TEST_ASSERT_EQUAL_STRING("admin", cfg.basicAuthUser.c_str());
-    TEST_ASSERT_EQUAL_STRING("secret", cfg.basicAuthPassword.c_str());
-}
-
-void test_ota_config_security_options() {
-    OTAConfig config;
-    config.rootCA = "-----BEGIN CERTIFICATE-----\nMIIC...\n-----END CERTIFICATE-----";
-    config.signaturePublicKey = "-----BEGIN PUBLIC KEY-----\nMIIB...\n-----END PUBLIC KEY-----";
     config.maxDownloadSize = 2097152;  // 2MB
 
     OTAComponent ota(config);
 
     const OTAConfig& cfg = ota.getConfig();
-    TEST_ASSERT_TRUE(cfg.rootCA.length() > 0);
-    TEST_ASSERT_TRUE(cfg.signaturePublicKey.length() > 0);
     TEST_ASSERT_EQUAL(2097152, cfg.maxDownloadSize);
 }
 
@@ -446,8 +418,7 @@ int main(int argc, char** argv) {
     // Config tests
     RUN_TEST(test_ota_config_defaults);
     RUN_TEST(test_ota_config_get_set);
-    RUN_TEST(test_ota_config_auth_options);
-    RUN_TEST(test_ota_config_security_options);
+    RUN_TEST(test_ota_config_max_download_size);
 
     // State machine tests
     RUN_TEST(test_ota_initial_state);

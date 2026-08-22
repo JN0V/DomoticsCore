@@ -26,10 +26,7 @@ static constexpr const char* EVENT_ERROR = "ota/error";
 /// Published for OTA informational messages
 static constexpr const char* EVENT_INFO = "ota/info";
 
-/// Published when OTA is complete (intermediate, before reboot decision)
-static constexpr const char* EVENT_COMPLETE = "ota/complete";
-
-/// Published when OTA is fully completed with reboot status
+/// Published when OTA is fully completed with status information
 static constexpr const char* EVENT_COMPLETED = "ota/completed";
 
 } // namespace OTAEvents

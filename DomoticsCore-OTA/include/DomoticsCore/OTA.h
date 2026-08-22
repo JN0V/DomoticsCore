@@ -20,17 +20,11 @@ namespace Components {
 struct OTAConfig {
     String updateUrl = "";              //!< Direct firmware URL
     String manifestUrl = "";            //!< Optional manifest endpoint providing metadata
-    String bearerToken = "";            //!< Optional HTTP bearer token
-    String basicAuthUser = "";          //!< Optional basic-auth username
-    String basicAuthPassword = "";      //!< Optional basic-auth password
-    String rootCA = "";                 //!< Optional PEM-encoded root CA certificate
-    String signaturePublicKey = "";     //!< Optional public key for signature validation (PEM)
-    uint32_t checkIntervalMs = 3600000;  //!< Automatic periodic check interval (0 = disabled)
-    bool requireTLS = true;              //!< Enforce HTTPS when true
-    bool allowDowngrades = false;        //!< Permit installing lower semantic versions
-    bool autoReboot = true;              //!< Reboot immediately after a successful update
-    size_t maxDownloadSize = 0;          //!< Reject binaries larger than this (0 = unlimited)
-    bool enableWebUIUpload = true;       //!< Allow manual firmware upload via WebUI helpers
+    uint32_t checkIntervalMs = 3600000; //!< Automatic periodic check interval (0 = disabled)
+    bool allowDowngrades = false;       //!< Permit installing lower semantic versions
+    bool autoReboot = true;             //!< Reboot immediately after a successful update
+    size_t maxDownloadSize = 0;         //!< Reject binaries larger than this (0 = unlimited)
+    bool enableWebUIUpload = true;      //!< Allow manual firmware upload via WebUI helpers
 };
 
 /**

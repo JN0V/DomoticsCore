@@ -561,14 +561,6 @@ bool OTAComponent::finalizeUpdateOperation(const String& source, bool autoReboot
     progress = 100.0f;
     downloadedBytes = totalBytes;  // Ensure bytes match total
 
-    // Final progress update via status event
-    publishStatusEvent(DomoticsCore::OTAEvents::EVENT_COMPLETE, [this](JsonDocument& doc){
-        doc["success"] = true;
-        doc["progress"] = 100.0f;
-        doc["bytes"] = totalBytes;
-        doc["total"] = totalBytes;
-    }, false);
-
     if (autoRebootPending) {
         transition(State::RebootPending, source + " complete");
         lastResult = "Update complete - rebooting in 2s";
@@ -579,13 +571,17 @@ bool OTAComponent::finalizeUpdateOperation(const String& source, bool autoReboot
         DLOG_I(LOG_OTA, "%s complete. Manual reboot required.", source.c_str());
     }
 
-    publishStatusEvent(DomoticsCore::OTAEvents::EVENT_COMPLETED, [this, &source](JsonDocument& doc){
+    // DC-6: Emit on the canonical EVENT_COMPLETED topic
+    auto buildPayload = [this, &source](JsonDocument& doc) {
         doc["success"] = true;
         doc["source"] = source.c_str();
         doc["autoReboot"] = config.autoReboot;
         doc["bytes"] = downloadedBytes;
+        doc["total"] = totalBytes;
+        doc["progress"] = 100.0f;
         doc["message"] = (config.autoReboot ? "Update complete, rebooting" : "Update complete, reboot manually");
-    }, true);
+    };
+    publishStatusEvent(DomoticsCore::OTAEvents::EVENT_COMPLETED, buildPayload, true);
 
     return true;
 }

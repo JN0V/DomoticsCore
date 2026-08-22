@@ -4,11 +4,11 @@ Over-the-Air (OTA) firmware update component for ESP32 devices in the DomoticsCo
 
 ## Features
 
-- **Secure OTA Updates**: HTTPS/TLS support with certificate validation
 - **Multiple Update Sources**: Direct URL, manifest-based, or manual upload
 - **Progress Tracking**: Real-time progress reporting via WebSocket
 - **Version Management**: Semantic versioning with upgrade/downgrade control
-- **Authentication**: Bearer token and basic auth support
+- **Integrity Check**: SHA-256 verification with rollback on mismatch
+- **Authenticated WebUI Upload**: upload endpoints gated behind WebUI auth
 - **Web UI Integration**: Rich upload interface with progress and reboot handling
 - **Network Agnostic**: Pluggable transport layer (HTTP/HTTPS via app-provided callbacks)
 
@@ -54,14 +54,25 @@ if (webui && ota) {
 OTAConfig cfg;
 cfg.updateUrl = "https://firmware-server.com/latest.bin";
 cfg.manifestUrl = "https://firmware-server.com/manifest.json"; // Optional
-cfg.bearerToken = "your-api-token"; // Optional
-cfg.rootCA = "-----BEGIN CERTIFICATE-----..."; // Optional TLS cert
 cfg.checkIntervalMs = 3600000; // Check every hour (0 = disabled)
 cfg.autoReboot = true; // Reboot after successful update
-cfg.requireTLS = true; // Enforce HTTPS
 cfg.allowDowngrades = false; // Prevent version downgrades
 cfg.enableWebUIUpload = true; // Allow manual uploads via web interface
 ```
+
+> **Transport security is yours to provide.** This component does not open
+> sockets: it calls the fetcher and downloader callbacks you install (see
+> *Network Transport* below). TLS, certificate pinning and any authorization
+> header belong in those callbacks, where the HTTP client actually lives.
+>
+> Earlier versions declared `requireTLS`, `bearerToken`, `basicAuthUser`,
+> `basicAuthPassword`, `rootCA` and `signaturePublicKey` here. **No code path
+> ever read them**, so setting them bought nothing but the belief that it did.
+> They have been removed rather than left to promise a protection that was
+> never there.
+>
+> The WebUI upload endpoints are a separate matter, and they *are* enforced —
+> see below.
 
 ### Network Transport
 
@@ -121,9 +132,16 @@ OTA requires custom REST endpoints for file uploads:
 - `/api/ota/status` - GET status
 - `/api/ota/check` - Trigger manifest check
 - `/api/ota/update` - Start update from URL
-- `/api/ota/upload` - Upload firmware file (multipart/form-data)
+- `/api/ota/upload` - Upload firmware file (multipart/form-data) — **authenticated**
+- `/ota/upload` - Upload form page — **authenticated**
 
 These are registered via `init()` method after WebUI server is ready.
+
+The two upload routes require WebUI credentials whenever `WebUIConfig::enableAuth`
+is set. Authentication is checked on the **first chunk**, before any byte reaches
+flash, and a failed check aborts the update rather than letting the remaining
+chunks through. With `enableAuth` false the endpoints are open, exactly like the
+rest of the WebUI — that is a deployment decision, not an OTA one.
 
 ## Manifest Format
 

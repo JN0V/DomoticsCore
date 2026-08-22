@@ -98,7 +98,6 @@ void setup() {
     OTAConfig otaConfig;
     otaConfig.updateUrl = OTA_UPDATE_URL;
     otaConfig.checkIntervalMs = 60000;  // Check every 60 seconds
-    otaConfig.requireTLS = false;       // Allow HTTP for testing
     otaConfig.autoReboot = true;
     otaConfig.enableWebUIUpload = false;  // No WebUI
 

@@ -97,8 +97,7 @@ struct SystemConfig {
     
     // OTA (optional)
     bool enableOTA = false;
-    String otaPassword = "";
-    
+
     // SystemInfo (optional)
     bool enableSystemInfo = false;
     
