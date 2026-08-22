@@ -8,6 +8,10 @@
 
 #if !DOMOTICS_PLATFORM_ESP32 && !DOMOTICS_PLATFORM_ESP8266
 
+#include <cstring>  // strlen, strncpy
+#include <cstdlib>  // strtoull
+#include <cstdio>   // snprintf
+
 namespace DomoticsCore {
 namespace HAL {
 
@@ -104,26 +108,71 @@ public:
     }
     
     bool putULong64(const char* key, uint64_t value) override {
-        return putString(key, String((unsigned long)value));
+        // BUG-16: Use proper uint64 serialization (no truncation to unsigned long)
+        char buf[21]; // max uint64 is 20 digits + null
+        snprintf(buf, sizeof(buf), "%llu", (unsigned long long)value);
+        return putString(key, String(buf));
     }
-    
+
     uint64_t getULong64(const char* key, uint64_t defaultValue = 0) override {
         if (!opened) return defaultValue;
         int idx = findKey(key);
-        return (idx >= 0) ? (uint64_t)entries[idx].value.toInt() : defaultValue;
+        // BUG-16: Use strtoull instead of toInt() which truncates
+        return (idx >= 0) ? strtoull(entries[idx].value.c_str(), nullptr, 10) : defaultValue;
     }
     
-    size_t putBytes(const char* key, const uint8_t*, size_t len) override {
-        putString(key, String(len));
-        return len;
-    }
-    
-    size_t getBytes(const char*, uint8_t*, size_t) override {
+    static constexpr const char* BYTES_PREFIX = "BYTES:";
+    static constexpr size_t BYTES_PREFIX_LEN = 6; // strlen("BYTES:")
+    static constexpr size_t MAX_BLOB_SIZE = 256; ///< Max blob size for test stub (avoids VLA)
+
+    // BUG-17: Store actual byte data as hex-encoded string
+    size_t putBytes(const char* key, const uint8_t* data, size_t len) override {
+        if (!opened || !data) return 0;
+        if (len > MAX_BLOB_SIZE) return 0; // Guard: reject oversized blobs
+        // Encode bytes as hex string using fixed-size buffer (no VLA, no String concat in loop)
+        char hex[MAX_BLOB_SIZE * 2 + 1];
+        for (size_t i = 0; i < len; i++) {
+            snprintf(hex + i * 2, 3, "%02X", data[i]);
+        }
+        hex[len * 2] = '\0';
+        // Store with BYTES_PREFIX to distinguish from regular strings
+        char prefixed[BYTES_PREFIX_LEN + MAX_BLOB_SIZE * 2 + 1];
+        snprintf(prefixed, sizeof(prefixed), "%s%s", BYTES_PREFIX, hex);
+        if (putString(key, String(prefixed))) return len;
         return 0;
     }
-    
-    size_t getBytesLength(const char*) override {
-        return 0;
+
+    size_t getBytes(const char* key, uint8_t* buffer, size_t maxLen) override {
+        if (!opened || !buffer) return 0;
+        int idx = findKey(key);
+        if (idx < 0) return 0;
+        const String& val = entries[idx].value;
+        if (!val.startsWith(BYTES_PREFIX)) return 0;
+        const char* hex = val.c_str() + BYTES_PREFIX_LEN;
+        size_t hexLen = strlen(hex);
+        size_t byteLen = hexLen / 2;
+        if (byteLen > maxLen) byteLen = maxLen;
+        for (size_t i = 0; i < byteLen; i++) {
+            char hi = hex[i * 2];
+            char lo = hex[i * 2 + 1];
+            auto hexVal = [](char c) -> uint8_t {
+                if (c >= '0' && c <= '9') return c - '0';
+                if (c >= 'A' && c <= 'F') return 10 + c - 'A';
+                if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+                return 0;
+            };
+            buffer[i] = (hexVal(hi) << 4) | hexVal(lo);
+        }
+        return byteLen;
+    }
+
+    size_t getBytesLength(const char* key) override {
+        if (!opened) return 0;
+        int idx = findKey(key);
+        if (idx < 0) return 0;
+        const String& val = entries[idx].value;
+        if (!val.startsWith(BYTES_PREFIX)) return 0;
+        return (val.length() - BYTES_PREFIX_LEN) / 2; // hex chars / 2
     }
     
     bool remove(const char* key) override {

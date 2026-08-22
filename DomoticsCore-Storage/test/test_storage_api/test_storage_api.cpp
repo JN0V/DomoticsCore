@@ -232,6 +232,63 @@ void test_storage_memory_stability_namespace_lifecycle(void) {
     TEST_ASSERT_TRUE_MESSAGE(result.passed, result.message.c_str());
 }
 
+// ===== RAM-only backend (BUG-16, BUG-17) =====
+
+void test_put_get_uint64_large_value(void) {
+    // BUG-16: Values > 2^32 must round-trip correctly
+    uint64_t bigValue = 0xFFFFFFFF00000001ULL;
+    TEST_ASSERT_TRUE(storage.putULong64("u64_key", bigValue));
+    uint64_t result = storage.getULong64("u64_key");
+    TEST_ASSERT_EQUAL_UINT64(bigValue, result);
+}
+
+void test_put_get_uint64_zero(void) {
+    TEST_ASSERT_TRUE(storage.putULong64("u64_zero", 0));
+    TEST_ASSERT_EQUAL_UINT64(0, storage.getULong64("u64_zero"));
+}
+
+void test_put_get_uint64_max(void) {
+    uint64_t maxVal = 0xFFFFFFFFFFFFFFFFULL;
+    TEST_ASSERT_TRUE(storage.putULong64("u64_max", maxVal));
+    TEST_ASSERT_EQUAL_UINT64(maxVal, storage.getULong64("u64_max"));
+}
+
+void test_get_uint64_default(void) {
+    TEST_ASSERT_EQUAL_UINT64(999, storage.getULong64("nonexistent", 999));
+}
+
+void test_put_get_bytes_roundtrip(void) {
+    // BUG-17: putBytes/getBytes must store and retrieve actual data
+    uint8_t data[] = {0xDE, 0xAD, 0xBE, 0xEF, 0x42};
+    size_t written = storage.putBytes("bytes_key", data, sizeof(data));
+    TEST_ASSERT_EQUAL(sizeof(data), written);
+
+    uint8_t buffer[16] = {0};
+    size_t read = storage.getBytes("bytes_key", buffer, sizeof(buffer));
+    TEST_ASSERT_EQUAL(sizeof(data), read);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(data, buffer, sizeof(data));
+}
+
+void test_get_bytes_length(void) {
+    uint8_t data[] = {0x01, 0x02, 0x03, 0x04, 0x05};
+    storage.putBytes("bl_key", data, sizeof(data));
+    TEST_ASSERT_EQUAL(sizeof(data), storage.getBytesLength("bl_key"));
+}
+
+void test_get_bytes_nonexistent(void) {
+    uint8_t buffer[16];
+    TEST_ASSERT_EQUAL(0, storage.getBytes("no_such_key", buffer, sizeof(buffer)));
+    TEST_ASSERT_EQUAL(0, storage.getBytesLength("no_such_key"));
+}
+
+void test_put_bytes_single_byte(void) {
+    uint8_t data[] = {0xFF};
+    TEST_ASSERT_EQUAL(1, storage.putBytes("single", data, 1));
+    uint8_t out[1] = {0};
+    TEST_ASSERT_EQUAL(1, storage.getBytes("single", out, 1));
+    TEST_ASSERT_EQUAL_UINT8(0xFF, out[0]);
+}
+
 void test_storage_memory_no_growth_repeated_reads(void) {
     HeapTracker tracker;
     
@@ -294,6 +351,15 @@ int main(int argc, char **argv) {
     RUN_TEST(test_namespace_switch);
 
     // Memory leak detection tests (HeapTracker)
+    RUN_TEST(test_put_get_uint64_large_value);
+    RUN_TEST(test_put_get_uint64_zero);
+    RUN_TEST(test_put_get_uint64_max);
+    RUN_TEST(test_get_uint64_default);
+    RUN_TEST(test_put_get_bytes_roundtrip);
+    RUN_TEST(test_get_bytes_length);
+    RUN_TEST(test_get_bytes_nonexistent);
+    RUN_TEST(test_put_bytes_single_byte);
+
     RUN_TEST(test_storage_memory_stability_basic_ops);
     RUN_TEST(test_storage_memory_stability_namespace_lifecycle);
     RUN_TEST(test_storage_memory_no_growth_repeated_reads);
