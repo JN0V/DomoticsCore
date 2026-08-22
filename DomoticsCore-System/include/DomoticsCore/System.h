@@ -219,18 +219,29 @@ private:
     
     void registerLEDComponent() {
         if (!config.enableLED) return;
-        
+
+        // BUG-23: register only. Do not call led->begin() here.
+        //
+        // ComponentRegistry::initializeAll() skips any component that is already
+        // successfully initialised and active — and that skip is what made the
+        // early call harmful rather than merely redundant. The skipped branch is
+        // the only place __dc_setEventBus() and __dc_setCore() are ever called,
+        // so a component initialised here never received them and ran for the
+        // whole life of the device with both pointers null.
+        //
+        // It went unnoticed because LEDComponent happens not to use either. It
+        // would not stay unnoticed: eventBus() dereferences the pointer with no
+        // null check, and the on<T>() helper silently returns 0 instead of
+        // subscribing. The first LED event published or consumed would have hit
+        // one or the other.
+        //
+        // Registering and letting core.begin() do the rest restores the
+        // injection, in the order Constitution XIII describes.
         auto ledPtr = std::make_unique<Components::LEDComponent>();
         led = ledPtr.get();
         led->addSingleLED(config.ledPin, "status", 255, !config.ledActiveHigh);
         core.addComponent(std::move(ledPtr));
-        
-        if (led->begin() == Components::ComponentStatus::Success) {
-            led->setActive(true);
-            DLOG_I(LOG_SYSTEM, "✓ LED component initialized (early)");
-        } else {
-            DLOG_E(LOG_SYSTEM, "✗ LED initialization failed");
-        }
+        DLOG_I(LOG_SYSTEM, "LED component registered");
     }
     
     void registerStorageComponent() {
