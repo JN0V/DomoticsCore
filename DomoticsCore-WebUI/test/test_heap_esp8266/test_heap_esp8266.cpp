@@ -213,8 +213,12 @@ protected:
             contexts.push_back(WebUIContext::dashboard(id, title)
                 .withField(WebUIField("field1", "Field 1", WebUIFieldType::Text, "value1"))
                 .withField(WebUIField("field2", "Field 2", WebUIFieldType::Number, "42"))
-                .withCustomHtml(html)
-                .withCustomCss(css));
+                // Dynamic, not the const char* overload: html and css are built
+                // here and die at the end of this iteration. The static overload
+                // stores the pointer and would leave the context reading freed
+                // memory — which is exactly the heap behaviour under test.
+                .withCustomHtmlDynamic(html)
+                .withCustomCssDynamic(css));
         }
     }
     
