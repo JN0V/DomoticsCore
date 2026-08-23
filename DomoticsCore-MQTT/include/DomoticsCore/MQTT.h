@@ -20,6 +20,7 @@
 #include <DomoticsCore/Events.h>
 #include <ArduinoJson.h>
 #include <DomoticsCore/ArduinoJsonString.h>  // String converters for native tests
+#include <cstring>                           // strncpy, for the broker buffer (BUG-8)
 #include <functional>
 #include <vector>
 #include <map>
@@ -369,6 +370,7 @@ public:
 private:
     // Configuration
     MQTTConfig config;
+    char brokerBuffer_[128] = {0};  ///< Persistent buffer for broker address (PubSubClient stores raw pointer)
 
     // MQTT client (using HAL for platform independence)
     HAL::MQTT::MQTTClientImpl* mqttClient;
