@@ -31,7 +31,13 @@
 // Intentional deviation from Constitution IX (no #ifdef outside HAL):
 // __has_include() enables the zero-config "just add components" developer experience.
 // This is compile-time optional dependency detection, not platform-specific feature-flagging.
-// 20 directives across: initial includes, component registration, event orchestration, console commands.
+//
+// 54 directives across the component: 22 here (initial includes, component
+// registration, event orchestration, console commands), 16 in
+// SystemPersistence.h and 16 in SystemWebUISetup.h. The count is worth keeping
+// honest — it is the measure of how much of this component only exists in some
+// builds, and the native suite exercises the arm where none of the optional
+// components are present.
 
 // Optional components - include if available
 #if __has_include(<DomoticsCore/WebUI.h>)

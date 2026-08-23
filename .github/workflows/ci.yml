@@ -62,9 +62,13 @@ jobs:
         run: |
           failed=""
           found=0
-          # DomoticsCore-System declares no native environment: it is
-          # orchestration-only and carries no suites. Skipping is the point of
-          # testing the file rather than hard-coding a list.
+          # Every component now declares a native environment, DomoticsCore-System
+          # included — it was the last one without, on the grounds that
+          # orchestration carries no logic of its own. It carries the decisions
+          # instead: which components exist, in what order, and what happens when
+          # one is absent (TEST-1). Discovery picked it up without this file
+          # changing, which is the point of testing the tracked platformio.ini
+          # files rather than hard-coding a list.
           for ini in $(git ls-files '*platformio.ini'); do
             grep -q '^\[env:native\]' "$ini" || continue
             project=$(dirname "$ini")
