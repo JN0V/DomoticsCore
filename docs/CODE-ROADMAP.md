@@ -28,7 +28,12 @@ versions may sit still while fixes land.
 | Isolated — System | BUG-23 | **Merged** — PR #7, 2026-08-22 |
 | Isolated — MQTT, RemoteConsole | BUG-8, BUG-22 | **Merged** — PR #10, 2026-08-23, landed before the `esp32-ethernet` sync so it merges once |
 | ESP8266 on-device suites | CI-10 | **Merged** — PR #19, 2026-08-23, first run on real hardware; found STOR-ESP-1 |
-| System | TEST-1, ARCH-3 | PR #18 — tests only; `System.h` overlaps `esp32-ethernet`, coordinated first |
+| System | TEST-1, ARCH-3 | **Merged** — PR #18, 2026-08-23 |
+| LED | BUG-19, DC-5, TEST-2, LO-11 | PR #17 — chosen for having no file in common with `esp32-ethernet` |
+
+The first series closed with v2.1.0 and v2.1.1; the lots above resume from what
+the roadmap still lists open. The no-version-bump rule still holds — component
+versions and the CHANGELOG move once, when a series is ready to ship.
 
 `main` requires six checks: `test-install`, `check-versions`,
 `Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
@@ -40,7 +45,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 621 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
+| ✅ | The 13 native projects run — 706 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -327,11 +332,27 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 - **Problem**: When `effectPhase > 1.0`, reset to `0.0` instead of wrapping (`fmod`). Causes effect stuttering.
 - **Fix**: Use `effectPhase = fmod(effectPhase, 1.0f)`.
 
-### BUG-19 — LED: `addLED()` after `begin()` causes vector desync [MEDIUM]
+### BUG-19 — LED: `addLED()` after `begin()` causes vector desync [MEDIUM] — **DONE (2026-08-23, PR #17)**
 
 - **Ref**: LED-F8
 - **Problem**: `begin()` calls `ledStates.resize()` once. Adding LEDs after `begin()` grows `ledConfigs` but not `ledStates`.
-- **Fix**: Guard `addLED()` against post-begin calls, or auto-resize `ledStates`.
+- **Fix as filed**: guard `addLED()` against post-begin calls, or auto-resize
+  `ledStates`. **Auto-resizing alone would not have been enough**: `begin()` also
+  runs the pin validation and calls `pinMode()`, so a state entry conjured for a
+  late LED would have addressed a pin nobody had configured.
+- **Fixed**: `addLED()` now does the whole of what `begin()` would have done for
+  that one LED — validate, `initializePin()`, append the state — and returns
+  `bool` so a rejected pin is reported where the mistake is made rather than
+  swallowed. `addSingleLED()`/`addRGBLED()` forward the result; callers ignoring
+  it still compile.
+- **Silent, not fatal**: nothing read out of bounds. `getLEDCount()` and
+  `getLEDNames()` counted from `ledConfigs` while every setter bounds-checked
+  against `ledStates`, so the LED appeared in the WebUI dropdown and refused
+  every command sent to it.
+- **Also**: `begin()` now uses `assign()` instead of `resize()`, so a second
+  `begin()` resets `effectPhase` and `lastUpdate` too — `resize()` kept them.
+- **Verified**: four tests in `test_led_component` fail against the previous
+  implementation and pass against this one.
 
 ### BUG-20 — OTA: static variables in header files [HIGH]
 
@@ -429,11 +450,35 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   are likewise never entered — `test_boot_goes_straight_from_booting_to_ready`
   pins that, so the day one of them starts firing, a test says so.
 
-### TEST-2 — LED: grossly inadequate coverage [CRITICAL]
+### TEST-2 — LED: grossly inadequate coverage [CRITICAL] — **DONE (2026-08-23, PR #17)**
 
 - **Ref**: LED-F5
 - **Problem**: Only tests LED type definitions. Zero coverage for effects, PWM output, state management, WebUI interactions.
-- **Fix**: Add tests for all effects, brightness calculations, multi-LED scenarios, WebUI handlers.
+- **Fixed**: 18 test cases became 103, across four native projects —
+  `test_led_types` (unchanged), `test_led_component` (lifecycle, pin validation,
+  naming, every setter by index and by name, BUG-19 and DC-5 regressions),
+  `test_led_effects` (the six effect curves, the rainbow ramp, the PWM
+  arithmetic) and `test_led_webui` (every field the browser can post).
+- **What made effects testable**: the stub HAL swallows `analogWrite()`, so a
+  native test cannot observe a pin. The arithmetic was lifted out of
+  `updateEffects()` into `effectBrightness()`, `rainbowColor()`, `scaleToMax()`
+  and `pwmValue()` — pure, static, no member state — and the tests check the
+  value computed for the pin. Behaviour is unchanged; the switch statement moved.
+- **What made `LEDWebUI` testable**: `BaseWebUIComponents.h` places a CSS literal
+  in `PROGMEM`, which no host toolchain defines, so the header could not be
+  compiled by any native test. `Platform_HAL.h` now falls back to empty
+  `PROGMEM` / identity `PSTR` — in the block that already carried the
+  `DSNPRINTF_P` and `DLOG_SNPRINTF` fallbacks for the same reason. Both Arduino
+  cores define the two macros before that point, so the `#ifndef` never fires on
+  a board. This unblocks the same test for the other WebUI providers (TEST-6).
+- **Still not covered**: `loop()` itself. Driving it needs a controllable clock
+  and a recording `analogWrite()` — a Core-level test seam, not an LED one.
+  What is proven is the arithmetic it applies, not the cadence at which it runs.
+- **Two expectations the code corrected**: an LED is enabled by default at the
+  component level, so `LEDWebUI` selecting another LED does not disable the
+  first; and `getWebUIData()` answers an unknown context with `null`, not `{}`,
+  because that is what ArduinoJson 7 makes of an untouched document. Both are
+  recorded as tests rather than changed.
 
 ### TEST-3 — OTA: superficial coverage [HIGH]
 
@@ -722,7 +767,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | DC-3 | HA | Residual `static_cast` in handleCommand despite virtual dispatch (R24) | Complete migration to virtual dispatch |
 | DC-3b | HA | `volatile bool publishing` set/cleared but never read — dead code | Remove or implement guard (see BUG-11) |
 | DC-4 | LED | `effectDirection` — confirmed dead, may have been missed in v1 cleanup | Remove if still present |
-| DC-5 | LED | `shutdown()` doesn't clear internal vectors | Add cleanup |
+| DC-5 | LED | `shutdown()` doesn't clear internal vectors | **DONE** (PR #17) — `ledStates` cleared and shrunk; `ledConfigs` deliberately kept, see below |
 | DC-6 | OTA | `EVENT_COMPLETE` vs `EVENT_COMPLETED` — confusing duplicate names | **DONE** (PR #4) — consolidated on `EVENT_COMPLETED` |
 | DC-7 | OTA | `signaturePublicKey` — documented but never used | **DONE** (PR #4, docs PR #9) — removed with the five other unread fields |
 | DC-8 | WebUI | Pointless `doc.shrinkToFit()` after serialization is complete | Remove |
@@ -754,6 +799,15 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   asserts the behaviour as it is, not as the branch intends, so whoever settles
   this sees the test change with it.
 
+**DC-5, on keeping `ledConfigs`.** "Clear the internal vectors" was filed as one
+action; it is two. `ledStates` is runtime churn and is released, per Constitution
+XIV. `ledConfigs` is the user's registration — the pins, names and brightness
+ceilings passed to `addSingleLED()`. `ComponentRegistry::shutdownAll()` leaves a
+component able to be initialised again, and clearing the configuration would have
+left that second `begin()` driving nothing at all, silently. The vector that
+holds user input outlives the shutdown; the vector that holds machine state does
+not.
+
 ---
 
 ## Priority 10: Minor Issues (LOW)
@@ -770,7 +824,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | LO-8 | RC | `nextClientId` wraps after 4B connections |
 | LO-9 | WiFi | Member shadowing (`ssid`/`password` vs constructor params) |
 | LO-10 | WiFi | Magic numbers for WiFi status codes |
-| LO-11 | LED | French comment in test file ("Tests unitaires") |
+| LO-11 | LED | French comment in test file ("Tests unitaires") — **DONE** (PR #17) |
 | LO-12 | System | French comment in FullStack test |
 | LO-13 | SI | Unicode emoji in log message (non-ASCII) |
 | LO-14 | SI | `calculateCpuLoad()` uses unreliable heap-churn heuristic |
@@ -826,15 +880,15 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-2, SEC-3 done**) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 2H, 2M (**MEM-1 done**; STOR-ESP-1 new) |
-| 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 0H, 7M (**17 done**) |
-| 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 1C, 3H, 2M (**TEST-1 done**) |
+| 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 0H, 6M (**18 done**) |
+| 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 3H, 2M (**TEST-1, TEST-2 done**) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
 | 8. CI/Infrastructure | CI-1 to CI-11 | II, XII | 0C, 0H, 3M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10 done**; CI-11 new) |
-| 9. Dead Code | DC-1 to DC-10, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-6, DC-7, DC-8 done**; PERSIST-1 new) |
-| 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
-| **Total** | **103 items** | | **1C, 9H, 27M, 34L** (42 resolved) |
+| 9. Dead Code | DC-1 to DC-10, PERSIST-1 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8 done**; PERSIST-1 new) |
+| 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 31L (**LO-11 done**) |
+| **Total** | **103 items** | | **0C, 9H, 25M, 33L** (46 resolved) |
 
 ---
 

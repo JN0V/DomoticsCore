@@ -1,5 +1,5 @@
-// Tests unitaires pour les types LED (LEDColor, LEDEffect, LEDConfig)
-// Ces tests ne dépendent pas de Core - ils testent la logique pure
+// Unit tests for the LED value types (LEDColor, LEDEffect, LEDConfig).
+// They do not depend on Core — pure logic only.
 
 #include <DomoticsCore/Logger.h>  // Required for DLOG macros used in LED.h
 #include <DomoticsCore/LED.h>

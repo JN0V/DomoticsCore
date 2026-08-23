@@ -84,6 +84,7 @@ private:
     std::vector<LEDConfig> ledConfigs;
     std::vector<LEDState> ledStates;
     Utils::NonBlockingDelay updateTimer;
+    bool pinsInitialized = false;  // true between a successful begin() and shutdown()
 
 public:
     /**
@@ -116,17 +117,12 @@ public:
         
         // Initialize hardware pins
         initializePins();
-        
-        // Initialize LED states
-        ledStates.resize(ledConfigs.size());
-        for (size_t i = 0; i < ledStates.size(); i++) {
-            ledStates[i].currentColor = LEDColor::Off();
-            ledStates[i].brightness = 0;
-            ledStates[i].effect = LEDEffect::Solid;
-            ledStates[i].effectSpeed = 1000;
-            ledStates[i].enabled = true;
-        }
-        
+
+        // Fresh runtime state: assign() rather than resize() so a second begin()
+        // also resets effectPhase and lastUpdate, which resize() would have kept.
+        ledStates.assign(ledConfigs.size(), LEDState());
+        pinsInitialized = true;
+
         DLOG_I(LOG_LED, "Initialized %zu LEDs successfully", ledConfigs.size());
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
@@ -144,7 +140,11 @@ public:
     }
     
     /**
-     * @brief Turn off all LEDs and release resources.
+     * @brief Turn off all LEDs and release the runtime state.
+     *
+     * The configuration survives: shutdown() is reversible, and a later begin()
+     * must bring the same LEDs back up. Only @ref ledStates — pure runtime
+     * churn — is released, per Constitution XIV.
      */
     ComponentStatus shutdown() override {
         DLOG_I(LOG_LED, "Shutting down...");
@@ -153,36 +153,61 @@ public:
         for (size_t i = 0; i < ledConfigs.size(); i++) {
             setLEDOutput(i, LEDColor::Off(), 0);
         }
-        
+
+        ledStates.clear();
+        ledStates.shrink_to_fit();
+        pinsInitialized = false;
+
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
     }
-    
+
     // Configuration setup
     /**
      * @brief Add a fully-specified LED configuration (single or RGB).
+     *
+     * Accepted before or after begin(). Called after begin(), the pins are
+     * validated and initialized on the spot and the matching state entry is
+     * created, so @ref ledConfigs and @ref ledStates never drift apart — an LED
+     * added late is driveable, not merely listed.
+     *
+     * @return false if called after begin() with unusable pins; true otherwise.
+     *         Before begin(), pins are validated there instead and this always
+     *         returns true.
      */
-    void addLED(const LEDConfig& config) {
+    bool addLED(const LEDConfig& config) {
+        if (!pinsInitialized) {
+            ledConfigs.push_back(config);
+            return true;
+        }
+
+        if (!validateLEDConfig(config)) return false;
+
         ledConfigs.push_back(config);
+        initializePin(ledConfigs.back());
+        ledStates.emplace_back();
+        return true;
     }
 
     /**
      * @brief Convenience helper to register a single-channel LED.
+     * @return see @ref addLED.
      */
-    void addSingleLED(int pin, const String& name = "", uint8_t maxBrightness = 255, bool invertLogic = false) {
+    bool addSingleLED(int pin, const String& name = "", uint8_t maxBrightness = 255, bool invertLogic = false) {
         LEDConfig config;
         config.pin = pin;
         config.isRGB = false;
         config.name = name.isEmpty() ? ("LED_" + String(ledConfigs.size())) : name;
         config.maxBrightness = maxBrightness;
         config.invertLogic = invertLogic;
-        addLED(config);
+        return addLED(config);
     }
 
     /**
      * @brief Register a three-channel RGB LED using discrete GPIO pins.
+     * @return see @ref addLED.
      */
-    void addRGBLED(int redPin, int greenPin, int bluePin, const String& name = "", 
+    bool addRGBLED(int redPin, int greenPin, int bluePin, const String& name = "",
                    uint8_t maxBrightness = 255, bool invertLogic = false) {
         LEDConfig config;
         config.isRGB = true;
@@ -192,7 +217,7 @@ public:
         config.name = name.isEmpty() ? ("RGB_" + String(ledConfigs.size())) : name;
         config.maxBrightness = maxBrightness;
         config.invertLogic = invertLogic;
-        addLED(config);
+        return addLED(config);
     }
     
     // LED control methods
@@ -340,61 +365,135 @@ public:
         }
     }
 
+    // ------------------------------------------------------------------
+    // Effect engine — pure arithmetic, no hardware and no member state.
+    // Split out of updateEffects() so the curves can be checked directly:
+    // the HAL swallows analogWrite() on the host, so the only way to test
+    // what a pin would receive is to test the value computed for it.
+    // ------------------------------------------------------------------
+
+    /**
+     * @brief Brightness an effect emits at a given phase.
+     * @param effect Effect being animated.
+     * @param phase  Position in the cycle, 0.0 to 1.0.
+     * @param base   Brightness the effect modulates (the LED's set brightness).
+     * @return Modulated brightness. Solid and Rainbow return @p base unchanged —
+     *         Rainbow animates the colour, not the brightness.
+     */
+    static uint8_t effectBrightness(LEDEffect effect, float phase, uint8_t base) {
+        switch (effect) {
+            case LEDEffect::Blink:
+                return (phase < 0.5f) ? base : 0;
+
+            case LEDEffect::Fade:
+                return (uint8_t)(base * (sin(phase * 2 * HAL::PI) + 1) / 2);
+
+            case LEDEffect::Pulse:
+                if (phase < 0.3f) {
+                    return (uint8_t)(base * sin(phase * HAL::PI / 0.3));
+                } else if (phase < 0.5f) {
+                    return (uint8_t)(base * sin((phase - 0.3) * HAL::PI / 0.2));
+                }
+                return 0;
+
+            case LEDEffect::Breathing:
+                return (uint8_t)(base * (1 - cos(phase * 2 * HAL::PI)) / 2);
+
+            default:
+                return base;
+        }
+    }
+
+    /**
+     * @brief Colour the Rainbow effect emits at a given phase (RGB LEDs only).
+     * @param phase Position in the cycle, 0.0 to 1.0, mapped onto a 360° hue.
+     */
+    static LEDColor rainbowColor(float phase) {
+        float hue = phase * 360.0;
+        // Simple HSV to RGB conversion
+        if (hue < 120) {
+            return LEDColor(255 - hue * 2.125, hue * 2.125, 0);
+        } else if (hue < 240) {
+            return LEDColor(0, 255 - (hue - 120) * 2.125, (hue - 120) * 2.125);
+        }
+        return LEDColor((hue - 240) * 2.125, 0, 255 - (hue - 240) * 2.125);
+    }
+
+    /**
+     * @brief Scale a 0-255 value onto a 0-@p max range.
+     */
+    static uint8_t scaleToMax(uint8_t value, uint8_t max) {
+        return (uint8_t)HAL::map(value, 0, 255, 0, max);
+    }
+
+    /**
+     * @brief PWM value actually written to a pin, after common-anode inversion.
+     */
+    static uint8_t pwmValue(uint8_t value, bool invert) {
+        return invert ? (uint8_t)(255 - value) : value;
+    }
+
 private:
     // Private helper methods
     bool validateLEDPins() {
-        for (size_t i = 0; i < ledConfigs.size(); i++) {
-            const auto& config = ledConfigs[i];
-            
-            if (config.isRGB) {
-                if (config.redPin < 0 || config.greenPin < 0 || config.bluePin < 0) {
-                    DLOG_E(LOG_LED, "Invalid RGB pins for LED '%s': R=%d, G=%d, B=%d", 
-                                config.name.c_str(), config.redPin, config.greenPin, config.bluePin);
-                    return false;
-                }
-            } else {
-                if (config.pin < 0) {
-                    DLOG_E(LOG_LED, "Invalid pin for LED '%s': %d", config.name.c_str(), config.pin);
-                    return false;
-                }
+        for (const auto& config : ledConfigs) {
+            if (!validateLEDConfig(config)) return false;
+        }
+        return true;
+    }
+
+    static bool validateLEDConfig(const LEDConfig& config) {
+        if (config.isRGB) {
+            if (config.redPin < 0 || config.greenPin < 0 || config.bluePin < 0) {
+                DLOG_E(LOG_LED, "Invalid RGB pins for LED '%s': R=%d, G=%d, B=%d",
+                            config.name.c_str(), config.redPin, config.greenPin, config.bluePin);
+                return false;
+            }
+        } else {
+            if (config.pin < 0) {
+                DLOG_E(LOG_LED, "Invalid pin for LED '%s': %d", config.name.c_str(), config.pin);
+                return false;
             }
         }
         return true;
     }
-    
+
     void initializePins() {
         for (const auto& config : ledConfigs) {
-            if (config.isRGB) {
-                HAL::pinMode(config.redPin, OUTPUT);
-                HAL::pinMode(config.greenPin, OUTPUT);
-                HAL::pinMode(config.bluePin, OUTPUT);
-                setPWMOutput(config.redPin, 0, config.invertLogic);
-                setPWMOutput(config.greenPin, 0, config.invertLogic);
-                setPWMOutput(config.bluePin, 0, config.invertLogic);
-            } else {
-                HAL::pinMode(config.pin, OUTPUT);
-                setPWMOutput(config.pin, 0, config.invertLogic);
-            }
+            initializePin(config);
         }
     }
-    
+
+    void initializePin(const LEDConfig& config) {
+        if (config.isRGB) {
+            HAL::pinMode(config.redPin, OUTPUT);
+            HAL::pinMode(config.greenPin, OUTPUT);
+            HAL::pinMode(config.bluePin, OUTPUT);
+            setPWMOutput(config.redPin, 0, config.invertLogic);
+            setPWMOutput(config.greenPin, 0, config.invertLogic);
+            setPWMOutput(config.bluePin, 0, config.invertLogic);
+        } else {
+            HAL::pinMode(config.pin, OUTPUT);
+            setPWMOutput(config.pin, 0, config.invertLogic);
+        }
+    }
+
     void setPWMOutput(int pin, uint8_t value, bool invert) {
         if (pin < 0) return;
-        uint8_t outputValue = invert ? (255 - value) : value;
-        HAL::analogWrite(pin, outputValue);
+        HAL::analogWrite(pin, pwmValue(value, invert));
     }
-    
+
     void setLEDOutput(size_t ledIndex, const LEDColor& color, uint8_t brightness) {
         if (ledIndex >= ledConfigs.size()) return;
-        
+
         const auto& config = ledConfigs[ledIndex];
-        uint8_t scaledBrightness = HAL::map(brightness, 0, 255, 0, config.maxBrightness);
-        
+        uint8_t scaledBrightness = scaleToMax(brightness, config.maxBrightness);
+
         if (config.isRGB) {
-            uint8_t red = HAL::map(color.red, 0, 255, 0, scaledBrightness);
-            uint8_t green = HAL::map(color.green, 0, 255, 0, scaledBrightness);
-            uint8_t blue = HAL::map(color.blue, 0, 255, 0, scaledBrightness);
-            
+            uint8_t red = scaleToMax(color.red, scaledBrightness);
+            uint8_t green = scaleToMax(color.green, scaledBrightness);
+            uint8_t blue = scaleToMax(color.blue, scaledBrightness);
+
             setPWMOutput(config.redPin, red, config.invertLogic);
             setPWMOutput(config.greenPin, green, config.invertLogic);
             setPWMOutput(config.bluePin, blue, config.invertLogic);
@@ -403,7 +502,7 @@ private:
             setPWMOutput(config.pin, value, config.invertLogic);
         }
     }
-    
+
     void updateEffects() {
         unsigned long currentTime = HAL::getMillis();
         
@@ -426,53 +525,15 @@ private:
             }
             
             state.lastUpdate = currentTime;
-            
+
             // Apply effect
             LEDColor outputColor = state.currentColor;
-            uint8_t outputBrightness = state.brightness;
-            
-            switch (state.effect) {
-                case LEDEffect::Blink:
-                    outputBrightness = (state.effectPhase < 0.5) ? state.brightness : 0;
-                    break;
-                    
-                case LEDEffect::Fade:
-                    outputBrightness = (uint8_t)(state.brightness * (sin(state.effectPhase * 2 * HAL::PI) + 1) / 2);
-                    break;
-                    
-                case LEDEffect::Pulse:
-                    if (state.effectPhase < 0.3) {
-                        outputBrightness = (uint8_t)(state.brightness * sin(state.effectPhase * HAL::PI / 0.3));
-                    } else if (state.effectPhase < 0.5) {
-                        outputBrightness = (uint8_t)(state.brightness * sin((state.effectPhase - 0.3) * HAL::PI / 0.2));
-                    } else {
-                        outputBrightness = 0;
-                    }
-                    break;
-                    
-                case LEDEffect::Rainbow:
-                    if (ledConfigs[i].isRGB) {
-                        float hue = state.effectPhase * 360.0;
-                        // Simple HSV to RGB conversion
-                        if (hue < 120) {
-                            outputColor = LEDColor(255 - hue * 2.125, hue * 2.125, 0);
-                        } else if (hue < 240) {
-                            outputColor = LEDColor(0, 255 - (hue - 120) * 2.125, (hue - 120) * 2.125);
-                        } else {
-                            outputColor = LEDColor((hue - 240) * 2.125, 0, 255 - (hue - 240) * 2.125);
-                        }
-                        outputBrightness = state.brightness;
-                    }
-                    break;
-                    
-                case LEDEffect::Breathing:
-                    outputBrightness = (uint8_t)(state.brightness * (1 - cos(state.effectPhase * 2 * HAL::PI)) / 2);
-                    break;
-                    
-                default:
-                    break;
+            uint8_t outputBrightness = effectBrightness(state.effect, state.effectPhase, state.brightness);
+
+            if (state.effect == LEDEffect::Rainbow && ledConfigs[i].isRGB) {
+                outputColor = rainbowColor(state.effectPhase);
             }
-            
+
             setLEDOutput(i, outputColor, outputBrightness);
         }
     }
