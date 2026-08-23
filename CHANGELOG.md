@@ -5,6 +5,130 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-08-23
+
+### ⚠️ Breaking Changes — one of them needs your attention
+
+**`SystemConfig::otaPassword` is removed, and setting it never protected anything.**
+
+If you followed the FullStack example's *Security Best Practices* section and wrote
+`config.otaPassword = "MyStr0ng!P@ssw0rd"`, **your OTA endpoint was never
+protected**. The field was assigned to `OTAConfig::bearerToken`, which no code
+path ever read. That wiring was itself a past "fix" (R20 in 2.0.0), connecting a
+dead field to another dead field.
+
+To actually protect firmware upload, enable WebUI authentication:
+
+```cpp
+config.enableWebUI = true;
+webuiConfig.enableAuth = true;
+webuiConfig.username = "admin";
+webuiConfig.password = "...";
+```
+
+Both `/ota/upload` and `/api/ota/upload` now require those credentials, checked on
+the first upload chunk, before any byte reaches flash.
+
+**Other removals**, none of which ever did anything:
+
+- `OTAConfig`: `requireTLS`, `bearerToken`, `basicAuthUser`, `basicAuthPassword`,
+  `rootCA`, `signaturePublicKey` (SEC-1, DC-7). No code path read them. Transport
+  security belongs in the `ManifestFetcher` / `Downloader` callbacks you install —
+  that is where the HTTP client is.
+- `OTAEvents::EVENT_COMPLETE` (DC-6) — use `EVENT_COMPLETED`, whose payload now
+  carries the fields both events used to split between them.
+- `HAL::IStorage` gains a pure virtual `maxEntries()`. Only affects out-of-tree
+  implementations of that interface; the three in-tree backends are updated.
+
+### Security
+
+- fix(ota): `/ota/upload` and `/api/ota/upload` require WebUI authentication
+  (SEC-3) [HIGH]. Previously any network client could POST firmware and have it
+  written to flash. Checked on the first chunk; a failed check aborts the update
+  rather than letting the remaining chunks through.
+- fix(system): the LED component was initialised outside `ComponentRegistry`,
+  which skips already-initialised components — and that skipped branch is the
+  only place EventBus and Core are injected. The component ran with both pointers
+  null (BUG-23) [HIGH].
+
+### Bug Fixes
+
+**Storage**
+- fix(storage): getters consult the cache instead of always hitting the backend
+  (BUG-15) [HIGH]. Note: when a key is absent from both cache and backend, the
+  caller's default is cached — use `put()` to set canonical values.
+- fix(storage): `RAMOnlyStorage::putBytes()` stored the *length* in place of the
+  content and returned success for data it discarded (BUG-17) [MEDIUM].
+- fix(storage): `RAMOnlyStorage` uint64 round-trip no longer truncates (BUG-16)
+  [MEDIUM].
+- fix(storage): entry counts come from the backend rather than from cache size,
+  and blob capacity is released rather than merely cleared.
+
+**NTP**
+- fix(ntp): SNTP server names live in buffers that outlive the client
+  (BUG-4) [HIGH]. `esp_sntp_setservername()` keeps the pointer it is given.
+- fix(ntp): a single sync threshold, delegated to `HAL::NTP::isSynced()`
+  (BUG-5) [HIGH].
+- fix(ntp): `bootTime` width matches `getMillis()` (BUG-6) [HIGH]. Private
+  member; no API change.
+
+**MQTT and RemoteConsole**
+- fix(mqtt): the broker address lives in a buffer the component owns
+  (BUG-8) [MEDIUM]. PubSubClient keeps the pointer given to `setServer()` without
+  copying it.
+- fix(remoteconsole): telnet input is bounded in both directions (BUG-22) [HIGH]
+  — at most 512 bytes read per `loop()` call, and the command buffer is capped.
+  Bounding the read alone left the heap open to a client that never sends a
+  newline.
+
+### CI
+
+The repository had 29 test suites that no workflow ran, and compiled only
+`esp32dev` while declaring three targets.
+
+- ci: run every native suite — 12 projects, 568 test cases (CI-1) [HIGH]
+- ci: build `esp32dev`, `esp8266dev` and `esp32c3` (CI-2) [HIGH]. The ten
+  ESP8266-specific files had never been compiled by anything; they were sound.
+- ci: declare the `DomoticsCore-Core` dependency in Storage, SystemInfo and OTA
+  (CI-3) [HIGH]
+- ci: `actions/checkout@v4`, `actions/setup-python@v5` (CI-5)
+- fix(example): FullStack uses the stock `min_spiffs.csv` (CI-9). Same firmware,
+  ceiling raised from 1,572,864 to 1,966,080 bytes — 66.3% instead of 82.9% on
+  ESP32-C3.
+
+`main` now requires six checks. Known gap: the install-from-GitHub witness is
+still `esp32dev`-only, because the root manifest pulls the ESP32-only `AsyncTCP`
+unconditionally (CI-8, open).
+
+### Documentation
+
+- docs: six documents still described the removed OTA fields as working security
+  — including a "TLS and Certificate Configuration" section stating that
+  `requireTLS` rejected non-HTTPS URLs. Removing the fields without correcting
+  the documentation would have had readers trust the protection twice.
+- docs: `docs/CODE-ROADMAP.md` gains a Delivery section recording how these lots
+  land and, next to what CI proves, what it does not.
+
+### Component Versions
+
+| Component | Version | |
+|-----------|---------|---|
+| **DomoticsCore** (root) | **2.1.0** | breaking removals |
+| Core | 1.5.3 | unchanged |
+| WebUI | 1.5.1 | unchanged |
+| LED | 1.4.1 | unchanged |
+| Storage | **1.5.0** | `IStorage` gains a pure virtual |
+| MQTT | **1.4.3** | |
+| HomeAssistant | 2.0.1 | unchanged |
+| OTA | **1.5.0** | six config fields removed |
+| NTP | **1.3.1** | |
+| RemoteConsole | **1.4.3** | |
+| Wifi | 1.4.2 | unchanged |
+| System | **1.5.0** | `otaPassword` removed |
+| SystemInfo | **1.4.1** | |
+
+---
+
 ## [2.0.1] - 2026-03-11
 
 ### Bug Fixes (Roadmap v2 Batch Remediation — 20 items)

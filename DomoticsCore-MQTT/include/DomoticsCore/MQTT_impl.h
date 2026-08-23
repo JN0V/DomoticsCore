@@ -35,7 +35,7 @@ inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
 
     // Initialize metadata
     metadata.name = "MQTT";
-    metadata.version = "1.4.2";
+    metadata.version = "1.4.3";
     metadata.author = "DomoticsCore";
     metadata.description = "MQTT client with auto-reconnection";
 }
