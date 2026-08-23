@@ -34,13 +34,7 @@ Defined in `DomoticsCore/OTA.h` within `DomoticsCore::Components`.
 |-------|------|---------|-------------|
 | `updateUrl` | `String` | `""` | Direct firmware binary URL. Used when no manifest is configured. |
 | `manifestUrl` | `String` | `""` | Optional JSON manifest endpoint providing version, URL, SHA-256, and signature. |
-| `bearerToken` | `String` | `""` | Optional HTTP `Authorization: Bearer <token>` header value. |
-| `basicAuthUser` | `String` | `""` | Optional HTTP basic-auth username. |
-| `basicAuthPassword` | `String` | `""` | Optional HTTP basic-auth password. |
-| `rootCA` | `String` | `""` | Optional PEM-encoded root CA certificate for TLS validation. |
-| `signaturePublicKey` | `String` | `""` | Optional PEM-encoded public key for firmware signature validation. |
 | `checkIntervalMs` | `uint32_t` | `3600000` | Automatic periodic check interval in milliseconds. Set to `0` to disable periodic checks. |
-| `requireTLS` | `bool` | `true` | When `true`, reject non-HTTPS URLs. |
 | `allowDowngrades` | `bool` | `false` | When `true`, permit installing firmware with a lower semantic version. |
 | `autoReboot` | `bool` | `true` | When `true`, reboot automatically 2 seconds after a successful update. |
 | `maxDownloadSize` | `size_t` | `0` | Maximum acceptable firmware binary size in bytes. `0` means unlimited. |
@@ -214,17 +208,38 @@ If either provider is not set, the corresponding network features log an error a
 
 ---
 
-## TLS and Certificate Configuration
+## TLS and Transport Security
 
-| Config Field | Purpose |
-|-------------|---------|
-| `requireTLS` | When `true` (default), non-HTTPS URLs are rejected. |
-| `rootCA` | PEM-encoded root CA certificate string. Passed to the HTTP client in the application-provided transport callbacks. |
-| `signaturePublicKey` | PEM-encoded public key for firmware signature validation (reserved; verification logic is application-side). |
-| `bearerToken` | Bearer token included in HTTP `Authorization` headers. |
-| `basicAuthUser` / `basicAuthPassword` | HTTP basic authentication credentials. |
+**`OTAConfig` carries no security fields, and never usefully did.**
 
-The OTA component itself does not perform HTTP requests -- TLS setup is the responsibility of the injected `ManifestFetcher` and `Downloader` callbacks. The configuration fields serve as a structured way to pass credentials and certificates from the application configuration to those callbacks.
+Until v2.1.0 it declared `requireTLS`, `rootCA`, `bearerToken`, `basicAuthUser`,
+`basicAuthPassword` and `signaturePublicKey`, and this page described them as
+working — `requireTLS` as rejecting non-HTTPS URLs, the others as credentials
+"passed to the HTTP client". **No code path ever read any of them.** Nothing
+rejected an HTTP URL; nothing attached an `Authorization` header; nothing
+validated a certificate or a signature. The fields have been removed rather than
+left to promise a protection that was never implemented.
+
+The component performs no HTTP requests of its own. It calls the
+`ManifestFetcher` and `Downloader` callbacks the application installs, and
+**transport security lives entirely inside those callbacks** — that is where the
+HTTP client is, so that is where TLS, certificate pinning and any authorization
+header belong:
+
+```cpp
+ota->setDownloader([](const String& url, ChunkCallback onChunk) -> bool {
+    WiFiClientSecure client;
+    client.setCACert(MY_ROOT_CA);          // certificate validation, here
+    HTTPClient http;
+    http.begin(client, url);
+    http.addHeader("Authorization", "Bearer " + myToken);   // and auth, here
+    // ...
+});
+```
+
+The WebUI upload endpoints are a separate matter and *are* enforced: they require
+WebUI credentials when `WebUIConfig::enableAuth` is set, checked on the first
+chunk before any byte reaches flash.
 
 ---
 

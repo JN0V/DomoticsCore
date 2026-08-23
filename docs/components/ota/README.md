@@ -10,7 +10,7 @@ The component registers as `OTAComponent` (type key `"ota"`) in the Core compone
 
 ## Key Features
 
-- **Secure Downloads** -- HTTPS/TLS with optional root CA certificate pinning and configurable `requireTLS` enforcement.
+- **Pluggable Transport** -- the component performs no HTTP itself; TLS, certificate pinning and authorization headers live in the fetcher and downloader callbacks the application installs.
 - **Manifest-Based Updates** -- fetch a JSON manifest providing version, URL, SHA-256, and signature metadata.
 - **Direct URL Updates** -- download and install firmware from a known URL without a manifest.
 - **Manual Upload** -- browser-based file upload via the WebUI provider (`/api/ota/upload`) with multipart/form-data support.
@@ -35,7 +35,6 @@ using namespace DomoticsCore::Components;
 OTAConfig otaCfg;
 otaCfg.updateUrl = "https://firmware.example.com/latest.bin";
 otaCfg.autoReboot = true;
-otaCfg.requireTLS = true;
 
 // 2. Register component
 core.addComponent(std::make_unique<OTAComponent>(otaCfg));

@@ -247,7 +247,7 @@ All three implementations expose the same function set in `DomoticsCore::HAL::OT
 
 - `OTA.cpp` line count (607) should be monitored. If new features are added, consider extracting manifest fetching or version comparison into a separate utility.
 - `OTAWebUI.h` contains both context building and route registration. If it grows further, route registration could be extracted into a helper.
-- The `signaturePublicKey` config field is declared but not yet used in the verification flow -- this is YAGNI-compliant for now but should be documented if implemented.
+- Firmware signature verification is not implemented. The `signaturePublicKey` field that used to advertise it was removed in v2.1.0 (DC-7): it was never read, so it promised a check that did not happen. SHA-256 integrity verification *is* performed, with rollback on mismatch (SEC-2).
 - **(C14)** `EVENT_START` and `EVENT_END` are defined in `OTAEvents.h` but never emitted by `OTAComponent`. Either add `emit()` calls at the appropriate points (beginning of download/upload and end of transfer before verification), or remove the unused constants to avoid misleading subscribers.
 - **(C15)** `State::Applying` is defined in the enum and checked in `isBusy()` / `stateToString()` but is never entered via `transition()`. Either introduce a transition to `Applying` after download completes (before `finalizeUpdateOperation`), or remove the state from the enum to match actual runtime behavior.
 - **(Bug)** `OTAWebUI::getWebUIVersion()` returns hardcoded `"1.4.0"` instead of reading `metadata.version` (which is `"1.4.1"`). Should be updated to match.
