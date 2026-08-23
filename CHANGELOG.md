@@ -5,6 +5,46 @@ All notable changes to DomoticsCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-08-23
+
+### Fixed
+
+**The library could not be installed for ESP8266, and had not been able to for
+some time.**
+
+`library.json` declared `ESP32Async/AsyncTCP` as a plain dependency. That package
+is ESP32-only, so installing DomoticsCore from the registry or from GitHub for an
+`espressif8266` target pulled it in and stopped at:
+
+```
+AsyncTCP.h:22:10: fatal error: sdkconfig.h: No such file or directory
+```
+
+`sdkconfig.h` is an ESP-IDF header; it does not exist on ESP8266. The manifest
+listed `espressif8266` among the library's platforms throughout.
+
+Nothing in this repository was affected. Every example lists components as
+`file://` paths and names its own TCP backend, so the manifest was never
+consulted here — the one path nobody in the project takes is the one every user
+takes. If you build from the examples, or pin components individually, nothing
+changes for you.
+
+- fix(manifest): remove the unconditional `AsyncTCP` dependency (CI-8) [HIGH].
+  `ESPAsyncWebServer` already declares the TCP backends conditionally and
+  correctly — `AsyncTCP` for `espressif32`/`libretiny`, `ESPAsyncTCP` for
+  `espressif8266`, `RPAsyncTCP` for `raspberrypi` — so the root entry was
+  redundant on ESP32 and harmful on ESP8266. The transitive dependency now
+  resolves the right backend per platform.
+- ci: `test-github-install.yml` builds both declared platforms. It is the only
+  workflow that resolves through the manifest rather than through `file://`
+  paths, which is why this went unseen; it is now the place it cannot.
+
+No API change. If you are on ESP32, 2.1.1 resolves `AsyncTCP` through
+`ESPAsyncWebServer` instead of directly, which may pick a newer version within
+the same major.
+
+---
+
 ## [2.1.0] - 2026-08-23
 
 ### ⚠️ Breaking Changes — one of them needs your attention
