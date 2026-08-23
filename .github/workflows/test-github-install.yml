@@ -34,17 +34,31 @@ jobs:
           mkdir test-install
           cd test-install
           cat > platformio.ini << EOF
-          [env:esp32dev]
-          platform = espressif32
-          board = esp32dev
+          # Both declared platforms are built here, deliberately. This project
+          # resolves dependencies through the root library.json — unlike the
+          # in-tree examples, which list components as file:// paths and work
+          # around manifest problems with lib_ignore. It is therefore the only
+          # thing in CI that exercises what someone installing the library
+          # actually gets, and until CI-8 the ESP8266 half of that did not work.
+          [env]
           framework = arduino
-          board_build.partitions = min_spiffs.csv
           lib_deps =
               https://github.com/${INSTALL_REPO}.git#${INSTALL_SHA}
           build_unflags =
               -std=gnu++11
+
+          [env:esp32dev]
+          platform = espressif32
+          board = esp32dev
+          board_build.partitions = min_spiffs.csv
           build_flags =
               -std=gnu++14
+
+          [env:esp8266dev]
+          platform = espressif8266
+          board = d1_mini
+          build_flags =
+              -std=gnu++17
           EOF
 
           mkdir src

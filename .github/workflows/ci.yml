@@ -9,10 +9,9 @@ name: CI
 # example declares. This workflow closes both gaps.
 #
 # What it still does not cover, so that a green tick is not read for more than
-# it is worth: the install-from-GitHub path remains esp32dev-only. Building the
-# witness project for esp8266 would first need the root library.json to stop
-# pulling AsyncTCP unconditionally, which is ESP32-only — a separate change.
-# And a host build proves compilation, not behaviour on a board.
+# it is worth: a host build proves compilation, not behaviour on a board. The
+# install-from-GitHub path is covered by test-github-install.yml, which since
+# CI-8 builds both declared platforms rather than esp32dev alone.
 
 on: [push, pull_request]
 
