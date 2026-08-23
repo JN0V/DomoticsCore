@@ -27,7 +27,8 @@ versions may sit still while fixes land.
 | Storage | BUG-15, BUG-16, BUG-17, F1, F10 | **Merged** — PR #5 |
 | Isolated — System | BUG-23 | **Merged** — PR #7, 2026-08-22 |
 | Isolated — MQTT, RemoteConsole | BUG-8, BUG-22 | **Merged** — PR #10, 2026-08-23, landed before the `esp32-ethernet` sync so it merges once |
-| ESP8266 on-device suites | CI-10 | PR #19 — first run on real hardware; found STOR-ESP-1 |
+| ESP8266 on-device suites | CI-10 | **Merged** — PR #19, 2026-08-23, first run on real hardware; found STOR-ESP-1 |
+| System | TEST-1, ARCH-3 | PR #18 — tests only; `System.h` overlaps `esp32-ethernet`, coordinated first |
 
 `main` requires six checks: `test-install`, `check-versions`,
 `Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
@@ -39,7 +40,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 12 native projects run — 567 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
+| ✅ | The 13 native projects run — 621 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -391,11 +392,42 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 
 TDD with 100% coverage is a constitutional mandate. These components have critical gaps.
 
-### TEST-1 — System: zero tests [CRITICAL]
+### TEST-1 — System: zero tests [CRITICAL] — **DONE (2026-08-23, PR #18)**
 
 - **Ref**: SYS-F1
 - **Problem**: No `test/` directory exists. Complex branching logic (heap guards, state machine, event orchestration) completely untested.
-- **Fix**: Create comprehensive test suite covering all public methods and state transitions.
+- **Fixed**: `DomoticsCore-System` gains a `native` environment — it was the last
+  component without one — and 54 test cases in three projects:
+  `test_system_config` (12: the presets the README tells users to write, and the
+  `SystemState` names), `test_system_lifecycle` (24: boot, registration,
+  double-`begin()`, the state callbacks, the status LED, the four console
+  commands), `test_system_persistence` (18: every early return in the loaders).
+- **The component set is the fixture.** Almost everything System does is
+  selected by `__has_include`, so `platformio.ini` lists Core, LED,
+  RemoteConsole and Wifi (the hard dependencies) plus Storage and SystemInfo,
+  and deliberately omits WebUI, NTP, MQTT, OTA and HomeAssistant. Asking a
+  `fullStack()` config for components that are not compiled in is itself a test:
+  it must warn and boot, not fail.
+- **How the console commands are reached**: `System` registers `status`, `wifi`,
+  `storage` and `bootdiag` on the RemoteConsole and exposes none of them. The
+  WiFi stub's simulated client — the harness the RemoteConsole suite already
+  uses — drives them over a fake telnet session, which also covers
+  `initBootDiagnosticsPersistence()` end to end: `bootdiag` reports
+  `Boot Count: 1` and the values Storage received during `begin()`.
+- **BUG-23 now has a real check.** It was closed "verified by compilation only"
+  for want of this suite. `test_ready_drives_the_status_led` asserts the LED is
+  named `status` and breathing after boot, which is only true if the component
+  was registered and initialised by `core.begin()`.
+- **Not covered**: the heap guards. The four `HAL::getFreeHeap() >= 3072`
+  branches in `begin()` cannot be reached on a host that always has heap.
+  Forcing them needs an injectable heap reading — a Core-level seam, filed
+  nowhere yet. What is covered is the path taken when heap is plentiful, which
+  is every path a healthy device takes.
+- **Also**: `ERROR` is unreachable through `SystemConfig` alone. `ledPin` is
+  `uint8_t`, so the LED pin validation that could fail `core.begin()` never sees
+  a negative value. `WIFI_CONNECTING`, `WIFI_CONNECTED` and `SERVICES_STARTING`
+  are likewise never entered — `test_boot_goes_straight_from_booting_to_ready`
+  pins that, so the day one of them starts firing, a test says so.
 
 ### TEST-2 — LED: grossly inadequate coverage [CRITICAL]
 
@@ -494,11 +526,15 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Problem**: Combines config management, hardware pin control, PWM, effect calculations, state management, WebUI in one class.
 - **Fix**: Extract effect engine and WebUI into separate classes.
 
-### ARCH-3 — System: `__has_include` count comment wrong [MEDIUM]
+### ARCH-3 — System: `__has_include` count comment wrong [MEDIUM] — **DONE (2026-08-23, PR #18)**
 
 - **Ref**: SYS-F5
 - **Problem**: Comment says "20 directives" but actual count is 54 across 3 files.
-- **Fix**: Correct the comment.
+- **Fixed**: the comment gives the breakdown — 22 in `System.h`, 16 in
+  `SystemPersistence.h`, 16 in `SystemWebUISetup.h` — rather than one number
+  that drifts silently. Corrected alongside TEST-1 because writing the suite
+  meant counting them anyway: the count is the measure of how much of this
+  component exists only in some builds.
 
 ---
 
@@ -692,6 +728,31 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | DC-8 | WebUI | Pointless `doc.shrinkToFit()` after serialization is complete | Remove |
 | DC-9 | MQTT | `topicMatches()` allocates 2 vectors per call — use char* parsing | Refactor to zero-alloc |
 | DC-10 | WebUI | `const_cast` in `onComponentsReady` — change API to accept non-const ref | Fix signature |
+| PERSIST-1 | System | `loadWifiConfig()` AP-SSID generation appears unreachable | Investigate, then remove or move — see below |
+
+### PERSIST-1 — System: the device-name AP SSID is never generated [MEDIUM]
+
+- **Filed**: 2026-08-23, from writing the TEST-1 suite (PR #18).
+- **File**: `SystemPersistence.h:189-192`
+- **Problem**: `loadWifiConfig()` builds an AP SSID from `config.deviceName`
+  when the stored one is empty. The condition looks reachable and is not:
+  `System::begin()` runs `core.begin()` *before* `loadAllConfigs()`, and by then
+  `WifiComponent::begin()` has already fallen back to AP mode and named itself
+  `"DomoticsCore-" + <last 6 of MAC>` — a literal, not the device name. The SSID
+  the loader inspects is therefore never empty.
+- **The two ways in are mutually exclusive.** With `config.wifiSSID` empty, WiFi
+  always ends `begin()` holding some AP SSID; with it set, `loadWifiConfig()`
+  returns at its first guard. No configuration reaches the branch.
+- **Consequence, if confirmed**: dead code, and a user who names their device
+  still gets an access point called `DomoticsCore-XXXXXX`. Note that the *normal*
+  path is unaffected — `System::registerWifiComponent()` sets a device-name-based
+  AP SSID before `core.begin()`, and `Wifi.h:130` honours a pre-set one.
+- **Not fixed here.** The fix belongs in the WiFi layer, not in a test PR, and
+  `Wifi.h` is being rewritten on `esp32-ethernet`. Confirm against that branch
+  before touching it.
+- **Pinned meanwhile**: `test_an_absent_ap_ssid_keeps_the_one_the_component_already_has`
+  asserts the behaviour as it is, not as the branch intends, so whoever settles
+  this sees the test change with it.
 
 ---
 
@@ -766,14 +827,14 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-2, SEC-3 done**) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 2H, 2M (**MEM-1 done**; STOR-ESP-1 new) |
 | 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 0H, 7M (**17 done**) |
-| 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 2C, 3H, 2M |
+| 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 1C, 3H, 2M (**TEST-1 done**) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
-| 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 1M |
+| 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
 | 8. CI/Infrastructure | CI-1 to CI-11 | II, XII | 0C, 0H, 3M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10 done**; CI-11 new) |
-| 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-6, DC-7, DC-8 done**) |
+| 9. Dead Code | DC-1 to DC-10, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-6, DC-7, DC-8 done**; PERSIST-1 new) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
-| **Total** | **102 items** | | **2C, 9H, 27M, 34L** (40 resolved) |
+| **Total** | **103 items** | | **1C, 9H, 27M, 34L** (42 resolved) |
 
 ---
 
