@@ -94,7 +94,7 @@ Plain configuration struct with 13 fields. No methods. Passed by value to constr
 
 ### `OTAEvents` (namespace)
 
-Seven `static constexpr const char*` constants. No classes or functions. **Note (C14)**: `EVENT_START` (`"ota/start"`) and `EVENT_END` (`"ota/end"`) are declared but never emitted by `OTAComponent`. Only `EVENT_PROGRESS`, `EVENT_ERROR`, `EVENT_INFO`, `EVENT_COMPLETE`, and `EVENT_COMPLETED` are actually emitted in `OTA.cpp`.
+Six `static constexpr const char*` constants. No classes or functions. **Note (C14)**: `EVENT_START` (`"ota/start"`) and `EVENT_END` (`"ota/end"`) are declared but never emitted by `OTAComponent`. Only `EVENT_PROGRESS`, `EVENT_ERROR`, `EVENT_INFO` and `EVENT_COMPLETED` are actually emitted in `OTA.cpp` (`EVENT_COMPLETE` was removed in v2.1.0, DC-6).
 
 ---
 
