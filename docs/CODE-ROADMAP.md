@@ -533,6 +533,45 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Ref**: R-F8
 - **Fix**: Add `depends=ArduinoJson,ESPAsyncWebServer,AsyncTCP,PubSubClient`.
 
+### CI-9 — FullStack partition table wastes 384 KB per app slot [MEDIUM] — **DONE (2026-08-23, PR #11)**
+
+- **Problem**: the example carries its own `partitions.csv` — `app0`/`app1` at
+  `0x180000` each, plus a 960 KB `spiffs` partition — so the firmware ceiling is
+  1,572,864 bytes. Measured on `main`, 2026-08-23, `esp32c3`: 1,302,694 bytes
+  used, 82.8%, 270,170 free. That `spiffs` partition is dead weight in the
+  default configuration: `embed_webui.py` gzips the WebUI into the firmware,
+  `WebUIConfig::useFileSystem` defaults to `false`, `Storage` uses NVS on ESP32,
+  and the only filesystem call sites in the whole tree are the two lines of the
+  opt-in static-file fallback in `WebServerManager.h:139-140`. Nothing ever
+  writes there.
+- **Why it matters now**: the `esp32-ethernet` branch adds a Network component
+  *and* moves to Arduino-ESP32 3.x, whose binaries are larger than 2.0.17's;
+  FullStack no longer fits an ESP32-C3 4 MB part there. The ceiling is the
+  example's own, not OTA's — OTA needs two app slots of equal size and does not
+  dictate their size.
+- **Fix**: switch the example to the stock `min_spiffs.csv` (app slots
+  `0x1E0000` = 1,966,080 bytes, 128 KB spiffs, 64 KB coredump) or an equivalent
+  local table. The same firmware then sits at 66.3%. Note that
+  `docs/getting-started.md:68` already recommends `min_spiffs.csv` to users, so
+  the example currently contradicts the documentation it ships with.
+- **Note**: filed 2026-08-23, after marianorenzi reported that FullStack plus
+  his Network component overflows an ESP32-C3. Answering him, we said we would
+  make this change on `main` so his branch inherits it.
+- **Fixed**: the example's local `partitions.csv` is deleted and both ESP32
+  environments use the stock `min_spiffs.csv`. Measured, same firmware, same
+  commit:
+
+  | Target | Firmware | Before | After | Headroom |
+  |---|---|---|---|---|
+  | `esp32dev` | 1,333,617 B | 84.8% | **67.8%** | 269,247 → **632,463 B** |
+  | `esp32c3` | 1,303,326 B | 82.9% | **66.3%** | 269,538 → **662,754 B** |
+
+  Not a byte of firmware changed — only the ceiling. `esp8266dev` is unaffected
+  (68.4%, no partition table on that platform). `DomoticsCore-OTA/examples/`
+  `OTAWithWebUI` was already on `min_spiffs.csv`: FullStack was the only example
+  in the tree carrying its own table, and the only one contradicting
+  `docs/getting-started.md`.
+
 ### CI-7 — `local_ci.sh` counts total lines, not code lines [LOW]
 
 - **Ref**: R-F10
@@ -634,10 +673,10 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 1M |
-| 8. CI/Infrastructure | CI-1 to CI-8 | II, XII | 0C, 1H, 2M, 1L (**CI-1, CI-2, CI-3, CI-5 done**; CI-8 filed) |
+| 8. CI/Infrastructure | CI-1 to CI-9 | II, XII | 0C, 1H, 2M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-9 done**; CI-8 filed) |
 | 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-6, DC-7, DC-8 done**) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
-| **Total** | **98 items** | | **2C, 9H, 26M, 34L** (37 resolved) |
+| **Total** | **99 items** | | **2C, 9H, 26M, 34L** (38 resolved) |
 
 ---
 
