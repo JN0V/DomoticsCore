@@ -3,7 +3,28 @@
 All notable changes to DomoticsCore will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
+— with one departure, recorded here rather than left to be discovered.
+
+> **2.1.0 removed eight public symbols and shipped as a minor release.** Under
+> strict SemVer that is a major change, and `2.x` consumers who expected a minor
+> update to be safe did not get one.
+>
+> The decision was taken knowingly. Seven of the eight — the six `OTAConfig`
+> security fields and `SystemConfig::otaPassword` — were read by no code path,
+> so removing them takes away nothing a caller could have depended on; the break
+> is at compile time and it is loud.
+>
+> The eighth is different and is the reason this note exists.
+> `OTAEvents::EVENT_COMPLETE` **did** fire. Code referencing the constant fails
+> to compile, but code subscribing by string literal — `on("ota/complete", ...)`
+> — still compiles, still runs, and silently never fires again. That is the one
+> removal a reader could miss entirely, and no version number would have warned
+> them either way.
+>
+> Releases that remove public API will say so at the top of their entry, as
+> 2.1.0 does. If you need the guarantee that a minor release never breaks you,
+> pin an exact version.
 
 ## [2.1.1] - 2026-08-23
 
