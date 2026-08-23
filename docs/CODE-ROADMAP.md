@@ -55,12 +55,24 @@ tests and cross-compilation cover what breaks most often, not what costs most.
 
 Unenforced security configurations are the most dangerous class of defect — users believe they are protected when they are not.
 
-### SEC-1 — OTA: security config fields never enforced [CRITICAL]
+### SEC-1 — OTA: security config fields never enforced [CRITICAL] — **DONE (2026-08-22, PR #4 and #9)**
 
 - **Ref**: OTA-F1
 - **File**: `DomoticsCore-OTA/include/DomoticsCore/OTA.h`
 - **Problem**: `requireTLS`, `bearerToken`, `basicAuthUser`, `basicAuthPassword`, `rootCA`, and `signaturePublicKey` are declared in `OTAConfig` but **never checked** by any code path. A user setting `requireTLS = true` believes HTTPS is enforced — it isn't. Firmware can be replaced by any network client via plain HTTP.
-- **Fix**: Implement TLS validation, bearer token / basic auth checks in upload handler, or remove fields and document that OTA is unsecured.
+- **Fixed** by the third of the options above: the fields are removed (PR #4,
+  with DC-7) and the documentation now states plainly where transport security
+  actually lives — in the fetcher and downloader callbacks the application
+  installs (PR #9).
+- **Both halves were needed.** Removing the fields without correcting the
+  documentation left four documents still describing `requireTLS` as rejecting
+  non-HTTPS URLs and `bearerToken` as authenticating uploads. A reader following
+  them would have believed in a protection twice over: once from a field that did
+  nothing, then from a field that no longer existed.
+- **What replaces it**: the upload endpoints are genuinely authenticated (SEC-3),
+  and SHA-256 integrity is verified with rollback on mismatch (SEC-2). Firmware
+  signature verification remains unimplemented, and is now documented as such
+  rather than advertised by a config field.
 
 ### SEC-2 — OTA: SHA256 failure doesn't rollback firmware [CRITICAL]
 
@@ -539,8 +551,8 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | DC-3b | HA | `volatile bool publishing` set/cleared but never read — dead code | Remove or implement guard (see BUG-11) |
 | DC-4 | LED | `effectDirection` — confirmed dead, may have been missed in v1 cleanup | Remove if still present |
 | DC-5 | LED | `shutdown()` doesn't clear internal vectors | Add cleanup |
-| DC-6 | OTA | `EVENT_COMPLETE` vs `EVENT_COMPLETED` — confusing duplicate names | Consolidate to one |
-| DC-7 | OTA | `signaturePublicKey` — documented but never used | Implement or remove |
+| DC-6 | OTA | `EVENT_COMPLETE` vs `EVENT_COMPLETED` — confusing duplicate names | **DONE** (PR #4) — consolidated on `EVENT_COMPLETED` |
+| DC-7 | OTA | `signaturePublicKey` — documented but never used | **DONE** (PR #4, docs PR #9) — removed with the five other unread fields |
 | DC-8 | WebUI | Pointless `doc.shrinkToFit()` after serialization is complete | Remove |
 | DC-9 | MQTT | `topicMatches()` allocates 2 vectors per call — use char* parsing | Refactor to zero-alloc |
 | DC-10 | WebUI | `const_cast` in `onComponentsReady` — change API to accept non-const ref | Fix signature |
@@ -615,7 +627,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
-| 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 1C, 0H, 3M (**SEC-2, SEC-3 done**) |
+| 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-2, SEC-3 done**) |
 | 2. Memory Safety | MEM-1 to MEM-4 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done**) |
 | 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 1H, 8M (**15 done**) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 2C, 3H, 2M |
@@ -625,7 +637,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | 8. CI/Infrastructure | CI-1 to CI-8 | II, XII | 0C, 1H, 2M, 1L (**CI-1, CI-2, CI-3, CI-5 done**; CI-8 filed) |
 | 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-6, DC-7, DC-8 done**) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
-| **Total** | **98 items** | | **3C, 10H, 27M, 34L** (34 resolved) |
+| **Total** | **98 items** | | **2C, 10H, 27M, 34L** (35 resolved) |
 
 ---
 

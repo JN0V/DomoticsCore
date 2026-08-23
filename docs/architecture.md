@@ -133,7 +133,6 @@ SystemConfig config = SystemConfig::standard();
 ```cpp
 SystemConfig config = SystemConfig::fullStack();
 config.mqttBroker = "192.168.1.100";
-config.otaPassword = "secure123";
 ```
 
 ### Built-in State Management

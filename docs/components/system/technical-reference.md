@@ -158,7 +158,12 @@ All fields have sensible defaults. Fields are grouped by functional area.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enableOTA` | `bool` | `false` | Enable over-the-air firmware updates |
-| `otaPassword` | `String` | `""` | Mapped to `OTAConfig::bearerToken` during component registration (see `System::registerOTAComponent()`). When set, OTA upload requests must provide this value as a bearer token for authentication. |
+
+> `otaPassword` was removed in v2.1.0. It was documented here as requiring "a
+> bearer token for authentication" on OTA uploads; it was assigned to
+> `OTAConfig::bearerToken`, which no code path ever read. Setting it protected
+> nothing. Upload endpoints are now gated behind WebUI authentication (SEC-3) —
+> configure `WebUIConfig::enableAuth`, `username` and `password` instead.
 
 ### SystemInfo
 
