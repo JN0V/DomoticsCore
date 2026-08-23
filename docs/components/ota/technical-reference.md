@@ -334,10 +334,20 @@ All events are emitted via the Core EventBus with JSON string payloads. Each pay
 | `EVENT_END` | `"ota/end"` | **Declared but NOT emitted by `OTAComponent` as of v1.4.1.** Defined in `OTAEvents.h` for forward compatibility or application-level use, but no call to `emit()` with this topic exists in `OTA.cpp`. | -- |
 | `EVENT_ERROR` | `"ota/error"` | Error encountered | `error`, `source` |
 | `EVENT_INFO` | `"ota/info"` | Informational message (e.g., upload started) | `message`, `source` |
-| `EVENT_COMPLETE` | `"ota/complete"` | Intermediate completion (before reboot decision) | `progress`, `bytes`, `total` |
-| `EVENT_COMPLETED` | `"ota/completed"` | Final completion with reboot status (sticky) | `source`, `autoReboot`, `bytes`, `message` |
+| `EVENT_COMPLETED` | `"ota/completed"` | Completion, with reboot status (sticky) | `source`, `autoReboot`, `bytes`, `total`, `progress`, `message` |
 
-> **Warning (C14)**: `EVENT_START` and `EVENT_END` are defined as constants in `OTAEvents.h` but are **not emitted** anywhere in the current `OTA.cpp` implementation. Do not subscribe to these events expecting them to fire. The actual lifecycle events emitted are: `EVENT_INFO` (start of upload), `EVENT_PROGRESS`, `EVENT_ERROR`, `EVENT_COMPLETE`, and `EVENT_COMPLETED`.
+> **Warning (C14)**: `EVENT_START` and `EVENT_END` are defined as constants in `OTAEvents.h` but are **not emitted** anywhere in the current `OTA.cpp` implementation. Do not subscribe to these events expecting them to fire. The actual lifecycle events emitted are: `EVENT_INFO` (start of upload), `EVENT_PROGRESS`, `EVENT_ERROR` and `EVENT_COMPLETED`.
+
+> **Removed in v2.1.0 (DC-6)**: `EVENT_COMPLETE` (`"ota/complete"`). It fired
+> immediately before `EVENT_COMPLETED`, carrying the progress fields while the
+> latter carried the reboot decision — two topics one letter apart. They are
+> consolidated onto `EVENT_COMPLETED`, whose payload now carries both sets.
+>
+> **A subscriber to `"ota/complete"` stops receiving without any error.** The
+> constant is gone, so C++ code referencing it fails to compile — but code
+> subscribing by string literal compiles, runs, and silently never fires.
+> Search your project for `"ota/complete"` as a string, not just for the
+> constant.
 
 The `EVENT_COMPLETED` event is published as **sticky**, so late subscribers (e.g., WebUI clients reconnecting) receive the last update status.
 
