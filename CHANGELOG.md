@@ -86,7 +86,7 @@ the first upload chunk, before any byte reaches flash.
 The repository had 29 test suites that no workflow ran, and compiled only
 `esp32dev` while declaring three targets.
 
-- ci: run every native suite — 12 projects, 568 test cases (CI-1) [HIGH]
+- ci: run every native suite — 12 projects, 567 test cases (CI-1) [HIGH]
 - ci: build `esp32dev`, `esp8266dev` and `esp32c3` (CI-2) [HIGH]. The ten
   ESP8266-specific files had never been compiled by anything; they were sound.
 - ci: declare the `DomoticsCore-Core` dependency in Storage, SystemInfo and OTA
