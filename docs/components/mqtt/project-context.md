@@ -145,7 +145,11 @@ In `begin()`, EventBus listeners for `mqtt/publish` and `mqtt/subscribe` are reg
 
 ### PubSubClient Server Pointer Lifetime
 
-PubSubClient stores the `const char*` pointer passed to `setServer()` without copying it. If the `config.broker` String reallocates (e.g., after `setConfig()`), the old pointer becomes dangling. Both `setConfig()` and `connectInternal()` defensively re-call `mqttClient->setServer()` to refresh the pointer.
+PubSubClient stores the `const char*` pointer passed to `setServer()` without copying it. If the `config.broker` String reallocates — after `setConfig()`, say — the old pointer dangles.
+
+Until v2.1.0 this was handled by re-calling `setServer()` from `setConfig()` and `connectInternal()`, hoping to refresh the pointer often enough. That is not a fix: it narrows the window rather than closing it, and it depends on every future caller remembering to do the same.
+
+The component now owns a `char brokerBuffer_[128]` and copies the broker into it (BUG-8). PubSubClient is only ever given a pointer to that buffer, whose lifetime is the component's own, so no String reallocation can invalidate it. Addresses longer than 127 characters are truncated with a warning. `connectInternal()` refuses to connect on an empty buffer rather than handing over an uninitialised address.
 
 ### Fixed-Size Event Buffers
 

@@ -533,8 +533,24 @@ private:
     }
     
     void handleClient(uint32_t clientId, HAL::WiFiClient& client) {
-        while (client.available()) {
+        // BUG-22, first half: bounded read, so a client streaming bytes without
+        // pause cannot keep this loop from returning. At most MAX_BYTES_PER_LOOP
+        // bytes per loop() call; the rest waits for the next iteration.
+        static constexpr size_t MAX_BYTES_PER_LOOP = 512;
+
+        // BUG-22, second half: bounding the read alone does not bound memory.
+        // A client sending printable bytes and never a newline accumulates them
+        // in commandBuffer across loop() calls — 512 bytes per call, with nothing
+        // to stop it. On an ESP8266 that is remote heap exhaustion through an
+        // open telnet port. The buffer is capped here, and the cap is the same
+        // constant the line cleaner already truncates to below, so a long command
+        // is cut at exactly the point it was being cut before — no new behaviour,
+        // just a bound where there was none.
+        static constexpr size_t MAX_COMMAND_LEN = 128;
+        size_t bytesRead = 0;
+        while (client.available() && bytesRead < MAX_BYTES_PER_LOOP) {
             char c = client.read();
+            bytesRead++;
 
             // Get or create command buffer for this client
             String& commandBuffer = clientBuffers[clientId];
@@ -552,14 +568,19 @@ private:
                 line.trim();
 
                 // Remove any non-printable characters (telnet negotiation)
-                String cleaned = "";
-                for (size_t i = 0; i < line.length(); i++) {
+                // Constitution XIV: fixed-size char[] rather than String concat in a loop.
+                // F5: 128 bytes rather than MAX_BYTES_PER_LOOP+1 (513), which was
+                // more stack than an ESP8266 (~80KB RAM) should spend here.
+                char cleaned[MAX_COMMAND_LEN];
+                size_t ci = 0;
+                for (size_t i = 0; i < line.length() && ci < MAX_COMMAND_LEN - 1; i++) {
                     char ch = line.charAt(i);
                     if (ch >= 32 && ch < 127) {  // Only printable ASCII
-                        cleaned += ch;
+                        cleaned[ci++] = ch;
                     }
                 }
-                line = cleaned;
+                cleaned[ci] = '\0';
+                line = String(cleaned);
 
                 if (line.isEmpty()) continue;
 
@@ -640,7 +661,14 @@ private:
                 }
             }
             // Handle printable characters ONLY
+            // F4: reserve once, up front, so a buffer partially filled by an
+            // earlier loop() call does not reallocate on every appended byte.
             else if (c >= 32 && c < 127) {
+                // Bounded by MAX_COMMAND_LEN, not by the per-loop read: bytes
+                // beyond the cap are dropped rather than accumulated, so a client
+                // that never sends a newline cannot grow this buffer without end.
+                if (commandBuffer.length() >= MAX_COMMAND_LEN - 1) continue;
+                commandBuffer.reserve(MAX_COMMAND_LEN);
                 commandBuffer += c;
             }
             // Silently ignore all other control characters (telnet negotiation, etc.)

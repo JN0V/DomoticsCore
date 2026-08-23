@@ -78,13 +78,22 @@ inline ComponentStatus MQTTComponent::begin() {
         DLOG_I(LOG_MQTT, "No broker configured - MQTT inactive until configured");
         return ComponentStatus::Success;  // Success but inactive
     }
-    
+
+    // BUG-8: Copy broker into persistent buffer for PubSubClient.
+    // Must happen before the enabled check so that a later connect() call
+    // can find the broker even if the component was disabled at begin() time.
+    if (config.broker.length() >= sizeof(brokerBuffer_)) {
+        DLOG_W(LOG_MQTT, "Broker address truncated: '%s' exceeds %u chars",
+               config.broker.c_str(), (unsigned)(sizeof(brokerBuffer_) - 1));
+    }
+    strncpy(brokerBuffer_, config.broker.c_str(), sizeof(brokerBuffer_) - 1);
+    brokerBuffer_[sizeof(brokerBuffer_) - 1] = '\0';
+    mqttClient->setServer(brokerBuffer_, config.port);
+
     if (!config.enabled) {
         DLOG_I(LOG_MQTT, "Component disabled in configuration");
         return ComponentStatus::Success;  // Success but inactive
     }
-    
-    mqttClient->setServer(config.broker.c_str(), config.port);
     mqttClient->setKeepAlive(config.keepAlive);
     // Buffer size is now set at connection
     
@@ -369,11 +378,15 @@ inline void MQTTComponent::setConfig(const MQTTConfig& cfg) {
         DLOG_W(LOG_MQTT, "setConfig: preserving enabled=true for active connection");
         config.enabled = true;
     }
-    // Ensure PubSubClient stores a valid pointer to the current broker string.
-    // PubSubClient retains the const char* pointer passed to setServer without copying,
-    // so if our String storage changes, the old pointer becomes invalid.
+    // BUG-8: Copy broker into persistent buffer. PubSubClient stores raw pointer.
     if (!config.broker.isEmpty()) {
-        mqttClient->setServer(config.broker.c_str(), config.port);
+        if (config.broker.length() >= sizeof(brokerBuffer_)) {
+            DLOG_W(LOG_MQTT, "Broker address truncated: '%s' exceeds %u chars",
+                   config.broker.c_str(), (unsigned)(sizeof(brokerBuffer_) - 1));
+        }
+        strncpy(brokerBuffer_, config.broker.c_str(), sizeof(brokerBuffer_) - 1);
+        brokerBuffer_[sizeof(brokerBuffer_) - 1] = '\0';
+        mqttClient->setServer(brokerBuffer_, config.port);
     }
     // Config persistence handled externally (SystemPersistence)
 }
@@ -381,7 +394,14 @@ inline void MQTTComponent::setConfig(const MQTTConfig& cfg) {
 inline void MQTTComponent::setBroker(const String& broker, uint16_t port) {
     config.broker = broker;
     config.port = port;
-    mqttClient->setServer(broker.c_str(), port);
+    // BUG-8: Copy broker into persistent buffer. PubSubClient stores raw pointer.
+    if (broker.length() >= sizeof(brokerBuffer_)) {
+        DLOG_W(LOG_MQTT, "Broker address truncated: '%s' exceeds %u chars",
+               broker.c_str(), (unsigned)(sizeof(brokerBuffer_) - 1));
+    }
+    strncpy(brokerBuffer_, broker.c_str(), sizeof(brokerBuffer_) - 1);
+    brokerBuffer_[sizeof(brokerBuffer_) - 1] = '\0';
+    mqttClient->setServer(brokerBuffer_, port);
 }
 
 inline void MQTTComponent::setCredentials(const String& username, const String& password) {
@@ -394,10 +414,13 @@ inline void MQTTComponent::setCredentials(const String& username, const String& 
 // Private methods
 inline bool MQTTComponent::connectInternal() {
     bool success = false;
-    // Defensive: refresh server pointer before attempting connection in case config changed recently
-    if (!config.broker.isEmpty()) {
-        mqttClient->setServer(config.broker.c_str(), config.port);
+    // BUG-8: brokerBuffer_ is already populated by begin(), setConfig(), or setBroker().
+    // Guard for empty broker to prevent connecting to uninitialized address.
+    if (brokerBuffer_[0] == '\0') {
+        DLOG_E(LOG_MQTT, "Cannot connect: broker address is empty");
+        return false;
     }
+    mqttClient->setServer(brokerBuffer_, config.port);
 
     // Ensure buffer size is preserved across reconnections
     mqttClient->setBufferSize(MQTT_MAX_PACKET_SIZE);

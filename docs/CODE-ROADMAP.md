@@ -26,7 +26,7 @@ versions may sit still while fixes land.
 | OTA | SEC-3, DC-7, DC-6 | **Merged** — PR #4 |
 | Storage | BUG-15, BUG-16, BUG-17, F1, F10 | **Merged** — PR #5 |
 | Isolated — System | BUG-23 | **Merged** — PR #7, 2026-08-22 |
-| Isolated — MQTT, RemoteConsole | BUG-8, BUG-22 | **held** — those files are being rewritten on `esp32-ethernet`; coordinating before touching them |
+| Isolated — MQTT, RemoteConsole | BUG-8, BUG-22 | **Merged** — PR #10, 2026-08-23, landed before the `esp32-ethernet` sync so it merges once |
 
 `main` requires six checks: `test-install`, `check-versions`,
 `Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
@@ -216,7 +216,7 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 - **Problem**: `MQTTComponent* MQTTComponent::instance = nullptr;` defined in header. Multiple TU inclusion = linker error. Needs `inline` (C++17) or `.cpp` file.
 - **Fix**: Add `inline` keyword or move to a `.cpp` compilation unit.
 
-### BUG-8 — MQTT: dangling broker pointer [MEDIUM]
+### BUG-8 — MQTT: dangling broker pointer [MEDIUM] — **DONE (2026-08-23, PR #10)**
 
 - **Ref**: MQTT-F12
 - **Problem**: `setBroker()` passes `broker.c_str()` to PubSubClient which stores the raw pointer. If the `String` is later destroyed, the pointer dangles.
@@ -300,7 +300,7 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 - **Problem**: Declared in `OTAEvents.h` but never emitted by any code path.
 - **Fix**: Emit at appropriate lifecycle points, or remove.
 
-### BUG-22 — RemoteConsole: unbounded client read [HIGH]
+### BUG-22 — RemoteConsole: unbounded client read [HIGH] — **DONE (2026-08-23, PR #10)**
 
 - **Ref**: RC-F3
 - **Problem**: `while (client.available())` with no upper bound. Continuous byte stream = infinite loop.
@@ -629,7 +629,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-2, SEC-3 done**) |
 | 2. Memory Safety | MEM-1 to MEM-4 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done**) |
-| 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 1H, 8M (**15 done**) |
+| 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 0H, 7M (**17 done**) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 2C, 3H, 2M |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
@@ -637,7 +637,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | 8. CI/Infrastructure | CI-1 to CI-8 | II, XII | 0C, 1H, 2M, 1L (**CI-1, CI-2, CI-3, CI-5 done**; CI-8 filed) |
 | 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-6, DC-7, DC-8 done**) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
-| **Total** | **98 items** | | **2C, 10H, 27M, 34L** (35 resolved) |
+| **Total** | **98 items** | | **2C, 9H, 26M, 34L** (37 resolved) |
 
 ---
 
