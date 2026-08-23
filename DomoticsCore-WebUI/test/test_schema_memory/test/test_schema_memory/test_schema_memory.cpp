@@ -195,9 +195,13 @@ void test_stress_schema_generation() {
         "Stress test should not leak more than 200 bytes total");
 }
 
-int main() {
-    delay(2000);  // Wait for serial
+// setup()/loop(), not main(): this project declares only an esp8266dev
+// environment, and the Arduino core supplies main() itself. With main() here
+// the suite linked against nothing and failed on undefined references to setup
+// and loop — which is why it had never run.
+void setup() {
     Serial.begin(115200);
+    delay(2000);  // Wait for the serial monitor to attach
 
     Serial.println("\n=== Schema Memory Leak Test ===");
     Serial.printf("Initial heap: %u bytes\n", HAL::Platform::getFreeHeap());
@@ -208,5 +212,7 @@ int main() {
     RUN_TEST(test_cached_provider_no_memory_leak);
     RUN_TEST(test_stress_schema_generation);
 
-    return UNITY_END();
+    UNITY_END();
 }
+
+void loop() {}

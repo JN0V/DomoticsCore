@@ -27,6 +27,7 @@ versions may sit still while fixes land.
 | Storage | BUG-15, BUG-16, BUG-17, F1, F10 | **Merged** — PR #5 |
 | Isolated — System | BUG-23 | **Merged** — PR #7, 2026-08-22 |
 | Isolated — MQTT, RemoteConsole | BUG-8, BUG-22 | **Merged** — PR #10, 2026-08-23, landed before the `esp32-ethernet` sync so it merges once |
+| ESP8266 on-device suites | CI-10 | PR #19 — first run on real hardware; found STOR-ESP-1 |
 
 `main` requires six checks: `test-install`, `check-versions`,
 `Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
@@ -42,7 +43,8 @@ Worth knowing before a green tick is read for more than it is worth.
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
-| ❌ | **No test runs on hardware.** A host build proves compilation, not behaviour on a board |
+| ⚠️ | **The four on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev` |
+| ❌ | **No test runs on hardware in CI.** A host build proves compilation, not behaviour on a board — STOR-ESP-1 is what that costs |
 
 That last line is not a formality. BUG-4, the SNTP server-name use-after-free,
 **compiles cleanly and passes the native suites**; it only shows itself on a
@@ -130,6 +132,48 @@ Multiple `clear()`/`erase()` operations without `shrink_to_fit()`, violating Con
 
 - **Refs**: CORE-F1, CORE-F5, CORE-F11, WEB-F4, RC-F8, RC-F9, WIFI-F4, SYS-F3
 - **Fix**: Add `shrink_to_fit()` after every size-reducing operation. Add bounds check on `stateCallbacks` (max 8).
+
+### STOR-ESP-1 — Storage: every write leaks ~122 bytes on ESP8266 [HIGH]
+
+- **Filed**: 2026-08-23, from the first run of the on-device suites on real
+  hardware (a D1 mini on `/dev/ttyUSB0`).
+- **File**: `DomoticsCore-Storage/include/DomoticsCore/Storage_ESP8266.h`
+- **Problem**: `LittleFSStorage` holds a member `JsonDocument doc` for the life
+  of the component. Every `putX()` does `doc[key] = value` and every `remove()`
+  does `doc.remove(key)`. Neither returns memory: ArduinoJson 7's pool grows and
+  is never shrunk, so the heap falls on every write and never recovers.
+- **Measured on the board**, 20 iterations each:
+
+  | Pattern | Heap delta | Per operation |
+  |---|---|---|
+  | put + get + remove, 20 distinct keys | 3,856 B | 192 B |
+  | put + get + remove, **one** key | 3,904 B | 195 B |
+  | put only, **one** key overwritten | 2,448 B | 122 B |
+  | open / use / close a namespace (×5) | 64 B | 12 B — passes |
+
+- **It is per operation, not per key.** That distinction is the whole severity.
+  Growth bounded by the number of distinct keys would plateau; this does not.
+  One key rewritten twenty times costs as much as twenty different keys, so a
+  device persisting a counter, a timestamp or a setpoint bleeds at a constant
+  rate for as long as it runs.
+- **What that means in service**: the board booted with 49,512 bytes free. At
+  122 bytes per write, a single value written once a minute exhausts the heap in
+  roughly seven hours, and sooner in practice since not all free heap is usable.
+- **The put path is the larger half.** Writing without removing still leaks
+  122 B; adding get and remove takes it to ~195 B. Whoever fixes this should
+  start at `putString()` and friends, not at `remove()`.
+- **ESP32 is unaffected** — it uses NVS through `Preferences`, not a JSON
+  document held in RAM. This is specific to the ESP8266 backend, which is
+  exactly the platform that can least afford it: 80 KB of RAM against 320 KB.
+- **Not fixed here.** Three candidate directions, none of them a one-liner:
+  `doc.shrinkToFit()` after each mutation (simplest, costs a reallocation per
+  write); reloading the document per operation rather than holding it (slower,
+  bounded); or moving the ESP8266 backend off a resident `JsonDocument`
+  entirely.
+- **Pinned meanwhile**: three tests in `test_heap_esp8266` **fail on hardware**,
+  deliberately. They are the signal. CI does not run them — no runner has a
+  board — so `main` stays green and the failure is visible only where it is
+  real.
 
 ### MEM-2 — String concatenation in hot paths across 9 components [HIGH]
 
@@ -539,6 +583,48 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   this problem — that was wrong. CI-3 is about a missing `DomoticsCore-Core`
   dependency and has nothing to do with TCP backends.
 
+### CI-10 — Nothing built the on-device test projects [HIGH] — **DONE (2026-08-23, PR #19)**
+
+- **Filed and fixed together**, after a board was plugged in for the first time
+  and none of the suites meant for it would run.
+- **Problem**: four projects carry ESP8266 test suites. No workflow built any of
+  them, and the native environments exclude them by `test_ignore` or
+  `test_filter`. Three of the four had rotted where nobody could see it:
+  Storage called a `setNamespace()` that has never existed in any commit — added
+  2026-01-04 with the message "build issues to fix later"; WebUI passed `String`
+  to `withCustomHtml(const char*)` after that API split into static and
+  `Dynamic` overloads; and `test_schema_memory` had its suite outside `test/`
+  and an `int main()` where the Arduino core supplies one, so it linked against
+  nothing.
+- **Worse than not compiling**: the Storage suite also constructed a bare
+  `StorageComponent` and never opened it. Every put and get returns at
+  `if (!isOpen)` without allocating, so had it compiled, three leak tests would
+  have measured rejected calls and passed for the wrong reason.
+- **Fixed**: the three suites repaired, and a `build-device-tests` job compiles
+  all four on every push. It cannot run them — no runner has a board — but a
+  suite that builds cannot rot silently for seven months.
+- **Every test now asserts it is measuring something** before it measures:
+  a `putString()` must return true or the test fails with "Storage did not open
+  — the rest would measure nothing".
+- **What the first real run found**: STOR-ESP-1. The WebUI suites pass, all nine
+  cases.
+
+### CI-11 — HomeAssistant declares an ESP8266 test env with no ESP8266 tests [MEDIUM]
+
+- **Filed**: 2026-08-23, while writing the CI-10 job.
+- **File**: `DomoticsCore-HomeAssistant/platformio.ini`
+- **Problem**: the `esp8266dev` environment sets `test_framework` and
+  `test_build_src` but carries no ESP8266 suite and no `test_filter`, so
+  `pio test -e esp8266dev` cross-compiles the component's **native** suites for
+  the board. They include `Platform_Stub.h` explicitly, which collides with the
+  real platform header: `redefinition of 'class String'`, and a dozen more.
+- **Why it matters now**: it is the reason `build-device-tests` lists its four
+  projects instead of discovering them. "Declares `esp8266dev` and has a `test/`
+  directory" is otherwise the right rule, and it matches this one too.
+- **Fix**: decide what that environment is for. Either give it a `test_filter`
+  naming a real ESP8266 suite, or drop the test settings and leave it a build
+  environment. Then the CI job can discover rather than list.
+
 ### CI-6 — Missing `depends` in `library.properties` [MEDIUM]
 
 - **Ref**: R-F8
@@ -678,16 +764,16 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-2, SEC-3 done**) |
-| 2. Memory Safety | MEM-1 to MEM-4 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done**) |
+| 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 2H, 2M (**MEM-1 done**; STOR-ESP-1 new) |
 | 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 0H, 7M (**17 done**) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 2C, 3H, 2M |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 1M |
-| 8. CI/Infrastructure | CI-1 to CI-9 | II, XII | 0C, 0H, 2M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9 done**) |
+| 8. CI/Infrastructure | CI-1 to CI-11 | II, XII | 0C, 0H, 3M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10 done**; CI-11 new) |
 | 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-6, DC-7, DC-8 done**) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
-| **Total** | **99 items** | | **2C, 8H, 26M, 34L** (39 resolved) |
+| **Total** | **102 items** | | **2C, 9H, 27M, 34L** (40 resolved) |
 
 ---
 

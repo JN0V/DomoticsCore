@@ -130,3 +130,74 @@ jobs:
       - name: Build FullStack example
         working-directory: DomoticsCore-System/examples/FullStack
         run: pio run -e ${{ matrix.target }}
+
+  # ---------------------------------------------------------------------------
+  # The on-device suites, compiled but not run. No runner has an ESP8266 wired
+  # to it, so this cannot execute them — it exists because until 2026-08-23
+  # nothing built them either, and three of the four had rotted where nobody
+  # could see it:
+  #
+  #   Storage      called StorageComponent::setNamespace(), a method that has
+  #                never existed in any commit. Added 2026-01-04 with the
+  #                message "build issues to fix later".
+  #   WebUI        passed String to withCustomHtml(const char*) after the API
+  #                split into static and Dynamic overloads.
+  #   schema_memory had its suite outside test/, and an int main() where the
+  #                Arduino core supplies one — it linked against nothing.
+  #
+  # Compiling is most of what was missing. A suite that builds can still be
+  # wrong, but it cannot rot silently for seven months.
+  #
+  # The four are listed rather than discovered, unlike the native job. Discovery
+  # over "declares esp8266dev and has a test/ directory" also matches
+  # DomoticsCore-HomeAssistant, whose esp8266dev environment carries no ESP8266
+  # suite and no test_filter, so pio cross-compiles its native suites and fails
+  # on Platform_Stub.h (CI-11). Until that is settled, a list that is checked
+  # for existence beats a loop that silently matches the wrong thing.
+  # ---------------------------------------------------------------------------
+  build-device-tests:
+    name: Build on-device suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-device-tests-6.1.19-${{ hashFiles('DomoticsCore-*/platformio.ini') }}
+          restore-keys: pio-device-tests-
+
+      - name: Install PlatformIO
+        run: pip install platformio==6.1.19
+
+      - name: Build every on-device suite
+        run: |
+          projects="
+            DomoticsCore-Storage
+            DomoticsCore-WebUI
+            DomoticsCore-WebUI/test/test_schema_memory
+            DomoticsCore-System/examples/FullStack
+          "
+          failed=""
+          for project in $projects; do
+            # A renamed or deleted project must fail loudly, not vanish from the
+            # run and leave the job green with less coverage than it claims.
+            if [ ! -f "$project/platformio.ini" ]; then
+              echo "::error::$project has no platformio.ini — the list in this workflow is stale"
+              exit 1
+            fi
+            echo "::group::${project}"
+            (cd "$project" && pio test -e esp8266dev --without-uploading --without-testing) \
+              || failed="${failed} ${project}"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::on-device suites failed to build:${failed}"
+            exit 1
+          fi
