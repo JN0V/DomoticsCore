@@ -41,7 +41,7 @@ Worth knowing before a green tick is read for more than it is worth.
 | ✅ | The 12 native projects run — 567 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
-| ❌ | **The install-from-GitHub path is still `esp32dev`-only.** Building the witness project for ESP8266 needs the root `library.json` to stop pulling `AsyncTCP` unconditionally — that package is ESP32-only. See CI-8 |
+| ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
 | ❌ | **No test runs on hardware.** A host build proves compilation, not behaviour on a board |
 
 That last line is not a formality. BUG-4, the SNTP server-name use-after-free,
@@ -485,7 +485,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Result**: the ten files compile clean. The platform the library had been promising
   without ever checking was sound — there was nothing to repair, only something to
   prove. `esp8266dev` RAM 61.7% / Flash 68.1%.
-- **Not covered**: the install-from-GitHub witness stays `esp32dev`-only until CI-8.
+- **Since CI-8**: the install-from-GitHub witness builds both declared platforms too.
 
 ### CI-3 — Missing `DomoticsCore-Core` dependency in 3 library.json [HIGH] — **DONE (2026-08-22, PR #6)**
 
@@ -511,7 +511,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   and was left untouched — it carries the fork workaround for `pull_request`
   events, and rewriting it wholesale is how that gets lost.
 
-### CI-8 — Root `library.json` pulls `AsyncTCP` unconditionally [HIGH]
+### CI-8 — Root `library.json` pulls `AsyncTCP` unconditionally [HIGH] — **DONE (2026-08-23, PR #14)**
 
 - **Problem**: the root manifest declares `ESP32Async/AsyncTCP` as a plain
   dependency. That package is ESP32-only; ESP8266 needs `ESP32Async/ESPAsyncTCP`.
@@ -521,9 +521,20 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   It is also what keeps `test-github-install.yml` pinned to `esp32dev`: the
   witness project cannot be built for ESP8266 while the manifest resolves this
   way.
-- **Fix**: make the two TCP dependencies conditional on `platforms` in the
-  manifest, then extend the witness to `esp8266dev` so the install path is
-  actually proven rather than assumed.
+- **Fix as filed**: make the two TCP dependencies conditional on `platforms`.
+  **That turned out to be the wrong fix.** `ESPAsyncWebServer` already declares
+  them conditionally and correctly — `AsyncTCP` for `espressif32`/`libretiny`,
+  `ESPAsyncTCP` for `espressif8266`, `RPAsyncTCP` for `raspberrypi`. The root
+  entry was therefore redundant on ESP32 and harmful on ESP8266. Declaring a
+  conditional pair here would have duplicated a correct declaration and pinned
+  versions that can drift from what the web server wants.
+- **Fixed**: the `AsyncTCP` entry is removed from the root manifest; the
+  transitive dependency resolves the right backend per platform. The witness
+  project now builds both declared platforms.
+- **Proven, not assumed**: a witness resolving through the manifest fails on the
+  previous root `library.json` with `AsyncTCP.h:22:10: fatal error: sdkconfig.h:
+  No such file or directory` — an ESP-IDF header absent on ESP8266 — and builds
+  clean once the entry is gone. ESP8266: 67.4% flash, 56.2% RAM.
 - **Note**: filed 2026-08-22. Earlier revisions of this file pointed at CI-3 for
   this problem — that was wrong. CI-3 is about a missing `DomoticsCore-Core`
   dependency and has nothing to do with TCP backends.
@@ -673,10 +684,10 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 1M |
-| 8. CI/Infrastructure | CI-1 to CI-9 | II, XII | 0C, 1H, 2M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-9 done**; CI-8 filed) |
+| 8. CI/Infrastructure | CI-1 to CI-9 | II, XII | 0C, 0H, 2M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9 done**) |
 | 9. Dead Code | DC-1 to DC-10 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-6, DC-7, DC-8 done**) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 32L |
-| **Total** | **99 items** | | **2C, 9H, 26M, 34L** (38 resolved) |
+| **Total** | **99 items** | | **2C, 8H, 26M, 34L** (39 resolved) |
 
 ---
 
