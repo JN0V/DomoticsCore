@@ -159,6 +159,14 @@
 #ifndef DOMOTICS_DLOG_BUF_SIZE
     #define DOMOTICS_DLOG_BUF_SIZE 256
 #endif
+// The Arduino cores define these; nothing does on the host, so headers that
+// place literals in flash could not be compiled by a native test at all.
+#ifndef PROGMEM
+    #define PROGMEM
+#endif
+#ifndef PSTR
+    #define PSTR(s) (s)
+#endif
 
 // ============================================================================
 // Backward-Compatible API (delegates to Platform namespace)
