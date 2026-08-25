@@ -27,7 +27,7 @@ versions may sit still while fixes land.
 | Storage | BUG-15, BUG-16, BUG-17, F1, F10 | **Merged** — PR #5 |
 | Isolated — System | BUG-23 | **Merged** — PR #7, 2026-08-22 |
 | Isolated — MQTT, RemoteConsole | BUG-8, BUG-22 | **Merged** — PR #10, 2026-08-23, landed before the `esp32-ethernet` sync so it merges once |
-| ESP8266 on-device suites | CI-10 | **Merged** — PR #19, 2026-08-23, first run on real hardware; found STOR-ESP-1 |
+| ESP8266 on-device suites | CI-10 | **Merged** — PR #19, 2026-08-23, first run on real hardware; raised STOR-ESP-1, later withdrawn |
 | System | TEST-1, ARCH-3 | **Merged** — PR #18, 2026-08-23 |
 | LED | BUG-19, DC-5, TEST-2, LO-11 | PR #17 — chosen for having no file in common with `esp32-ethernet` |
 
@@ -50,7 +50,7 @@ Worth knowing before a green tick is read for more than it is worth.
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
 | ⚠️ | **The four on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev` |
-| ❌ | **No test runs on hardware in CI.** A host build proves compilation, not behaviour on a board — STOR-ESP-1 is what that costs |
+| ❌ | **No test runs on hardware in CI.** A host build proves compilation, not behaviour on a board — BUG-4 is what that costs, and STOR-ESP-1 is what a board proves when nobody checks what the suite is actually measuring |
 
 That last line is not a formality. BUG-4, the SNTP server-name use-after-free,
 **compiles cleanly and passes the native suites**; it only shows itself on a
@@ -139,47 +139,50 @@ Multiple `clear()`/`erase()` operations without `shrink_to_fit()`, violating Con
 - **Refs**: CORE-F1, CORE-F5, CORE-F11, WEB-F4, RC-F8, RC-F9, WIFI-F4, SYS-F3
 - **Fix**: Add `shrink_to_fit()` after every size-reducing operation. Add bounds check on `stateCallbacks` (max 8).
 
-### STOR-ESP-1 — Storage: every write leaks ~122 bytes on ESP8266 [HIGH]
+### STOR-ESP-1 — Storage did not leak; the suite measured the EventBus [WITHDRAWN]
 
-- **Filed**: 2026-08-23, from the first run of the on-device suites on real
-  hardware (a D1 mini on `/dev/ttyUSB0`).
-- **File**: `DomoticsCore-Storage/include/DomoticsCore/Storage_ESP8266.h`
-- **Problem**: `LittleFSStorage` holds a member `JsonDocument doc` for the life
-  of the component. Every `putX()` does `doc[key] = value` and every `remove()`
-  does `doc.remove(key)`. Neither returns memory: ArduinoJson 7's pool grows and
-  is never shrunk, so the heap falls on every write and never recovers.
-- **Measured on the board**, 20 iterations each:
+- **Filed**: 2026-08-23 as HIGH, from the first run of the on-device suites on
+  real hardware. **Withdrawn 2026-08-25** — the defect was in the measurement,
+  not in Storage. Kept rather than deleted: someone will read 3,904 bytes off a
+  board again, and this entry is what tells them why.
+- **What was measured**, 20 iterations each, and it was reproducible to the byte:
 
-  | Pattern | Heap delta | Per operation |
+  | Pattern | Heap delta | Per iteration |
   |---|---|---|
   | put + get + remove, 20 distinct keys | 3,856 B | 192 B |
   | put + get + remove, **one** key | 3,904 B | 195 B |
   | put only, **one** key overwritten | 2,448 B | 122 B |
-  | open / use / close a namespace (×5) | 64 B | 12 B — passes |
+  | open / use / close a namespace (×5) | 64 B | 12 B — passed |
 
-- **It is per operation, not per key.** That distinction is the whole severity.
-  Growth bounded by the number of distinct keys would plateau; this does not.
-  One key rewritten twenty times costs as much as twenty different keys, so a
-  device persisting a counter, a timestamp or a setpoint bleeds at a constant
-  rate for as long as it runs.
-- **What that means in service**: the board booted with 49,512 bytes free. At
-  122 bytes per write, a single value written once a minute exhausts the heap in
-  roughly seven hours, and sooner in practice since not all free heap is usable.
-- **The put path is the larger half.** Writing without removing still leaks
-  122 B; adding get and remove takes it to ~195 B. Whoever fixes this should
-  start at `putString()` and friends, not at `remove()`.
-- **ESP32 is unaffected** — it uses NVS through `Preferences`, not a JSON
-  document held in RAM. This is specific to the ESP8266 backend, which is
-  exactly the platform that can least afford it: 80 KB of RAM against 320 KB.
-- **Not fixed here.** Three candidate directions, none of them a one-liner:
-  `doc.shrinkToFit()` after each mutation (simplest, costs a reallocation per
-  write); reloading the document per operation rather than holding it (slower,
-  bounded); or moving the ESP8266 backend off a resident `JsonDocument`
-  entirely.
-- **Pinned meanwhile**: three tests in `test_heap_esp8266` **fail on hardware**,
-  deliberately. They are the signal. CI does not run them — no runner has a
-  board — so `main` stays green and the failure is visible only where it is
-  real.
+- **What it actually was**: `StorageComponent` emits `storage/changed` on every
+  put and remove. `EventBus` queues each event at roughly 122 B and releases it
+  only when `poll()` dispatches it, which firmware reaches through `Core::loop()`
+  on every pass. **The suite never called `Core::loop()`**, so it measured queue
+  occupancy and charged it to Storage.
+- **The arithmetic closes.** 2,448 B over 20 undrained events is 122.4 B each.
+  The two put/get/remove tests queued 40 against a cap of 32 (`EventBus.h:238`)
+  and measured 3,904 B and 3,856 B — 32 events' worth. That is the ceiling, not
+  a slope.
+- **Why "per operation, not per key" was wrong.** Twenty iterations never reached
+  the 32-entry cap, so bounded growth was indistinguishable from unbounded. The
+  two tests that appeared *worse* were simply the ones that hit the ceiling. The
+  seven-hour heap-exhaustion figure derived from that reading does not hold: the
+  queue is capped, drops the oldest to make room, and real firmware drains it
+  every pass.
+- **Verified on hardware**: adding `Core::loop()` to the three measuring loops
+  turns every failing test green against library code byte-identical to
+  `07cb37a9`. Candidates `doc.shrinkToFit()` per mutation and per-operation
+  document loading were both measured on the board and moved the figure by zero
+  bytes. `Storage_ESP8266.h` was never changed.
+- **Closed by** `test(storage): the ESP8266 heap suite measured the EventBus, not
+  Storage`. The suite now runs 7/7 on a `nodemcuv2`, and two new tests hold the
+  behaviour in place: undrained growth must plateau at the queue cap, and
+  draining must give the memory back. Both open with a floor assertion, so
+  neither can pass by measuring nothing.
+- **Left open behind it**: `EventBus::enqueue` never decrements `pendingByTopic`
+  for the event it drops on overflow, and `HeapTracker` charges its own
+  checkpoint node to the window that follows it. Both are recorded in
+  `_bmad-output/implementation-artifacts/deferred-work.md`.
 
 ### MEM-2 — String concatenation in hot paths across 9 components [HIGH]
 
@@ -687,8 +690,11 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Every test now asserts it is measuring something** before it measures:
   a `putString()` must return true or the test fails with "Storage did not open
   — the rest would measure nothing".
-- **What the first real run found**: STOR-ESP-1. The WebUI suites pass, all nine
-  cases.
+- **What the first real run found**: STOR-ESP-1 — which turned out to be the
+  suite measuring an undrained EventBus rather than Storage, and was withdrawn
+  on 2026-08-25. The liveness assertions above were the right instinct applied
+  one level too shallow: they proved an operation happened, not that the thing
+  being measured was the thing under test. The WebUI suites pass, all nine cases.
 
 ### CI-11 — HomeAssistant declares an ESP8266 test env with no ESP8266 tests [MEDIUM]
 
@@ -879,7 +885,7 @@ not.
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-2, SEC-3 done**) |
-| 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 2H, 2M (**MEM-1 done**; STOR-ESP-1 new) |
+| 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
 | 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 0H, 6M (**18 done**) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 3H, 2M (**TEST-1, TEST-2 done**) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
@@ -888,7 +894,7 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-11 | II, XII | 0C, 0H, 3M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10 done**; CI-11 new) |
 | 9. Dead Code | DC-1 to DC-10, PERSIST-1 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8 done**; PERSIST-1 new) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 31L (**LO-11 done**) |
-| **Total** | **103 items** | | **0C, 9H, 25M, 33L** (46 resolved) |
+| **Total** | **103 items** | | **0C, 8H, 25M, 33L** (47 resolved) |
 
 ---
 
