@@ -68,7 +68,14 @@ Roadmap.md
 *.tar.gz
 
 # BMAD framework — reinstall it, don't track it. Only _bmad-output/ is tracked.
+# Everything below is written by the BMAD installer or its builder, and is
+# reproduced by `npx bmad-method install`. Reinstall command of record:
+#   npx bmad-method@6 install --modules bmm,tea,bmb --tools claude-code
 _bmad/
+# Agent-facing skills the installer generates for Claude Code (64 files today).
+.claude/skills/
+# Where BMad Builder writes generated skills (_bmad/config.toml:40).
+/skills/
 
 # Windsurf IDE
 .windsurf/
