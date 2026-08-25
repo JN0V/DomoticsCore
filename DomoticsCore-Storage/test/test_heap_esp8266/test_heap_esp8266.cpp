@@ -11,6 +11,16 @@
  * been opened, and a leak test run against rejected calls allocates nothing and
  * passes for the wrong reason — which is what this file did before it was
  * repaired.
+ *
+ * The measuring loops call core.loop(), and that is not incidental. Storage
+ * emits storage/changed on every put and remove; EventBus queues each one at a
+ * cost of roughly 122 bytes and releases it only when poll() dispatches it,
+ * which firmware reaches through Core::loop() on every pass. A loop that omits
+ * the call measures queue occupancy and reports it as a Storage leak — the
+ * error that produced STOR-ESP-1, where 3,904 bytes over 20 undrained cycles
+ * were read as 195 bytes leaked per operation. The last two tests hold that
+ * behaviour in place deliberately: growth without a drain must plateau at the
+ * queue cap, and draining must give the memory back.
  */
 
 #include <unity.h>
@@ -88,6 +98,10 @@ void test_storage_repeated_operations() {
         String read = s.storage->getString(key.c_str());
         s.storage->remove(key.c_str());
 
+        // Drain the EventBus, as firmware does every pass. Storage emits
+        // storage/changed on every put and remove; without this call the queue
+        // fills and its occupancy is charged to Storage as a leak.
+        s.core.loop();
         yield();
     }
 
@@ -108,7 +122,17 @@ void test_storage_repeated_operations() {
         Serial.printf("  *** MEMORY LEAK DETECTED: %d bytes > threshold %d ***\n", delta, LEAK_THRESHOLD);
     }
 
-    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD, "Memory leak detected in Storage operations");
+    // PlatformIO filters the serial stream down to Unity lines, so the figures
+    // above never reach the test report. Carry them in the message instead: a
+    // failure that names the number is comparable between candidates, and
+    // "Expected TRUE Was FALSE" is not.
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "Memory leak in Storage operations: delta=%ld B over %d put/get/remove cycles "
+             "(%ld B/cycle), threshold=%ld B",
+             (long)delta, ITERATIONS, (long)perOp, (long)LEAK_THRESHOLD);
+
+    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD, msg);
 }
 
 // ============================================================================
@@ -142,6 +166,7 @@ void test_storage_single_key_churn() {
         s.storage->putString("k", "value_with_some_padding_data");
         String read = s.storage->getString("k");
         s.storage->remove("k");
+        s.core.loop();  // drain the bus, as firmware does
         yield();
     }
 
@@ -156,8 +181,13 @@ void test_storage_single_key_churn() {
 
     const int32_t LEAK_THRESHOLD = 64;
 
-    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD,
-                             "Rewriting a single key leaks — the growth is per operation, not per key");
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "Single-key churn leaks: delta=%ld B over %d cycles (%ld B/cycle), threshold=%ld B "
+             "-- growth is per operation, not per key",
+             (long)delta, ITERATIONS, (long)(delta / ITERATIONS), (long)LEAK_THRESHOLD);
+
+    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD, msg);
 }
 
 // ============================================================================
@@ -180,6 +210,7 @@ void test_storage_repeated_put_same_key() {
     const int ITERATIONS = 20;
     for (int i = 0; i < ITERATIONS; i++) {
         s.storage->putString("counter", String(i));
+        s.core.loop();  // drain the bus, as firmware does
         yield();
     }
 
@@ -194,8 +225,13 @@ void test_storage_repeated_put_same_key() {
 
     const int32_t LEAK_THRESHOLD = 64;
 
-    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD,
-                             "Overwriting one key leaks — the fault is in the put path");
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "Overwriting one key leaks: delta=%ld B over %d writes (%ld B/write), threshold=%ld B "
+             "-- the fault is in the put path",
+             (long)delta, ITERATIONS, (long)(delta / ITERATIONS), (long)LEAK_THRESHOLD);
+
+    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD, msg);
 }
 
 // ============================================================================
@@ -243,7 +279,171 @@ void test_storage_namespace_lifecycle() {
 
     const int32_t LEAK_THRESHOLD = 128;  // A full open/close cycle costs more than a put
 
-    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD, "Memory leak detected in namespace lifecycle");
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "Memory leak in namespace lifecycle: delta=%ld B over %d cycles (%ld B/cycle), threshold=%ld B",
+             (long)delta, ITERATIONS, (long)(delta / ITERATIONS), (long)LEAK_THRESHOLD);
+
+    TEST_ASSERT_TRUE_MESSAGE(delta <= LEAK_THRESHOLD, msg);
+}
+
+// ============================================================================
+// The undrained bus — what this suite once mistook for a Storage leak
+// ============================================================================
+
+// Writing without ever draining the bus DOES cost heap: every put queues a
+// storage/changed event. What matters is that the cost stops. EventBus caps the
+// queue at 32 and drops the oldest to make room, so occupancy reaches a ceiling
+// and stays there.
+//
+// This is the test the suite was missing. Measuring 20 undrained writes and
+// calling the result a per-operation leak is what produced STOR-ESP-1: 20 never
+// reached the 32-entry ceiling, so bounded growth was indistinguishable from
+// unbounded. Here the second half of the run is compared against the first — if
+// the cap is ever removed, the plateau disappears and this fails.
+void test_storage_undrained_writes_plateau() {
+    HeapTracker tracker;
+    OpenStorage s("undrained");
+
+    TEST_ASSERT_TRUE_MESSAGE(s.storage->putString("counter", "0"),
+                             "Storage did not open — the rest would measure nothing");
+
+    // Start the window on an empty queue. begin() and the warm-up put have
+    // already queued events; letting the measured half free them would offset
+    // real growth by roughly the amount being measured.
+    s.core.loop();
+    yield();
+
+    const int HALF = 40;  // 40 > 32, so the queue is already full at the midpoint
+
+    tracker.checkpoint("baseline");
+    for (int i = 0; i < HALF; i++) {
+        s.storage->putString("counter", String(i));
+        yield();
+    }
+    tracker.checkpoint("half");
+    for (int i = 0; i < HALF; i++) {
+        s.storage->putString("counter", String(i));
+        yield();
+    }
+    tracker.checkpoint("full");
+
+    int32_t firstHalf = tracker.getDelta("baseline", "half");
+    int32_t secondHalf = tracker.getDelta("half", "full");
+
+    Serial.printf("\n[UNDRAINED PLATEAU TEST]\n");
+    Serial.printf("  First %d writes:  %d bytes\n", HALF, firstHalf);
+    Serial.printf("  Second %d writes: %d bytes\n", HALF, secondHalf);
+
+    // A plateau proves nothing unless the queue actually filled. Assert the
+    // floor first: if events ever stop being queued -- say enqueue learns to
+    // skip topics with no subscriber, and this suite subscribes to none -- both
+    // halves fall to zero and the plateau assert below would pass while
+    // measuring nothing. That is the failure this file exists to refuse.
+    const int32_t OCCUPANCY_FLOOR = 1000;
+
+    char floorMsg[192];
+    snprintf(floorMsg, sizeof(floorMsg),
+             "Queue never filled: first %d writes cost only %ld B, floor=%ld B "
+             "-- nothing was queued, so this test measured nothing",
+             HALF, (long)firstHalf, (long)OCCUPANCY_FLOOR);
+
+    TEST_ASSERT_TRUE_MESSAGE(firstHalf >= OCCUPANCY_FLOOR, floorMsg);
+
+    const int32_t PLATEAU_THRESHOLD = 64;
+
+    char msg[192];
+    snprintf(msg, sizeof(msg),
+             "Undrained queue did not plateau: first %d writes cost %ld B, next %d cost %ld B "
+             "(threshold=%ld B) -- the queue cap is gone and growth is now unbounded",
+             HALF, (long)firstHalf, HALF, (long)secondHalf, (long)PLATEAU_THRESHOLD);
+
+    TEST_ASSERT_TRUE_MESSAGE(secondHalf <= PLATEAU_THRESHOLD, msg);
+}
+
+// The other half of the same claim: queue occupancy is held memory, not lost
+// memory. If this fails while the plateau test passes, the events really are
+// leaking.
+//
+// Measured differentially, over two identical fill-and-drain cycles. A single
+// cycle does not come back to zero — it leaves ~128 B behind, and that residue
+// is one-time rather than per-event: EventBus keeps the topic's entry in its
+// pending-by-topic map (poll() decrements the counter but never erases the
+// entry), and HeapTracker charges each checkpoint's own map node to the window
+// that follows it. Widening the threshold to swallow that would blind the test
+// to a real 128 B leak. Comparing two cycles does not: a genuine loss recurs
+// every cycle, a one-time allocation is already paid by the first.
+void test_storage_drain_reclaims_queue_memory() {
+    HeapTracker tracker;
+    OpenStorage s("reclaim");
+
+    TEST_ASSERT_TRUE_MESSAGE(s.storage->putString("counter", "0"),
+                             "Storage did not open — the rest would measure nothing");
+
+    const int WRITES = 40;  // 40 > the queue cap, so the queue reaches its ceiling
+
+    // Cycle 1 — absorbs every one-time cost, and is not measured.
+    for (int i = 0; i < WRITES; i++) {
+        s.storage->putString("counter", String(i));
+        yield();
+    }
+    for (int i = 0; i < 10; i++) {
+        s.core.loop();
+        yield();
+    }
+
+    tracker.checkpoint("baseline");
+    const uint32_t heapAtBaseline = ESP.getFreeHeap();
+
+    // Cycle 2 — identical, and measured.
+    for (int i = 0; i < WRITES; i++) {
+        s.storage->putString("counter", String(i));
+        yield();
+    }
+
+    // Read the queued occupancy straight from the heap rather than through a
+    // checkpoint: a third checkpoint would add a tracker map node to the very
+    // window being measured.
+    const uint32_t heapWhileQueued = ESP.getFreeHeap();
+    const int32_t held = (int32_t)heapAtBaseline - (int32_t)heapWhileQueued;
+
+    // 40 writes were issued but the cap holds fewer, so at most a capful of
+    // events is waiting. poll() dispatches 8 per call; ten passes is headroom.
+    for (int i = 0; i < 10; i++) {
+        s.core.loop();
+        yield();
+    }
+    tracker.checkpoint("drained");
+
+    const int32_t after = tracker.getDelta("baseline", "drained");
+
+    Serial.printf("\n[DRAIN RECLAIM TEST]\n");
+    Serial.printf("  Held while queued (cycle 2): %d bytes\n", held);
+    Serial.printf("  Left after draining:         %d bytes\n", after);
+
+    // Floor first: reclaiming nothing from an empty queue is not evidence of
+    // reclamation. If events ever stop being queued, `held` collapses and the
+    // assertion below would pass while measuring nothing.
+    const int32_t OCCUPANCY_FLOOR = 1000;
+
+    char floorMsg[192];
+    snprintf(floorMsg, sizeof(floorMsg),
+             "Nothing to reclaim: %d writes held only %ld B, floor=%ld B "
+             "-- the queue never filled, so this test measured nothing",
+             WRITES, (long)held, (long)OCCUPANCY_FLOOR);
+
+    TEST_ASSERT_TRUE_MESSAGE(held >= OCCUPANCY_FLOOR, floorMsg);
+
+    const int32_t LEAK_THRESHOLD = 64;
+
+    char msg[224];
+    snprintf(msg, sizeof(msg),
+             "Draining did not reclaim the queue: a second identical cycle held %ld B and gave "
+             "back all but %ld B (threshold=%ld B) -- the loss recurs per cycle, so it is a leak, "
+             "not a one-time allocation",
+             (long)held, (long)after, (long)LEAK_THRESHOLD);
+
+    TEST_ASSERT_TRUE_MESSAGE(after <= LEAK_THRESHOLD, msg);
 }
 
 // ============================================================================
@@ -265,6 +465,8 @@ void setup() {
     RUN_TEST(test_storage_single_key_churn);
     RUN_TEST(test_storage_repeated_put_same_key);
     RUN_TEST(test_storage_namespace_lifecycle);
+    RUN_TEST(test_storage_undrained_writes_plateau);
+    RUN_TEST(test_storage_drain_reclaims_queue_memory);
 
     UNITY_END();
 }
