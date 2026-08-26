@@ -48,7 +48,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 709 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
+| ✅ | The 13 native projects run — 713 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -169,7 +169,7 @@ Unenforced security configurations are the most dangerous class of defect — us
 - **Problem**: Any website can make authenticated API requests to the device (CSRF/data exfiltration). Especially dangerous when `enableAuth` is true.
 - **Fix**: Restrict CORS origin when auth is enabled, or disable wildcard CORS entirely.
 
-### SEC-7 — OTA: the upload path has no integrity check at all [MEDIUM]
+### SEC-7 — OTA: the upload path has no integrity check at all [MEDIUM] — **DONE (2026-08-26)**
 
 - **File**: `DomoticsCore-OTA/src/OTA.cpp` — `finalizeUpload()`
 - **Found by**: the SEC-2 re-fix, 2026-08-26.
@@ -186,6 +186,39 @@ Unenforced security configurations are the most dangerous class of defect — us
   SEC-2 now depends on.
 - **Not scope creep into SEC-2**: this needs a new input from the caller, which
   is a feature, not a correction.
+- **Fixed**: `beginUpload(size_t, const String& expectedSha256 = "")` — a
+  defaulted parameter, so every existing caller still compiles.
+  `acceptUploadChunk()` hashes what it writes, and `finalizeUpload()` verifies
+  **before** `end(true)`, on the ordering SEC-2 established.
+- **`OTAConfig::requireUploadHash`** (default `false`) refuses an upload that
+  carries no digest — **before** `HAL::OTAUpdate::begin()`, which erases flash.
+  Refusing afterwards would have destroyed the running firmware to reject an
+  upload that was never going to be installed. Default `false` because mandatory
+  would break every existing uploader, and this library is installed by version
+  from the registry.
+
+  The field is read on the only path that can start an upload. SEC-1 was six
+  `OTAConfig` fields that were never checked while four documents said they were;
+  a flag that does nothing is the defect this component has already paid for.
+- **Transport**: `X-Firmware-SHA256` header, or `?sha256=` for clients that
+  cannot set headers. Both are parsed before the body, so both are available when
+  the upload starts — a multipart field would arrive wherever it sits in the body.
+  ESPAsyncWebServer 3.12 stores every header unconditionally
+  (`WebRequest.cpp:698`) and the ESP32Async fork dropped `collectHeaders()`;
+  checked in the resolved package rather than assumed.
+- **The browser form is unaffected and stays unverified.** It cannot send a
+  digest: a header needs JavaScript, and `crypto.subtle` needs a secure context,
+  which a device answering plain HTTP on a LAN is not. With `requireUploadHash`
+  set, that form is rejected. That is the trade, and it is documented rather than
+  engineered around.
+- **Also fixed**: `OTAWebUI` discarded `beginUpload()`'s return value, so a
+  refusal surfaced one chunk later as the misleading "Upload not active". Its
+  `authFailed` flag is now `rejected` — auth was no longer the only way in.
+- **Verified on hardware** (`nodemcuv2`): 6/6, and with SEC-7 removed the two new
+  tests fail at `copyCommandStaged()` — a mismatched **upload** armed the
+  bootloader, exactly as a mismatched download did before SEC-2. On the host,
+  4 more tests via the `Update_Stub.h` call counters, including one asserting
+  that a `requireUploadHash` refusal never reaches `HAL::OTAUpdate::begin()`.
 
 ---
 
@@ -1088,7 +1121,7 @@ not.
 
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
-| 1. Security | SEC-1 to SEC-7 | OTA, Remote, WebUI | 0C, 0H, 4M (**SEC-1, SEC-3 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; SEC-7 new) |
+| 1. Security | SEC-1 to SEC-7 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 | Multiple | 0C, 0H, 7M (**18 done**; BUG-28 new) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 3H, 2M (**TEST-1, TEST-2 done**) |
@@ -1098,10 +1131,10 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-13 | II, XII | 0C, 0H, 4M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new) |
 | 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 31L (**LO-11 done**) |
-| **Total** | **109 items** | | **0C, 8H, 29M, 33L** (49 resolved) |
+| **Total** | **109 items** | | **0C, 8H, 28M, 33L** (50 resolved) |
 
 The severity columns sum across the rows. The **item count does not reconcile**,
-and did not before this change: 49 resolved + 70 remaining is 119, against a
+and did not before this change: 50 resolved + 69 remaining is 119, against a
 stated 109, while counting the ID ranges in the Items column gives 113 (112 with
 STOR-ESP-1 withdrawn). Three figures, three answers. Left as found rather than
 re-baselined to whichever one looks tidiest — someone has to decide what the
