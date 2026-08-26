@@ -1,6 +1,12 @@
 name: Test GitHub Installation
 
-on: [push, pull_request]
+# Scoped to avoid running twice per branch commit — see CI-12 and the comment in
+# ci.yml. The pull_request path is the one that matters here: it carries the
+# head-repo/head-sha workaround below, and is what fork contributions exercise.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
 
 jobs:
   test-install:

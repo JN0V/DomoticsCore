@@ -35,9 +35,11 @@ The first series closed with v2.1.0 and v2.1.1; the lots above resume from what
 the roadmap still lists open. The no-version-bump rule still holds — component
 versions and the CHANGELOG move once, when a series is ready to ship.
 
-`main` requires six checks: `test-install`, `check-versions`,
+`main` requires seven checks: `test-install`, `check-versions`,
 `Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
-plus an up-to-date branch and resolved conversations.
+`Build on-device suites`, plus an up-to-date branch and resolved conversations.
+The seventh became required on 2026-08-23 with CI-10; the count here still said
+six.
 
 ### What CI proves, and what it does not
 
@@ -712,6 +714,31 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   naming a real ESP8266 suite, or drop the test settings and leave it a build
   environment. Then the CI job can discover rather than list.
 
+### CI-12 — Every commit on a branch with an open PR ran the suite twice [MEDIUM] — **DONE (2026-08-26)**
+
+- **Filed**: 2026-08-25, and fixed the day after, once two pull requests
+  demonstrated it.
+- **Files**: `ci.yml`, `test-github-install.yml` — both were `on: [push,
+  pull_request]`.
+- **Problem**: once a branch lives here and carries an open PR, each commit
+  fires both events. The concurrency group is keyed on `github.ref`, which is
+  `refs/heads/<branch>` for the push and `refs/pull/N/merge` for the PR, so
+  neither run cancels the other. Two full matrices — native suites, three
+  cross-compilations, and the on-device builds — for one commit.
+- **Observed**: PRs #20 and #21 each ran fourteen jobs for seven required
+  checks. `gh pr checks` reported `pass,pending` on three of them while the
+  duplicate run caught up. `check-versions` was the exception, appearing once —
+  because `version-check.yml` already scoped both its triggers to branches, and
+  that is what made the mechanism visible.
+- **Fixed**: `push` scoped to `main`, `pull_request` left bare. Branch commits
+  are now covered once, by the PR event; `main` stays covered after every merge.
+  A branch with no open PR gets no run, which is the intended trade — nothing
+  lands here except through a pull request.
+- **Why the pull_request half is the one to keep**: `test-github-install.yml`
+  installs from `pull_request.head.repo` at `head.sha`, falling back to
+  `GITHUB_SHA` off-PR. That path is what fork contributions exercise, and it is
+  the half that would have been lost by scoping the other way.
+
 ### CI-6 — Missing `depends` in `library.properties` [MEDIUM]
 
 - **Ref**: R-F8
@@ -891,10 +918,10 @@ not.
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
-| 8. CI/Infrastructure | CI-1 to CI-11 | II, XII | 0C, 0H, 3M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10 done**; CI-11 new) |
+| 8. CI/Infrastructure | CI-1 to CI-12 | II, XII | 0C, 0H, 3M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 new) |
 | 9. Dead Code | DC-1 to DC-10, PERSIST-1 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8 done**; PERSIST-1 new) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 31L (**LO-11 done**) |
-| **Total** | **103 items** | | **0C, 8H, 25M, 33L** (47 resolved) |
+| **Total** | **104 items** | | **0C, 8H, 25M, 33L** (48 resolved) |
 
 ---
 
