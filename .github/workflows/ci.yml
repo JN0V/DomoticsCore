@@ -13,7 +13,15 @@ name: CI
 # install-from-GitHub path is covered by test-github-install.yml, which since
 # CI-8 builds both declared platforms rather than esp32dev alone.
 
-on: [push, pull_request]
+# A branch commit fires push and pull_request as two separate runs, and the
+# concurrency group below cannot collapse them: github.ref is refs/heads/<branch>
+# for one and refs/pull/N/merge for the other, so neither cancels the other.
+# Scoping push to main leaves branch commits covered exactly once, by the PR
+# event, and keeps main covered after every merge (CI-12).
+on:
+  push:
+    branches: [ main ]
+  pull_request:
 
 permissions:
   contents: read
