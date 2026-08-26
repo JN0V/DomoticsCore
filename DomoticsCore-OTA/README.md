@@ -58,6 +58,7 @@ cfg.checkIntervalMs = 3600000; // Check every hour (0 = disabled)
 cfg.autoReboot = true; // Reboot after successful update
 cfg.allowDowngrades = false; // Prevent version downgrades
 cfg.enableWebUIUpload = true; // Allow manual uploads via web interface
+cfg.requireUploadHash = false; // Refuse uploads that carry no expected SHA-256
 ```
 
 > **Transport security is yours to provide.** This component does not open
@@ -132,8 +133,23 @@ OTA requires custom REST endpoints for file uploads:
 - `/api/ota/status` - GET status
 - `/api/ota/check` - Trigger manifest check
 - `/api/ota/update` - Start update from URL
-- `/api/ota/upload` - Upload firmware file (multipart/form-data) — **authenticated**
+- `/api/ota/upload` - Upload firmware file (multipart/form-data) — **authenticated**, optionally **integrity-checked**
 - `/ota/upload` - Upload form page — **authenticated**
+
+Send the expected digest and the image is verified before anything is committed
+to flash:
+
+```bash
+curl -u admin:secret \
+     -H "X-Firmware-SHA256: $(sha256sum firmware.bin | cut -d' ' -f1)" \
+     -F 'firmware=@firmware.bin' \
+     http://device.local/api/ota/upload
+```
+
+A `?sha256=` query parameter works for clients that cannot set headers. Omit both
+and the upload is committed unverified, which is what this endpoint did for every
+caller before SEC-7 — set `requireUploadHash` to refuse that. Note it also
+rejects the built-in browser form, which cannot compute or send a digest.
 
 These are registered via `init()` method after WebUI server is ready.
 
