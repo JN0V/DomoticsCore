@@ -20,8 +20,17 @@ namespace OTAUpdate {
 
 inline size_t s_stubBytesWritten = 0;
 
+// Commit and discard are indistinguishable on a host — nothing is written to any
+// flash. The counters give the native suite the one thing it otherwise cannot
+// observe: whether an image was committed, and whether it was discarded first.
+// See the abort()-before-end() contract in Update_HAL.h.
+inline size_t s_stubEndCalls = 0;
+inline size_t s_stubAbortCalls = 0;
+
 inline bool begin(size_t = UPDATE_SIZE_UNKNOWN) {
     s_stubBytesWritten = 0;
+    s_stubEndCalls = 0;
+    s_stubAbortCalls = 0;
     return true;
 }
 
@@ -30,8 +39,8 @@ inline size_t write(uint8_t*, size_t len) {
     return len;
 }
 
-inline bool end(bool = false) { return true; }
-inline void abort() {}
+inline bool end(bool = false) { ++s_stubEndCalls; return true; }
+inline void abort() { ++s_stubAbortCalls; }
 inline String errorString() { return "Update not supported on this platform"; }
 inline bool hasError() { return false; }
 

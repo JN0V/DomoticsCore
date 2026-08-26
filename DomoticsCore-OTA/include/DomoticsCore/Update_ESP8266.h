@@ -13,6 +13,7 @@
 
 #include <Updater.h>
 #include <Arduino.h>
+#include <eboot_command.h>
 
 #ifndef UPDATE_SIZE_UNKNOWN
 #define UPDATE_SIZE_UNKNOWN 0
@@ -59,10 +60,25 @@ inline bool end(bool evenIfRemaining = false) {
     return Update.end(evenIfRemaining);
 }
 
+/**
+ * @brief Discard an update that is still in flight.
+ *
+ * Only meaningful before end() — see the contract in Update_HAL.h.
+ *
+ * The ESP8266 Updater exposes no abort(), so the only way to release its buffer
+ * is to call end(). That is safe while the image is incomplete: end(false) hits
+ * the `!isFinished() && !evenIfRemaining` guard and just resets. It is *not* safe
+ * once every announced byte has been written — end() then runs to completion and
+ * stages an eboot ACTION_COPY_RAW, committing the very image we are discarding.
+ * That is exactly the state a failed SHA-256 check leaves behind, so clear the
+ * staged command afterwards. eboot_command_clear() is harmless when nothing is
+ * staged, which makes this correct either way.
+ */
 inline void abort() {
     s_updateActive = false;
     Update.runAsync(false);
     Update.end(false);
+    eboot_command_clear();
     Update.clearError();
 }
 

@@ -21,6 +21,7 @@
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/OTA.h>
 #include <DomoticsCore/OTAEvents.h>
+#include <DomoticsCore/Update_HAL.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -190,6 +191,83 @@ void test_ota_trigger_update_from_url_no_provider() {
     bool result = ota.triggerUpdateFromUrl("http://example.com/firmware.bin");
     // Should not crash
     TEST_ASSERT_TRUE(ota.isIdle() || !ota.isIdle());
+}
+
+// ============================================================================
+// SHA-256 Verification Tests (SEC-2)
+// ============================================================================
+//
+// The stub HAL::Platform::SHA256 digests everything to 32 zero bytes, so the
+// expected hash alone decides which branch runs: 64 zeros matches, anything else
+// does not. What these tests actually pin is the *ordering* — HAL::OTAUpdate::end()
+// is the commit, and neither Arduino core can undo it, so a mismatched image must
+// never reach it. The counters live in Update_Stub.h; they are the only way a host
+// build can tell a committed image from a discarded one.
+
+namespace {
+
+const char* const SHA_OF_ANY_STUB_INPUT = "0000000000000000000000000000000000000000000000000000000000000000";
+const char* const SHA_THAT_CANNOT_MATCH = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+// Drives the real application path: manifest fetch -> performCheck -> installFromUrl.
+// installFromUrl is private, and going through the front door is the point.
+void runDownloadWithExpectedSha(OTAComponent& ota, const char* expectedSha) {
+    OTAConfig config;
+    config.manifestUrl = "http://example.com/manifest.json";
+    config.checkIntervalMs = 0;   // no periodic check racing the explicit one
+    config.autoReboot = false;    // do not arm the reboot timer in a host test
+    ota.setConfig(config);
+    ota.begin();
+
+    const String sha = expectedSha;
+    ota.setManifestFetcher([sha](const String&, String& outJson) {
+        outJson = String("{\"version\":\"9.9.9\",\"url\":\"http://example.com/fw.bin\",\"sha256\":\"") + sha + "\"}";
+        return true;
+    });
+    ota.setDownloader([](const String&, size_t& totalSize, OTAComponent::DownloadCallback onChunk) {
+        const uint8_t firmware[8] = {0xE9, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+        totalSize = sizeof(firmware);
+        return onChunk(firmware, sizeof(firmware));
+    });
+
+    ota.triggerImmediateCheck(true);
+    ota.loop();
+}
+
+} // namespace
+
+void test_ota_sha_mismatch_never_commits() {
+    OTAComponent ota;
+    runDownloadWithExpectedSha(ota, SHA_THAT_CANNOT_MATCH);
+
+    // The image was discarded, and never committed. Before SEC-2 was fixed
+    // properly, end() ran first and the abort() that followed was inert.
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::OTAUpdate::s_stubEndCalls);
+    TEST_ASSERT_EQUAL_UINT32(1, HAL::OTAUpdate::s_stubAbortCalls);
+
+    TEST_ASSERT_EQUAL(OTAComponent::State::Error, ota.getState());
+    TEST_ASSERT_EQUAL_STRING("SHA256 mismatch", ota.getLastError().c_str());
+}
+
+void test_ota_sha_match_commits() {
+    OTAComponent ota;
+    runDownloadWithExpectedSha(ota, SHA_OF_ANY_STUB_INPUT);
+
+    TEST_ASSERT_EQUAL_UINT32(1, HAL::OTAUpdate::s_stubEndCalls);
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::OTAUpdate::s_stubAbortCalls);
+    TEST_ASSERT_NOT_EQUAL(OTAComponent::State::Error, ota.getState());
+}
+
+void test_ota_no_expected_sha_still_commits() {
+    // A manifest without a sha256 field, and triggerUpdateFromUrl(), both reach
+    // installFromUrl with an empty expected hash. That path is unverified by
+    // design and must keep working — moving the check must not gate on it.
+    OTAComponent ota;
+    runDownloadWithExpectedSha(ota, "");
+
+    TEST_ASSERT_EQUAL_UINT32(1, HAL::OTAUpdate::s_stubEndCalls);
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::OTAUpdate::s_stubAbortCalls);
+    TEST_ASSERT_NOT_EQUAL(OTAComponent::State::Error, ota.getState());
 }
 
 // ============================================================================
@@ -430,6 +508,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_ota_trigger_update_from_url_no_provider);
 
     // Upload session tests
+    // SHA-256 verification (SEC-2)
+    RUN_TEST(test_ota_sha_mismatch_never_commits);
+    RUN_TEST(test_ota_sha_match_commits);
+    RUN_TEST(test_ota_no_expected_sha_still_commits);
+
     RUN_TEST(test_ota_begin_upload);
     RUN_TEST(test_ota_upload_chunk_before_begin);
     RUN_TEST(test_ota_abort_upload);
