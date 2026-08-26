@@ -30,6 +30,7 @@ versions may sit still while fixes land.
 | ESP8266 on-device suites | CI-10 | **Merged** — PR #19, 2026-08-23, first run on real hardware; raised STOR-ESP-1, later withdrawn |
 | System | TEST-1, ARCH-3 | **Merged** — PR #18, 2026-08-23 |
 | LED | BUG-19, DC-5, TEST-2, LO-11 | PR #17 — chosen for having no file in common with `esp32-ethernet` |
+| OTA | SEC-2 | 2026-08-26 — reopened: the v2.0.1 fix was inert on both cores. Raised SEC-7 |
 
 The first series closed with v2.1.0 and v2.1.1; the lots above resume from what
 the roadmap still lists open. The no-version-bump rule still holds — component
@@ -47,7 +48,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 706 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
+| ✅ | The 13 native projects run — 709 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -80,16 +81,55 @@ Unenforced security configurations are the most dangerous class of defect — us
   them would have believed in a protection twice over: once from a field that did
   nothing, then from a field that no longer existed.
 - **What replaces it**: the upload endpoints are genuinely authenticated (SEC-3),
-  and SHA-256 integrity is verified with rollback on mismatch (SEC-2). Firmware
+  and SHA-256 integrity is verified before the image is ever committed to flash
+  (SEC-2 — the mismatch path used to run *after* the commit, and could not undo
+  it). Firmware
   signature verification remains unimplemented, and is now documented as such
   rather than advertised by a config field.
 
-### SEC-2 — OTA: SHA256 failure doesn't rollback firmware [CRITICAL]
+### SEC-2 — OTA: SHA256 failure doesn't rollback firmware [CRITICAL] — **DONE (2026-08-26)**, after a first fix that did nothing
 
 - **Ref**: OTA-F2
-- **File**: `DomoticsCore-OTA/include/DomoticsCore/OTA.h`
+- **File**: `DomoticsCore-OTA/src/OTA.cpp`, `Update_ESP8266.h`
 - **Problem**: After `HAL::OTAUpdate::end(true)` succeeds and SHA256 verification fails, the code transitions to `State::Error` but does NOT call `HAL::OTAUpdate::abort()`. Corrupted firmware may persist in the OTA partition.
-- **Fix**: Call `abort()` (or equivalent rollback) when SHA256 verification fails, before transitioning to Error state.
+- **What v2.0.1 shipped** (commit `e081940`): the missing `abort()`, added after
+  the failed check, with the comment *"Rollback corrupted firmware from OTA
+  partition"*. It was inert on both platforms, and stayed inert for two releases.
+  `end(true)` **is** the commit, and neither Arduino core lets an application
+  undo it:
+  - **ESP32** — `end(true)` → `_verifyEnd()` → `esp_ota_set_boot_partition()`,
+    then `_reset()`. `Update.abort()` is `_reset()` plus an error code: no flash
+    write, boot partition still pointing at the rejected image.
+  - **ESP8266** — `end()` writes an eboot `ACTION_COPY_RAW` staging a copy over
+    the running sketch. The HAL's `abort()` called `Update.end(false)`, which
+    returns early once `_size == 0`. The staged copy survived, and the next
+    reboot flashed the rejected image over the good one.
+
+  The component reported `State::Error` and skipped its own reboot, so nothing
+  looked wrong — until any watchdog reset or power cycle.
+- **Fix**: verify before committing, rather than trying to undo a commit. The
+  digest is complete the moment the download loop returns; nothing required
+  `end(true)` to run first. Aborting *before* `end()` genuinely works — ESP32
+  withholds the image's first 16 bytes until `_verifyEnd()` precisely so a
+  half-written partition is unbootable, and ESP8266 stages nothing until `end()`
+  succeeds. There is now no ordering in which a rejected image is briefly
+  bootable.
+- **The HAL had to move too.** Reordering alone would have made ESP8266 *worse*:
+  with every announced byte written, `Update.end(false)` inside `abort()` clears
+  the `!isFinished()` guard and reaches `eboot_command_write()` — `abort()` would
+  have committed the image it was asked to discard, which is exactly the state a
+  failed hash leaves behind. `Update_ESP8266.h::abort()` now calls
+  `eboot_command_clear()` after `end(false)`.
+- **The contract is written down** in `Update_HAL.h`: `abort()` is only
+  meaningful before `end()`. That is the sentence whose absence cost two
+  releases.
+- **Not verified on hardware.** Proving it needs a firmware image served with a
+  deliberately wrong hash and a reset to confirm the old firmware still boots.
+  The mechanism above is established by reading the two vendored cores — evidence
+  about the code, not about a board.
+- **Test**: `test_ota_sha_mismatch_never_commits` asserts `end()` is never
+  reached, via call counters added to `Update_Stub.h` (commit and discard are
+  otherwise indistinguishable on a host). It fails on the pre-fix ordering.
 
 ### SEC-3 — OTA: upload endpoint has no authentication [HIGH]
 
@@ -117,6 +157,24 @@ Unenforced security configurations are the most dangerous class of defect — us
 - **File**: `WebUI.h:429`
 - **Problem**: Any website can make authenticated API requests to the device (CSRF/data exfiltration). Especially dangerous when `enableAuth` is true.
 - **Fix**: Restrict CORS origin when auth is enabled, or disable wildcard CORS entirely.
+
+### SEC-7 — OTA: the upload path has no integrity check at all [MEDIUM]
+
+- **File**: `DomoticsCore-OTA/src/OTA.cpp` — `finalizeUpload()`
+- **Found by**: the SEC-2 re-fix, 2026-08-26.
+- **Problem**: SEC-2 concerns the *download* path, which hashes what it writes.
+  The **upload** path does not hash anything: `finalizeUpload()` calls
+  `end(true)` on whatever arrived. `OTAConfig` has no field for an expected
+  digest and the WebUI form collects none, so a truncated or mangled upload is
+  committed and booted. SEC-3 authenticates the endpoint, which stops a stranger
+  pushing firmware; it does nothing about a corrupt transfer from a legitimate
+  one.
+- **Fix**: accept an optional expected SHA-256 alongside the upload (form field
+  or header), hash the chunks in `acceptUploadChunk()` as the downloader does,
+  and verify **before** `finalizeUpload()` calls `end(true)` — the same ordering
+  SEC-2 now depends on.
+- **Not scope creep into SEC-2**: this needs a new input from the caller, which
+  is a feature, not a correction.
 
 ---
 
@@ -993,7 +1051,7 @@ not.
 
 | Item | Severity | Fix |
 |------|----------|-----|
-| **SEC-2** | CRITICAL | `abort()` + error event on SHA256 mismatch after OTA download |
+| **SEC-2** | CRITICAL | `abort()` + error event on SHA256 mismatch after OTA download — **the commit landed, the rollback did not work.** `abort()` after a successful `end(true)` is inert on both cores; properly fixed 2026-08-26 by verifying before committing |
 | **MEM-1** | HIGH | `shrink_to_fit()` in ComponentRegistry, EventBus, IWebUIProvider, Wifi; bounded System stateCallbacks (max 8); Wifi reserve(n) |
 | **BUG-1** | HIGH | `static_assert(is_trivially_copyable)` on EventBus publish |
 | **BUG-3** | MEDIUM | LoggerCallbacks ID-based add/remove (was clearing all) |
@@ -1018,7 +1076,7 @@ not.
 
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
-| 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-2, SEC-3 done**) |
+| 1. Security | SEC-1 to SEC-7 | OTA, Remote, WebUI | 0C, 0H, 4M (**SEC-1, SEC-3 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; SEC-7 new) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 | Multiple | 0C, 0H, 7M (**18 done**; BUG-28 new) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 3H, 2M (**TEST-1, TEST-2 done**) |
@@ -1028,7 +1086,14 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-13 | II, XII | 0C, 0H, 4M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new) |
 | 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 31L (**LO-11 done**) |
-| **Total** | **108 items** | | **0C, 8H, 28M, 33L** (49 resolved) |
+| **Total** | **109 items** | | **0C, 8H, 29M, 33L** (49 resolved) |
+
+The severity columns sum across the rows. The **item count does not reconcile**,
+and did not before this change: 49 resolved + 70 remaining is 119, against a
+stated 109, while counting the ID ranges in the Items column gives 113 (112 with
+STOR-ESP-1 withdrawn). Three figures, three answers. Left as found rather than
+re-baselined to whichever one looks tidiest — someone has to decide what the
+column is counting before it can be corrected.
 
 ---
 
