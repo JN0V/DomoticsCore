@@ -39,6 +39,7 @@ Defined in `DomoticsCore/OTA.h` within `DomoticsCore::Components`.
 | `autoReboot` | `bool` | `true` | When `true`, reboot automatically 2 seconds after a successful update. |
 | `maxDownloadSize` | `size_t` | `0` | Maximum acceptable firmware binary size in bytes. `0` means unlimited. |
 | `enableWebUIUpload` | `bool` | `true` | When `true`, expose manual firmware upload routes and WebUI file-upload controls. |
+| `requireUploadHash` | `bool` | `false` | When `true`, refuse any upload that arrives without an expected SHA-256 (SEC-7). The refusal happens before a flash sector is erased. Note this also rejects the built-in `/ota/upload` browser form, which cannot send one — see below. |
 
 ### Runtime Configuration Update
 
@@ -290,10 +291,14 @@ These methods are called by the `OTAWebUI` provider (or custom upload tooling) t
 ### `beginUpload`
 
 ```cpp
-bool beginUpload(size_t expectedSize = 0);
+bool beginUpload(size_t expectedSize = 0, const String& expectedSha256 = "");
 ```
 
-Initializes the HAL update subsystem for the given size (or `UPDATE_SIZE_UNKNOWN` if 0). Resets progress counters and transitions to `Downloading` state. Returns `false` if an upload is already active or if `HAL::OTAUpdate::begin()` fails.
+Initializes the HAL update subsystem for the given size (or `UPDATE_SIZE_UNKNOWN` if 0). Resets progress counters and transitions to `Downloading` state. Returns `false` if an upload is already active, if `HAL::OTAUpdate::begin()` fails, or if `requireUploadHash` is set and `expectedSha256` is empty.
+
+`expectedSha256` is the hex digest the uploaded image must match. Leave it empty and the image is committed unverified — which is what this endpoint did for every caller before SEC-7. The check itself happens in `finalizeUpload()`; what `beginUpload()` decides is whether to start at all.
+
+**Do not discard the return value.** A refusal here means nothing was written to flash. Ignoring it makes the failure resurface one chunk later as `"Upload not active"`, which says nothing about the cause.
 
 ### `acceptUploadChunk`
 
@@ -301,7 +306,7 @@ Initializes the HAL update subsystem for the given size (or `UPDATE_SIZE_UNKNOWN
 bool acceptUploadChunk(const uint8_t* data, size_t length);
 ```
 
-Writes a chunk of firmware data to the HAL. On both ESP32 and ESP8266, this writes directly to flash. (ESP8266 uses `Update.runAsync(true)` to enable direct writes from async callbacks.) Returns `false` on write failure.
+Writes a chunk of firmware data to the HAL. On both ESP32 and ESP8266, this writes directly to flash. (ESP8266 uses `Update.runAsync(true)` to enable direct writes from async callbacks.) Returns `false` on write failure. Each chunk is also fed to the session's running SHA-256, hashing what was written rather than what was offered.
 
 ### `finalizeUpload`
 
@@ -309,7 +314,9 @@ Writes a chunk of firmware data to the HAL. On both ESP32 and ESP8266, this writ
 bool finalizeUpload();
 ```
 
-Signals the HAL that all data has been received. Finalization is immediate on both ESP32 and ESP8266. Returns `false` if no upload is active or if `HAL::OTAUpdate::end()` fails.
+Finishes the session's digest and, when an expected SHA-256 was supplied, verifies it **before** calling `HAL::OTAUpdate::end()`. Returns `false` if no upload is active, if the digest does not match (`lastError` is `"SHA256 mismatch"`), or if `end()` fails.
+
+The ordering is the security property, not a style choice. `end()` is the point of no return — it switches the ESP32 boot partition and stages the ESP8266 eboot copy — and no Arduino core lets the application undo it, so a rejected image must never reach it. See the contract in `Update_HAL.h`, and SEC-2 in the roadmap for what it cost to learn.
 
 ### `abortUpload`
 
@@ -419,7 +426,20 @@ All endpoints are registered by `OTAWebUI::registerRoutes()` after `init()` is c
 | `POST` | `/api/ota/check` | Triggers an immediate manifest check. Returns `{"success": true}`. |
 | `POST` | `/api/ota/update` | Starts a firmware download. Accepts `url` and `force` parameters. Without parameters, returns current field values. |
 | `GET` | `/ota/upload` | Serves a minimal HTML firmware upload page (only when `enableWebUIUpload` is `true`). |
-| `POST` | `/api/ota/upload` | Accepts `multipart/form-data` firmware upload (only when `enableWebUIUpload` is `true`). Returns `{"success": true/false}`. |
+| `POST` | `/api/ota/upload` | Accepts `multipart/form-data` firmware upload (only when `enableWebUIUpload` is `true`). Returns `{"success": true/false}`. Optionally carries the expected digest as an `X-Firmware-SHA256` header, or a `?sha256=` query parameter for clients that cannot set headers. |
+
+#### Supplying the upload digest (SEC-7)
+
+```bash
+curl -u admin:secret \
+     -H "X-Firmware-SHA256: $(sha256sum firmware.bin | cut -d' ' -f1)" \
+     -F 'firmware=@firmware.bin' \
+     http://device.local/api/ota/upload
+```
+
+The digest must arrive as a header or a query parameter, not as a multipart form field: both are parsed before the body, so both are available when the upload starts, whereas a form field arrives wherever it happens to sit in the body.
+
+The built-in `/ota/upload` browser form sends no digest and keeps working — verification is opt-in per upload. It cannot be made to send one: setting a header needs JavaScript, and computing SHA-256 in a browser needs `crypto.subtle`, which is unavailable outside a secure context. A device answering plain HTTP on a LAN is not one. Set `requireUploadHash` if that trade is unacceptable for your deployment, and accept that the browser form stops working.
 
 ---
 
