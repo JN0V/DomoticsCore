@@ -104,6 +104,7 @@ void OTAComponent::loop() {
             lastError = bufferError;
             uploadSession.error = lastError;
             HAL::OTAUpdate::abort();
+            uploadSha.abort();
             uploadSession.active = false;
             transition(State::Error, lastError);
             publishStatusEvent(DomoticsCore::OTAEvents::EVENT_ERROR, [this](JsonDocument& doc){
@@ -153,6 +154,7 @@ void OTAComponent::loop() {
 ComponentStatus OTAComponent::shutdown() {
     if (uploadSession.active) {
         HAL::OTAUpdate::abort();
+        uploadSha.abort();
     }
     state = State::Idle;
     return ComponentStatus::Success;
@@ -164,9 +166,18 @@ bool OTAComponent::triggerImmediateCheck(bool force) {
     return true;
 }
 
-bool OTAComponent::beginUpload(size_t expectedSize) {
+bool OTAComponent::beginUpload(size_t expectedSize, const String& expectedSha256) {
     if (uploadSession.active) {
         lastError = "Upload already in progress";
+        return false;
+    }
+
+    // SEC-7: refuse before HAL::OTAUpdate::begin(), which erases flash. A refusal
+    // after that point would have destroyed the running firmware to reject an
+    // upload it never intended to install.
+    if (config.requireUploadHash && expectedSha256.isEmpty()) {
+        lastError = "Firmware hash required";
+        DLOG_W(LOG_OTA, "Upload rejected: requireUploadHash is set and no SHA-256 was supplied");
         return false;
     }
 
@@ -177,12 +188,17 @@ bool OTAComponent::beginUpload(size_t expectedSize) {
         return false;
     }
 
+    // A previous session may have been abandoned without finishing its digest.
+    uploadSha.abort();
+    uploadSha.begin();
+
     uploadSession = UploadSession{};
     uploadSession.active = true;
     uploadSession.expected = expectedSize;
     uploadSession.received = 0;
     uploadSession.success = false;
     uploadSession.error.clear();
+    uploadSession.expectedSha256 = expectedSha256;
 
     totalBytes = expectedSize;
     downloadedBytes = 0;
@@ -225,6 +241,7 @@ bool OTAComponent::acceptUploadChunk(const uint8_t* data, size_t length) {
         }
         uploadSession.error = lastError;
         HAL::OTAUpdate::abort();
+        uploadSha.abort();
         uploadSession.active = false;
         transition(State::Error, lastError);
         publishStatusEvent(DomoticsCore::OTAEvents::EVENT_ERROR, [this](JsonDocument& doc){
@@ -234,6 +251,10 @@ bool OTAComponent::acceptUploadChunk(const uint8_t* data, size_t length) {
         }, false);
         return false;
     }
+
+    // Hash what was written, not what was offered — the same distinction
+    // installFromUrl makes.
+    uploadSha.update(data, written);
 
     uploadSession.received += written;
 
@@ -289,6 +310,28 @@ bool OTAComponent::finalizeUpload() {
     DLOG_I(LOG_OTA, "Upload finalizing | received=%lu bytes",
            static_cast<unsigned long>(uploadSession.received));
 
+    // SEC-7: verify before committing, on the ordering SEC-2 established.
+    // end(true) is the point of no return — it switches the ESP32 boot partition
+    // and stages the ESP8266 eboot copy — and no Arduino core lets the
+    // application undo it. See the contract in Update_HAL.h.
+    uint8_t digest[32];
+    uploadSha.finish(digest);
+
+    if (!uploadSession.expectedSha256.isEmpty() &&
+        !verifySha256(digest, uploadSession.expectedSha256)) {
+        lastError = "SHA256 mismatch";
+        uploadSession.error = lastError;
+        HAL::OTAUpdate::abort();
+        uploadSession.active = false;
+        transition(State::Error, lastError);
+        publishStatusEvent(DomoticsCore::OTAEvents::EVENT_ERROR, [this](JsonDocument& doc){
+            doc["success"] = false;
+            doc["error"] = lastError.c_str();
+            doc["source"] = "upload";
+        }, false);
+        return false;
+    }
+
     // On platforms with buffering, end() just marks as finalizing
     // Actual finalization happens in loop() when buffer is flushed
     if (!HAL::OTAUpdate::end(true)) {
@@ -322,6 +365,7 @@ void OTAComponent::abortUpload(const String& reason) {
         return;
     }
     HAL::OTAUpdate::abort();
+    uploadSha.abort();
     uploadSession.active = false;
     uploadSession.success = false;
     uploadSession.error = reason;

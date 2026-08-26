@@ -1,6 +1,7 @@
 /**
  * @file test_ota_esp8266.cpp
- * @brief SEC-2 on silicon: a firmware whose hash does not match is never staged.
+ * @brief SEC-2 and SEC-7 on silicon: a firmware whose hash does not match is
+ *        never staged, whether it was downloaded or uploaded.
  *
  * The host suite proves the *ordering* — that `HAL::OTAUpdate::end()` is not
  * reached when the digest mismatches — by counting calls into a stub. It cannot
@@ -129,6 +130,33 @@ struct Download {
     }
 };
 
+/**
+ * @brief Drive one upload to completion through the public path (SEC-7).
+ *
+ * The chunk sequence a WebUI multipart POST produces, minus the HTTP.
+ */
+struct Upload {
+    OTAComponent ota;
+    bool opened = false;
+    bool committed = false;
+
+    Upload(const String& expectedHash, bool requireHash) {
+        OTAConfig cfg;
+        cfg.autoReboot = false;
+        cfg.requireUploadHash = requireHash;
+        ota.setConfig(cfg);
+        ota.begin();
+
+        opened = ota.beginUpload(PAYLOAD_SIZE, expectedHash);
+        if (!opened) return;
+        for (size_t offset = 0; offset < PAYLOAD_SIZE; offset += 512) {
+            if (!ota.acceptUploadChunk(g_payload + offset, 512)) return;
+            yield();
+        }
+        committed = ota.finalizeUpload();
+    }
+};
+
 } // namespace
 
 void setUp() {
@@ -189,6 +217,52 @@ void test_abort_after_a_complete_image_stages_nothing() {
     TEST_ASSERT_FALSE(Update.isRunning());
 }
 
+// ============================================================================
+// SEC-7 — the upload path, same property, different entry point
+// ============================================================================
+
+void test_upload_with_mismatched_hash_stages_nothing() {
+    // Until SEC-7 the upload path hashed nothing at all: finalizeUpload() called
+    // end(true) on whatever arrived. On this board that armed the bootloader.
+    Upload up(HASH_THAT_CANNOT_MATCH, false);
+
+    // The flash consequence first — it is the property, and asserting it before
+    // the bookkeeping means a regression reports the armed bootloader rather
+    // than a return value that merely implies it.
+    TEST_ASSERT_FALSE(copyCommandStaged());
+
+    TEST_ASSERT_TRUE(up.opened);
+    TEST_ASSERT_FALSE(up.committed);
+    TEST_ASSERT_EQUAL(OTAComponent::State::Error, up.ota.getState());
+    TEST_ASSERT_EQUAL_STRING("SHA256 mismatch", up.ota.getLastError().c_str());
+}
+
+void test_upload_with_matching_hash_stages_the_copy() {
+    // Non-vacuity for the upload path, on the same terms as the download one.
+    Upload up(payloadHash(), false);
+
+    TEST_ASSERT_TRUE(up.committed);
+
+    const bool staged = copyCommandStaged();
+    eboot_command_clear();  // BEFORE any assertion: a failure here longjmps out
+
+    TEST_ASSERT_TRUE(staged);
+}
+
+void test_require_upload_hash_refuses_before_erasing_flash() {
+    // The refusal must land before Update.begin(), which erases the staging
+    // sectors. Refusing after that point would have destroyed the staged region
+    // to reject an upload that was never going to be installed.
+    Upload up("", true);
+
+    TEST_ASSERT_FALSE(copyCommandStaged());
+    TEST_ASSERT_FALSE(Update.isRunning());  // never opened an update at all
+
+    TEST_ASSERT_FALSE(up.opened);
+    TEST_ASSERT_FALSE(up.committed);
+    TEST_ASSERT_EQUAL_STRING("Firmware hash required", up.ota.getLastError().c_str());
+}
+
 void setup() {
     delay(2000);  // let the host attach before Unity starts printing
     UNITY_BEGIN();
@@ -196,6 +270,10 @@ void setup() {
     RUN_TEST(test_mismatched_hash_stages_nothing);
     RUN_TEST(test_matching_hash_stages_the_copy);
     RUN_TEST(test_abort_after_a_complete_image_stages_nothing);
+
+    RUN_TEST(test_upload_with_mismatched_hash_stages_nothing);
+    RUN_TEST(test_upload_with_matching_hash_stages_the_copy);
+    RUN_TEST(test_require_upload_hash_refuses_before_erasing_flash);
 
     UNITY_END();
 }

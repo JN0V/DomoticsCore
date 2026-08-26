@@ -9,6 +9,7 @@
 
 #include "DomoticsCore/IComponent.h"
 #include "DomoticsCore/Logger.h"
+#include "DomoticsCore/Platform_HAL.h"  // For HAL::SHA256
 #include <ArduinoJson.h>
 
 namespace DomoticsCore {
@@ -25,6 +26,7 @@ struct OTAConfig {
     bool autoReboot = true;             //!< Reboot immediately after a successful update
     size_t maxDownloadSize = 0;         //!< Reject binaries larger than this (0 = unlimited)
     bool enableWebUIUpload = true;      //!< Allow manual firmware upload via WebUI helpers
+    bool requireUploadHash = false;     //!< Reject uploads that carry no expected SHA-256 (SEC-7)
 };
 
 /**
@@ -58,7 +60,18 @@ public:
     bool triggerUpdateFromUrl(const String& url, bool force = false);
 
     // Manual upload helpers (used by WebUI provider or OTA tooling)
-    bool beginUpload(size_t expectedSize = 0);
+    /**
+     * @brief Open an upload session.
+     *
+     * @param expectedSize    Announced firmware size, 0 when unknown.
+     * @param expectedSha256  Hex SHA-256 the image must match. Empty means the
+     *                        upload is committed unverified — which is what the
+     *                        endpoint did for every caller before SEC-7. Set
+     *                        `OTAConfig::requireUploadHash` to refuse that.
+     * @return false when the session could not be opened. Nothing is written to
+     *         flash in that case; callers must not ignore it.
+     */
+    bool beginUpload(size_t expectedSize = 0, const String& expectedSha256 = "");
     bool acceptUploadChunk(const uint8_t* data, size_t length);
     bool finalizeUpload();
     void abortUpload(const String& reason);
@@ -101,6 +114,7 @@ private:
         String error;
         size_t received = 0;
         size_t expected = 0;
+        String expectedSha256;  //!< Empty when the caller supplied none (SEC-7)
     };
 
     OTAConfig config;
@@ -115,6 +129,10 @@ private:
     String lastResult;
     String lastError;
     UploadSession uploadSession;
+    // Hashed as chunks are written, exactly as installFromUrl hashes what it
+    // downloads. Held as a member rather than allocated per session: it is about
+    // 110 bytes, needs no heap, and so has no failure path mid-upload.
+    HAL::SHA256 uploadSha;
     float lastLoggedProgress = -1.0f;
     size_t lastLoggedBytes = 0;
 

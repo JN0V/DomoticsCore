@@ -315,6 +315,88 @@ void test_ota_finalize_without_begin() {
 }
 
 // ============================================================================
+// Upload Integrity Tests (SEC-7)
+// ============================================================================
+//
+// Same trick as the download tests above: the stub SHA256 digests everything to
+// 32 zero bytes, so the expected hash alone selects the branch. What is pinned is
+// again the ordering — end() is the commit, and a mismatched upload must never
+// reach it.
+
+namespace {
+
+// Runs a complete upload session and leaves the counters to be inspected.
+bool runUpload(OTAComponent& ota, const char* expectedSha, bool requireHash = false) {
+    OTAConfig config;
+    config.autoReboot = false;
+    config.requireUploadHash = requireHash;
+    ota.setConfig(config);
+    ota.begin();
+
+    const uint8_t firmware[16] = {0xE9, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                                  0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10};
+    if (!ota.beginUpload(sizeof(firmware), expectedSha)) return false;
+    if (!ota.acceptUploadChunk(firmware, sizeof(firmware))) return false;
+    return ota.finalizeUpload();
+}
+
+} // namespace
+
+void test_ota_upload_sha_mismatch_never_commits() {
+    OTAComponent ota;
+    TEST_ASSERT_FALSE(runUpload(ota, SHA_THAT_CANNOT_MATCH));
+
+    // The upload path used to call end(true) on whatever arrived — no hash of
+    // any kind. This is SEC-7.
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::OTAUpdate::s_stubEndCalls);
+    TEST_ASSERT_EQUAL_UINT32(1, HAL::OTAUpdate::s_stubAbortCalls);
+
+    TEST_ASSERT_EQUAL(OTAComponent::State::Error, ota.getState());
+    TEST_ASSERT_EQUAL_STRING("SHA256 mismatch", ota.getLastError().c_str());
+}
+
+void test_ota_upload_sha_match_commits() {
+    OTAComponent ota;
+    TEST_ASSERT_TRUE(runUpload(ota, SHA_OF_ANY_STUB_INPUT));
+
+    TEST_ASSERT_EQUAL_UINT32(1, HAL::OTAUpdate::s_stubEndCalls);
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::OTAUpdate::s_stubAbortCalls);
+    TEST_ASSERT_NOT_EQUAL(OTAComponent::State::Error, ota.getState());
+}
+
+void test_ota_upload_without_hash_still_commits() {
+    // Every caller before SEC-7 supplied no hash, and this library is installed
+    // by version. Verification is opt-in per upload; requireUploadHash is how a
+    // deployment makes it compulsory.
+    OTAComponent ota;
+    TEST_ASSERT_TRUE(runUpload(ota, ""));
+
+    TEST_ASSERT_EQUAL_UINT32(1, HAL::OTAUpdate::s_stubEndCalls);
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::OTAUpdate::s_stubAbortCalls);
+}
+
+void test_ota_require_upload_hash_refuses_before_touching_flash() {
+    // The refusal has to land before HAL::OTAUpdate::begin(), which erases flash.
+    // Refusing afterwards would destroy the running firmware to reject an upload
+    // that was never going to be installed.
+    HAL::OTAUpdate::s_stubBytesWritten = 12345;  // sentinel: begin() would zero it
+
+    OTAComponent ota;
+    OTAConfig config;
+    config.autoReboot = false;
+    config.requireUploadHash = true;
+    ota.setConfig(config);
+    ota.begin();
+
+    TEST_ASSERT_FALSE(ota.beginUpload(16, ""));
+    TEST_ASSERT_EQUAL_STRING("Firmware hash required", ota.getLastError().c_str());
+    TEST_ASSERT_EQUAL_UINT32(12345, HAL::OTAUpdate::s_stubBytesWritten);  // untouched
+
+    // ...and a hash makes the same upload acceptable.
+    TEST_ASSERT_TRUE(ota.beginUpload(16, SHA_OF_ANY_STUB_INPUT));
+}
+
+// ============================================================================
 // Lifecycle Tests
 // ============================================================================
 
@@ -517,6 +599,12 @@ int main(int argc, char** argv) {
     RUN_TEST(test_ota_upload_chunk_before_begin);
     RUN_TEST(test_ota_abort_upload);
     RUN_TEST(test_ota_finalize_without_begin);
+
+    // Upload integrity (SEC-7)
+    RUN_TEST(test_ota_upload_sha_mismatch_never_commits);
+    RUN_TEST(test_ota_upload_sha_match_commits);
+    RUN_TEST(test_ota_upload_without_hash_still_commits);
+    RUN_TEST(test_ota_require_upload_hash_refuses_before_touching_flash);
 
     // Lifecycle tests
     RUN_TEST(test_ota_begin_returns_ok);

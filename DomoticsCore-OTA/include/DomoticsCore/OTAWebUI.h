@@ -190,7 +190,8 @@ private:
     struct UploadState {
         bool active = false;
         bool success = false;
-        bool authFailed = false;  ///< SEC-3: Track auth failure to skip upload chunks
+        bool rejected = false;    ///< Upload refused at index 0 — skip every chunk that follows.
+                                  ///< Auth failure (SEC-3) or a refused beginUpload (SEC-7).
         String error;
         String filename;
         size_t total = 0;
@@ -375,18 +376,18 @@ private:
                 },
                 [this](AsyncWebServerRequest* request, const String& filename, uint32_t index, uint8_t* data, size_t len, bool final) {
                     // SEC-3: Reset state FIRST at index == 0, THEN check auth.
-                    // This prevents a stale authFailed flag from a previous failed upload
+                    // This prevents a stale rejected flag from a previous failed upload
                     // from causing the current upload to be silently rejected.
                     // NOTE: WebUIConfig.username is char[32] and .password is char[48] (not String)
                     if (index == 0) {
-                        uploadState = UploadState{};  // Reset ALL state (clears stale authFailed)
+                        uploadState = UploadState{};  // Reset ALL state (clears stale rejected)
                         if (webui && webui->getConfig().enableAuth) {
                             if (!request->authenticate(
                                     webui->getConfig().username,
                                     webui->getConfig().password)) {
                                 uploadState.success = false;
                                 uploadState.error = "Authentication required";
-                                uploadState.authFailed = true;
+                                uploadState.rejected = true;
                                 // Abort any in-progress OTA to prevent flash writes
                                 ota->abortUpload("Authentication required");
                                 return;
@@ -396,10 +397,34 @@ private:
                         uploadState.filename = filename;
                         uploadState.total = 0;
                         size_t expectedSize = request->contentLength();
-                        ota->beginUpload(expectedSize);
+
+                        // SEC-7: the expected digest, if the client sent one.
+                        // Header first, query parameter as a fallback for tools
+                        // that cannot set headers. Both are parsed before the
+                        // body, so both are available here at index 0 — a
+                        // multipart field would not be, since its position in
+                        // the body decides when it arrives.
+                        String expectedSha;
+                        if (const AsyncWebHeader* h = request->getHeader("X-Firmware-SHA256")) {
+                            expectedSha = h->value();
+                        } else if (request->hasParam("sha256")) {
+                            expectedSha = request->getParam("sha256")->value();
+                        }
+
+                        // beginUpload() refuses an upload with no hash when
+                        // requireUploadHash is set, and refuses before erasing
+                        // any flash. Discarding that result surfaced the refusal
+                        // one chunk later as "Upload not active", which says
+                        // nothing about why.
+                        if (!ota->beginUpload(expectedSize, expectedSha)) {
+                            uploadState.success = false;
+                            uploadState.error = ota->getLastError();
+                            uploadState.rejected = true;
+                            return;
+                        }
                     }
-                    // Skip all chunks if auth failed
-                    if (uploadState.authFailed) return;
+                    // Skip every chunk once the upload has been refused
+                    if (uploadState.rejected) return;
                     if (data && len > 0) {
                         uploadState.total += len;
                         if (!ota->acceptUploadChunk(data, len)) {
