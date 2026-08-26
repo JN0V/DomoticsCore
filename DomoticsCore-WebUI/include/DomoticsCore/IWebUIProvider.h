@@ -162,11 +162,6 @@ struct WebUIField {
     std::map<String, String> optionLabels;  // Option value -> label mapping
     String endpoint;                // API endpoint for updates (dynamic storage)
 
-    // Context-specific configuration
-    // Use pointer to avoid large JsonDocument allocation on stack/heap for every field
-    // Only allocated when configure() is called - most fields don't need custom config
-    std::unique_ptr<JsonDocument> config;  // Custom field configuration (optional)
-
     // Constructor with const char* — stores pointers directly, no String allocation
     WebUIField(const char* n, const char* l, WebUIFieldType t,
                const char* v = "", const char* u = "", bool ro = false)
@@ -187,11 +182,7 @@ struct WebUIField {
           endpointPtr(other.endpointPtr),
           minValue(other.minValue), maxValue(other.maxValue),
           options(other.options), selectedValues(other.selectedValues), optionLabels(other.optionLabels),
-          endpoint(other.endpoint) {
-        if (other.config) {
-            config = std::make_unique<JsonDocument>(*other.config);
-        }
-    }
+          endpoint(other.endpoint) {}
 
     // Copy assignment - preserves hybrid state
     WebUIField& operator=(const WebUIField& other) {
@@ -213,11 +204,6 @@ struct WebUIField {
             selectedValues = other.selectedValues;
             optionLabels = other.optionLabels;
             endpoint = other.endpoint;
-            if (other.config) {
-                config = std::make_unique<JsonDocument>(*other.config);
-            } else {
-                config.reset();
-            }
         }
         return *this;
     }
@@ -246,13 +232,6 @@ struct WebUIField {
         return *this;
     }
     WebUIField& api(const char* ep) { endpointPtr = ep; endpoint = ""; return *this; }
-    WebUIField& configure(const String& key, const JsonVariant& val) {
-        if (!config) {
-            config = std::make_unique<JsonDocument>();
-        }
-        (*config)[key] = val;
-        return *this;
-    }
 };
 
 /**
@@ -291,11 +270,6 @@ struct WebUIContext {
     int updateInterval = 5000;      // Update interval in ms
     bool alwaysInteractive = false; // If true, controls are always enabled (bypassing Settings lock)
 
-    // Context-specific configuration
-    // Use pointer to avoid large JsonDocument allocation on stack/heap for every context
-    // Only allocated when configure() is called - most contexts don't need custom config
-    std::unique_ptr<JsonDocument> contextConfig;  // Custom presentation config (optional)
-
     // Constructors
     WebUIContext() = default;
 
@@ -319,11 +293,7 @@ struct WebUIContext {
           customHtml(other.customHtml), customCss(other.customCss), customJs(other.customJs),
           customHtmlPtr(other.customHtmlPtr), customCssPtr(other.customCssPtr), customJsPtr(other.customJsPtr),
           fields(other.fields), apiEndpoint(other.apiEndpoint), realTime(other.realTime),
-          updateInterval(other.updateInterval), alwaysInteractive(other.alwaysInteractive) {
-        if (other.contextConfig) {
-            contextConfig = std::make_unique<JsonDocument>(*other.contextConfig);
-        }
-    }
+          updateInterval(other.updateInterval), alwaysInteractive(other.alwaysInteractive) {}
 
     // Copy assignment - preserves hybrid state
     WebUIContext& operator=(const WebUIContext& other) {
@@ -349,16 +319,11 @@ struct WebUIContext {
             realTime = other.realTime;
             updateInterval = other.updateInterval;
             alwaysInteractive = other.alwaysInteractive;
-            if (other.contextConfig) {
-                contextConfig = std::make_unique<JsonDocument>(*other.contextConfig);
-            } else {
-                contextConfig.reset();
-            }
         }
         return *this;
     }
 
-    // Move constructor and assignment are defaulted (unique_ptr handles move correctly)
+    // Move constructor and assignment are defaulted
     WebUIContext(WebUIContext&&) = default;
     WebUIContext& operator=(WebUIContext&&) = default;
     
@@ -395,14 +360,6 @@ struct WebUIContext {
         return *this;
     }
 
-    WebUIContext& configure(const String& key, const JsonVariant& value) {
-        if (!contextConfig) {
-            contextConfig = std::make_unique<JsonDocument>();
-        }
-        (*contextConfig)[key] = value;
-        return *this;
-    }
-    
     // Static content (const char* / Flash / PROGMEM) — no heap allocation
     WebUIContext& withCustomHtml(const char* html) {
         customHtmlPtr = html;
