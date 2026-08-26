@@ -52,7 +52,7 @@ Worth knowing before a green tick is read for more than it is worth.
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
-| ⚠️ | **The four on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev` |
+| ⚠️ | **The five on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev` |
 | ❌ | **No test runs on hardware in CI.** A host build proves compilation, not behaviour on a board — BUG-4 is what that costs, and STOR-ESP-1 is what a board proves when nobody checks what the suite is actually measuring |
 
 That last line is not a formality. BUG-4, the SNTP server-name use-after-free,
@@ -123,13 +123,24 @@ Unenforced security configurations are the most dangerous class of defect — us
 - **The contract is written down** in `Update_HAL.h`: `abort()` is only
   meaningful before `end()`. That is the sentence whose absence cost two
   releases.
-- **Not verified on hardware.** Proving it needs a firmware image served with a
-  deliberately wrong hash and a reset to confirm the old firmware still boots.
-  The mechanism above is established by reading the two vendored cores — evidence
-  about the code, not about a board.
-- **Test**: `test_ota_sha_mismatch_never_commits` asserts `end()` is never
-  reached, via call counters added to `Update_Stub.h` (commit and discard are
-  otherwise indistinguishable on a host). It fails on the pre-fix ordering.
+- **Verified on hardware** (2026-08-26, `nodemcuv2` on `/dev/ttyUSB0`).
+  `DomoticsCore-OTA/test/test_ota_esp8266/` drives a download through the public
+  path with a synthetic downloader — no network — and reads back the eboot
+  command, which is the only thing that decides what boots next. 3/3 pass. Run
+  against the pre-fix code, **2 of the 3 fail**: after a SHA-256 mismatch a copy
+  command *was* armed (`Expected FALSE Was TRUE`), and so was it after the old
+  `abort()` on a fully-written image. That is SEC-2 reproduced on silicon rather
+  than argued from the core sources, and the reason this suite exists at all —
+  a host build has no bootloader to arm.
+
+  The suite deliberately commits one good image and reads the staged command
+  back, because three tests all asserting "nothing is staged" would pass just as
+  well if staging were impossible. It disarms before asserting, and again in
+  `tearDown()`.
+- **Tests**: on the host, `test_ota_sha_mismatch_never_commits` asserts `end()`
+  is never reached, via call counters added to `Update_Stub.h` (commit and
+  discard are otherwise indistinguishable on a host). It too fails on the pre-fix
+  ordering.
 
 ### SEC-3 — OTA: upload endpoint has no authentication [HIGH]
 
@@ -774,7 +785,8 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   have measured rejected calls and passed for the wrong reason.
 - **Fixed**: the three suites repaired, and a `build-device-tests` job compiles
   all four on every push. It cannot run them — no runner has a board — but a
-  suite that builds cannot rot silently for seven months.
+  suite that builds cannot rot silently for seven months. *(A fifth joined on
+  2026-08-26: `DomoticsCore-OTA`, with the SEC-2 re-fix.)*
 - **Every test now asserts it is measuring something** before it measures:
   a `putString()` must return true or the test fails with "Storage did not open
   — the rest would measure nothing".
