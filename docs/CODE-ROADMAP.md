@@ -544,6 +544,38 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 
 ---
 
+### BUG-29 — MQTT: the publish rate limit silently drops discovery [HIGH]
+
+- **Filed**: 2026-08-26, found on hardware while validating a WaterMeter build
+  against 2.1.1 — an ESP32-D0WD-V3 on a live broker.
+- **File**: `MQTT_impl.h:228-239` (the limiter), `HomeAssistant.h:567-581`
+  (the caller that ignores the result).
+- **Problem**: a device declaring more than ten entities loses the discovery
+  messages for whatever is declared last. `publish()` enforces
+  `config.publishRateLimit` (default 10, tumbling 1 s window) and **discards**
+  anything above it. `publishDiscovery()` sends one config per entity back to
+  back, then the initial states — twelve entities is comfortably past ten in the
+  same second.
+- **Measured**: with 9 sensors and 3 buttons declared in that order, the broker
+  retained 9 `sensor/*/config` and **0** `button/*/config`. The three buttons
+  never reached Home Assistant.
+- **Three things hide it**:
+  - `HomeAssistantComponent` logs `Discovery published` after handing the
+    message over, so the two layers disagree and only MQTT knows the truth;
+  - `publish()` returns `false`, and the discovery path ignores it;
+  - the failure is **order-dependent** — adding one sensor can silently remove
+    an unrelated button.
+- **Fix**: the queue this needs already exists. When disconnected, `publish()`
+  enqueues into `messageQueue` and drains later; when connected but over the
+  limit, it throws the message away instead. Route the rate-limited case into
+  that same queue so a burst drains over the following seconds without changing
+  the sustained rate. And stop logging success for a message the transport
+  rejected.
+- **Also affects production**: any device with more than ~10 entities. The
+  entities go missing rather than break, so it reads as a Home Assistant problem
+  rather than a firmware one.
+- **Tracked publicly** as issue #27.
+
 ## Priority 4: Test Coverage (Constitution II — NON-NEGOTIABLE)
 
 TDD with 100% coverage is a constitutional mandate. These components have critical gaps.
@@ -1123,7 +1155,7 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-7 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 | Multiple | 0C, 0H, 7M (**18 done**; BUG-28 new) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28, BUG-29 | Multiple | 0C, 1H, 7M (**18 done**; BUG-28, BUG-29 new) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 3H, 2M (**TEST-1, TEST-2 done**) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
