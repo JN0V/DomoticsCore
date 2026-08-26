@@ -52,7 +52,7 @@ Worth knowing before a green tick is read for more than it is worth.
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
-| ⚠️ | **The five on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev` |
+| ⚠️ | **The six on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev`. Five are ESP8266; `DomoticsCore-OTA` also carries an `esp32cam` one |
 | ❌ | **No test runs on hardware in CI.** A host build proves compilation, not behaviour on a board — BUG-4 is what that costs, and STOR-ESP-1 is what a board proves when nobody checks what the suite is actually measuring |
 
 That last line is not a formality. BUG-4, the SNTP server-name use-after-free,
@@ -137,6 +137,20 @@ Unenforced security configurations are the most dangerous class of defect — us
   back, because three tests all asserting "nothing is staged" would pass just as
   well if staging were impossible. It disarms before asserting, and again in
   `tearDown()`.
+- **The ESP32 half too** (2026-08-26, ESP32-CAM). `test_ota_esp32/` asserts on
+  `esp_ota_get_boot_partition()`, since on ESP32 the commit *is* the boot
+  partition switch. 6/6 pass; with the fix removed, **3 of the 6 fail** and two
+  of those fail on the partition having moved — a mismatched image really did
+  become what the bootloader would start next.
+
+  **That test only became meaningful after it was rewritten.** It first fed a
+  synthetic payload, and both mismatch tests passed without the fix: the failure
+  was `Could Not Activate The Firmware`, because `esp_ota_set_boot_partition()`
+  verifies the image and ESP-IDF had rejected it on its own. The test was
+  measuring the platform's protection, not ours. Feeding a *valid* image with the
+  wrong hash separates the two — and that is also the real threat model, since
+  ESP-IDF stops a corrupt download but cannot stop a well-formed firmware that is
+  not the one requested.
 - **Tests**: on the host, `test_ota_sha_mismatch_never_commits` asserts `end()`
   is never reached, via call counters added to `Update_Stub.h` (commit and
   discard are otherwise indistinguishable on a host). It too fails on the pre-fix
@@ -214,11 +228,14 @@ Unenforced security configurations are the most dangerous class of defect — us
 - **Also fixed**: `OTAWebUI` discarded `beginUpload()`'s return value, so a
   refusal surfaced one chunk later as the misleading "Upload not active". Its
   `authFailed` flag is now `rejected` — auth was no longer the only way in.
-- **Verified on hardware** (`nodemcuv2`): 6/6, and with SEC-7 removed the two new
-  tests fail at `copyCommandStaged()` — a mismatched **upload** armed the
-  bootloader, exactly as a mismatched download did before SEC-2. On the host,
-  4 more tests via the `Update_Stub.h` call counters, including one asserting
-  that a `requireUploadHash` refusal never reaches `HAL::OTAUpdate::begin()`.
+- **Verified on both platforms** (2026-08-26). `nodemcuv2`: 6/6, and with SEC-7
+  removed the two new tests fail at `copyCommandStaged()` — a mismatched
+  **upload** armed the bootloader, exactly as a mismatched download did before
+  SEC-2. ESP32-CAM: 6/6, and removing SEC-7 moves the boot partition to an
+  unverified upload and lets `requireUploadHash` accept an upload with no digest.
+  On the host, 4 more tests via the `Update_Stub.h` call counters, including one
+  asserting that a `requireUploadHash` refusal never reaches
+  `HAL::OTAUpdate::begin()`.
 
 ---
 

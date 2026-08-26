@@ -140,6 +140,36 @@ Idle --> Checking --> Downloading --> RebootPending (or Idle)
 
 ---
 
+## Partition Requirements (ESP32)
+
+OTA needs **two application slots**. It writes the new firmware into the one that
+is not running, then points the bootloader at it. With a single slot there is
+nowhere to write.
+
+A single-slot table does not fail politely. `esp_ota_get_next_update_partition()`
+returns **the running partition** rather than `NULL` — there is no other OTA slot
+to cycle to — so `Update` tries to erase the code it is executing from, and
+ESP-IDF calls `abort()` inside `spi_flash` with no message. What you see is a
+panic and a backtrace several frames deep in flash-driver internals, with nothing
+pointing at the partition table.
+
+Several stock tables are single-slot, `huge_app.csv` among them, and some boards
+select one by default — the `esp32cam` board does. Check before assuming:
+
+```ini
+board_build.partitions = default.csv     ; app0 + app1, 1.25 MB each
+; or min_spiffs.csv                      ; app0 + app1, 1.92 MB each
+```
+
+The slots must be equal in size; OTA does not dictate what that size is. If you
+are close to the ceiling, `min_spiffs.csv` buys the most room while keeping two
+slots — see CI-9 in `docs/CODE-ROADMAP.md`.
+
+`DomoticsCore-OTA/test/test_ota_esp32/` asserts this as its first test, so a
+misconfigured table reports itself instead of panicking later.
+
+---
+
 ## Update Sources
 
 ### 1. Manifest-Based Update

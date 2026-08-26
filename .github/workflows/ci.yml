@@ -160,11 +160,12 @@ jobs:
   # Compiling is most of what was missing. A suite that builds can still be
   # wrong, but it cannot rot silently for seven months.
   #
-  # OTA joined on 2026-08-26 with the SEC-2 re-fix. It is the one suite here
-  # whose subject cannot be tested any other way: SEC-2 is a claim about what the
-  # bootloader does at the next reset, and a host build has no bootloader. It ran
-  # on a nodemcuv2 before landing — 3/3, and 2 of the 3 fail against the pre-fix
-  # code — but CI still only compiles it, like the rest.
+  # OTA joined on 2026-08-26 with the SEC-2 re-fix, on both platforms. It is the
+  # one subject here that cannot be tested any other way: SEC-2 and SEC-7 are
+  # claims about what boots next, and a host build has nothing that boots. Both
+  # ran before landing — 6/6 on a nodemcuv2 and 6/6 on an ESP32-CAM, each with
+  # 2-3 of the 6 failing against the pre-fix code — but CI still only compiles
+  # them, like the rest.
   #
   # The five are listed rather than discovered, unlike the native job. Discovery
   # over "declares esp8266dev and has a test/ directory" also matches
@@ -216,6 +217,16 @@ jobs:
               || failed="${failed} ${project}"
             echo "::endgroup::"
           done
+
+          # The ESP32 OTA suite is the one suite here that is not an ESP8266
+          # target. It has to exist separately because the commit it observes is
+          # a boot-partition switch, not an eboot command, so nothing about the
+          # ESP8266 suite transfers.
+          echo "::group::DomoticsCore-OTA (esp32cam)"
+          (cd DomoticsCore-OTA && pio test -e esp32cam --without-uploading --without-testing) \
+            || failed="${failed} DomoticsCore-OTA(esp32cam)"
+          echo "::endgroup::"
+
           if [ -n "$failed" ]; then
             echo "::error::on-device suites failed to build:${failed}"
             exit 1
