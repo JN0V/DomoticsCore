@@ -412,6 +412,34 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 - **Problem**: Key+colon+value written in one iteration. Partial value writes with small buffer cause malformed JSON because `optionIndex` not incremented but key already consumed.
 - **Fix**: Split key, colon, value into separate states for correct pause/resume.
 
+### BUG-28 — WebUI: Multiselect value resumes from a destroyed `String` [MEDIUM]
+
+- **Filed**: 2026-08-26, found while investigating DC-11. Not fixed there — it
+  sits in the serializer, which is where marianorenzi's `Table` work will land.
+  (BUG-27 is reserved for his separate WebUI report.)
+- **File**: `StreamingContextSerializer.h` — `writeLiteral` at :431-449, the
+  Multiselect value path at :700-708.
+- **Problem**: `writeLiteral` caches its `str` argument in the member
+  `currentLiteral` so a literal can resume across `write()` calls, keyed on the
+  pointer comparing equal. The Multiselect branch builds `String
+  serializedValues` **local to the `case` block** and passes
+  `serializedValues.c_str()`. If the output buffer fills mid-literal, that
+  `String` is destroyed before the next call, leaving `currentLiteral`
+  dangling. On the next call the local is rebuilt, usually at a different
+  address: the pointers compare unequal, `literalOffset` resets to 0, and the
+  array is re-emitted from the start **after part of it was already written** —
+  malformed JSON, and the dashboard fails to render the whole schema. When the
+  rebuilt `String` happens to reuse the same address the resume is correct only
+  by accident, and the equality test itself is a comparison against an
+  indeterminate pointer.
+- **Note**: this is the same failure mode as BUG-26 in the same file — a
+  pause/resume boundary the state machine does not actually survive — which is
+  why it is rated alongside it. No test forces a chunk boundary inside a
+  multiselect value; the fix needs one.
+- **Fix**: Hold the serialized text in a serializer **member** with a lifetime
+  spanning the pause, not in a local, and clear it when the field completes.
+  **Any future dynamic schema key must do the same** — see DC-12.
+
 ---
 
 ## Priority 4: Test Coverage (Constitution II — NON-NEGOTIABLE)
@@ -698,6 +726,34 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   one level too shallow: they proved an operation happened, not that the thing
   being measured was the thing under test. The WebUI suites pass, all nine cases.
 
+### CI-13 — `clean_examples.py` does not know about the `test/` projects [MEDIUM]
+
+- **Filed**: 2026-08-26, after a FullStack cross-compile recursed to 4.3 GB and
+  was killed. Cleaning every `.pio` in the tree recovered 6.8 GB.
+- **File**: `clean_examples.py:68-87`
+- **Problem**: the script exists precisely to stop recursive `.pio` nesting, and
+  every example wires it as `extra_scripts = pre:../../../clean_examples.py`. It
+  enumerates two fixed depths — `DomoticsCore-*/.pio` and
+  `DomoticsCore-*/examples/*/.pio` — and never looks under `test/`. But
+  `DomoticsCore-WebUI/test/test_schema_memory` and
+  `.../test_streaming_serializer` are **PlatformIO projects in their own right**,
+  each generating a `.pio` the script cannot see. When PlatformIO resolves
+  `file://../../../DomoticsCore-WebUI`, that unseen `.pio` is copied in with the
+  source, and its own `libdeps` carry more copies. The header comment already
+  records having observed 12,000+ nested directories from this mechanism.
+- **Why the fixed depths are right**: the script forbids `rglob('.pio')` on
+  purpose — it would match `.pio` directories inside the *current* project's own
+  `libdeps`, and deleting those corrupts `.sconsign312`. The design is sound; the
+  enumeration is simply incomplete.
+- **Fix**: add a third fixed-depth pass over `DomoticsCore-*/test/*/.pio`,
+  keeping the `_safe_to_clean` guard and without introducing `rglob`. Discovering
+  the projects from tracked `platformio.ini` files, as the CI job does, would not
+  drift the way a hard-coded list does.
+- **The irony worth recording**: `test_streaming_serializer` is the project CI-1's
+  discovery-based job found — "a native project nested a level below the
+  components, that nothing had ever run". It was taught to the test runner and
+  never to the cleanup.
+
 ### CI-11 — HomeAssistant declares an ESP8266 test env with no ESP8266 tests [MEDIUM]
 
 - **Filed**: 2026-08-23, while writing the CI-10 job.
@@ -806,7 +862,58 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 | DC-8 | WebUI | Pointless `doc.shrinkToFit()` after serialization is complete | Remove |
 | DC-9 | MQTT | `topicMatches()` allocates 2 vectors per call — use char* parsing | Refactor to zero-alloc |
 | DC-10 | WebUI | `const_cast` in `onComponentsReady` — change API to accept non-const ref | Fix signature |
+| DC-11 | WebUI | `WebUIField::configure()` and `WebUIContext::configure()` allocate a `JsonDocument` per call — no caller in the tree, and nothing serializes it | **DONE** (2026-08-26) — deleted, see below |
+| DC-12 | WebUI | `presentation` is serialized on every context (`StreamingContextSerializer.h:233`, `WebUI.h:825`) and `app.js` never reads it | Honour it in the frontend — frontend work, sequenced behind marianorenzi; see below |
 | PERSIST-1 | System | `loadWifiConfig()` AP-SSID generation appears unreachable | Investigate, then remove or move — see below |
+
+### DC-11 and DC-12 — the WebUI extension channel, decided [MEDIUM] — **DC-11 done, DC-12 open**
+
+- **Filed**: 2026-08-23. Kept together because they are the same hole seen from
+  both ends: the C++ side can attach arbitrary JSON to a field or a context and
+  never sends it, while the wire carries a presentation hint the browser
+  ignores. `WebUIPresentation::Table` is one of the values it ignores.
+- **Decision (2026-08-26): explicit schema keys, not a generic JSON blob.** The
+  question was whether `configure()` becomes the extension channel — serialize
+  it, and column definitions, status severity maps and chart options all travel
+  the same way — or whether the schema grows explicit keys per field type and
+  `configure()` goes. It goes. A generic blob costs an unbounded `JsonDocument`
+  per field on a platform with 80 KB of RAM, and every field or context copy
+  deep-copies it (Constitution IV and XIV). Explicit keys cost what they carry
+  and no more.
+- **DC-11 is closed by that decision.** Both `configure()` methods, the
+  `WebUIField::config` and `WebUIContext::contextConfig` members, and the four
+  copy-constructor / copy-assignment branches that deep-copied them are removed
+  from `IWebUIProvider.h`. The sweep before deleting found zero call sites in
+  production, examples, tests or docs code, and no serializer read either
+  member — so the emitted JSON is byte-identical. **This lot removed the generic
+  half only; it did not design the explicit half.**
+- **What it actually saved, stated honestly.** Because nothing ever called
+  `configure()`, both pointers were always null: no `JsonDocument` was ever
+  allocated in shipped firmware, and there was no leak. The realised saving is
+  the pointer itself — one per field and one per context, 4 bytes each on a
+  32-bit target (measured on the host: `sizeof(WebUIField)` 368 → 360,
+  `sizeof(WebUIContext)` 400 → 392) — plus four dead copy branches. The larger
+  point is the one the decision settles: the cost the design *would* have had
+  once used, not a cost it was already imposing.
+- **This is a public API removal, and the sweep that justified it was too
+  narrow.** "No caller in this repository" is not the same as "no caller", for a
+  library published on the PlatformIO Registry that people install by version.
+  Known downstream consumers were checked before landing and none calls it — but
+  that check cannot be exhaustive, and its result is not what makes the change
+  safe to ship quietly. **Record it as breaking for the release that ships this
+  series**: removing a public method from a public struct requires a MAJOR bump,
+  whether or not a caller can be enumerated today.
+- **DC-12 stays open, and its fix is frontend work.** The backend already sends
+  `presentation` correctly; the defect is that `app.js` ignores it. That is a
+  change to `webui_src/app.js`, sequenced **behind marianorenzi's in-flight
+  change to that same file** — he is writing a `Table` field for the provider
+  status report (Provider / IP / Status), with the columns in the schema and
+  complete rows in the value. Do not touch `app.js` ahead of him.
+- **Constraint carried forward for whoever adds the explicit keys**:
+  `WebUIField::value` is a `String`, so table rows would arrive as JSON inside a
+  string unless the serializer learns to emit a raw array for that field type.
+  See **BUG-28** — a dynamic schema key must hold its serialized text in a
+  serializer member, never in a local, or the chunked writer will dangle.
 
 ### PERSIST-1 — System: the device-name AP SSID is never generated [MEDIUM]
 
@@ -913,15 +1020,15 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-6 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-2, SEC-3 done**) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
-| 3. Code Safety | BUG-1 to BUG-26 | Multiple | 0C, 0H, 6M (**18 done**) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 | Multiple | 0C, 0H, 7M (**18 done**; BUG-28 new) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 3H, 2M (**TEST-1, TEST-2 done**) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
-| 8. CI/Infrastructure | CI-1 to CI-12 | II, XII | 0C, 0H, 3M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 new) |
-| 9. Dead Code | DC-1 to DC-10, PERSIST-1 | IV (YAGNI) | 0C, 0H, 6M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8 done**; PERSIST-1 new) |
+| 8. CI/Infrastructure | CI-1 to CI-13 | II, XII | 0C, 0H, 4M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new) |
+| 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 31L (**LO-11 done**) |
-| **Total** | **104 items** | | **0C, 8H, 25M, 33L** (48 resolved) |
+| **Total** | **108 items** | | **0C, 8H, 28M, 33L** (49 resolved) |
 
 ---
 

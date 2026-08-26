@@ -160,7 +160,6 @@ Describes where and how a piece of component UI appears in the dashboard.
 | `customHtml` / `customHtmlPtr` | `String` / `const char*` | Custom HTML snippet (hybrid). |
 | `customCss` / `customCssPtr` | `String` / `const char*` | Custom CSS snippet (hybrid). |
 | `customJs` / `customJsPtr` | `String` / `const char*` | Custom JS snippet (hybrid). |
-| `contextConfig` | `std::unique_ptr<JsonDocument>` | Optional custom JSON configuration. |
 
 ### Fluent Builder Methods
 
@@ -171,7 +170,6 @@ WebUIContext& withAPI(const String& ep);
 WebUIContext& withRealTime(int interval = 5000);
 WebUIContext& withAlwaysInteractive(bool interactive = true);
 WebUIContext& withPriority(int p);
-WebUIContext& configure(const String& key, const JsonVariant& value);
 WebUIContext& withCustomHtml(const char* html);      // static/PROGMEM
 WebUIContext& withCustomCss(const char* css);         // static/PROGMEM
 WebUIContext& withCustomJs(const char* js);           // static/PROGMEM
@@ -228,7 +226,6 @@ Describes a single data field or control within a context.
 | `options` | `std::vector<String>` | Option values for Select fields. |
 | `optionLabels` | `std::map<String, String>` | Value-to-label mapping for options. |
 | `endpoint` / `endpointPtr` | `String` / `const char*` | API endpoint for field updates (hybrid). |
-| `config` | `std::unique_ptr<JsonDocument>` | Optional custom JSON configuration. |
 
 ### Constructors
 
@@ -249,7 +246,6 @@ WebUIField& range(float min, float max);
 WebUIField& choices(const std::vector<String>& opts);
 WebUIField& addOption(const String& value, const String& label);
 WebUIField& api(const char* endpoint);
-WebUIField& configure(const String& key, const JsonVariant& val);
 ```
 
 ---
