@@ -841,17 +841,99 @@ void test_mqtt_subscribe_unlimited_when_zero() {
 }
 
 void test_mqtt_rate_limit_enforced() {
+    // The limit governs what goes out on the wire, so it is only observable
+    // while connected. Offline, every message is queued and bounded by
+    // maxQueueSize instead — nothing is being sent, so there is no rate to cap.
+    //
+    // This test used to assert the opposite: that the third publish returned
+    // false while disconnected. That was the discard BUG-29 is about, and the
+    // counter it relied on advanced on queueing, charging each deferred message
+    // twice — once on the way in, once when the queue drained it.
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.publishRateLimit = 3;
+    cfg.maxQueueSize = 0;  // unlimited queue — isolate the rate limit
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+    TEST_ASSERT_TRUE(mqtt.isConnected());
+
+    const uint32_t sentBefore = mqtt.getStatistics().publishCount;
+    for (int i = 0; i < 8; i++) {
+        TEST_ASSERT_TRUE(mqtt.publish("topic", String(i)));
+    }
+
+    // Exactly the limit reached the broker...
+    TEST_ASSERT_EQUAL_UINT32(3, mqtt.getStatistics().publishCount - sentBefore);
+    // ...and the rest is waiting, not gone. This is BUG-29: the five would have
+    // been discarded, which is how a device lost every entity it declared last.
+    TEST_ASSERT_EQUAL_UINT32(5, mqtt.getQueuedMessageCount());
+
+    mqtt.shutdown();
+    HAL::WiFiImpl::setConnectedForTest(false);
+}
+
+void test_mqtt_rate_limited_messages_drain_next_window() {
+    // Deferring is only useful if the queue actually moves. processMessageQueue()
+    // runs on every connected loop(), so the backlog leaves over the following
+    // seconds without changing the sustained rate.
+    //
+    // The only slow test in this suite: native time is real time
+    // (Platform_Stub.h uses steady_clock), so the tumbling window cannot be
+    // fast-forwarded.
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.publishRateLimit = 3;
+    cfg.maxQueueSize = 0;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+
+    for (int i = 0; i < 8; i++) mqtt.publish("topic", String(i));
+    TEST_ASSERT_EQUAL_UINT32(5, mqtt.getQueuedMessageCount());
+
+    HAL::Platform::delayMs(1100);  // let the window turn over
+    mqtt.loop();
+
+    // Three more go out, and the loop stops at the limit rather than re-queueing
+    // what it is iterating over.
+    TEST_ASSERT_EQUAL_UINT32(2, mqtt.getQueuedMessageCount());
+
+    HAL::Platform::delayMs(1100);
+    mqtt.loop();
+    TEST_ASSERT_EQUAL_UINT32(0, mqtt.getQueuedMessageCount());
+
+    mqtt.shutdown();
+    HAL::WiFiImpl::setConnectedForTest(false);
+}
+
+void test_mqtt_rate_limited_queue_still_bounded() {
+    // Deferring must not turn a bounded queue into an unbounded one. Overflow is
+    // still a loss, and still counted.
     MQTTConfig cfg;
     cfg.broker = "test.local";
     cfg.publishRateLimit = 2;
-    cfg.maxQueueSize = 0; // unlimited queue
+    cfg.maxQueueSize = 3;
     MQTTComponent mqtt(cfg);
     mqtt.begin();
-    // Not connected, but rate limit is checked before queue
-    TEST_ASSERT_TRUE(mqtt.publish("topic", "msg1"));
-    TEST_ASSERT_TRUE(mqtt.publish("topic", "msg2"));
-    TEST_ASSERT_FALSE(mqtt.publish("topic", "msg3"));
+
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+
+    const uint32_t errorsBefore = mqtt.getStatistics().publishErrors;
+    // 2 sent, next 3 queued, the rest refused.
+    for (int i = 0; i < 5; i++) TEST_ASSERT_TRUE(mqtt.publish("topic", String(i)));
+    TEST_ASSERT_FALSE(mqtt.publish("topic", "overflow"));
+
+    TEST_ASSERT_EQUAL_UINT32(3, mqtt.getQueuedMessageCount());
+    TEST_ASSERT_GREATER_THAN_UINT32(errorsBefore, mqtt.getStatistics().publishErrors);
+
     mqtt.shutdown();
+    HAL::WiFiImpl::setConnectedForTest(false);
 }
 
 void test_mqtt_rate_limit_unlimited_when_zero() {
@@ -944,6 +1026,10 @@ int main() {
     RUN_TEST(test_mqtt_subscribe_unlimited_when_zero);
     RUN_TEST(test_mqtt_rate_limit_enforced);
     RUN_TEST(test_mqtt_rate_limit_unlimited_when_zero);
+
+    // BUG-29 — rate-limited messages are deferred, not discarded
+    RUN_TEST(test_mqtt_rate_limited_messages_drain_next_window);
+    RUN_TEST(test_mqtt_rate_limited_queue_still_bounded);
 
     return UNITY_END();
 }

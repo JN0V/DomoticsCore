@@ -410,6 +410,21 @@ private:
     bool connectInternal();
     void handleReconnection();
     void processMessageQueue();
+    /**
+     * @brief Advance the tumbling window and report whether a publish may go out now.
+     *
+     * Has a side effect: resets the counter once the current second has elapsed.
+     * Callers that only want to look must accept that.
+     */
+    bool rateLimitAllowsPublish();
+    /**
+     * @brief Append to messageQueue unless it is full.
+     *
+     * Shared by both reasons a message gets deferred — offline, or over the rate
+     * limit (BUG-29). Does not touch publishCountThisSecond: nothing has gone out
+     * on the wire yet, and counting here would count the message twice.
+     */
+    bool enqueueMessage(const String& topic, const String& payload, uint8_t qos, bool retain);
     void handleIncomingMessage(char* topic, byte* payload, unsigned int length);
     void updateStatistics();
     String generateClientId();
