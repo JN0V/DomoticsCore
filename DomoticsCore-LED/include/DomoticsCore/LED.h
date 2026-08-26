@@ -93,7 +93,7 @@ public:
     LEDComponent() : updateTimer(50) {  // 20Hz update rate
         // Set component metadata
         metadata.name = "LED";
-        metadata.version = "1.4.1";
+        metadata.version = "1.5.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Multi-LED management with PWM control and effects";
         metadata.category = "Hardware";

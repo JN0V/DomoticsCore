@@ -31,10 +31,17 @@ versions may sit still while fixes land.
 | System | TEST-1, ARCH-3 | **Merged** — PR #18, 2026-08-23 |
 | LED | BUG-19, DC-5, TEST-2, LO-11 | PR #17 — chosen for having no file in common with `esp32-ethernet` |
 | OTA | SEC-2 | 2026-08-26 — reopened: the v2.0.1 fix was inert on both cores. Raised SEC-7 |
+| OTA | SEC-7 | **Merged** — PR #28, 2026-08-26, with the ESP32 suite in PR #29 |
+| MQTT | BUG-29 | **Merged** — PR #30, 2026-08-26, filed and fixed the same day |
 
-The first series closed with v2.1.0 and v2.1.1; the lots above resume from what
-the roadmap still lists open. The no-version-bump rule still holds — component
-versions and the CHANGELOG move once, when a series is ready to ship.
+The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
+(2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
+both an ESP8266 and an ESP32. Six components move; `System` and `Storage` do not,
+having gained only a comment and a test respectively.
+
+The no-version-bump rule held throughout — component versions and the CHANGELOG
+moved once, here, at the end. It is why OTA sat at 1.5.0 while SEC-2 and SEC-7
+landed.
 
 `main` requires seven checks: `test-install`, `check-versions`,
 `Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
