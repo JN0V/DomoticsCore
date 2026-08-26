@@ -19,9 +19,12 @@ jobs:
         with:
           python-version: '3.10'
 
+      # intelhex is a dependency of the esptool that espressif32 pulls in, and
+      # pip install platformio does not supply it. This job builds both declared
+      # platforms, ESP32 included, and has no cache to hide behind.
       - name: Install PlatformIO
         run: |
-          pip install platformio
+          pip install platformio intelhex
 
       - name: Create test project
         env:

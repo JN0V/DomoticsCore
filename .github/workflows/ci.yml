@@ -136,8 +136,13 @@ jobs:
           key: pio-${{ matrix.target }}-6.1.19-${{ hashFiles('DomoticsCore-System/examples/FullStack/platformio.ini') }}
           restore-keys: pio-${{ matrix.target }}-
 
+      # intelhex is a dependency of the esptool that espressif32 pulls in, and
+      # `pip install platformio` does not bring it. Nothing here fails while a
+      # warm cache still holds a working toolchain, which is exactly why it is
+      # worth pinning down: the on-device job broke the first time its cache key
+      # changed and it had to install espressif32 from scratch.
       - name: Install PlatformIO
-        run: pip install platformio==6.1.19
+        run: pip install platformio==6.1.19 intelhex
 
       - name: Build FullStack example
         working-directory: DomoticsCore-System/examples/FullStack
@@ -192,8 +197,10 @@ jobs:
           key: pio-device-tests-6.1.19-${{ hashFiles('DomoticsCore-*/platformio.ini') }}
           restore-keys: pio-device-tests-
 
+      # See the note on the build job: espressif32's esptool needs intelhex, and
+      # pip install platformio does not supply it.
       - name: Install PlatformIO
-        run: pip install platformio==6.1.19
+        run: pip install platformio==6.1.19 intelhex
 
       - name: Build every on-device suite
         run: |
