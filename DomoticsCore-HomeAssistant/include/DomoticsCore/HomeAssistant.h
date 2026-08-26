@@ -578,7 +578,11 @@ private:
         DLOG_D(LOG_HA, "  Payload: %s", payload.c_str());
         
         mqttPublish(topic, payload, 0, config.retainDiscovery);
-        DLOG_I(LOG_HA, "  Discovery published");
+        // Handed to the EventBus, not published: mqttPublish() emits, and MQTT
+        // consumes it later. This component never learns the outcome, so saying
+        // "published" claimed something it cannot know — and did so even while
+        // the rate limiter was silently discarding these very messages (BUG-29).
+        DLOG_I(LOG_HA, "  Discovery queued for publish");
     }
     
     /**

@@ -219,40 +219,59 @@ inline String MQTTComponent::getStateString() const {
 }
 
 // Publishing
+inline bool MQTTComponent::rateLimitAllowsPublish() {
+    if (config.publishRateLimit == 0) return true;  // 0 = unlimited
+
+    // Tumbling window: reset the counter once the current second has elapsed.
+    unsigned long now = HAL::getMillis();
+    if (now - lastPublishTime >= 1000) {
+        publishCountThisSecond = 0;
+        lastPublishTime = now;
+    }
+    return publishCountThisSecond < config.publishRateLimit;
+}
+
+inline bool MQTTComponent::enqueueMessage(const String& topic, const String& payload,
+                                          uint8_t qos, bool retain) {
+    // Queue size guard (0 = unlimited)
+    if (config.maxQueueSize > 0 && messageQueue.size() >= config.maxQueueSize) {
+        DLOG_W(LOG_MQTT, "Message queue full (%u/%u), dropping message for '%s'",
+               (unsigned)messageQueue.size(), config.maxQueueSize, topic.c_str());
+        stats.publishErrors++;
+        return false;
+    }
+    messageQueue.push_back({topic, payload, qos, retain});
+    return true;
+}
+
 inline bool MQTTComponent::publish(const String& topic, const String& payload, uint8_t qos, bool retain) {
     if (qos > 2) {
         DLOG_W(LOG_MQTT, "Invalid QoS %u for publish, clamping to 2", qos);
         qos = 2;
     }
-    // Rate limit guard (tumbling window: reset counter every 1000ms)
-    if (config.publishRateLimit > 0) {
-        unsigned long now = HAL::getMillis();
-        if (now - lastPublishTime >= 1000) {
-            publishCountThisSecond = 0;
-            lastPublishTime = now;
-        }
-        if (publishCountThisSecond >= config.publishRateLimit) {
-            DLOG_W(LOG_MQTT, "Publish rate limit reached (%u/s), dropping message for '%s'",
-                   config.publishRateLimit, topic.c_str());
-            stats.publishErrors++;
-            return false;
-        }
+
+    // BUG-29: over the rate limit, defer rather than discard. This used to drop
+    // the message, which cost a device its last entities: publishDiscovery()
+    // sends one config per entity back to back, so anything past the tenth in the
+    // same second vanished. Order-dependent, and silent — adding a sensor could
+    // remove an unrelated button, and Home Assistant simply never saw it.
+    //
+    // The queue that makes this work is the one the offline path already uses,
+    // and processMessageQueue() already drains it on every connected loop().
+    if (!rateLimitAllowsPublish()) {
+        DLOG_D(LOG_MQTT, "Publish rate limit reached (%u/s), queueing '%s' for the next window",
+               config.publishRateLimit, topic.c_str());
+        return enqueueMessage(topic, payload, qos, retain);
     }
 
     if (!isConnected()) {
-        // Queue size guard (0 = unlimited)
-        if (config.maxQueueSize > 0 && messageQueue.size() >= config.maxQueueSize) {
-            DLOG_W(LOG_MQTT, "Message queue full (%u/%u), dropping message for '%s'",
-                   (unsigned)messageQueue.size(), config.maxQueueSize, topic.c_str());
-            stats.publishErrors++;
-            return false;
-        }
-        // Queue message for later if offline
-        messageQueue.push_back({topic, payload, qos, retain});
-        publishCountThisSecond++;
-        return true;
+        // Queue message for later if offline. Note this deliberately does not
+        // advance publishCountThisSecond — nothing has gone out on the wire, and
+        // counting here would charge the message twice, once now and once when
+        // the queue actually drains it.
+        return enqueueMessage(topic, payload, qos, retain);
     }
-    
+
     DLOG_D(LOG_MQTT, "Publishing to topic '%s' (QoS %d, retain %s), size: %d bytes", 
            topic.c_str(), qos, retain ? "true" : "false", payload.length());
     
@@ -498,6 +517,13 @@ inline void MQTTComponent::processMessageQueue() {
     bool erased = false;
     auto it = messageQueue.begin();
     while (it != messageQueue.end() && isConnected()) {
+        // Check the limit here rather than letting publish() discover it. Since
+        // BUG-29, publish() defers instead of dropping, so calling it while over
+        // the limit would push_back into the very vector being iterated —
+        // invalidating `it` and looping over what it just re-queued. Stop
+        // instead; the next loop() runs in a fresh window.
+        if (!rateLimitAllowsPublish()) break;
+
         if (publish(it->topic, it->payload, it->qos, it->retain)) {
             it = messageQueue.erase(it);
             erased = true;
