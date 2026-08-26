@@ -41,6 +41,15 @@ inline bool end(bool evenIfRemaining = false) {
     return Update.end(evenIfRemaining);
 }
 
+/**
+ * @brief Discard an update that is still in flight.
+ *
+ * Only meaningful before end() — see the contract in Update_HAL.h. Update.abort()
+ * resets in-memory state; the partition is left unbootable because Update stashes
+ * the image's first 16 bytes until _verifyEnd() writes them. After a successful
+ * end(true) there is nothing to abort: esp_ota_set_boot_partition() has run and
+ * this call cannot take it back.
+ */
 inline void abort() {
     Update.abort();
 }

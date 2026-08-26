@@ -487,29 +487,33 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
         return false;
     }
 
-    if (!HAL::OTAUpdate::end(true)) {
-        lastError = HAL::OTAUpdate::errorString();
-        HAL::OTAUpdate::abort();
-        shaCtx.abort();
-        transition(State::Error, lastError);
-        return false;
-    }
-
+    // Verify BEFORE committing. end(true) is the point of no return — it switches
+    // the ESP32 boot partition and stages the ESP8266 eboot copy — and no Arduino
+    // core lets the application undo it. An image that fails its hash must never
+    // reach that call. See the abort()-before-end() contract in Update_HAL.h.
+    // finish() releases the hash context on every platform, so the error paths
+    // below need no shaCtx.abort() — only the download failure above, which
+    // returns before the digest is ever finalized.
     uint8_t digest[32];
     shaCtx.finish(digest);
 
-    if (!expectedSha256.isEmpty()) {
-        if (!verifySha256(digest, expectedSha256)) {
-            lastError = "SHA256 mismatch";
-            HAL::OTAUpdate::abort();  // Rollback corrupted firmware from OTA partition
-            transition(State::Error, lastError);
-            publishStatusEvent(DomoticsCore::OTAEvents::EVENT_ERROR, [this](JsonDocument& doc){
-                doc["success"] = false;
-                doc["error"] = lastError.c_str();
-                doc["source"] = "download";
-            }, false);
-            return false;
-        }
+    if (!expectedSha256.isEmpty() && !verifySha256(digest, expectedSha256)) {
+        lastError = "SHA256 mismatch";
+        HAL::OTAUpdate::abort();
+        transition(State::Error, lastError);
+        publishStatusEvent(DomoticsCore::OTAEvents::EVENT_ERROR, [this](JsonDocument& doc){
+            doc["success"] = false;
+            doc["error"] = lastError.c_str();
+            doc["source"] = "download";
+        }, false);
+        return false;
+    }
+
+    if (!HAL::OTAUpdate::end(true)) {
+        lastError = HAL::OTAUpdate::errorString();
+        HAL::OTAUpdate::abort();
+        transition(State::Error, lastError);
+        return false;
     }
 
     finalizeUpdateOperation("download", config.autoReboot);
