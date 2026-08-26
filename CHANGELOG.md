@@ -26,6 +26,80 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.2.0] - 2026-08-26
+
+> **This release removes one public symbol and changes the behaviour of another,
+> and ships as a minor release.** The same departure 2.1.0 took, recorded here
+> for the same reason.
+>
+> `WebUIComponent::configure()` is gone. Like seven of the eight symbols 2.1.0
+> removed, no code path read it — the break is at compile time and it is loud.
+>
+> The one worth reading twice does not break compilation at all.
+> `MQTTComponent::publish()` **no longer returns `false` when the rate limit is
+> reached**; it queues the message and returns `true`. Code that inspected that
+> return to detect a dropped publish still compiles, still runs, and now never
+> sees a drop — because there are no longer any. That is the correct behaviour,
+> and it is why BUG-29 existed, but a caller counting rejections will silently
+> count zero.
+>
+> `publishRateLimit` also no longer applies while disconnected. Offline,
+> `maxQueueSize` is the bound; the limit governs what goes on the wire.
+
+### Security
+
+**SEC-2 — OTA: a firmware whose SHA-256 did not match was left bootable.**
+
+The fix recorded as resolved in v2.0.1 did nothing, on either platform, for two
+releases. It called `abort()` *after* `HAL::OTAUpdate::end(true)`, and `end()` is
+the commit: on ESP32 it has already called `esp_ota_set_boot_partition()`, on
+ESP8266 it has already staged an eboot copy over the running sketch. Neither
+Arduino core lets an application undo that. The component reported `State::Error`
+and skipped its own reboot, so nothing looked wrong — until any watchdog reset or
+power cycle.
+
+Verification now happens **before** the commit, so a rejected image is never made
+bootable. Reproduced on hardware both ways: on a `nodemcuv2` and on an ESP32-CAM,
+the pre-fix code really does arm the bootloader with a mismatched image.
+
+**SEC-7 — OTA: the upload path had no integrity check at all.**
+
+`finalizeUpload()` committed whatever arrived. SEC-3 authenticated the endpoint,
+which stops a stranger pushing firmware, but did nothing about a corrupt transfer
+from a legitimate one.
+
+`beginUpload()` now takes an optional expected SHA-256 — supplied as an
+`X-Firmware-SHA256` header or a `?sha256=` query parameter — and verifies it
+before the commit. Set `OTAConfig::requireUploadHash` to refuse uploads that
+carry none; note that this also rejects the built-in browser upload form, which
+cannot send one.
+
+### Fixed
+
+- **MQTT (BUG-29): the publish rate limit silently discarded discovery.** A
+  device declaring 9 sensors and 3 buttons left 9 sensor configs retained on the
+  broker and none of the buttons. Rate-limited messages are now deferred into the
+  queue that already existed and drained over the following seconds. The failure
+  was order-dependent and silent: adding one sensor could remove an unrelated
+  button.
+- **LED (BUG-19): LEDs added after `begin()` were never driven.**
+- **OTA**: the ESP8266 HAL's `abort()` no longer commits the update it was asked
+  to discard once every announced byte has been written.
+
+### Changed
+
+- `WebUIComponent::configure()` removed — see the note above.
+- `HomeAssistantComponent` no longer logs `Discovery published`. It emits on the
+  EventBus and never learns the outcome, so it now says what it actually did.
+
+### Testing
+
+- The four ESP8266 on-device suites, unrunnable for months, were repaired and run
+  on hardware for the first time. OTA adds a fifth, and an ESP32 suite a sixth.
+- **715 native test cases** across 13 projects, up from 567 at v2.1.0.
+- STOR-ESP-1 was withdrawn: the suite measured an undrained EventBus and charged
+  it to Storage.
+
 ## [2.1.1] - 2026-08-23
 
 ### Fixed
