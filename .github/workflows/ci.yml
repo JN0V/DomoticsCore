@@ -160,7 +160,13 @@ jobs:
   # Compiling is most of what was missing. A suite that builds can still be
   # wrong, but it cannot rot silently for seven months.
   #
-  # The four are listed rather than discovered, unlike the native job. Discovery
+  # OTA joined on 2026-08-26 with the SEC-2 re-fix. It is the one suite here
+  # whose subject cannot be tested any other way: SEC-2 is a claim about what the
+  # bootloader does at the next reset, and a host build has no bootloader. It ran
+  # on a nodemcuv2 before landing — 3/3, and 2 of the 3 fail against the pre-fix
+  # code — but CI still only compiles it, like the rest.
+  #
+  # The five are listed rather than discovered, unlike the native job. Discovery
   # over "declares esp8266dev and has a test/ directory" also matches
   # DomoticsCore-HomeAssistant, whose esp8266dev environment carries no ESP8266
   # suite and no test_filter, so pio cross-compiles its native suites and fails
@@ -195,6 +201,7 @@ jobs:
             DomoticsCore-WebUI
             DomoticsCore-WebUI/test/test_schema_memory
             DomoticsCore-System/examples/FullStack
+            DomoticsCore-OTA
           "
           failed=""
           for project in $projects; do
