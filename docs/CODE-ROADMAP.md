@@ -48,7 +48,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 713 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
+| ✅ | The 13 native projects run — 715 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -561,7 +561,7 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 
 ---
 
-### BUG-29 — MQTT: the publish rate limit silently drops discovery [HIGH]
+### BUG-29 — MQTT: the publish rate limit silently drops discovery [HIGH] — **DONE (2026-08-26)**
 
 - **Filed**: 2026-08-26, found on hardware while validating a WaterMeter build
   against 2.1.1 — an ESP32-D0WD-V3 on a live broker.
@@ -582,12 +582,36 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
   - `publish()` returns `false`, and the discovery path ignores it;
   - the failure is **order-dependent** — adding one sensor can silently remove
     an unrelated button.
+- **Correction to the second point above.** There is no return value to ignore.
+  `mqttPublish()` (`HomeAssistant.h:526`) is fire-and-forget: it emits
+  `EVENT_PUBLISH` on the EventBus and MQTT consumes it later
+  (`MQTT_impl.h:59`). The rejection happens in another component, after the
+  fact, and nothing carries it back. So there was nothing to fix on the caller's
+  side — **the whole fix is in MQTT**, and once nothing is discarded the
+  HomeAssistant log stops being a lie by itself.
 - **Fix**: the queue this needs already exists. When disconnected, `publish()`
   enqueues into `messageQueue` and drains later; when connected but over the
-  limit, it throws the message away instead. Route the rate-limited case into
-  that same queue so a burst drains over the following seconds without changing
-  the sustained rate. And stop logging success for a message the transport
-  rejected.
+  limit, it threw the message away instead. The rate-limited case now takes that
+  same queue, and `processMessageQueue()` — which already runs on **every**
+  connected `loop()`, not just after a reconnect — drains the burst over the
+  following seconds without changing the sustained rate.
+- **The drain loop had to change too.** It called `publish()` on each entry; now
+  that `publish()` defers rather than drops, doing so would `push_back` into the
+  vector being iterated — invalidating the iterator and re-queueing what it was
+  draining. It now checks the limit itself and stops, leaving the rest to the
+  next `loop()`.
+- **Behaviour change worth knowing**: `publishRateLimit` no longer rejects
+  anything, it defers. And it no longer applies while disconnected — the counter
+  advanced on queueing, which both capped a queue that sends nothing and charged
+  every deferred message twice, once on the way in and once on the way out.
+  Offline, `maxQueueSize` is the bound; the rate limit governs the wire.
+- **Tests**: three in `test_mqtt_component.cpp`, and the pre-existing
+  `test_mqtt_rate_limit_enforced` was rewritten — it asserted the discard. All
+  three fail against the old behaviour; the clearest reads `Expected 5 Was 0`,
+  five messages that no longer exist anywhere.
+- **Not reproduced on hardware here**: that needs a broker and a device
+  declaring more than ten entities. The original observation on a live broker
+  remains the evidence for the defect.
 - **Also affects production**: any device with more than ~10 entities. The
   entities go missing rather than break, so it reads as a Home Assistant problem
   rather than a firmware one.
@@ -1172,7 +1196,7 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-7 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28, BUG-29 | Multiple | 0C, 1H, 7M (**18 done**; BUG-28, BUG-29 new) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28, BUG-29 | Multiple | 0C, 0H, 7M (**19 done**; BUG-28 new, BUG-29 filed and fixed same day) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 3H, 2M (**TEST-1, TEST-2 done**) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
@@ -1180,14 +1204,20 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-13 | II, XII | 0C, 0H, 4M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new) |
 | 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 31L (**LO-11 done**) |
-| **Total** | **109 items** | | **0C, 8H, 28M, 33L** (50 resolved) |
+| **Total** | **109 items** | | **0C, 8H, 28M, 33L** (51 resolved) |
 
-The severity columns sum across the rows. The **item count does not reconcile**,
-and did not before this change: 50 resolved + 69 remaining is 119, against a
-stated 109, while counting the ID ranges in the Items column gives 113 (112 with
-STOR-ESP-1 withdrawn). Three figures, three answers. Left as found rather than
-re-baselined to whichever one looks tidiest — someone has to decide what the
-column is counting before it can be corrected.
+The severity columns sum across the rows again. They had stopped: filing BUG-29
+took Code Safety from 0H to 1H without moving the total off 8H, so the rows added
+up to nine HIGH against a stated eight. Fixing BUG-29 the same day puts Code
+Safety back to 0H and the two agree once more — by luck rather than by anyone
+noticing, which is the argument for checking after every edit.
+
+The **item count still does not reconcile**, and did not before this change:
+51 resolved + 69 remaining is 120, against a stated 109, while counting the ID
+ranges in the Items column gives 113 (112 with STOR-ESP-1 withdrawn). Three
+figures, three answers. Left as found rather than re-baselined to whichever one
+looks tidiest — someone has to decide what the column is counting before it can
+be corrected.
 
 ---
 
