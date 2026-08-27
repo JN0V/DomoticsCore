@@ -27,10 +27,21 @@ inline size_t s_stubBytesWritten = 0;
 inline size_t s_stubEndCalls = 0;
 inline size_t s_stubAbortCalls = 0;
 
+// SEC-9: the argument end() was last called with. Both Arduino cores define a
+// finished image as an exact equality — _progress == _size (ESP32 Update.h:116,
+// ESP8266 Updater.h:165) — and refuse end() on anything short of it unless
+// evenIfRemaining is set (ESP32 Updater.cpp:289, ESP8266 Updater.cpp:226). A
+// streaming upload never knows its exact length before the last chunk, so every
+// browser upload this library has ever committed did so through that `true`.
+// Nothing could observe it, which made it a one-character regression waiting to
+// happen; the native suite asserts it now.
+inline bool s_stubEndEvenIfRemaining = false;
+
 inline bool begin(size_t = UPDATE_SIZE_UNKNOWN) {
     s_stubBytesWritten = 0;
     s_stubEndCalls = 0;
     s_stubAbortCalls = 0;
+    s_stubEndEvenIfRemaining = false;
     return true;
 }
 
@@ -39,7 +50,11 @@ inline size_t write(uint8_t*, size_t len) {
     return len;
 }
 
-inline bool end(bool = false) { ++s_stubEndCalls; return true; }
+inline bool end(bool evenIfRemaining = false) {
+    ++s_stubEndCalls;
+    s_stubEndEvenIfRemaining = evenIfRemaining;
+    return true;
+}
 inline void abort() { ++s_stubAbortCalls; }
 inline String errorString() { return "Update not supported on this platform"; }
 inline bool hasError() { return false; }
