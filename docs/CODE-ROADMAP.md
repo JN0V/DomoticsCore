@@ -271,17 +271,24 @@ Unenforced security configurations are the most dangerous class of defect — us
 - **This entry originally listed three consequences. Two of them were wrong**, and
   they were checked against the installed Arduino cores rather than argued:
 
-  1. ~~Progress never reaches 100 %.~~ **False.** `finalizeUpdateOperation()` sets
-     `progress = 100.0f` at `OTA.cpp:686`, and `requiresBuffering()` returns
-     `false` on both platforms, so every successful upload reaches it. The suite
-     already asserted this — `test_ota_upload_settles_in_idle_without_autoreboot`
-     has checked `getProgress() == 100.0f` since TEST-3. The claim was refutable
-     from a test that was already passing.
+  1. ~~Progress never reaches 100 %.~~ **The component's does.**
+     `finalizeUpdateOperation()` sets `progress = 100.0f` at `OTA.cpp:711`,
+     `requiresBuffering()` returns `false` on both platforms, and
+     `test_ota_upload_settles_in_idle_without_autoreboot` has asserted
+     `getProgress() == 100.0f` since TEST-3 — so the value the device holds is not
+     the problem. **What a browser displays was never measured, and is not the
+     same claim.** The bar is fed by an SSE broadcast on a ~5.4 s cadence and
+     `autoReboot` restarts the device 2 s after completion, so a bar that stops
+     short is entirely possible without `progress` ever being wrong. The original
+     observation was made on two boards through a browser; this refutes the
+     mechanism it named, not the thing it saw. Whether a browser ever renders
+     100 % belongs to TEST-8.
   2. ~~`Update.begin()` is opened 220 bytes too large, so the image is
      incomplete.~~ **True, and not a defect of the envelope.** A finished image is
-     an exact equality — `_progress == _size` (ESP32 `Update.h:116`, ESP8266
-     `Updater.h:165`) — and `end()` refuses anything short of it without
-     `evenIfRemaining` (ESP32 `Updater.cpp:289`, ESP8266 `Updater.cpp:226`). A
+     an exact equality — ESP32 `_progress == _size` (`Update.h:116`), ESP8266
+     `_currentAddress == (_startAddress + _size)` (`Updater.h:165`) — and `end()`
+     refuses anything short of it without `evenIfRemaining` (ESP32
+     `Updater.cpp:289`, ESP8266 `Updater.cpp:226`). A
      streaming upload never knows its length before the last chunk, so **no
      announced figure removes this dependency**. Passing `0` widens it: `_size`
      becomes the whole partition (`Updater.cpp:159`) or the whole free sketch
@@ -298,34 +305,65 @@ Unenforced security configurations are the most dangerous class of defect — us
   `HAL::OTAUpdate::begin()` targets `esp_ota_get_next_update_partition()`
   (`Updater.cpp:134`), the partition holding the image `canRollBack()` would boot
   (`Updater.cpp:98`) — and on a single-slot ESP32 the running code itself, as
-  `DomoticsCore-OTA/platformio.ini:32-37` already recorded. It also turns the
-  progress bar from 99.954 % into a flat 0 %, since `expected == 0` sets
-  `progress = 0.0f` (`OTA.cpp:309-313`).
-- **Fixed**, three changes, none of them at the call site:
+  `DomoticsCore-OTA/platformio.ini:32-37` already recorded. It also turns
+  `progress` from 99.954 % into a flat 0 %, since `expected == 0` takes the
+  `progress = 0.0f` branch at `OTA.cpp:329`.
+- **Fixed**, four changes, none of them to the value passed at the call site:
   1. The refusal in `beginUpload()` says what it compared, and the comment above it
      records the contract: `acceptUploadChunk()` is authoritative on the ceiling
      because it counts what arrives; the pre-write check is a deliberately
-     conservative fast-fail on the announced envelope.
-  2. `finalizeUpload()` narrows `totalBytes` to `uploadSession.received` before
-     finalizing, so `EVENT_COMPLETED` reports the firmware and not the envelope.
-     `finalizeUpdateOperation()`'s `downloadedBytes = totalBytes` is correct for a
-     download, where `totalBytes` is the server's announced size, and was the last
-     place the envelope leaked out of the upload path.
-  3. `Update_Stub.h` records the `evenIfRemaining` argument, and the native suite
-     asserts it. Consequence (2) is inherent, so it is **pinned rather than
-     fixed**: `end(false)` now fails a test instead of breaking every browser
-     upload silently.
-- **Verified** (2026-08-27): 51/51 native from a cleaned `.pio`, both device suites
-  cross-compile. Both removal checks are non-vacuous and non-cascading — flipping
-  `end(true)` to `end(false)` fails only the `evenIfRemaining` assertion, and
-  dropping the `totalBytes` narrowing fails only with `Expected 16 Was 236`.
+     conservative fast-fail on the announced envelope. The message is 96
+     characters at its widest, against the 128-byte `DOMOTICS_DLOG_BUF_SIZE` an
+     ESP8266 formats it into — a longer sentence would have lost its qualifier
+     first, on the platform where the ceiling is tightest.
+  2. `finalizeUpload()` narrows `totalBytes` to `uploadSession.received` **above
+     `EVENT_END`**, not merely before `EVENT_COMPLETED`. Narrowing later was the
+     first attempt and it made one upload announce 236 on `ota/end` and 16 on
+     `ota/completed` — self-contradictory, and worse than the single wrong figure
+     it replaced.
+  3. `OTAWebUI.h:399` carries a comment saying why the envelope is passed on
+     deliberately. Every other decision on that handler is annotated in place, and
+     whoever deletes it will be reading that line rather than this file.
+  4. `Update_Stub.h` records the `evenIfRemaining` argument, and the native suite
+     asserts it on both the upload and the download path. Consequence (2) is
+     inherent, so it is **pinned rather than fixed**.
+- **What the pin does not cover, stated because a reviewer had to find it.** The
+  stub's `end()` returns `true` whatever it is passed, so the assertion observes
+  the argument `OTA.cpp` passes and nothing further. Changing `Update_ESP8266.h`
+  or `Update_ESP32.h` to hand `false` to the real Updater leaves every test in
+  this repository green and breaks every browser upload on a board. Neither device
+  suite reaches it either: both announce exactly what they deliver, so their
+  images are already finished when `end()` is called and the flag is never
+  load-bearing. **The one shape that would prove it — announce N + 220, deliver
+  N — exists nowhere.** Filed under TEST-8.
+- **Also not pinned**: the ordering in (2). The EventBus dispatches after publish,
+  so a subscriber reading `getTotalBytes()` sees the narrowed value whichever
+  order the code is in, and reading the payload itself needs `on<String>` —
+  BUG-30's use-after-free. A test for it was written, **proved vacuous by moving
+  the line back and watching it stay green**, and deleted rather than kept as
+  decoration.
+- **Verified** (2026-08-27): 52/52 native from a cleaned `.pio`, both device suites
+  cross-compile. Four removal checks, each red on one assertion and no other:
+  `finalizeUpload()`'s `end(true)` → `end(false)` fails only the upload
+  `evenIfRemaining` assertion; `installFromUrl()`'s fails only the download one;
+  dropping the `totalBytes` narrowing fails only with `Expected 16 Was 236`;
+  shortening the warning fails only the qualifier check. A fifth check is why the
+  ordering above is recorded as unpinned — it found the test for it was vacuous.
+  An earlier run of the first check proved nothing at all, having been aimed at a
+  line number that had moved; it was redone by matching the text.
+  **Nothing here ran on a board**, which for a defect that only a board produced is
+  the honest limit of this lot.
 - **Downgraded MEDIUM → LOW** on what survived: one over-refusal window of ~220
   bytes against a ceiling nobody sets to the byte, and one overstated figure in a
   completion event. The severity says what the defect is; the warning at the top
   of this entry does the scheduling.
-- **Left open by this lot**: `installFromUrl()` also calls `end(true)`
-  (`OTA.cpp:655`) and nothing pins it — flipping that one breaks no test. Filed as
-  part of TEST-8 rather than fixed here.
+- **Left open by this lot**: `finalizeUpdateOperation()` does
+  `downloadedBytes = totalBytes` for downloads too, where `totalBytes` is the size
+  the *server* announced — so a server that announces 8 and streams 6 completes
+  reporting 8. SEC-8 exists because servers lie about that number, so calling the
+  download side "correct" would be the same overstatement this entry just removed
+  from uploads. Recorded in TEST-8, not fixed here: it is a different path, with a
+  different lying party, and it deserves its own removal check.
 
 ### SEC-8 — OTA: `maxDownloadSize` was enforced on downloads and not on uploads [MEDIUM] — **DONE (2026-08-27)**
 
@@ -358,7 +396,9 @@ Unenforced security configurations are the most dangerous class of defect — us
   with both refusals visible in the log for the right reasons
   (`65536 bytes announced against a 32768 byte ceiling`, then
   `33280 bytes would pass a 32768 byte ceiling` for the upload that announced no
-  size at all).
+  size at all). **That first line is a record of what was observed on the day**;
+  SEC-9 reworded the message on 2026-08-27 and the code now emits
+  `65536 announced bytes (framing included) against a 32768 byte ceiling`.
 - Both device tests assert on the error *message*, not merely on a refusal: the
   Updater has size limits of its own, and a test content with "it said no" would
   be crediting the platform for our check. That is the trap the ESP32 suite
@@ -979,7 +1019,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   `DomoticsCore-OTA/test/test_ota_esp32/`, `DomoticsCore-OTA/test/test_ota_esp8266/`
 - **Found by**: SEC-9, 2026-08-27. Filed when the lot that closed it asked why a
   220-byte defect on the primary upload path needed a human with a browser to find.
-- **Problem**: every OTA test — 51 native, 8 per board — calls `beginUpload()`,
+- **Problem**: every OTA test — 52 native, 8 per board — calls `beginUpload()`,
   `acceptUploadChunk()` and `finalizeUpload()` **directly**. Nothing constructs an
   HTTP request, nothing goes through `OTAWebUI`'s upload handler, and nothing has
   ever seen a `multipart/form-data` envelope. The suites therefore cover the OTA
@@ -989,9 +1029,24 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   code review. It was invisible to every automated check the repository has, and it
   surfaced only because someone joined a LAN and uploaded a file by hand. The same
   blind spot covers anything else on that handler.
-- **Also uncovered**: `installFromUrl()`'s `end(true)` at `OTA.cpp:655`. SEC-9
-  pinned the upload path's `evenIfRemaining`; the download path's is still
-  unobserved, and flipping it fails no test.
+- **Four specific holes**, each one SEC-9 could not close:
+  1. **`evenIfRemaining` below the HAL.** SEC-9 pins the argument `OTA.cpp` passes;
+     the stub's `end()` ignores it. Handing `false` to the real Updater in
+     `Update_ESP8266.h` or `Update_ESP32.h` keeps every test green. Both device
+     suites announce exactly what they deliver, so their images are finished and
+     the flag never matters. The shape that would prove it — **announce N + 220,
+     deliver N** — exists nowhere, and it is the shape every browser upload has.
+  2. **`installFromUrl()`'s own `end(true)`** at `OTA.cpp:658`, now asserted
+     natively but never against a real Updater, for the same reason.
+  3. **The download path overstates its byte count.** `totalBytes = announcedSize`
+     is the server's claim and `finalizeUpdateOperation()` copies it into
+     `downloadedBytes`, so an announce-8-send-6 server completes reporting 8. SEC-8
+     exists because servers lie about exactly that number.
+  4. **What the browser actually renders.** SEC-9's first recorded consequence was
+     a bar that stopped short. `progress` reaches 100, but the SSE cadence is
+     ~5.4 s and `autoReboot` restarts the device 2 s after completion — so the
+     original observation may have been right about the screen and wrong about the
+     cause. Nothing measures the screen.
 - **The harness already exists** — `tools/on-device/` drives a real browser, and
   `OTAWithWebUI` reaches a LAN behind `DC_OTA_PREFER_STA`. What is missing is a
   test that uses them, not a means of writing one.
