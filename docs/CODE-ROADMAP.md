@@ -1465,7 +1465,7 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 4M (**SEC-1, SEC-3, SEC-7, SEC-8 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; SEC-8 filed and fixed 2026-08-27; **SEC-9 new and open**, from the real-conditions campaign) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, 1H, 7M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **2H**, 7M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 2H, 2M (**TEST-1, TEST-2, TEST-3 done**) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
@@ -1473,11 +1473,25 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **114 items** | | **0C, 8H, 30M, 34L** (54 resolved) |
+| **Total** | **114 items** | | **0C, 9H, 30M, 34L** (54 resolved) |
 
-The severity columns sum across the rows: 1 + 1 + 2 + 2 + 2 = 8 HIGH, in Memory
-Safety, Code Safety, Test Coverage, File Size and Architecture. The eight are
-MEM-2, BUG-30, TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1, ARCH-2.
+The severity columns sum across the rows: 1 + 2 + 2 + 2 + 2 = 9 HIGH, in Memory
+Safety, Code Safety, Test Coverage, File Size and Architecture. The nine are
+MEM-2, **BUG-2**, BUG-30, TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1, ARCH-2.
+
+**BUG-2 was found on 2026-08-27 by the same method that found BUG-21, one day
+later, in a file that had just been edited to warn about exactly this.** It has
+no DONE marker, appears in no release table and in no merged lot, and
+`Core.h:104` still reads `return component ? static_cast<T*>(component) : nullptr;`
+— no type check, as filed. The rows and the total had been re-summed by script
+hours earlier and agreed, because the item was missing from both.
+
+The lesson stands and needs sharpening: **summing the rows proves nothing about
+items that are in neither.** The only check that finds this class is enumerating
+every `[HIGH]` section heading and demanding, for each, a DONE marker or a row in
+a resolved table or a merged lot — then verifying the survivors against the code.
+That sweep is cheap, it is scriptable, and it should be run before any statement
+about how many items remain.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
