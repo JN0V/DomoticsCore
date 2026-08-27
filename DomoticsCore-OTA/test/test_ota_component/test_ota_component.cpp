@@ -790,6 +790,60 @@ void test_ota_upload_completion_reports_the_bytes_that_arrived() {
     TEST_ASSERT_EQUAL_FLOAT(100.0f, ota.getProgress());
 }
 
+// --- TEST-8: the download path reported the size the server announced --------
+//
+// SEC-9 narrowed the upload path's figures to what actually arrived. The
+// download path had the same defect and failed in both directions, because
+// finalizeUpdateOperation() copied the announced size back over the counted one:
+// a server that announced nothing completed reporting zero bytes downloaded, and
+// a server that announced more than it sent completed reporting the larger
+// figure. SEC-8 exists precisely because that number is one a lying server picks.
+
+void test_ota_download_of_unknown_length_reports_what_arrived() {
+    // Content-Length is optional and a chunked response has none, so the
+    // downloader announces 0. Measured on a nodemcuv2 before this fix: the whole
+    // image transferred and the device reported having downloaded nothing.
+    Core core;
+    OTAComponent* ota = attachOta(core, quietConfig());
+    TEST_ASSERT_NOT_NULL(ota);
+
+    ota->setDownloader(downloaderOf(/*announced=*/0, /*streamed=*/32));
+    ota->triggerUpdateFromUrl("http://example.com/fw.bin");
+    drain(core);
+
+    TEST_ASSERT_EQUAL_MESSAGE(OTAComponent::State::Idle, ota->getState(),
+                              ota->getLastError().c_str());
+    TEST_ASSERT_EQUAL_MESSAGE(32, ota->getDownloadedBytes(),
+                              "a completed download reported bytes it never counted");
+    TEST_ASSERT_EQUAL_MESSAGE(32, ota->getTotalBytes(),
+                              "the total is still the size the server announced");
+
+    core.shutdown();
+}
+
+void test_ota_download_reports_what_arrived_not_what_was_announced() {
+    // The lying server, in the direction SEC-8's ceiling does not catch: it
+    // announces more than it sends. The transfer is short, not oversized, so
+    // nothing refuses it — and before this fix the completion event repeated the
+    // server's number back as though the device had verified it.
+    Core core;
+    OTAComponent* ota = attachOta(core, quietConfig());
+    TEST_ASSERT_NOT_NULL(ota);
+
+    ota->setDownloader(downloaderOf(/*announced=*/64, /*streamed=*/32));
+    ota->triggerUpdateFromUrl("http://example.com/fw.bin");
+    drain(core);
+
+    TEST_ASSERT_EQUAL_MESSAGE(OTAComponent::State::Idle, ota->getState(),
+                              ota->getLastError().c_str());
+    TEST_ASSERT_EQUAL_MESSAGE(32, ota->getDownloadedBytes(),
+                              "the device repeated the server's figure as its own count");
+    TEST_ASSERT_EQUAL_MESSAGE(32, ota->getTotalBytes(),
+                              "the announced size outlived the transfer that could be counted");
+
+    core.shutdown();
+}
+
 // ============================================================================
 // State Machine Transitions (TEST-3)
 // ============================================================================
@@ -1107,6 +1161,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_ota_upload_commits_with_even_if_remaining);
     RUN_TEST(test_ota_upload_refusal_names_the_figure_it_compared);
     RUN_TEST(test_ota_upload_completion_reports_the_bytes_that_arrived);
+    RUN_TEST(test_ota_download_of_unknown_length_reports_what_arrived);
+    RUN_TEST(test_ota_download_reports_what_arrived_not_what_was_announced);
 
     // State machine transitions (TEST-3)
     RUN_TEST(test_ota_upload_holds_downloading_while_it_runs);
