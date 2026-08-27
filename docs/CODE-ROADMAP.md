@@ -34,6 +34,7 @@ versions may sit still while fixes land.
 | OTA | SEC-7 | **Merged** — PR #28, 2026-08-26, with the ESP32 suite in PR #29 |
 | MQTT | BUG-29 | **Merged** — PR #30, 2026-08-26, filed and fixed the same day |
 | OTA | BUG-21, SEC-8, TEST-3 | 2026-08-27 — BUG-21 was open all along while the tracking row said `0H`; SEC-8 filed from an observation SEC-7 left loose |
+| OTA | SEC-9 | 2026-08-27 — filed by the real-conditions campaign and closed the same day, minus two of its three consequences; raised TEST-8 |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -245,9 +246,15 @@ Unenforced security configurations are the most dangerous class of defect — us
   asserting that a `requireUploadHash` refusal never reaches
   `HAL::OTAUpdate::begin()`.
 
-### SEC-9 — OTA: the upload path sizes itself from the multipart envelope [MEDIUM]
+### SEC-9 — OTA: the upload path sizes itself from the multipart envelope [LOW] — **DONE (2026-08-27)**
 
-- **File**: `DomoticsCore-OTA/include/DomoticsCore/OTAWebUI.h:399`
+> **Do not "fix" this by passing `0`.** That was this entry's own recommendation
+> for a day, and it is a regression on three counts — see *What the recorded fix
+> would have done* below. The envelope stays where it is. If you are here to
+> change `OTAWebUI.h:399`, you are in the wrong place.
+
+- **File**: `DomoticsCore-OTA/include/DomoticsCore/OTAWebUI.h:399`,
+  `DomoticsCore-OTA/src/OTA.cpp`
 - **Found by**: the real-conditions campaign of 2026-08-27, on a `nodemcuv2` and a
   WROOM-32D. Suspected while reading the code, then measured on both.
 - **Problem**: `size_t expectedSize = request->contentLength();` measures the
@@ -261,23 +268,64 @@ Unenforced security configurations are the most dangerous class of defect — us
   | `nodemcuv2` | 475 452 | 475 232 | **220 B** |
   | WROOM-32D | 982 508 | 982 288 | **220 B** |
 
-- **Three consequences**, in increasing order of how much they will hurt:
-  1. **Progress never reaches 100 %.** `received / expected` tops out below the
-     end, so the browser's bar stops short on every successful upload. Cosmetic,
-     and the only one a user sees today.
-  2. **`Update.begin()` is opened 220 bytes too large**, so the Updater treats
-     the image as incomplete right through to the end. This works *only* because
-     `finalizeUpload()` calls `end(true)` — `evenIfRemaining`. Anyone who changes
-     that to `end(false)`, for any reason, breaks every browser upload.
-  3. **SEC-8's ceiling is compared against the envelope**, so a firmware within
-     220 bytes of `maxDownloadSize` is refused when it should be accepted. The
-     error even says so: `475452 bytes announced against a 100000 byte ceiling`.
-- **Fix**: do not derive the size from `contentLength()` for a multipart body.
-  Passing `0` — "size unknown" — is enough: `acceptUploadChunk()` already counts
-  what arrives, which is what SEC-8 enforces and what the digest covers. The only
-  thing lost is a progress denominator, which is currently wrong anyway.
-- **Not urgent, and worth doing before it is.** Benign today because of one
-  `true` argument three call sites away.
+- **This entry originally listed three consequences. Two of them were wrong**, and
+  they were checked against the installed Arduino cores rather than argued:
+
+  1. ~~Progress never reaches 100 %.~~ **False.** `finalizeUpdateOperation()` sets
+     `progress = 100.0f` at `OTA.cpp:686`, and `requiresBuffering()` returns
+     `false` on both platforms, so every successful upload reaches it. The suite
+     already asserted this — `test_ota_upload_settles_in_idle_without_autoreboot`
+     has checked `getProgress() == 100.0f` since TEST-3. The claim was refutable
+     from a test that was already passing.
+  2. ~~`Update.begin()` is opened 220 bytes too large, so the image is
+     incomplete.~~ **True, and not a defect of the envelope.** A finished image is
+     an exact equality — `_progress == _size` (ESP32 `Update.h:116`, ESP8266
+     `Updater.h:165`) — and `end()` refuses anything short of it without
+     `evenIfRemaining` (ESP32 `Updater.cpp:289`, ESP8266 `Updater.cpp:226`). A
+     streaming upload never knows its length before the last chunk, so **no
+     announced figure removes this dependency**. Passing `0` widens it: `_size`
+     becomes the whole partition (`Updater.cpp:159`) or the whole free sketch
+     space (`Update_ESP8266.h:34-36`), turning a 220-byte shortfall into hundreds
+     of kilobytes.
+  3. **SEC-8's ceiling is compared against the envelope.** True, and the only real
+     one. The envelope is an upper bound, so the pre-write check can over-refuse a
+     firmware that would have fitted, and the message quoted a number that is not
+     the firmware size.
+
+- **What the recorded fix would have done.** Passing `0` fixes (3) by removing the
+  check that causes it — and with it SEC-8's pre-write refusal on the browser
+  path, the only path a human uses. That ordering is not decoration:
+  `HAL::OTAUpdate::begin()` targets `esp_ota_get_next_update_partition()`
+  (`Updater.cpp:134`), the partition holding the image `canRollBack()` would boot
+  (`Updater.cpp:98`) — and on a single-slot ESP32 the running code itself, as
+  `DomoticsCore-OTA/platformio.ini:32-37` already recorded. It also turns the
+  progress bar from 99.954 % into a flat 0 %, since `expected == 0` sets
+  `progress = 0.0f` (`OTA.cpp:309-313`).
+- **Fixed**, three changes, none of them at the call site:
+  1. The refusal in `beginUpload()` says what it compared, and the comment above it
+     records the contract: `acceptUploadChunk()` is authoritative on the ceiling
+     because it counts what arrives; the pre-write check is a deliberately
+     conservative fast-fail on the announced envelope.
+  2. `finalizeUpload()` narrows `totalBytes` to `uploadSession.received` before
+     finalizing, so `EVENT_COMPLETED` reports the firmware and not the envelope.
+     `finalizeUpdateOperation()`'s `downloadedBytes = totalBytes` is correct for a
+     download, where `totalBytes` is the server's announced size, and was the last
+     place the envelope leaked out of the upload path.
+  3. `Update_Stub.h` records the `evenIfRemaining` argument, and the native suite
+     asserts it. Consequence (2) is inherent, so it is **pinned rather than
+     fixed**: `end(false)` now fails a test instead of breaking every browser
+     upload silently.
+- **Verified** (2026-08-27): 51/51 native from a cleaned `.pio`, both device suites
+  cross-compile. Both removal checks are non-vacuous and non-cascading — flipping
+  `end(true)` to `end(false)` fails only the `evenIfRemaining` assertion, and
+  dropping the `totalBytes` narrowing fails only with `Expected 16 Was 236`.
+- **Downgraded MEDIUM → LOW** on what survived: one over-refusal window of ~220
+  bytes against a ceiling nobody sets to the byte, and one overstated figure in a
+  completion event. The severity says what the defect is; the warning at the top
+  of this entry does the scheduling.
+- **Left open by this lot**: `installFromUrl()` also calls `end(true)`
+  (`OTA.cpp:655`) and nothing pins it — flipping that one breaks no test. Filed as
+  part of TEST-8 rather than fixed here.
 
 ### SEC-8 — OTA: `maxDownloadSize` was enforced on downloads and not on uploads [MEDIUM] — **DONE (2026-08-27)**
 
@@ -925,6 +973,29 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Ref**: CORE-F17
 - **Problem**: Zero tests for MemoryManager singleton and ComponentConfig validation logic.
 
+### TEST-8 — OTA: nothing traverses `POST /api/ota/upload` [MEDIUM]
+
+- **Files**: `DomoticsCore-OTA/include/DomoticsCore/OTAWebUI.h:353-443`,
+  `DomoticsCore-OTA/test/test_ota_esp32/`, `DomoticsCore-OTA/test/test_ota_esp8266/`
+- **Found by**: SEC-9, 2026-08-27. Filed when the lot that closed it asked why a
+  220-byte defect on the primary upload path needed a human with a browser to find.
+- **Problem**: every OTA test — 51 native, 8 per board — calls `beginUpload()`,
+  `acceptUploadChunk()` and `finalizeUpload()` **directly**. Nothing constructs an
+  HTTP request, nothing goes through `OTAWebUI`'s upload handler, and nothing has
+  ever seen a `multipart/form-data` envelope. The suites therefore cover the OTA
+  component and not the route a user actually posts to, which is where SEC-3's auth
+  reset, SEC-7's rejected-flag handling and SEC-9's sizing all live.
+- **Why it matters more than the item that raised it**: SEC-9 was not missed by
+  code review. It was invisible to every automated check the repository has, and it
+  surfaced only because someone joined a LAN and uploaded a file by hand. The same
+  blind spot covers anything else on that handler.
+- **Also uncovered**: `installFromUrl()`'s `end(true)` at `OTA.cpp:655`. SEC-9
+  pinned the upload path's `evenIfRemaining`; the download path's is still
+  unobserved, and flipping it fails no test.
+- **The harness already exists** — `tools/on-device/` drives a real browser, and
+  `OTAWithWebUI` reaches a LAN behind `DC_OTA_PREFER_STA`. What is missing is a
+  test that uses them, not a means of writing one.
+
 ---
 
 ## Priority 5: Known Bug — SSE Broadcast Warning Spam
@@ -1463,17 +1534,17 @@ not.
 
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
-| 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 4M (**SEC-1, SEC-3, SEC-7, SEC-8 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; SEC-8 filed and fixed 2026-08-27; **SEC-9 new and open**, from the real-conditions campaign) |
+| 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences having been refuted against the Arduino cores) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **2H**, 7M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
-| 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 2H, 2M (**TEST-1, TEST-2, TEST-3 done**) |
+| 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 new** — nothing traverses `POST /api/ota/upload`) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **114 items** | | **0C, 9H, 30M, 34L** (54 resolved) |
+| **Total** | **115 items** | | **0C, 9H, 30M, 34L** (55 resolved) |
 
 The severity columns sum across the rows: 1 + 2 + 2 + 2 + 2 = 9 HIGH, in Memory
 Safety, Code Safety, Test Coverage, File Size and Architecture. The nine are
@@ -1523,13 +1594,27 @@ the absence of an error. What the campaign found instead was one latent trap
 and two advertised addresses that do not exist (DOC-1). None of the three is
 reachable from a host build, and none would have been found by reading the code.
 
+**SEC-9 closed on the same day it was filed, and closing it cost the entry two of
+its three consequences.** Checked against the installed Arduino cores rather than
+re-read, its consequence 1 was false — `finalizeUpdateOperation()` has set
+`progress = 100.0f` all along, and a test asserting exactly that had been passing
+since TEST-3 — and its consequence 2 turned out to be a property of streaming an
+image of unknown length rather than a defect of the envelope. The fix the entry
+recommended would have made both worse and removed SEC-8's pre-write refusal from
+the browser path. **A filed finding is a hypothesis, and this one had been read
+twice and measured on two boards before anybody checked what it claimed against
+the code it blamed.** Severity columns are unchanged by the lot: SEC-9 leaves the
+remaining count as it closes, TEST-8 enters it, and the MEDIUM → LOW downgrade
+never reaches the table because a DONE item is not counted there — the same
+convention SEC-8 was recorded under.
+
 The **item count still does not reconcile**, and did not before this change:
-54 resolved + 72 remaining is 126, against a stated 114, while counting the ID
-ranges in the Items column gives 118 (117 with STOR-ESP-1 withdrawn). Three
+55 resolved + 72 remaining is 127, against a stated 115, while counting the ID
+ranges in the Items column gives 119 (118 with STOR-ESP-1 withdrawn). Three
 figures, three answers. Left as found rather than re-baselined to whichever one
 looks tidiest — someone has to decide what the column is counting before it can
-be corrected. Each of the three moved by the same amount here, so the gaps are
-unchanged; nothing was hidden and nothing was fixed.
+be corrected. Each of the three moved by exactly one here — one new ID, TEST-8 —
+so the gaps are unchanged; nothing was hidden and nothing was fixed.
 
 ---
 
