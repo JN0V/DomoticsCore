@@ -180,6 +180,46 @@ struct Upload {
     }
 };
 
+/**
+ * @brief The shape every browser upload has, which no suite had.
+ *
+ * TEST-8. `Upload` above announces exactly what it delivers, so `_progress ==
+ * _size` holds by the time `end()` is called and the `evenIfRemaining` argument
+ * is never load-bearing. A multipart POST is not like that: SEC-9 measured
+ * `request->contentLength()` at 220 bytes over the firmware on this board, so
+ * `_size` is never reached and the commit happens only because
+ * `finalizeUpload()` passes `true`.
+ *
+ * SEC-9 pinned that argument natively, where the stub's `end()` returns true
+ * whatever it is given — so the pin stopped at the call site. This is the same
+ * claim against the real Updater, and it uses the running application as the
+ * payload for the reason the mismatched-hash test does: a synthetic image is
+ * refused by `esp_ota_set_boot_partition()` itself, and the test would then pass
+ * for the platform's reasons rather than ours.
+ */
+struct ShortUpload {
+    OTAComponent ota;
+    bool opened = false;
+    bool committed = false;
+
+    static constexpr size_t MULTIPART_OVERHEAD = 220;
+
+    ShortUpload() {
+        OTAConfig cfg;
+        cfg.autoReboot = false;
+        ota.setConfig(cfg);
+        ota.begin();
+
+        auto sink = [this](const uint8_t* d, size_t n) { return ota.acceptUploadChunk(d, n); };
+
+        // The digest covers what is delivered, not what is announced.
+        opened = ota.beginUpload(ESP.getSketchSize() + MULTIPART_OVERHEAD, runningAppHash());
+        if (!opened) return;
+        if (!streamRunningApp(sink, nullptr)) return;
+        committed = ota.finalizeUpload();
+    }
+};
+
 } // namespace
 
 void setUp() {
@@ -357,6 +397,26 @@ void test_upload_streaming_past_the_cap_leaves_the_boot_partition_alone() {
     TEST_ASSERT_EQUAL(OTAComponent::State::Error, ota.getState());
 }
 
+// ============================================================================
+// TEST-8 — an image short of Update's _size still commits
+// ============================================================================
+
+void test_upload_short_of_the_announced_size_still_switches_the_boot_partition() {
+    ShortUpload up;
+
+    TEST_ASSERT_TRUE_MESSAGE(up.opened, "the update never opened: nothing below means anything");
+    TEST_ASSERT_TRUE_MESSAGE(up.committed, up.ota.getLastError().c_str());
+    TEST_ASSERT_TRUE_MESSAGE(bootPartitionMoved(),
+                             "an upload 220 bytes short of its announced size did not switch the "
+                             "boot partition — this is every browser upload");
+
+    // SEC-9: the announced envelope must not survive into what the device reports.
+    TEST_ASSERT_EQUAL_MESSAGE(ESP.getSketchSize(), up.ota.getTotalBytes(),
+                              "the completion figures still carry the multipart envelope");
+
+    restoreBootPartition();
+}
+
 void setup() {
     delay(2000);  // let the host attach before Unity starts printing
     UNITY_BEGIN();
@@ -371,6 +431,8 @@ void setup() {
 
     RUN_TEST(test_upload_over_the_cap_is_refused_before_erasing_flash);
     RUN_TEST(test_upload_streaming_past_the_cap_leaves_the_boot_partition_alone);
+
+    RUN_TEST(test_upload_short_of_the_announced_size_still_switches_the_boot_partition);
 
     UNITY_END();
 }

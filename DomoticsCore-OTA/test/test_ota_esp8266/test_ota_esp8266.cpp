@@ -45,12 +45,26 @@ using namespace DomoticsCore::Components;
 
 namespace {
 
-// One flash sector. Large enough that Update fills and flushes its buffer, so
-// the image really is complete when the tests say it is; small enough to fit
-// the free sketch space of a board already carrying this firmware.
-constexpr size_t PAYLOAD_SIZE = 4096;
+// Two flash sectors, and the second one is not decoration.
+//
+// This was one sector, on the reasoning that a single sector is enough for the
+// Updater to fill and flush its buffer. It is not, and at exactly one sector it
+// only looked like it. `Updater.cpp:460` flushes the tail when
+// `_bufferLen == remaining()`, i.e. only when the buffered bytes complete the
+// *announced* size exactly — which a 4096-byte payload announced as 4096 does,
+// on its very first buffer, having never flushed once. `progress()` was
+// therefore 0 until `end()`, and every test passed because its announcement
+// happened to match its delivery to the byte.
+//
+// TEST-8 needs the shape that does not match — announce the multipart envelope,
+// deliver the firmware — and at one sector that shape leaves the whole image
+// unflushed, `progress()` at 0, and `end()` refusing it as UPDATE_ERROR_NO_DATA
+// before it reaches the flush three lines further down. Real firmware is never
+// one sector; a 475 KB upload flushes 115 times before it gets there. At two
+// sectors the suite behaves the way silicon does.
+constexpr size_t PAYLOAD_SIZE = 8192;
 
-// 4 KB will not fit on the ESP8266 stack.
+// 8 KB will not fit on the ESP8266 stack.
 uint8_t g_payload[PAYLOAD_SIZE];
 
 const char* const HASH_THAT_CANNOT_MATCH =
@@ -157,7 +171,89 @@ struct Upload {
     }
 };
 
+/**
+ * @brief A download whose length the server never announced.
+ *
+ * TEST-8. `Download` above announces PAYLOAD_SIZE and delivers it, so its image
+ * is finished and `end()`'s argument does not matter. Content-Length is optional
+ * and a chunked response has none, so `installFromUrl()` opens the update at
+ * UPDATE_SIZE_UNKNOWN — the whole free sketch space — and the image is short by
+ * everything it does not fill. Only `end(true)` commits it.
+ */
+struct UnknownLengthDownload {
+    OTAComponent ota;
+
+    UnknownLengthDownload() {
+        OTAConfig cfg;
+        cfg.manifestUrl = "http://localhost/manifest.json";
+        cfg.checkIntervalMs = 0;
+        cfg.autoReboot = false;
+        ota.setConfig(cfg);
+        ota.begin();
+
+        const String hash = payloadHash();
+        ota.setManifestFetcher([hash](const String&, String& outJson) {
+            outJson = String("{\"version\":\"9.9.9\","
+                             "\"url\":\"http://localhost/firmware.bin\","
+                             "\"sha256\":\"") + hash + "\"}";
+            return true;
+        });
+        ota.setDownloader([](const String&, size_t& totalSize, OTAComponent::DownloadCallback onChunk) {
+            totalSize = 0;  // "unknown" — what a chunked response gives you
+            for (size_t offset = 0; offset < PAYLOAD_SIZE; offset += 512) {
+                if (!onChunk(g_payload + offset, 512)) return false;
+                yield();
+            }
+            return true;
+        });
+
+        ota.triggerImmediateCheck(true);
+        ota.loop();
+    }
+};
+
+/**
+ * @brief The shape every browser upload has, which no suite had.
+ *
+ * TEST-8. `Upload` above announces exactly what it delivers, so the image is
+ * already finished by the Updater's definition when end() is called and the
+ * `evenIfRemaining` argument is never load-bearing. A multipart POST is not like
+ * that: `request->contentLength()` measures the encoded body, 220 bytes more
+ * than the firmware on this board (SEC-9), so `_size` is never reached and the
+ * commit happens only because `finalizeUpload()` passes `true`.
+ *
+ * SEC-9 pinned that argument natively, where the stub's end() returns true
+ * whatever it is given — so the pin stopped at the call site. This is the same
+ * claim against the real Updater.
+ */
+struct ShortUpload {
+    OTAComponent ota;
+    bool opened = false;
+    bool committed = false;
+
+    static constexpr size_t MULTIPART_OVERHEAD = 220;
+
+    ShortUpload() {
+        OTAConfig cfg;
+        cfg.autoReboot = false;
+        ota.setConfig(cfg);
+        ota.begin();
+
+        // The digest covers what is delivered, not what is announced — the same
+        // asymmetry SEC-7 established, and the reason an over-announcement is not
+        // an integrity problem.
+        opened = ota.beginUpload(PAYLOAD_SIZE + MULTIPART_OVERHEAD, payloadHash());
+        if (!opened) return;
+        for (size_t offset = 0; offset < PAYLOAD_SIZE; offset += 512) {
+            if (!ota.acceptUploadChunk(g_payload + offset, 512)) return;
+            yield();
+        }
+        committed = ota.finalizeUpload();
+    }
+};
+
 } // namespace
+
 
 void setUp() {
     eboot_command_clear();
@@ -341,6 +437,54 @@ void test_upload_streaming_past_the_cap_releases_flash_and_stages_nothing() {
     TEST_ASSERT_EQUAL(OTAComponent::State::Error, ota.getState());
 }
 
+// ============================================================================
+// TEST-8 — an image short of Update's _size still commits
+// ============================================================================
+//
+// Both of these fail if HAL::OTAUpdate::end() is ever handed `false`, on this
+// board, at the HAL rather than at the call site SEC-9 could reach. They are the
+// two shapes real transfers actually have and no suite had: an upload that
+// announces its multipart envelope, and a download whose length is not known in
+// advance.
+
+void test_upload_short_of_the_announced_size_still_stages_the_copy() {
+    ShortUpload up;
+
+    TEST_ASSERT_TRUE_MESSAGE(up.opened, "the update never opened: nothing below means anything");
+    TEST_ASSERT_TRUE_MESSAGE(up.committed, up.ota.getLastError().c_str());
+    TEST_ASSERT_TRUE_MESSAGE(copyCommandStaged(),
+                             "finalizeUpload() returned true and the bootloader was not armed");
+    TEST_ASSERT_EQUAL_STRING("", up.ota.getLastError().c_str());
+
+    // SEC-9: the announced envelope must not survive into what the device
+    // reports. 4096 delivered, 4316 announced.
+    TEST_ASSERT_EQUAL_MESSAGE(PAYLOAD_SIZE, up.ota.getTotalBytes(),
+                              "the completion figures still carry the multipart envelope");
+}
+
+void test_download_of_unknown_length_still_stages_the_copy() {
+    // Content-Length is optional and chunked transfer-encoding has none, so
+    // installFromUrl() opens the update at UPDATE_SIZE_UNKNOWN — the whole free
+    // sketch space. The image is then short by everything it does not fill, and
+    // only end(true) commits it.
+    UnknownLengthDownload dl;
+
+    TEST_ASSERT_EQUAL_MESSAGE(OTAComponent::State::Idle, dl.ota.getState(),
+                              dl.ota.getLastError().c_str());
+    TEST_ASSERT_TRUE_MESSAGE(copyCommandStaged(),
+                             "a download that announced no size was not committed");
+
+    // TEST-8, hole 3, measured here rather than argued: the transfer succeeded
+    // and the device reports having downloaded nothing. finalizeUpdateOperation()
+    // does downloadedBytes = totalBytes, and totalBytes is the size the *server*
+    // announced — zero, on a chunked response. SEC-9 narrowed the upload path's
+    // equivalent; this is the download path's, and it is not this lot's to fix.
+    // Asserted so that fixing it fails here and is noticed, rather than looking
+    // like nobody knew.
+    TEST_ASSERT_EQUAL_MESSAGE(0, dl.ota.getDownloadedBytes(),
+                              "the download byte count was fixed — good; update TEST-8 hole 3");
+}
+
 void setup() {
     delay(2000);  // let the host attach before Unity starts printing
     UNITY_BEGIN();
@@ -355,6 +499,9 @@ void setup() {
 
     RUN_TEST(test_upload_over_the_cap_is_refused_before_erasing_flash);
     RUN_TEST(test_upload_streaming_past_the_cap_releases_flash_and_stages_nothing);
+
+    RUN_TEST(test_upload_short_of_the_announced_size_still_stages_the_copy);
+    RUN_TEST(test_download_of_unknown_length_still_stages_the_copy);
 
     UNITY_END();
 }

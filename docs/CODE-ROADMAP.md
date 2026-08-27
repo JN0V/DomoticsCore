@@ -35,6 +35,7 @@ versions may sit still while fixes land.
 | MQTT | BUG-29 | **Merged** — PR #30, 2026-08-26, filed and fixed the same day |
 | OTA | BUG-21, SEC-8, TEST-3 | 2026-08-27 — BUG-21 was open all along while the tracking row said `0H`; SEC-8 filed from an observation SEC-7 left loose |
 | OTA | SEC-9 | PR #36 — 2026-08-27, filed by the real-conditions campaign and closed the same day, minus all three of its recorded consequences; raised TEST-8. Stacked on PR #35, where SEC-9 was filed |
+| OTA | TEST-8 (part) | 2026-08-27 — the two holes reachable without HTTP, closed on both boards. Found that the ESP8266 suite's one-sector payload had been hiding the Updater's flush. Stacked on PR #36 |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -1029,27 +1030,59 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   code review. It was invisible to every automated check the repository has, and it
   surfaced only because someone joined a LAN and uploaded a file by hand. The same
   blind spot covers anything else on that handler.
-- **Four specific holes**, each one SEC-9 could not close:
-  1. **`evenIfRemaining` below the HAL.** SEC-9 pins the argument `OTA.cpp` passes;
-     the stub's `end()` ignores it. Handing `false` to the real Updater in
-     `Update_ESP8266.h` or `Update_ESP32.h` keeps every test green. Both device
-     suites announce exactly what they deliver, so their images are finished and
-     the flag never matters. The shape that would prove it — **announce N + 220,
-     deliver N** — exists nowhere, and it is the shape every browser upload has.
-  2. **`installFromUrl()`'s own `end(true)`** at `OTA.cpp:658`, now asserted
-     natively but never against a real Updater, for the same reason.
-  3. **The download path overstates its byte count.** `totalBytes = announcedSize`
-     is the server's claim and `finalizeUpdateOperation()` copies it into
-     `downloadedBytes`, so an announce-8-send-6 server completes reporting 8. SEC-8
-     exists because servers lie about exactly that number.
+- **Four specific holes**, each one SEC-9 could not close. **Two are now closed on
+  silicon (2026-08-27); two remain.**
+  1. ~~**`evenIfRemaining` below the HAL.**~~ **CLOSED.** SEC-9 pinned the argument
+     `OTA.cpp` passes; the stub's `end()` ignores it, so handing `false` to the real
+     Updater kept every test green. Both device suites now carry an upload that
+     announces `PAYLOAD_SIZE + 220` and delivers `PAYLOAD_SIZE` — the shape every
+     browser upload has. Removal check on both boards: `Update.end(evenIfRemaining)`
+     → `Update.end(false)` in `Update_ESP8266.h` / `Update_ESP32.h` fails **only**
+     the new tests. ESP8266 reports `No data supplied`, ESP32 `Aborted`.
+  2. ~~**`installFromUrl()`'s own `end(true)`.**~~ **CLOSED on ESP8266.** A download
+     that announces no size at all — which is what a chunked response gives you —
+     opens the update at `UPDATE_SIZE_UNKNOWN` and is short by everything it does
+     not fill. `test_download_of_unknown_length_still_stages_the_copy` covers it,
+     and goes red under the same removal check. Not yet mirrored on ESP32.
+  3. **The download path overstates its byte count** — and understates it too.
+     Measured on a `nodemcuv2` rather than argued: an unknown-length download of
+     8192 bytes completes reporting **`getDownloadedBytes() == 0`**, because
+     `finalizeUpdateOperation()` does `downloadedBytes = totalBytes` and
+     `totalBytes` is the size the server announced, which was nothing. The same
+     assignment overstates when a server announces 8 and sends 6 — and SEC-8 exists
+     because servers lie about that number. The device test asserts the `0` today,
+     so a fix fails there and is noticed rather than passing silently.
   4. **What the browser actually renders.** SEC-9's first recorded consequence was
      a bar that stopped short. `progress` reaches 100, but the SSE cadence is
      ~5.4 s and `autoReboot` restarts the device 2 s after completion — so the
      original observation may have been right about the screen and wrong about the
-     cause. Nothing measures the screen.
+     cause. Nothing measures the screen. **This is the one that needs the HTTP
+     path**, and the harness for it already exists.
+- **What closing the first two cost, and it is the finding worth keeping.** The
+  ESP8266 payload was one flash sector, on the reasoning that one sector is enough
+  for the Updater to fill and flush its buffer. It is not.
+  `Updater.cpp:460` flushes the tail only when `_bufferLen == remaining()` — when
+  the buffered bytes complete the *announced* size exactly. A 4096-byte payload
+  announced as 4096 satisfies that on its very first buffer, **having never flushed
+  once**, so `progress()` was 0 right up to `end()`. Every test passed because its
+  announcement happened to match its delivery to the byte. Announce 4316 instead
+  and the whole image stays in RAM, `progress()` stays 0, and `end()` refuses it as
+  `UPDATE_ERROR_NO_DATA` — *before* reaching the flush three lines below. Real
+  firmware is never one sector; a 475 KB upload flushes 115 times. The payload is
+  two sectors now, and the suite behaves the way silicon does.
+- **And the removal check had to be run twice.** The first one passed — 10/10 with
+  `end(false)` in the HAL — because `pio` had built against the stale copy of
+  `Update_ESP8266.h` in `.pio/libdeps`. The header edit was never compiled. This is
+  the trap `CLAUDE.md` opens with, it was hit anyway, and it is why every figure
+  above comes from a run preceded by `rm -rf .pio`.
 - **The harness already exists** — `tools/on-device/` drives a real browser, and
   `OTAWithWebUI` reaches a LAN behind `DC_OTA_PREFER_STA`. What is missing is a
   test that uses them, not a means of writing one.
+- **Verified on both boards** (2026-08-27). `nodemcuv2`: 10/10, up from 8.
+  WROOM-32D: 9/9, up from 8 — and that board, not the ESP32-CAM, is what
+  `/dev/ttyUSB0` was; its adapter is a CP2102, which `CLAUDE.md` did not list.
+  52/52 native, unchanged. Each new test proved non-vacuous by the HAL removal
+  check above, from a cleaned `.pio`.
 
 ---
 
@@ -1592,7 +1625,7 @@ not.
 | 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences having been refuted against the Arduino cores) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **2H**, 7M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
-| 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 new** — nothing traverses `POST /api/ota/upload`) |
+| 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, two of its four holes closed on silicon** — the `evenIfRemaining` pin now reaches the HAL on both boards; the HTTP path is still traversed by nothing) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
