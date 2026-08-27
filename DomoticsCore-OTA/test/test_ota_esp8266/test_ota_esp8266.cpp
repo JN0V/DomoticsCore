@@ -165,6 +165,20 @@ void setUp() {
 }
 
 void tearDown() {
+    // Release an update left open by a test that longjmped out of a failed
+    // assertion. Without this, one failure cascades: the next beginUpload() gets
+    // a refusal from the Updater and the test after it reports a failure it never
+    // actually reached. The SEC-8 removal check on 2026-08-27 was read that way
+    // for a day — the second test looked like it had demonstrated something when
+    // all it had done was inherit the first one's open update.
+    //
+    // HAL::OTAUpdate::abort() rather than Update.end() directly: on this platform
+    // the release is end(false), which stages the image once every announced byte
+    // has been written, so the HAL clears the eboot command behind it. See the
+    // contract in Update_HAL.h.
+    if (Update.isRunning()) {
+        HAL::OTAUpdate::abort();
+    }
     // Never leave the bootloader armed, whatever a test did or how it failed.
     eboot_command_clear();
 }

@@ -272,9 +272,7 @@ Unenforced security configurations are the most dangerous class of defect — us
      cannot see that case coming at all.
   3. `installFromUrl()`'s chunk callback does the same against `downloadedBytes`,
      which closes the lying-server hole above.
-- **Verified on both boards** (2026-08-27). `nodemcuv2`: 8/8, and with SEC-8
-  removed the two new device tests fail — an upload twice the ceiling is
-  accepted, and 4 KB streams past a 2 KB ceiling unchallenged. ESP32-CAM: 8/8,
+- **Verified on both boards** (2026-08-27). `nodemcuv2`: 8/8. ESP32-CAM: 8/8,
   with both refusals visible in the log for the right reasons
   (`65536 bytes announced against a 32768 byte ceiling`, then
   `33280 bytes would pass a 32768 byte ceiling` for the upload that announced no
@@ -283,13 +281,36 @@ Unenforced security configurations are the most dangerous class of defect — us
   Updater has size limits of its own, and a test content with "it said no" would
   be crediting the platform for our check. That is the trap the ESP32 suite
   walked into with the synthetic payload on 2026-08-26.
-- **The ESP32 removal check did not complete**, and this is a gap rather than a
-  result. The board was reflashed without SEC-8 and dropped off the USB bus after
-  two tests — `/dev/ttyUSB0` disappeared entirely, which is the ESP32-CAM
-  brownout already documented in CLAUDE.md, not a fault in the code. So the two
-  SEC-8 tests are proven non-vacuous on the ESP8266 and **not** on the ESP32,
-  where all that is established is that they pass with the fix in place. Worth
-  redoing on a board with its own 5 V supply.
+- **The removal check, and a correction.** With SEC-8 disabled, the ESP32 fails
+  both new tests independently: test 7 logs
+  `Upload started | expected bytes=65536` against a 32 KB ceiling, and test 8
+  opens a session of unknown size and reports `64 KB went past a 32 KB ceiling`
+  — its own assertion message.
+
+  **It did not read that way at first, and the first reading was wrong.** A
+  failing Unity assertion longjmps out of the test, so test 7's failure left an
+  update open, and test 8 died at `beginUpload()` with
+  `Updater.cpp:116 begin(): already running` before reaching anything it was
+  meant to measure. Its failure was a cascade. Both device suites were briefly
+  documented — and PR #32 merged — claiming the second test had demonstrated
+  something it never ran. Line 314 of the ESP8266 suite is the same assertion, so
+  the same cascade applied there.
+
+  Fixed by releasing any open update in `tearDown()` on both suites. This is the
+  2026-08-26 lesson in mirror image: a hardware test can *fail* for the
+  platform's reasons rather than yours, and a red result invites no scrutiny at
+  all. Ask what a failure actually reached, not only whether it failed.
+- **The ESP8266 removal check still needs redoing** on the corrected suite. The
+  cascade means test 8 is proven non-vacuous on the ESP32 and not yet on the
+  ESP8266, where only test 7's failure was ever independent. The board was not
+  attached when this was found.
+- **On the ESP32-CAM dropping off the USB bus.** It happened once, mid-check, and
+  was written up here as the documented brownout. On a replug the same firmware
+  ran to completion, and four consecutive flash-and-run cycles followed without
+  incident — so it was a one-off link event and the brownout attribution was
+  confidence the evidence did not support. Worth knowing that a stalled sketch
+  cannot explain it either: the FTDI is a separate chip on USB power, so a hung
+  ESP32 gives silence on the port, not a port that ceases to exist.
 - **Not covered**: the ceiling is a byte count, not a rate limit or a concurrency
   bound. An upload within the ceiling can still be repeated.
 
