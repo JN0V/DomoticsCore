@@ -676,6 +676,97 @@ void test_ota_download_streaming_past_the_cap_is_refused() {
     core.shutdown();
 }
 
+// --- SEC-9: the upload path sizes itself from the multipart envelope --------
+//
+// request->contentLength() measures the whole encoded body, so what reaches
+// beginUpload() from a browser is 220 bytes more than the firmware — measured on
+// a nodemcuv2 and a WROOM-32D. That figure is an upper bound, which is safe
+// everywhere it is used except at the end, where the completion event reported it
+// as the byte count actually received.
+//
+// The other half is the argument nothing could observe. A streaming upload never
+// knows its exact length before the last chunk, so the image is never "finished"
+// by either core's definition and end() only commits it because evenIfRemaining
+// is true. That is not a defect of the envelope and no announced size removes it
+// — so it is pinned here rather than fixed.
+
+void test_ota_upload_commits_with_even_if_remaining() {
+    OTAComponent ota(quietConfig());
+    ota.begin();
+
+    const uint8_t firmware[16] = {0xE9};
+    TEST_ASSERT_TRUE(ota.beginUpload(sizeof(firmware)));
+    TEST_ASSERT_TRUE(ota.acceptUploadChunk(firmware, sizeof(firmware)));
+    TEST_ASSERT_TRUE(ota.finalizeUpload());
+
+    // Non-vacuity: a test that only read the flag would pass just as well if
+    // end() had never been called at all.
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, HAL::OTAUpdate::s_stubEndCalls,
+                                     "the image was never committed: the flag below means nothing");
+    TEST_ASSERT_TRUE_MESSAGE(HAL::OTAUpdate::s_stubEndEvenIfRemaining,
+                             "end() was called without evenIfRemaining — every browser upload "
+                             "is short of Update's _size and would now be refused");
+}
+
+void test_ota_upload_refusal_names_the_figure_it_compared() {
+    // The refusal quotes the *announced* size, which on the browser path is the
+    // multipart envelope. An operator reading "475452 against a 100000 ceiling"
+    // for a 475232-byte firmware needs the message to say which number that is.
+    // DLOG_W formats into 128 bytes on ESP8266, so this also pins that the
+    // sentence still fits: a truncated warning would drop the qualifier first.
+    String captured;
+    LoggerCallbacks::CallbackId id = LoggerCallbacks::addCallback(
+        [&captured](LogLevel level, const char* tag, const char* message) {
+            if (level == LOG_LEVEL_WARN && String(tag) == LOG_OTA) captured = message;
+        });
+
+    OTAConfig config = quietConfig();
+    config.maxDownloadSize = 100000;
+
+    OTAComponent ota(config);
+    ota.begin();
+    TEST_ASSERT_FALSE(ota.beginUpload(475452));
+
+    LoggerCallbacks::removeCallback(id);
+
+    TEST_ASSERT_TRUE_MESSAGE(captured.length() > 0, "the refusal logged no warning at all");
+    TEST_ASSERT_TRUE_MESSAGE(captured.indexOf("475452") >= 0,
+                             "the warning does not name the figure it compared");
+    TEST_ASSERT_TRUE_MESSAGE(captured.indexOf("announced") >= 0,
+                             "the warning does not say the figure is what the sender announced");
+    TEST_ASSERT_TRUE_MESSAGE(captured.indexOf("framing included") >= 0,
+                             "the qualifier is gone — truncated, or edited out");
+    TEST_ASSERT_TRUE_MESSAGE(captured.length() < 128,
+                             "the warning would be truncated by ESP8266's 128-byte log buffer");
+}
+
+void test_ota_upload_completion_reports_the_bytes_that_arrived() {
+    // 236 announced for 16 delivered: the shape of a multipart POST, with the
+    // 220-byte framing measured on both boards.
+    OTAComponent ota(quietConfig());
+    ota.begin();
+
+    const uint8_t firmware[16] = {0xE9};
+    TEST_ASSERT_TRUE(ota.beginUpload(236));
+    TEST_ASSERT_TRUE(ota.acceptUploadChunk(firmware, sizeof(firmware)));
+
+    // Mid-transfer the announced figure is deliberately kept as the denominator:
+    // it is an upper bound, it is the only one there is, and it is 0.046 % low on
+    // a real firmware rather than the 93 % it looks like at this scale.
+    TEST_ASSERT_EQUAL(236, ota.getTotalBytes());
+    TEST_ASSERT_EQUAL(16, ota.getDownloadedBytes());
+
+    TEST_ASSERT_TRUE(ota.finalizeUpload());
+
+    // Once the transfer is over the counted figure is known exactly, and it is
+    // the one the completion event carries.
+    TEST_ASSERT_EQUAL_MESSAGE(16, ota.getTotalBytes(),
+                              "completion reported the multipart envelope as the firmware size");
+    TEST_ASSERT_EQUAL_MESSAGE(16, ota.getDownloadedBytes(),
+                              "completion reported more bytes than ever arrived");
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, ota.getProgress());
+}
+
 // ============================================================================
 // State Machine Transitions (TEST-3)
 // ============================================================================
@@ -988,6 +1079,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_ota_upload_within_the_cap_is_accepted);
     RUN_TEST(test_ota_upload_streaming_past_the_cap_is_refused);
     RUN_TEST(test_ota_download_streaming_past_the_cap_is_refused);
+
+    // SEC-9
+    RUN_TEST(test_ota_upload_commits_with_even_if_remaining);
+    RUN_TEST(test_ota_upload_refusal_names_the_figure_it_compared);
+    RUN_TEST(test_ota_upload_completion_reports_the_bytes_that_arrived);
 
     // State machine transitions (TEST-3)
     RUN_TEST(test_ota_upload_holds_downloading_while_it_runs);

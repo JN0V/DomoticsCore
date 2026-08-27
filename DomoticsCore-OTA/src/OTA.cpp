@@ -183,10 +183,27 @@ bool OTAComponent::beginUpload(size_t expectedSize, const String& expectedSha256
 
     // SEC-8: maxDownloadSize used to apply only to the transfer this device
     // initiates, and not to the one anybody could POST. Refused here, before
-    // begin() erases flash, for the same reason as the hash check above.
+    // begin() opens an update, for the same reason as the hash check above.
+    //
+    // SEC-9: expectedSize is what the sender *announced*, and on the browser
+    // path OTAWebUI announces request->contentLength() — the whole multipart
+    // body, framing included, measured at 220 bytes over the firmware on both
+    // boards. That makes it an upper bound rather than a size, so this check
+    // can only ever over-refuse, never under-refuse, and the log has to say
+    // which number it compared. The ceiling that *decides* is the one in
+    // acceptUploadChunk(), which counts the bytes that actually arrive; this
+    // one exists to refuse the obviously-oversized before an update is opened
+    // at all. That ordering is not cosmetic: HAL::OTAUpdate::begin() targets
+    // esp_ota_get_next_update_partition(), which holds the image canRollBack()
+    // would boot — and on a single-slot ESP32 is the running code itself. See
+    // the partition note in DomoticsCore-OTA/platformio.ini.
     if (config.maxDownloadSize > 0 && expectedSize > config.maxDownloadSize) {
         lastError = "Firmware too large";
-        DLOG_W(LOG_OTA, "Upload rejected: %lu bytes announced against a %lu byte ceiling",
+        // Kept short on purpose: DLOG_W formats into DOMOTICS_DLOG_BUF_SIZE, which
+        // is 128 bytes on ESP8266 (Platform_ESP8266.h:49). At 96 characters with
+        // two 10-digit figures this fits; a longer sentence would be truncated on
+        // the one platform where the ceiling is tightest.
+        DLOG_W(LOG_OTA, "Upload rejected: %lu announced bytes (framing included) against a %lu byte ceiling",
                static_cast<unsigned long>(expectedSize),
                static_cast<unsigned long>(config.maxDownloadSize));
         return false;
@@ -398,6 +415,14 @@ bool OTAComponent::finalizeUpload() {
         }, false);
         return false;
     }
+
+    // SEC-9: the transfer is over, so the announced figure has outlived its
+    // usefulness and the counted one is now known exactly. finalizeUpdateOperation()
+    // does downloadedBytes = totalBytes to make the completion event self-consistent,
+    // which is right for a download — totalBytes is the size the server announced —
+    // and wrong for an upload, where it is the multipart envelope. Narrowing it here
+    // rather than in that helper keeps the download path untouched.
+    totalBytes = uploadSession.received;
 
     // On platforms without buffering (ESP32), finalize immediately
     if (!HAL::OTAUpdate::requiresBuffering()) {
