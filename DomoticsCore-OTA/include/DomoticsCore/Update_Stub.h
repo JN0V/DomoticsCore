@@ -28,13 +28,18 @@ inline size_t s_stubEndCalls = 0;
 inline size_t s_stubAbortCalls = 0;
 
 // SEC-9: the argument end() was last called with. Both Arduino cores define a
-// finished image as an exact equality — _progress == _size (ESP32 Update.h:116,
-// ESP8266 Updater.h:165) — and refuse end() on anything short of it unless
+// finished image as an exact equality — ESP32 `_progress == _size`
+// (Update.h:116), ESP8266 `_currentAddress == (_startAddress + _size)`
+// (Updater.h:165) — and refuse end() on anything short of it unless
 // evenIfRemaining is set (ESP32 Updater.cpp:289, ESP8266 Updater.cpp:226). A
 // streaming upload never knows its exact length before the last chunk, so every
 // browser upload this library has ever committed did so through that `true`.
-// Nothing could observe it, which made it a one-character regression waiting to
-// happen; the native suite asserts it now.
+//
+// What this observes is the argument OTA.cpp passes, and nothing more. end()
+// here returns true whatever it is given, so the flag pins the call site and
+// not the HAL: changing Update_ESP8266.h or Update_ESP32.h to pass false to the
+// real Updater would leave every test in this repository green and break every
+// browser upload on a board. That gap is TEST-8's.
 inline bool s_stubEndEvenIfRemaining = false;
 
 inline bool begin(size_t = UPDATE_SIZE_UNKNOWN) {
@@ -55,7 +60,14 @@ inline bool end(bool evenIfRemaining = false) {
     s_stubEndEvenIfRemaining = evenIfRemaining;
     return true;
 }
-inline void abort() { ++s_stubAbortCalls; }
+
+// Clears the flag as well as counting: the suite defines no setUp(), so this
+// state outlives a test. A later assertion that read it without opening an
+// update first would be reading the previous test's commit.
+inline void abort() {
+    ++s_stubAbortCalls;
+    s_stubEndEvenIfRemaining = false;
+}
 inline String errorString() { return "Update not supported on this platform"; }
 inline bool hasError() { return false; }
 

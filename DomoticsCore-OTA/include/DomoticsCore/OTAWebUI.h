@@ -396,6 +396,15 @@ private:
                         uploadState.active = true;
                         uploadState.filename = filename;
                         uploadState.total = 0;
+                        // SEC-9: this measures the whole multipart body — boundary,
+                        // part headers, trailing boundary — and not the firmware.
+                        // 220 bytes more on both boards. It is passed on anyway,
+                        // deliberately: an upper bound never truncates Update.begin(),
+                        // and it lets beginUpload() refuse a grossly oversized upload
+                        // before an update is opened at all. Passing 0 instead removes
+                        // that refusal from this path and widens the shortfall
+                        // end(true) has to absorb. See SEC-9 in docs/CODE-ROADMAP.md
+                        // before changing this line.
                         size_t expectedSize = request->contentLength();
 
                         // SEC-7: the expected digest, if the client sent one.

@@ -108,7 +108,7 @@ Returns `false` only if `url` is empty.
 | `getState()` | `State` | Current state machine value. |
 | `getProgress()` | `float` | Download/upload progress as a percentage (0.0 -- 100.0). |
 | `getDownloadedBytes()` | `size_t` | Bytes written to flash so far. |
-| `getTotalBytes()` | `size_t` | Expected total firmware size (0 if unknown). |
+| `getTotalBytes()` | `size_t` | Expected total firmware size (0 if unknown) **while a transfer runs**; on an upload it becomes the bytes actually received once `finalizeUpload()` runs, so `ota/end` and `ota/completed` report the firmware rather than the announced figure. SEC-9: on the browser path the announced figure is the whole multipart body, ~220 bytes larger than the firmware, and it survives only as `ota/progress`'s denominator. The download path still reports what the server announced. |
 | `getLastResult()` | `const String&` | Human-readable status message (e.g., `"Idle"`, `"Uploading firmware"`, `"Update complete - rebooting in 2s"`). |
 | `getLastError()` | `const String&` | Last error message, or empty if no error. |
 | `getLastVersion()` | `const String&` | Last firmware version seen in a manifest response. |
