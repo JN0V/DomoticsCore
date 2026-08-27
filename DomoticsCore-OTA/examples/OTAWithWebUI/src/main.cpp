@@ -47,6 +47,25 @@
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
+// Credentials. Put a `secrets.h` at the repository root — or anywhere on the
+// include path — to reach this example from a LAN instead of joining its access
+// point. Build with the root on the include path:
+//     PLATFORMIO_BUILD_FLAGS="-I/path/to/DomoticsCore" pio run -e esp8266dev
+// Without the file the example behaves exactly as before: access point only.
+#if defined(__has_include)
+#  if __has_include(<secrets.h>)
+#    include <secrets.h>
+#  endif
+#endif
+
+#ifndef DC_WIFI_SSID
+#  define DC_WIFI_SSID ""
+#endif
+#ifndef DC_WIFI_PASSWORD
+#  define DC_WIFI_PASSWORD ""
+#endif
+
+
 #define LOG_APP "APP"
 
 Core core;
@@ -82,11 +101,34 @@ void setup() {
     snprintf(apSSID, sizeof(apSSID), "DomoticsCore-OTA-%08X", (uint32_t)HAL::Platform::getChipId());
 
     HAL::WiFiHAL::init();
-    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::AccessPoint);
-    HAL::WiFiHAL::startAP(apSSID);
 
-    DLOG_I(LOG_APP, "AP SSID: %s", apSSID);
-    DLOG_I(LOG_APP, "AP IP: %s", HAL::WiFiHAL::getAPIP().c_str());
+    // This example is an access point by design: updating a device in the field
+    // is the point, and that needs no infrastructure. Define DC_OTA_PREFER_STA
+    // (in secrets.h) to join an existing network instead, which is what makes
+    // the upload endpoint reachable from a LAN for testing. Off by default, so
+    // the access-point path stays the one that ships and the one exercised.
+    bool staConnected = false;
+#ifdef DC_OTA_PREFER_STA
+    if (strlen(DC_WIFI_SSID) > 0) {
+        DLOG_I(LOG_APP, "Connecting to WiFi: %s", DC_WIFI_SSID);
+        HAL::WiFiHAL::connect(DC_WIFI_SSID, DC_WIFI_PASSWORD);
+        unsigned long start = HAL::Platform::getMillis();
+        while (!HAL::WiFiHAL::isConnected() && (HAL::Platform::getMillis() - start) < 15000) {
+            HAL::Platform::delayMs(100);
+        }
+        staConnected = HAL::WiFiHAL::isConnected();
+    }
+#endif
+
+    if (staConnected) {
+        DLOG_I(LOG_APP, "Connected. Upload endpoint: http://%s/api/ota/upload",
+               HAL::WiFiHAL::getLocalIP().c_str());
+    } else {
+        HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::AccessPoint);
+        HAL::WiFiHAL::startAP(apSSID);
+        DLOG_I(LOG_APP, "AP SSID: %s", apSSID);
+        DLOG_I(LOG_APP, "AP IP: %s", HAL::WiFiHAL::getAPIP().c_str());
+    }
 
     // Web UI component
     WebUIConfig webCfg;
