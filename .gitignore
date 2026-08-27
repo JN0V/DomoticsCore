@@ -88,3 +88,6 @@ docs/html/
 
 # Local credentials for on-device testing — never committed
 secrets.h
+
+# Logs produced by the on-device harness
+tools/on-device/log-*.txt
