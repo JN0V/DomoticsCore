@@ -33,14 +33,44 @@ using namespace DomoticsCore::Components;
 using namespace DomoticsCore::Components::HomeAssistant;
 
 // ========== Configuration ==========
-const char* WIFI_SSID = "YourWiFiSSID";
-const char* WIFI_PASSWORD = "YourWiFiPassword";
+// Credentials. Put a `secrets.h` at the repository root — or anywhere on the
+// include path — to run this example against a real network without editing,
+// and without committing, anything. Build with the root on the include path:
+//     PLATFORMIO_BUILD_FLAGS="-I/path/to/DomoticsCore" pio run -e esp8266dev
+// Without the file the placeholders below are unchanged.
+#if defined(__has_include)
+#  if __has_include(<secrets.h>)
+#    include <secrets.h>
+#  endif
+#endif
+
+#ifndef DC_WIFI_SSID
+#  define DC_WIFI_SSID "YourWiFiSSID"
+#endif
+#ifndef DC_WIFI_PASSWORD
+#  define DC_WIFI_PASSWORD "YourWiFiPassword"
+#endif
+#ifndef DC_MQTT_BROKER
+#  define DC_MQTT_BROKER "mqtt.example.com"
+#endif
+#ifndef DC_MQTT_PORT
+#  define DC_MQTT_PORT 1883
+#endif
+#ifndef DC_MQTT_USER
+#  define DC_MQTT_USER ""
+#endif
+#ifndef DC_MQTT_PASSWORD
+#  define DC_MQTT_PASSWORD ""
+#endif
+
+const char* WIFI_SSID = DC_WIFI_SSID;
+const char* WIFI_PASSWORD = DC_WIFI_PASSWORD;
 
 // MQTT broker
-const char* MQTT_BROKER = "mqtt.example.com";
-const uint16_t MQTT_PORT = 1883;
-const char* MQTT_USER = "";          // Leave empty if no auth
-const char* MQTT_PASSWORD = "";
+const char* MQTT_BROKER = DC_MQTT_BROKER;
+const uint16_t MQTT_PORT = DC_MQTT_PORT;
+const char* MQTT_USER = DC_MQTT_USER;          // Leave empty if no auth
+const char* MQTT_PASSWORD = DC_MQTT_PASSWORD;
 
 // Hardware pins
 const int SENSOR_UPDATE_INTERVAL = 30000;  // Update sensors every 30 seconds

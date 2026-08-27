@@ -28,8 +28,26 @@ using namespace DomoticsCore;
 
 // Option 1: Leave empty for automatic AP mode on first boot
 // Device will create AP "MyDevice-XXXX" and you configure via web interface
-const char* WIFI_SSID = "";
-const char* WIFI_PASSWORD = "";
+// Credentials. Put a `secrets.h` at the repository root — or anywhere on the
+// include path — to run this example against a real network without editing,
+// and without committing, anything. Build with the root on the include path:
+//     PLATFORMIO_BUILD_FLAGS="-I/path/to/DomoticsCore" pio run -e esp8266dev
+// Without the file the defaults are unchanged: an empty SSID means AP mode.
+#if defined(__has_include)
+#  if __has_include(<secrets.h>)
+#    include <secrets.h>
+#  endif
+#endif
+
+#ifndef DC_WIFI_SSID
+#  define DC_WIFI_SSID ""
+#endif
+#ifndef DC_WIFI_PASSWORD
+#  define DC_WIFI_PASSWORD ""
+#endif
+
+const char* WIFI_SSID = DC_WIFI_SSID;
+const char* WIFI_PASSWORD = DC_WIFI_PASSWORD;
 
 // Option 2: Hardcode credentials (not recommended for production)
 // const char* WIFI_SSID = "YOUR_WIFI_SSID";

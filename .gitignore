@@ -85,3 +85,6 @@ specs/
 
 # Doxygen generated documentation — regenerate with: doxygen docs/Doxyfile
 docs/html/
+
+# Local credentials for on-device testing — never committed
+secrets.h

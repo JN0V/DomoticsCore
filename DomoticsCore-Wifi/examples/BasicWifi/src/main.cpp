@@ -9,6 +9,24 @@ using namespace DomoticsCore::Components;
 // Custom application log tag
 #define LOG_APP "APP"
 
+// Credentials. Put a `secrets.h` at the repository root — or anywhere on the
+// include path — to run this example against a real network without editing,
+// and without committing, anything. Build with the root on the include path:
+//     PLATFORMIO_BUILD_FLAGS="-I/path/to/DomoticsCore" pio run -e esp8266dev
+// Without the file the placeholders below are unchanged.
+#if defined(__has_include)
+#  if __has_include(<secrets.h>)
+#    include <secrets.h>
+#  endif
+#endif
+
+#ifndef DC_WIFI_SSID
+#  define DC_WIFI_SSID "YourWifiSSID"
+#endif
+#ifndef DC_WIFI_PASSWORD
+#  define DC_WIFI_PASSWORD "YourWifiPassword"
+#endif
+
 Core core;
 
 /**
@@ -46,9 +64,10 @@ public:
     ComponentStatus begin() override {
         DLOG_I(LOG_APP, "[WifiDemo] Initializing Wifi demonstration component...");
         
-        // NOTE: Replace with your actual Wifi credentials
-        String ssid = "YourWifiSSID";
-        String password = "YourWifiPassword";
+        // Credentials come from secrets.h when it is on the include path, and
+        // fall back to the placeholders above otherwise.
+        String ssid = DC_WIFI_SSID;
+        String password = DC_WIFI_PASSWORD;
         
         // Create Wifi manager with credentials
         wifiComp.reset(new WifiComponent(ssid, password));
