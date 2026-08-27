@@ -58,6 +58,42 @@ roughly every 5.4 s. A three-second screenshot shows every field empty and looks
 exactly like a broken dashboard; it cost an afternoon before the cause turned out
 to be impatience. The default wait is 18 s for that reason.
 
+## `ota_upload_check.py`
+
+Drive a real `POST /api/ota/upload` and check what the device reports back.
+
+```
+python3 tools/on-device/ota_upload_check.py http://192.168.1.218 firmware.bin
+```
+
+TEST-8, hole 4. Every OTA test in the repository calls `beginUpload()` directly,
+so nothing had ever constructed an HTTP request or seen a `multipart/form-data`
+envelope — which is how SEC-9 stayed invisible to 54 native tests and 19
+on-device ones until somebody uploaded a file by hand.
+
+**The load-bearing case is the refused upload, not the accepted one.** A valid
+image sent with a deliberately wrong digest is refused at the hash check, which
+sits *after* SEC-9's narrowing and *before* the commit — so the device stays up,
+does not reboot, and `/api/ota/status` remains readable. Measured on a
+`nodemcuv2` against builds with and without the fix:
+
+| | announced `Content-Length` | `total` reported |
+|---|---|---|
+| with SEC-9 | 475452 | **475264** — the firmware |
+| without | 475452 | **475452** — the envelope |
+
+`downloaded` reads 475264 either way and proves nothing here: a refused digest
+never reaches `finalizeUpdateOperation()`, so it never hits the assignment that
+would have overwritten it. Only `total` discriminates, and the script says so.
+
+`--commit` also sends a correctly-hashed copy, which the device installs and
+reboots into. Uploading the image the board is already running makes that safe
+and repeatable. **That path is written and has not been exercised** — the board
+dropped off USB before it was reached.
+
+Needs `DC_OTA_PREFER_STA` in `secrets.h` and `OTAWithWebUI` flashed, so the
+endpoint is on the LAN rather than behind the device's own access point.
+
 ## Credentials
 
 Put a `secrets.h` at the repository root — it is gitignored:

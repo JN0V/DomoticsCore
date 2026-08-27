@@ -36,7 +36,8 @@ versions may sit still while fixes land.
 | OTA | BUG-21, SEC-8, TEST-3 | 2026-08-27 — BUG-21 was open all along while the tracking row said `0H`; SEC-8 filed from an observation SEC-7 left loose |
 | OTA | SEC-9 | PR #36 — 2026-08-27, filed by the real-conditions campaign and closed the same day, minus all three of its recorded consequences; raised TEST-8. Stacked on PR #35, where SEC-9 was filed |
 | OTA | TEST-8 (part) | **Merged** — PR #37, 2026-08-27, the two holes reachable without HTTP, closed on both boards. Found that the ESP8266 suite's one-sector payload had been hiding the Updater's flush |
-| OTA | TEST-8 hole 3 | 2026-08-27 — the download path reported the size the server announced, in both directions |
+| OTA | TEST-8 hole 3 | **Merged** — PR #39, 2026-08-27, the download path reported the size the server announced, in both directions |
+| OTA | TEST-8 hole 4 (part) | 2026-08-27 — a real multipart POST against a board, with a removal check that discriminates. The accepted path is unrun: the board left the USB bus |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -1033,8 +1034,10 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   code review. It was invisible to every automated check the repository has, and it
   surfaced only because someone joined a LAN and uploaded a file by hand. The same
   blind spot covers anything else on that handler.
-- **Four specific holes**, each one SEC-9 could not close. **Three are closed
-  (2026-08-27); the one that needs the HTTP path remains.**
+- **Four specific holes**, each one SEC-9 could not close. **Three closed and the
+  fourth part-closed (2026-08-27).** What remains of the fourth is the accepted
+  upload and the browser's own view, both of which need a board that stays
+  attached.
   1. ~~**`evenIfRemaining` below the HAL.**~~ **CLOSED.** SEC-9 pinned the argument
      `OTA.cpp` passes; the stub's `end()` ignores it, so handing `false` to the real
      Updater kept every test green. Both device suites now carry an upload that
@@ -1059,12 +1062,32 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
      SEC-9. Two native tests, one per direction; the removal check fails only them,
      with `Expected 32 Was 0` and `Expected 32 Was 64`. The device assertion that
      had been left reading `0` on purpose now reads `PAYLOAD_SIZE`.
-  4. **What the browser actually renders.** SEC-9's first recorded consequence was
-     a bar that stopped short. `progress` reaches 100, but the SSE cadence is
-     ~5.4 s and `autoReboot` restarts the device 2 s after completion — so the
-     original observation may have been right about the screen and wrong about the
-     cause. Nothing measures the screen. **This is the one that needs the HTTP
-     path**, and the harness for it already exists.
+  4. **The HTTP path itself — partly closed (2026-08-27), and the part that is
+     closed is the part that matters.** `tools/on-device/ota_upload_check.py`
+     builds a `multipart/form-data` body by hand and POSTs it to
+     `/api/ota/upload` on a board running `OTAWithWebUI`. Run on a `nodemcuv2`
+     against builds with and without SEC-9's narrowing:
+
+     | | announced `Content-Length` | `total` reported |
+     |---|---|---|
+     | with SEC-9 | 475452 | **475264** — the firmware |
+     | without | 475452 | **475452** — the envelope |
+
+     The discriminating case is the **refused** upload: a valid image with a
+     deliberately wrong digest is refused after the narrowing and before the
+     commit, so the device stays up and its figures stay readable. `downloaded`
+     reads 475264 either way and proves nothing — a refused digest never reaches
+     `finalizeUpdateOperation()`. Only `total` moves, and the script says so
+     rather than claiming two assertions where there is one.
+
+     **Still open**: the accepted-and-committed path is written behind `--commit`
+     and **has not been run** — the board's FTDI adapter dropped off USB before it
+     was reached. And nothing yet measures what a *browser* renders: `progress`
+     reaches 100, but the SSE cadence is ~5.4 s against an `autoReboot` that
+     restarts the device 2 s after completion, so SEC-9's first recorded
+     consequence may still have been right about the screen and wrong about the
+     cause. The harness for that is `webui_check.py`, and it has not been pointed
+     at an upload.
 - **What closing the first two cost, and it is the finding worth keeping.** The
   ESP8266 payload was one flash sector, on the reasoning that one sector is enough
   for the Updater to fill and flush its buffer. It is not.
@@ -1632,7 +1655,7 @@ not.
 | 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences having been refuted against the Arduino cores) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **2H**, 7M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
-| 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three of its four holes closed** — what remains is the one that needs a real HTTP request, which nothing in the repository has ever made) |
+| 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth part-closed** — a real multipart POST now runs against a board and its removal check discriminates; the accepted-and-committed path is written and unrun) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
