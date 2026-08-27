@@ -35,7 +35,8 @@ versions may sit still while fixes land.
 | MQTT | BUG-29 | **Merged** — PR #30, 2026-08-26, filed and fixed the same day |
 | OTA | BUG-21, SEC-8, TEST-3 | 2026-08-27 — BUG-21 was open all along while the tracking row said `0H`; SEC-8 filed from an observation SEC-7 left loose |
 | OTA | SEC-9 | PR #36 — 2026-08-27, filed by the real-conditions campaign and closed the same day, minus all three of its recorded consequences; raised TEST-8. Stacked on PR #35, where SEC-9 was filed |
-| OTA | TEST-8 (part) | 2026-08-27 — the two holes reachable without HTTP, closed on both boards. Found that the ESP8266 suite's one-sector payload had been hiding the Updater's flush. Stacked on PR #36 |
+| OTA | TEST-8 (part) | **Merged** — PR #37, 2026-08-27, the two holes reachable without HTTP, closed on both boards. Found that the ESP8266 suite's one-sector payload had been hiding the Updater's flush |
+| OTA | TEST-8 hole 3 | 2026-08-27 — the download path reported the size the server announced, in both directions |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -358,13 +359,15 @@ Unenforced security configurations are the most dangerous class of defect — us
   bytes against a ceiling nobody sets to the byte, and one overstated figure in a
   completion event. The severity says what the defect is; the warning at the top
   of this entry does the scheduling.
-- **Left open by this lot**: `finalizeUpdateOperation()` does
-  `downloadedBytes = totalBytes` for downloads too, where `totalBytes` is the size
-  the *server* announced — so a server that announces 8 and streams 6 completes
-  reporting 8. SEC-8 exists because servers lie about that number, so calling the
-  download side "correct" would be the same overstatement this entry just removed
-  from uploads. Recorded in TEST-8, not fixed here: it is a different path, with a
-  different lying party, and it deserves its own removal check.
+- **Left open by this lot, and closed by the next**: `finalizeUpdateOperation()`
+  did `downloadedBytes = totalBytes` for downloads too, where `totalBytes` is the
+  size the *server* announced — so a server that announced 64 and streamed 32
+  completed reporting 64, and one that announced nothing completed reporting
+  nothing. SEC-8 exists because servers lie about that number, so calling the
+  download side "correct" would have been the same overstatement this entry
+  removed from uploads. Recorded as TEST-8 hole 3 rather than fixed here, on the
+  grounds that it is a different path with a different lying party and deserves
+  its own removal check. It got one, the same day.
 
 ### SEC-8 — OTA: `maxDownloadSize` was enforced on downloads and not on uploads [MEDIUM] — **DONE (2026-08-27)**
 
@@ -1030,8 +1033,8 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   code review. It was invisible to every automated check the repository has, and it
   surfaced only because someone joined a LAN and uploaded a file by hand. The same
   blind spot covers anything else on that handler.
-- **Four specific holes**, each one SEC-9 could not close. **Two are now closed on
-  silicon (2026-08-27); two remain.**
+- **Four specific holes**, each one SEC-9 could not close. **Three are closed
+  (2026-08-27); the one that needs the HTTP path remains.**
   1. ~~**`evenIfRemaining` below the HAL.**~~ **CLOSED.** SEC-9 pinned the argument
      `OTA.cpp` passes; the stub's `end()` ignores it, so handing `false` to the real
      Updater kept every test green. Both device suites now carry an upload that
@@ -1044,14 +1047,18 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
      opens the update at `UPDATE_SIZE_UNKNOWN` and is short by everything it does
      not fill. `test_download_of_unknown_length_still_stages_the_copy` covers it,
      and goes red under the same removal check. Not yet mirrored on ESP32.
-  3. **The download path overstates its byte count** — and understates it too.
-     Measured on a `nodemcuv2` rather than argued: an unknown-length download of
-     8192 bytes completes reporting **`getDownloadedBytes() == 0`**, because
-     `finalizeUpdateOperation()` does `downloadedBytes = totalBytes` and
-     `totalBytes` is the size the server announced, which was nothing. The same
-     assignment overstates when a server announces 8 and sends 6 — and SEC-8 exists
-     because servers lie about that number. The device test asserts the `0` today,
-     so a fix fails there and is noticed rather than passing silently.
+  3. ~~**The download path overstates its byte count** — and understates it too.~~
+     **CLOSED (2026-08-27).** Measured on a `nodemcuv2` rather than argued: an
+     unknown-length download of 8192 bytes completed reporting
+     **`getDownloadedBytes() == 0`**, because `finalizeUpdateOperation()` does
+     `downloadedBytes = totalBytes` and `totalBytes` was the size the server
+     announced — nothing, on a chunked response. The same assignment overstated
+     when a server announced 64 and sent 32, and SEC-8 exists because that number
+     is one a lying server picks. `installFromUrl()` now narrows `totalBytes` to
+     what it counted, above `ota/end`, exactly as `finalizeUpload()` does for
+     SEC-9. Two native tests, one per direction; the removal check fails only them,
+     with `Expected 32 Was 0` and `Expected 32 Was 64`. The device assertion that
+     had been left reading `0` on purpose now reads `PAYLOAD_SIZE`.
   4. **What the browser actually renders.** SEC-9's first recorded consequence was
      a bar that stopped short. `progress` reaches 100, but the SSE cadence is
      ~5.4 s and `autoReboot` restarts the device 2 s after completion — so the
@@ -1625,7 +1632,7 @@ not.
 | 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences having been refuted against the Arduino cores) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **2H**, 7M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
-| 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, two of its four holes closed on silicon** — the `evenIfRemaining` pin now reaches the HAL on both boards; the HTTP path is still traversed by nothing) |
+| 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three of its four holes closed** — what remains is the one that needs a real HTTP request, which nothing in the repository has ever made) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |

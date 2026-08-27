@@ -474,15 +474,19 @@ void test_download_of_unknown_length_still_stages_the_copy() {
     TEST_ASSERT_TRUE_MESSAGE(copyCommandStaged(),
                              "a download that announced no size was not committed");
 
-    // TEST-8, hole 3, measured here rather than argued: the transfer succeeded
-    // and the device reports having downloaded nothing. finalizeUpdateOperation()
-    // does downloadedBytes = totalBytes, and totalBytes is the size the *server*
-    // announced — zero, on a chunked response. SEC-9 narrowed the upload path's
-    // equivalent; this is the download path's, and it is not this lot's to fix.
-    // Asserted so that fixing it fails here and is noticed, rather than looking
-    // like nobody knew.
-    TEST_ASSERT_EQUAL_MESSAGE(0, dl.ota.getDownloadedBytes(),
-                              "the download byte count was fixed — good; update TEST-8 hole 3");
+    // TEST-8, hole 3, fixed on 2026-08-27 and pinned on silicon here.
+    //
+    // This assertion read `0` for one commit, deliberately: the transfer
+    // succeeded and the device reported having downloaded nothing, because
+    // finalizeUpdateOperation() copied the *server's* announced size — zero, on a
+    // chunked response — back over the figure it had counted. It was asserted as
+    // `0` so that fixing it would fail here and be noticed, rather than looking
+    // like nobody knew. installFromUrl() now narrows totalBytes to what it
+    // counted, the same way finalizeUpload() does for SEC-9.
+    TEST_ASSERT_EQUAL_MESSAGE(PAYLOAD_SIZE, dl.ota.getDownloadedBytes(),
+                              "a completed download reported bytes it never counted");
+    TEST_ASSERT_EQUAL_MESSAGE(PAYLOAD_SIZE, dl.ota.getTotalBytes(),
+                              "the size the server announced outlived the transfer");
 }
 
 void setup() {

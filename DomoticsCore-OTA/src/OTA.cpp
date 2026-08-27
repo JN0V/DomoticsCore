@@ -637,6 +637,21 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
         return false;
     }
 
+    // TEST-8: the download half of what SEC-9 fixed for uploads, and it fails
+    // both ways. totalBytes is the size the *server* announced, and
+    // finalizeUpdateOperation() copies it over downloadedBytes to make the
+    // completion event self-consistent — so a server announcing nothing, which is
+    // what a chunked response does, completed reporting **zero bytes
+    // downloaded** after transferring the whole image, and a server announcing
+    // more than it sent completed reporting the larger number. SEC-8 exists
+    // because that figure is one a lying server controls; it has no business
+    // outliving the transfer that can be counted instead.
+    //
+    // Narrowed here, above the first event that reports it, for the same reason
+    // finalizeUpload() narrows above its own: otherwise ota/end and ota/completed
+    // give two different totals for one transfer.
+    totalBytes = downloadedBytes;
+
     // BUG-21: transfer over, verdict not in yet. Same point in the sequence as
     // the one finalizeUpload() emits.
     publishStatusEvent(DomoticsCore::OTAEvents::EVENT_END, [this](JsonDocument& doc){
@@ -722,7 +737,12 @@ bool OTAComponent::isNewerVersion(const String& candidate) const {
 
 bool OTAComponent::finalizeUpdateOperation(const String& source, bool autoRebootPending) {
     progress = 100.0f;
-    downloadedBytes = totalBytes;  // Ensure bytes match total
+    // Both live callers now narrow totalBytes to what they counted before they
+    // get here — finalizeUpload() for SEC-9, installFromUrl() for TEST-8 — so
+    // this is a no-op on every path a board takes, and kept only so the two
+    // figures cannot disagree if a third caller ever appears. It used to be the
+    // line that put the announced size back after the counted one was known.
+    downloadedBytes = totalBytes;
 
     if (autoRebootPending) {
         transition(State::RebootPending, source + " complete");
