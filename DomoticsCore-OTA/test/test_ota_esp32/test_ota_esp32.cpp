@@ -188,6 +188,15 @@ void setUp() {
 }
 
 void tearDown() {
+    // Release an update left open by a test that longjmped out of a failed
+    // assertion. Without this, one failure cascades: the next beginUpload() gets
+    // "already running" from Update and the test after it reports a failure it
+    // never actually reached. The SEC-8 removal check on 2026-08-27 was read that
+    // way for a day — the second test looked like it had demonstrated something
+    // when all it had done was inherit the first one's open partition.
+    if (Update.isRunning()) {
+        Update.abort();
+    }
     // Never leave the bootloader pointed anywhere but here, however a test ended.
     restoreBootPartition();
 }
