@@ -181,6 +181,17 @@ bool OTAComponent::beginUpload(size_t expectedSize, const String& expectedSha256
         return false;
     }
 
+    // SEC-8: maxDownloadSize used to apply only to the transfer this device
+    // initiates, and not to the one anybody could POST. Refused here, before
+    // begin() erases flash, for the same reason as the hash check above.
+    if (config.maxDownloadSize > 0 && expectedSize > config.maxDownloadSize) {
+        lastError = "Firmware too large";
+        DLOG_W(LOG_OTA, "Upload rejected: %lu bytes announced against a %lu byte ceiling",
+               static_cast<unsigned long>(expectedSize),
+               static_cast<unsigned long>(config.maxDownloadSize));
+        return false;
+    }
+
     // Initialize HAL upload (handles buffering internally on platforms that need it)
     size_t updateSize = expectedSize > 0 ? expectedSize : UPDATE_SIZE_UNKNOWN;
     if (!HAL::OTAUpdate::begin(updateSize)) {
@@ -213,6 +224,14 @@ bool OTAComponent::beginUpload(size_t expectedSize, const String& expectedSha256
     } else {
         DLOG_I(LOG_OTA, "Upload started | expected bytes=unknown");
     }
+    // BUG-21: the lifecycle event. EVENT_INFO below is kept because the published
+    // reference names it as the upload-start signal and this library is installed
+    // by version — removing it would break whoever followed the documentation.
+    publishStatusEvent(DomoticsCore::OTAEvents::EVENT_START, [this](JsonDocument& doc){
+        doc["success"] = true;
+        doc["source"] = "upload";
+        doc["total"] = totalBytes;
+    }, false);
     publishStatusEvent(DomoticsCore::OTAEvents::EVENT_INFO, [this](JsonDocument& doc){
         doc["success"] = true;
         doc["message"] = "Upload started";
@@ -228,6 +247,28 @@ bool OTAComponent::acceptUploadChunk(const uint8_t* data, size_t length) {
     }
     if (!data || length == 0) {
         return true;
+    }
+
+    // SEC-8: the announced size is a number the sender chose, and beginUpload(0)
+    // means it announced nothing at all. Counting what actually arrives is the
+    // only check that holds in either case.
+    if (config.maxDownloadSize > 0 &&
+        uploadSession.received + length > config.maxDownloadSize) {
+        lastError = "Firmware too large";
+        DLOG_W(LOG_OTA, "Upload aborted: %lu bytes would pass a %lu byte ceiling",
+               static_cast<unsigned long>(uploadSession.received + length),
+               static_cast<unsigned long>(config.maxDownloadSize));
+        uploadSession.error = lastError;
+        HAL::OTAUpdate::abort();
+        uploadSha.abort();
+        uploadSession.active = false;
+        transition(State::Error, lastError);
+        publishStatusEvent(DomoticsCore::OTAEvents::EVENT_ERROR, [this](JsonDocument& doc){
+            doc["success"] = false;
+            doc["error"] = lastError.c_str();
+            doc["source"] = "upload";
+        }, false);
+        return false;
     }
 
     // Write to HAL (buffers internally on ESP8266, direct write on ESP32)
@@ -309,6 +350,16 @@ bool OTAComponent::finalizeUpload() {
 
     DLOG_I(LOG_OTA, "Upload finalizing | received=%lu bytes",
            static_cast<unsigned long>(uploadSession.received));
+
+    // BUG-21: the transfer is over and the verdict is not in yet — which is what
+    // "before verification" in the OTAEvents.h contract means. Emitted here so a
+    // subscriber can tell a transfer that died from an image that was rejected.
+    publishStatusEvent(DomoticsCore::OTAEvents::EVENT_END, [this](JsonDocument& doc){
+        doc["success"] = true;
+        doc["source"] = "upload";
+        doc["bytes"] = uploadSession.received;
+        doc["total"] = uploadSession.expected;
+    }, false);
 
     // SEC-7: verify before committing, on the ordering SEC-2 established.
     // end(true) is the point of no return — it switches the ESP32 boot partition
@@ -485,6 +536,13 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
     downloadedBytes = 0;
     progress = 0.0f;
 
+    // BUG-21: see beginUpload() — same lifecycle event, other entry point.
+    publishStatusEvent(DomoticsCore::OTAEvents::EVENT_START, [this, &url](JsonDocument& doc){
+        doc["success"] = true;
+        doc["source"] = "download";
+        doc["url"] = url.c_str();
+    }, false);
+
     HAL::SHA256 shaCtx;
 
     bool started = false;
@@ -504,6 +562,16 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
             started = true;
         }
         if (len == 0) return true;
+        // SEC-8: the check above trusts the size the server announced. This one
+        // counts what it actually sent, which is the only figure a lying server
+        // does not control.
+        if (config.maxDownloadSize > 0 && downloadedBytes + len > config.maxDownloadSize) {
+            lastError = "Firmware too large";
+            DLOG_W(LOG_OTA, "Download aborted: %lu bytes would pass a %lu byte ceiling",
+                   static_cast<unsigned long>(downloadedBytes + len),
+                   static_cast<unsigned long>(config.maxDownloadSize));
+            return false;
+        }
         size_t written = HAL::OTAUpdate::write(const_cast<uint8_t*>(data), len);
         if (written != len) {
             lastError = HAL::OTAUpdate::errorString();
@@ -530,6 +598,15 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
         }, false);
         return false;
     }
+
+    // BUG-21: transfer over, verdict not in yet. Same point in the sequence as
+    // the one finalizeUpload() emits.
+    publishStatusEvent(DomoticsCore::OTAEvents::EVENT_END, [this](JsonDocument& doc){
+        doc["success"] = true;
+        doc["source"] = "download";
+        doc["bytes"] = downloadedBytes;
+        doc["total"] = totalBytes;
+    }, false);
 
     // Verify BEFORE committing. end(true) is the point of no return — it switches
     // the ESP32 boot partition and stages the ESP8266 eboot copy — and no Arduino
