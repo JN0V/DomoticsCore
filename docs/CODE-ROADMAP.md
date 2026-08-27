@@ -34,7 +34,7 @@ versions may sit still while fixes land.
 | OTA | SEC-7 | **Merged** — PR #28, 2026-08-26, with the ESP32 suite in PR #29 |
 | MQTT | BUG-29 | **Merged** — PR #30, 2026-08-26, filed and fixed the same day |
 | OTA | BUG-21, SEC-8, TEST-3 | 2026-08-27 — BUG-21 was open all along while the tracking row said `0H`; SEC-8 filed from an observation SEC-7 left loose |
-| OTA | SEC-9 | 2026-08-27 — filed by the real-conditions campaign and closed the same day, minus two of its three consequences; raised TEST-8 |
+| OTA | SEC-9 | PR #36 — 2026-08-27, filed by the real-conditions campaign and closed the same day, minus all three of its recorded consequences; raised TEST-8. Stacked on PR #35, where SEC-9 was filed |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
