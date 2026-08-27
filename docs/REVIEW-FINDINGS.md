@@ -40,7 +40,7 @@ The review also uncovered **significant code-level issues** (dead features, cons
 | C11 | MQTT | `maxQueueSize`, `publishRateLimit`, `maxSubscriptions` config fields NEVER enforced | Implement enforcement or add bold warnings |
 | C12 | MQTT | Header `@example` block references deleted `onMessage()` API | Update example to EventBus pattern |
 | C13 | NTP | `retryDelayMs` config field declared but NEVER used | Implement or remove |
-| C14 | OTA | `EVENT_START` and `EVENT_END` events NEVER emitted | Emit events or remove from docs |
+| C14 | OTA | `EVENT_START` and `EVENT_END` events NEVER emitted | **Resolved (BUG-21)** — both emitted, on the download and upload paths |
 | C15 | OTA | `Applying` state NEVER entered in code | Remove from state machine or implement |
 | C16 | RemoteConsole | `requireAuth`/`password` config: authentication NEVER implemented | Implement or remove (security issue) |
 | C17 | RemoteConsole | `allowCommands` config field NEVER checked | Implement guard |

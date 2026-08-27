@@ -33,6 +33,7 @@ versions may sit still while fixes land.
 | OTA | SEC-2 | 2026-08-26 — reopened: the v2.0.1 fix was inert on both cores. Raised SEC-7 |
 | OTA | SEC-7 | **Merged** — PR #28, 2026-08-26, with the ESP32 suite in PR #29 |
 | MQTT | BUG-29 | **Merged** — PR #30, 2026-08-26, filed and fixed the same day |
+| OTA | BUG-21, SEC-8, TEST-3 | 2026-08-27 — BUG-21 was open all along while the tracking row said `0H`; SEC-8 filed from an observation SEC-7 left loose |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -55,7 +56,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 715 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
+| ✅ | The 13 native projects run — 729 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -243,6 +244,54 @@ Unenforced security configurations are the most dangerous class of defect — us
   On the host, 4 more tests via the `Update_Stub.h` call counters, including one
   asserting that a `requireUploadHash` refusal never reaches
   `HAL::OTAUpdate::begin()`.
+
+### SEC-8 — OTA: `maxDownloadSize` was enforced on downloads and not on uploads [MEDIUM] — **DONE (2026-08-27)**
+
+- **File**: `DomoticsCore-OTA/src/OTA.cpp` — `beginUpload()`, `acceptUploadChunk()`,
+  `installFromUrl()`
+- **Found by**: SEC-7, 2026-08-26. Recorded then as a loose observation with no ID;
+  filed here when the OTA lot that fixes it was opened.
+- **Problem**: the ceiling applied to the transfer this device *initiates* and to
+  nothing else. `installFromUrl()` checked `config.maxDownloadSize` against the
+  announced size at `OTA.cpp:495`; `beginUpload()` took `request->contentLength()`
+  straight from `OTAWebUI.h:399` and never consulted the field, and
+  `acceptUploadChunk()` bounded nothing. A deployment that set a ceiling had it
+  apply to the path it controls and not to the one anybody authenticated could
+  POST to. Same shape as SEC-1: a config field that reads as a policy and is not
+  one on every path.
+- **Second half of the same defect**: even on the download path the check read the
+  size the *server announced*. A server that announces a small image and streams a
+  large one was never stopped.
+- **Fixed**, three checks:
+  1. `beginUpload()` refuses an announced size over the ceiling **before**
+     `HAL::OTAUpdate::begin()` erases flash — the ordering SEC-7 established, for
+     the same reason.
+  2. `acceptUploadChunk()` refuses the chunk that would carry the running total
+     past the ceiling. This is the check that matters: `Content-Length` is
+     optional, `beginUpload(0)` means "size unknown", and the announced-size check
+     cannot see that case coming at all.
+  3. `installFromUrl()`'s chunk callback does the same against `downloadedBytes`,
+     which closes the lying-server hole above.
+- **Verified on both boards** (2026-08-27). `nodemcuv2`: 8/8, and with SEC-8
+  removed the two new device tests fail — an upload twice the ceiling is
+  accepted, and 4 KB streams past a 2 KB ceiling unchallenged. ESP32-CAM: 8/8,
+  with both refusals visible in the log for the right reasons
+  (`65536 bytes announced against a 32768 byte ceiling`, then
+  `33280 bytes would pass a 32768 byte ceiling` for the upload that announced no
+  size at all).
+- Both device tests assert on the error *message*, not merely on a refusal: the
+  Updater has size limits of its own, and a test content with "it said no" would
+  be crediting the platform for our check. That is the trap the ESP32 suite
+  walked into with the synthetic payload on 2026-08-26.
+- **The ESP32 removal check did not complete**, and this is a gap rather than a
+  result. The board was reflashed without SEC-8 and dropped off the USB bus after
+  two tests — `/dev/ttyUSB0` disappeared entirely, which is the ESP32-CAM
+  brownout already documented in CLAUDE.md, not a fault in the code. So the two
+  SEC-8 tests are proven non-vacuous on the ESP8266 and **not** on the ESP32,
+  where all that is established is that they pass with the fix in place. Worth
+  redoing on a board with its own 5 V supply.
+- **Not covered**: the ceiling is a byte count, not a rate limit or a concurrency
+  bound. An upload within the ceiling can still be repeated.
 
 ---
 
@@ -491,11 +540,40 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 - **Problem**: `s_bytesWritten`, `s_updateActive`, `s_stubBytesWritten` are `static` in headers. Each TU gets its own copy.
 - **Fix**: Add `inline` (C++17) or move to `.cpp`.
 
-### BUG-21 — OTA: `EVENT_START` / `EVENT_END` never emitted [HIGH]
+### BUG-21 — OTA: `EVENT_START` / `EVENT_END` never emitted [HIGH] — **DONE (2026-08-27)**
 
 - **Ref**: OTA-F3
 - **Problem**: Declared in `OTAEvents.h` but never emitted by any code path.
-- **Fix**: Emit at appropriate lifecycle points, or remove.
+- **This row said `0H` for Code Safety while this item sat open.** BUG-21 has no
+  DONE marker in any release table and the constants were still unreferenced in
+  `OTA.cpp` on 2026-08-27. The other unmarked HIGH bugs in this section — BUG-1,
+  BUG-7, BUG-9 through BUG-14, BUG-20 — are all in the v2.0.1 resolved table;
+  BUG-21 is not, and never was. The count has been wrong since that table was
+  written, which is a second instance of the arithmetic CLAUDE.md warns about:
+  the row and the total are edited in different places.
+- **Fixed**: emitted on both entry points. `EVENT_START` after the transition to
+  `Downloading` in `installFromUrl()` and in `beginUpload()`; `EVENT_END` when the
+  transfer finishes and **before** the SHA-256 verdict, in `installFromUrl()` and
+  at the top of `finalizeUpload()`.
+- **Why "before verification" is the whole content of the event.** A transfer that
+  dies emits `ota/start` then `ota/error`. An image that arrives whole and fails
+  its hash emits `ota/start`, `ota/end`, `ota/error`. Nothing else in the event
+  stream distinguishes a dead connection from a rejected image, which is why an
+  `ota/end` that only fired on success would be worth nothing — the completion
+  event already says that.
+- **`EVENT_INFO` is kept at the start of an upload.** The published reference names
+  it as the upload-start signal and this library is installed by version;
+  `ota/start` is added beside it, not in its place.
+- **Also**: the six constants are `inline constexpr` rather than `static
+  constexpr`, on the reasoning BUG-12 gave for `HAEvents.h`. This costs six
+  `inline variables are only available with -std=c++17` warnings on the
+  `esp32dev` FullStack target, which builds at `gnu++14`. That warning class is
+  already present there from `HAEvents.h`, `MQTT_impl.h` and `Update_ESP32.h`;
+  moving that target to `gnu++17` would clear all four at once and is not this
+  lot's call to make.
+- **Pinned by** five native tests, including the two orderings above. Not tested
+  on hardware: nothing about emitting an event is platform-specific, and the
+  device suites would only be re-proving what the host already proves.
 
 ### BUG-22 — RemoteConsole: unbounded client read [HIGH] — **DONE (2026-08-23, PR #10)**
 
@@ -567,6 +645,45 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
   **Any future dynamic schema key must do the same** — see DC-12.
 
 ---
+
+### BUG-30 — Core: the topic overload of `EventBus::publish` has no trivially-copyable guard [HIGH]
+
+- **File**: `DomoticsCore-Core/include/DomoticsCore/EventBus.h:121-129`
+- **Found by**: BUG-21, 2026-08-27, while writing tests that subscribe to the OTA
+  lifecycle topics.
+- **Problem**: BUG-1 added `static_assert(std::is_trivially_copyable<PayloadT>)`
+  to `publish(EventType, const PayloadT&)`. The sibling
+  `publish(const String& topic, const PayloadT&)` twenty lines below does the
+  same `reinterpret_cast` byte copy and carries **no such guard**. It accepts a
+  `String`, copies the object's bytes — pointer, length, capacity — into the
+  queue, and dispatches them after the publisher's local has been destroyed and
+  its buffer freed.
+- **Measured, not argued** (2026-08-27, native): a subscriber registered with
+  `core.on<String>("ota/start", …)` receives a `String` reporting
+  `length() == 114` whose contents are `r\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd`.
+  The length is right because it was copied out of the dead object; the bytes are
+  freed heap. The native `String` wraps `std::string`, whose SSO buffer holds 15
+  characters — every one of these JSON payloads is well past that, so every one
+  of them is a heap read after free. On an ESP8266 that is a crash or silent
+  corruption rather than mojibake.
+- **Latent today, and documented as though it were not.** `OTA.cpp`'s
+  `publishStatusEvent()` is the only `emit<String>` caller in the repository, and
+  nothing subscribes with `on<String>` — the examples use `on<bool>` and
+  `on<MQTTMessageEvent>`, both trivially copyable. But
+  `docs/components/ota/technical-reference.md` has always listed the payload
+  fields of all six OTA events, which is an invitation to read a payload that
+  cannot be read. A warning now sits above that table.
+- **Not a one-liner, which is why it is not in the BUG-21 lot.** Adding the
+  assert breaks both `emit<String>` call sites at compile time by design. The
+  repair is to publish the bytes rather than the object — the
+  `publish(topic, const void*, size_t)` overload already deep-copies, so
+  `emit(topic, payload.c_str(), payload.length() + 1, sticky)` gives subscribers
+  a null-terminated `const char*` they can actually use. That changes the payload
+  contract of every OTA event and touches Core, so it wants its own lot and its
+  own decision.
+- **Check before fixing**: whether MQTT, WebUI or RemoteConsole publish any other
+  non-trivially-copyable payload on a topic. The assert will find them all at
+  once, which is the cheapest way to enumerate them.
 
 ### BUG-29 — MQTT: the publish rate limit silently drops discovery [HIGH] — **DONE (2026-08-26)**
 
@@ -695,10 +812,31 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   because that is what ArduinoJson 7 makes of an untouched document. Both are
   recorded as tests rather than changed.
 
-### TEST-3 — OTA: superficial coverage [HIGH]
+### TEST-3 — OTA: superficial coverage [HIGH] — **DONE (2026-08-27)**
 
 - **Ref**: OTA-F6
 - **Problem**: Critical gaps: no test for upload flow, SHA256 validation, state machine transitions, security enforcement, progress callbacks.
+- **Most of it had already closed** without this item being touched. SEC-2 and
+  SEC-7 brought the upload flow and SHA-256 validation in v2.2.0, on the host and
+  on two boards. What was left was the state machine, the security enforcement of
+  the size ceiling, and the events.
+- **Added**: 14 native tests. Lifecycle events and their ordering on both paths
+  (BUG-21, 5); the size ceiling on the upload and download paths (SEC-8, 4); and
+  the state machine actually moving (5) — `Downloading` while a transfer runs,
+  `Idle` versus `RebootPending` at the end depending on `autoReboot`, `Error`
+  after an abort with a late chunk refused afterwards, and progress tracking the
+  bytes written. The OTA native suite goes from 35 cases to 49.
+- **Seven of the fourteen failed against unmodified code**, which is what says the
+  suite measures the fixes rather than the platform. The other seven pin
+  behaviour that was already correct; they are regression pins, and are labelled
+  as such rather than counted as proof of anything.
+- **Not covered, deliberately**: `EVENT_PROGRESS` emission. It is throttled on
+  `millis()` (`> 1000` since the last publish), so a host test would have to
+  control time to reach it, and the download path never emits it at all — only
+  the upload path does. The progress *arithmetic* is covered. The dead
+  `broadcastProgress()` that would have emitted it on the download path is
+  recorded as DEAD-1 in `docs/components/ota/technical-reference.md` and is not
+  this lot's to remove.
 
 ### TEST-4 — WiFi: superficial coverage [HIGH]
 
@@ -1201,30 +1339,48 @@ not.
 
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
-| 1. Security | SEC-1 to SEC-7 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26) |
+| 1. Security | SEC-1 to SEC-8 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; SEC-8 filed and fixed 2026-08-27) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28, BUG-29 | Multiple | 0C, 0H, 7M (**19 done**; BUG-28 new, BUG-29 filed and fixed same day) |
-| 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 3H, 2M (**TEST-1, TEST-2 done**) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, 1H, 7M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open) |
+| 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 2H, 2M (**TEST-1, TEST-2, TEST-3 done**) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
 | 8. CI/Infrastructure | CI-1 to CI-13 | II, XII | 0C, 0H, 4M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new) |
 | 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
 | 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 31L (**LO-11 done**) |
-| **Total** | **109 items** | | **0C, 8H, 28M, 33L** (51 resolved) |
+| **Total** | **111 items** | | **0C, 8H, 28M, 33L** (54 resolved) |
 
-The severity columns sum across the rows again. They had stopped: filing BUG-29
-took Code Safety from 0H to 1H without moving the total off 8H, so the rows added
-up to nine HIGH against a stated eight. Fixing BUG-29 the same day puts Code
-Safety back to 0H and the two agree once more — by luck rather than by anyone
-noticing, which is the argument for checking after every edit.
+The severity columns sum across the rows: 1 + 1 + 2 + 2 + 2 = 8 HIGH, in Memory
+Safety, Code Safety, Test Coverage, File Size and Architecture. The eight are
+MEM-2, BUG-30, TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1, ARCH-2.
+
+**They summed before this change too, and both figures were wrong.** The Code
+Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
+and its constants still unreferenced in `OTA.cpp`. The real count on 2026-08-26
+was nine HIGH against a stated eight, and the rows agreed with the total only
+because the same item was missing from both. That is worse than the BUG-29 slip
+recorded here previously, which at least made the two disagree loudly: this one
+was self-consistent and false. Adding up the rows is necessary and not sufficient
+— an item that is in neither the row nor the total balances perfectly.
+
+This change: BUG-21 and TEST-3 close (9 → 7 HIGH), **BUG-30 is filed and left
+open** (7 → 8 HIGH), SEC-8 is filed and closed in the same lot (no change to any
+severity column since it opens and shuts here). Items 109 → 111 for the two new
+IDs, resolved 51 → 54.
+
+Both new findings came out of the work rather than out of a review, which is the
+pattern every lot has repeated: SEC-2's re-fix raised SEC-7, SEC-7 raised SEC-8,
+and BUG-21's tests raised BUG-30 by being the first code in the repository to
+subscribe to a topic OTA publishes on.
 
 The **item count still does not reconcile**, and did not before this change:
-51 resolved + 69 remaining is 120, against a stated 109, while counting the ID
-ranges in the Items column gives 113 (112 with STOR-ESP-1 withdrawn). Three
+54 resolved + 69 remaining is 123, against a stated 111, while counting the ID
+ranges in the Items column gives 115 (114 with STOR-ESP-1 withdrawn). Three
 figures, three answers. Left as found rather than re-baselined to whichever one
 looks tidiest — someone has to decide what the column is counting before it can
-be corrected.
+be corrected. Each of the three moved by the same amount here, so the gaps are
+unchanged; nothing was hidden and nothing was fixed.
 
 ---
 

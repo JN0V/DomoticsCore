@@ -37,7 +37,7 @@ Defined in `DomoticsCore/OTA.h` within `DomoticsCore::Components`.
 | `checkIntervalMs` | `uint32_t` | `3600000` | Automatic periodic check interval in milliseconds. Set to `0` to disable periodic checks. |
 | `allowDowngrades` | `bool` | `false` | When `true`, permit installing firmware with a lower semantic version. |
 | `autoReboot` | `bool` | `true` | When `true`, reboot automatically 2 seconds after a successful update. |
-| `maxDownloadSize` | `size_t` | `0` | Maximum acceptable firmware binary size in bytes. `0` means unlimited. |
+| `maxDownloadSize` | `size_t` | `0` | Ceiling on an incoming firmware image, in bytes. `0` means unlimited. Applies to **downloads and uploads alike** since SEC-8, and is checked twice on each: once against the size the sender announces, and again against the bytes that actually arrive — the announced figure is one the sender chose, and on an upload it is optional. On the upload path the announced-size refusal lands before flash is erased. |
 | `enableWebUIUpload` | `bool` | `true` | When `true`, expose manual firmware upload routes and WebUI file-upload controls. |
 | `requireUploadHash` | `bool` | `false` | When `true`, refuse any upload that arrives without an expected SHA-256 (SEC-7). The refusal happens before a flash sector is erased. Note this also rejects the built-in `/ota/upload` browser form, which cannot send one — see below. |
 
@@ -364,16 +364,45 @@ Defined in `DomoticsCore/OTAEvents.h`. Namespace: `DomoticsCore::OTAEvents`.
 
 All events are emitted via the Core EventBus with JSON string payloads. Each payload includes `state`, `progress`, and `lastResult` fields in addition to event-specific data.
 
+> **Do not read these payloads yet (BUG-30).** `publishStatusEvent()` publishes a
+> `String` through `EventBus::publish(topic, PayloadT)`, which byte-copies the
+> object — pointer, length, capacity — into a queue that dispatches after the
+> publisher's local has been destroyed. A subscriber registered with
+> `core.on<String>("ota/start", …)` gets a `String` reporting the right length
+> over freed heap; measured on 2026-08-27 as 114 characters of garbage. The
+> guard that would have caught this exists on the sibling `EventType` overload
+> (BUG-1) and not on this one.
+>
+> **Subscribe to the topics, not the payloads.** The topic and its timing carry
+> the lifecycle information — see the `EVENT_END` note below — and are safe:
+> `core.getEventBus().subscribe("ota/end", [](const void*) { … })` ignores the
+> payload pointer and works today. The columns below describe what the payload
+> *contains*, and will describe what it *delivers* once BUG-30 is fixed.
+
 | Constant | Topic String | When Emitted | Additional Payload Fields |
 |----------|-------------|--------------|---------------------------|
-| `EVENT_START` | `"ota/start"` | **Declared but NOT emitted by `OTAComponent` as of v1.4.1.** Defined in `OTAEvents.h` for forward compatibility or application-level use, but no call to `emit()` with this topic exists in `OTA.cpp`. | -- |
+| `EVENT_START` | `"ota/start"` | Transfer opened — after the state reaches `Downloading`, on both the download and the upload path | `source`, plus `url` (download) or `total` (upload) |
 | `EVENT_PROGRESS` | `"ota/progress"` | Periodically during transfer (throttled to 1/s for uploads) | `bytes`, `total`, `source` |
-| `EVENT_END` | `"ota/end"` | **Declared but NOT emitted by `OTAComponent` as of v1.4.1.** Defined in `OTAEvents.h` for forward compatibility or application-level use, but no call to `emit()` with this topic exists in `OTA.cpp`. | -- |
+| `EVENT_END` | `"ota/end"` | Transfer finished, **before** the SHA-256 verdict and before the commit | `source`, `bytes`, `total` |
 | `EVENT_ERROR` | `"ota/error"` | Error encountered | `error`, `source` |
 | `EVENT_INFO` | `"ota/info"` | Informational message (e.g., upload started) | `message`, `source` |
 | `EVENT_COMPLETED` | `"ota/completed"` | Completion, with reboot status (sticky) | `source`, `autoReboot`, `bytes`, `total`, `progress`, `message` |
 
-> **Warning (C14)**: `EVENT_START` and `EVENT_END` are defined as constants in `OTAEvents.h` but are **not emitted** anywhere in the current `OTA.cpp` implementation. Do not subscribe to these events expecting them to fire. The actual lifecycle events emitted are: `EVENT_INFO` (start of upload), `EVENT_PROGRESS`, `EVENT_ERROR` and `EVENT_COMPLETED`.
+> **Fixed in v2.3.0 (BUG-21)**: `EVENT_START` and `EVENT_END` were declared from
+> the first release and emitted by nothing. Three documents said so and told
+> readers not to subscribe; the constants are now emitted on both the download and
+> the upload path.
+>
+> `EVENT_END` fires **before** verification, which is what makes it worth having:
+> between `ota/end` and the next event a subscriber knows the transfer completed
+> and the verdict is still out. A transfer that dies produces `ota/start` and
+> `ota/error` with no `ota/end` in between; an image that arrives whole and fails
+> its hash produces `ota/start`, `ota/end`, `ota/error`. Nothing else distinguishes
+> the two.
+>
+> `EVENT_INFO` still fires at the start of an upload. This reference named it as
+> the upload-start signal, and the library is installed by version — `ota/start`
+> is added alongside it, not in its place.
 
 > **Removed in v2.1.0 (DC-6)**: `EVENT_COMPLETE` (`"ota/complete"`). It fired
 > immediately before `EVENT_COMPLETED`, carrying the progress fields while the
@@ -534,7 +563,7 @@ These private methods of `OTAComponent` are documented for maintainers and AI ag
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| C14 | Minor | `EVENT_START` and `EVENT_END` are defined in `OTAEvents.h` but never emitted by `OTAComponent`. |
+| C14 | ~~Minor~~ | **Resolved (BUG-21).** `EVENT_START` and `EVENT_END` are emitted on both the download and the upload path. See the event table above. |
 | C15 | Minor | `State::Applying` exists in the enum but `transition(State::Applying, ...)` is never called. |
 | BUG-1 | Minor | `OTAWebUI::getWebUIVersion()` returns hardcoded `"1.4.0"` instead of `"1.4.1"`. |
 | DEAD-1 | Cosmetic | `broadcastProgress()` is defined but never called (607 lines in OTA.cpp). |
