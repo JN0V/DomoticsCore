@@ -245,6 +245,40 @@ Unenforced security configurations are the most dangerous class of defect — us
   asserting that a `requireUploadHash` refusal never reaches
   `HAL::OTAUpdate::begin()`.
 
+### SEC-9 — OTA: the upload path sizes itself from the multipart envelope [MEDIUM]
+
+- **File**: `DomoticsCore-OTA/include/DomoticsCore/OTAWebUI.h:399`
+- **Found by**: the real-conditions campaign of 2026-08-27, on a `nodemcuv2` and a
+  WROOM-32D. Suspected while reading the code, then measured on both.
+- **Problem**: `size_t expectedSize = request->contentLength();` measures the
+  whole `multipart/form-data` body — boundary, part headers, trailing boundary —
+  and not the firmware. The upload handler receives only the firmware bytes,
+  ESPAsyncWebServer having stripped the framing.
+- **Measured, and the figure is a constant**:
+
+  | board | announced to `beginUpload()` | actually received | delta |
+  |---|---|---|---|
+  | `nodemcuv2` | 475 452 | 475 232 | **220 B** |
+  | WROOM-32D | 982 508 | 982 288 | **220 B** |
+
+- **Three consequences**, in increasing order of how much they will hurt:
+  1. **Progress never reaches 100 %.** `received / expected` tops out below the
+     end, so the browser's bar stops short on every successful upload. Cosmetic,
+     and the only one a user sees today.
+  2. **`Update.begin()` is opened 220 bytes too large**, so the Updater treats
+     the image as incomplete right through to the end. This works *only* because
+     `finalizeUpload()` calls `end(true)` — `evenIfRemaining`. Anyone who changes
+     that to `end(false)`, for any reason, breaks every browser upload.
+  3. **SEC-8's ceiling is compared against the envelope**, so a firmware within
+     220 bytes of `maxDownloadSize` is refused when it should be accepted. The
+     error even says so: `475452 bytes announced against a 100000 byte ceiling`.
+- **Fix**: do not derive the size from `contentLength()` for a multipart body.
+  Passing `0` — "size unknown" — is enough: `acceptUploadChunk()` already counts
+  what arrives, which is what SEC-8 enforces and what the digest covers. The only
+  thing lost is a progress denominator, which is currently wrong anyway.
+- **Not urgent, and worth doing before it is.** Benign today because of one
+  `true` argument three call sites away.
+
 ### SEC-8 — OTA: `maxDownloadSize` was enforced on downloads and not on uploads [MEDIUM] — **DONE (2026-08-27)**
 
 - **File**: `DomoticsCore-OTA/src/OTA.cpp` — `beginUpload()`, `acceptUploadChunk()`,
@@ -1080,6 +1114,63 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   one level too shallow: they proved an operation happened, not that the thing
   being measured was the thing under test. The WebUI suites pass, all nine cases.
 
+### CI-14 — CI reports `FullStack` as green on ESP8266, where it cannot work [MEDIUM]
+
+- **Filed**: 2026-08-27, from the real-conditions campaign. Measured on a
+  `nodemcuv2`, and discriminated against a WROOM-32D.
+- **Problem**: `Build esp8266dev` compiles `FullStack` and passes, and the "what
+  CI proves" table in this file and in CLAUDE.md both list that as a ✅. On a real
+  ESP8266 the example **boots and then cannot join a network**:
+
+  ```
+  Memory profile: MINIMAL (heap: 15088 bytes)
+  Memory profile MINIMAL: WS clients 3 -> 2
+  Polling mode (heap=14120 < 20000)          <- SSE disables itself
+  Discovery done: 1 providers registered
+  WebUI loop alive, heap=1856
+  [W] [WIFI] Deferring WiFi connect: heap too low (1856 bytes, need 2500+)
+  ```
+
+  All twelve components register, the heap settles at **1 856 bytes**, and the
+  WiFi guard needs 2 500. The device retries forever and never connects.
+- **Not a crash, and the framework behaves well**: it detects the minimal
+  profile, degrades the WebUI to two WS clients and polling, and declines to
+  attempt a connection it cannot fund rather than panicking. The failure is
+  legible and contained. It is still a device that does nothing.
+- **The discriminator**: the same `FullStack`, same commit, on a WROOM-32D runs
+  end to end — profile FULL (278 KB), WiFi up, MQTT connected, HA availability
+  published, WebUI serving 200 with SSE enabled. This is a platform limit, not a
+  defect.
+- **Why CI cannot see it**: a host build proves compilation, not behaviour — the
+  standing lesson of BUG-4, applied to a configuration rather than to a bug.
+  `esp8266dev` is a declared target of the example, so the build job is doing
+  exactly what it was asked.
+- **Fix, one of**: document `FullStack` as ESP32-class and drop `esp8266dev` from
+  its `platformio.ini`; or keep the target and make the shortfall loud — a boot
+  banner naming the profile and what it disabled, rather than a `[W]` line inside
+  a retry loop. Whichever is chosen, the ✅ row in both "what CI proves" tables
+  needs a caveat: it proves the ESP8266 *build*, not an ESP8266 *device*.
+- **Related**: `docs/components/webui/project-context.md:126` already records
+  that ESP8266 free heap "can be as low as 2-3 KB during AP+STA mode". This is
+  that note, measured, with the consequence attached.
+
+### DOC-1 — two examples advertise addresses and endpoints that do not exist [LOW]
+
+- **Filed**: 2026-08-27, same campaign.
+- **`WebUIOnly` prints the wrong address.**
+  `DomoticsCore-WebUI/examples/WebUIOnly/src/main.cpp:249` logs
+  `WebUI available at: http://192.168.4.1` as a **hard-coded string**. The
+  example's own logic connects to a station when credentials are present — it
+  did, and served on `192.168.1.224` — so anyone following the log goes to the
+  access-point address the device is not using. Use `HAL::WiFiHAL::getLocalIP()`
+  when the station is up, as the same file already does at line 191.
+- **The `webui_uptime` context advertises a dead endpoint.** `/api/ui/schema`
+  declares `"apiEndpoint":"/api/webui/uptime"` for it; that path returns **404**
+  on both an ESP8266 and an ESP32. The data reaches the browser over SSE and the
+  polling endpoint, so nothing is broken today — but a schema is a contract, and
+  anyone writing a client against it will follow the advertised path. Either
+  serve it or stop declaring it.
+
 ### CI-13 — `clean_examples.py` does not know about the `test/` projects [MEDIUM]
 
 - **Filed**: 2026-08-26, after a FullStack cross-compile recursed to 4.3 GB and
@@ -1372,17 +1463,17 @@ not.
 
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
-| 1. Security | SEC-1 to SEC-8 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; SEC-8 filed and fixed 2026-08-27) |
+| 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 4M (**SEC-1, SEC-3, SEC-7, SEC-8 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; SEC-8 filed and fixed 2026-08-27; **SEC-9 new and open**, from the real-conditions campaign) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, 1H, 7M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open) |
 | 4. Test Coverage | TEST-1 to TEST-7 | II (NON-NEGOTIABLE) | 0C, 2H, 2M (**TEST-1, TEST-2, TEST-3 done**) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
-| 8. CI/Infrastructure | CI-1 to CI-13 | II, XII | 0C, 0H, 4M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new) |
+| 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
-| 10. Minor | LO-1 to LO-32 | Various | 0C, 0H, 0M, 31L (**LO-11 done**) |
-| **Total** | **111 items** | | **0C, 8H, 28M, 33L** (54 resolved) |
+| 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
+| **Total** | **114 items** | | **0C, 8H, 30M, 34L** (54 resolved) |
 
 The severity columns sum across the rows: 1 + 1 + 2 + 2 + 2 = 8 HIGH, in Memory
 Safety, Code Safety, Test Coverage, File Size and Architecture. The eight are
@@ -1407,9 +1498,20 @@ pattern every lot has repeated: SEC-2's re-fix raised SEC-7, SEC-7 raised SEC-8,
 and BUG-21's tests raised BUG-30 by being the first code in the repository to
 subscribe to a topic OTA publishes on.
 
+**The 2026-08-27 real-conditions campaign added three more, and closed none.**
+SEC-9, CI-14 and DOC-1 all came from running the shipped examples on a
+`nodemcuv2` and a WROOM-32D against a real network, a real MQTT broker and a real
+browser — thirteen examples per board, climbing from `01-CoreOnly` to
+`FullStack`. Nothing shipped since v2.0 was found broken: SEC-2, SEC-7, SEC-8,
+BUG-22 and BUG-29 were each confirmed by their effect on silicon rather than by
+the absence of an error. What the campaign found instead was one latent trap
+(SEC-9), one configuration CI reports as green and a device cannot run (CI-14),
+and two advertised addresses that do not exist (DOC-1). None of the three is
+reachable from a host build, and none would have been found by reading the code.
+
 The **item count still does not reconcile**, and did not before this change:
-54 resolved + 69 remaining is 123, against a stated 111, while counting the ID
-ranges in the Items column gives 115 (114 with STOR-ESP-1 withdrawn). Three
+54 resolved + 72 remaining is 126, against a stated 114, while counting the ID
+ranges in the Items column gives 118 (117 with STOR-ESP-1 withdrawn). Three
 figures, three answers. Left as found rather than re-baselined to whichever one
 looks tidiest — someone has to decide what the column is counting before it can
 be corrected. Each of the three moved by the same amount here, so the gaps are
