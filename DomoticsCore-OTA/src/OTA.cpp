@@ -368,6 +368,27 @@ bool OTAComponent::finalizeUpload() {
     DLOG_I(LOG_OTA, "Upload finalizing | received=%lu bytes",
            static_cast<unsigned long>(uploadSession.received));
 
+    // SEC-9: the transfer is over, so the announced figure has outlived its
+    // usefulness and the counted one is now known exactly. Narrowed here, above
+    // the first event that reports it, so ota/end and ota/completed cannot give
+    // two different totals for one upload. The announced figure survives only as
+    // ota/progress's denominator, where it is the only number there is.
+    //
+    // finalizeUpdateOperation() later does downloadedBytes = totalBytes to make
+    // the completion event self-consistent. That is defensible for a download,
+    // where totalBytes is what the server announced, and wrong for an upload,
+    // where it is the multipart envelope. Narrowing here rather than in that
+    // shared helper leaves the download path exactly as it was — including its
+    // own version of this overstatement, which is recorded in TEST-8.
+    //
+    // NOT PINNED BY ANY TEST. The ordering is invisible to the native suite: the
+    // EventBus dispatches after publish, so a subscriber reading getTotalBytes()
+    // always sees the narrowed value whatever the order, and reading the payload
+    // itself needs on<String>, which is BUG-30's use-after-free. A test asserting
+    // this was written, was proved vacuous by moving this line back, and was
+    // deleted rather than kept as decoration.
+    totalBytes = uploadSession.received;
+
     // BUG-21: the transfer is over and the verdict is not in yet — which is what
     // "before verification" in the OTAEvents.h contract means. Emitted here so a
     // subscriber can tell a transfer that died from an image that was rejected.
@@ -375,7 +396,7 @@ bool OTAComponent::finalizeUpload() {
         doc["success"] = true;
         doc["source"] = "upload";
         doc["bytes"] = uploadSession.received;
-        doc["total"] = uploadSession.expected;
+        doc["total"] = totalBytes;
     }, false);
 
     // SEC-7: verify before committing, on the ordering SEC-2 established.
@@ -415,14 +436,6 @@ bool OTAComponent::finalizeUpload() {
         }, false);
         return false;
     }
-
-    // SEC-9: the transfer is over, so the announced figure has outlived its
-    // usefulness and the counted one is now known exactly. finalizeUpdateOperation()
-    // does downloadedBytes = totalBytes to make the completion event self-consistent,
-    // which is right for a download — totalBytes is the size the server announced —
-    // and wrong for an upload, where it is the multipart envelope. Narrowing it here
-    // rather than in that helper keeps the download path untouched.
-    totalBytes = uploadSession.received;
 
     // On platforms without buffering (ESP32), finalize immediately
     if (!HAL::OTAUpdate::requiresBuffering()) {

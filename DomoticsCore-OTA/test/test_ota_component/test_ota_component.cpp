@@ -497,6 +497,17 @@ void test_ota_download_emits_start_then_end_then_completed() {
     TEST_ASSERT_TRUE(log.indexOf(OTAEvents::EVENT_START) < log.indexOf(OTAEvents::EVENT_END));
     TEST_ASSERT_TRUE(log.indexOf(OTAEvents::EVENT_END) < log.indexOf(OTAEvents::EVENT_COMPLETED));
 
+    // SEC-9 pinned the upload path's evenIfRemaining and left this one unobserved,
+    // which meant flipping installFromUrl()'s end(true) failed no test at all. The
+    // observable already existed; this is the assertion that was missing. A
+    // download announcing exactly what it delivers does not need the flag — which
+    // is the point: nothing here justifies passing false, and nothing may quietly
+    // start doing so.
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, HAL::OTAUpdate::s_stubEndCalls,
+                                     "the image was never committed: the flag below means nothing");
+    TEST_ASSERT_TRUE_MESSAGE(HAL::OTAUpdate::s_stubEndEvenIfRemaining,
+                             "installFromUrl() committed without evenIfRemaining");
+
     core.shutdown();
 }
 
@@ -713,31 +724,43 @@ void test_ota_upload_refusal_names_the_figure_it_compared() {
     // multipart envelope. An operator reading "475452 against a 100000 ceiling"
     // for a 475232-byte firmware needs the message to say which number that is.
     // DLOG_W formats into 128 bytes on ESP8266, so this also pins that the
-    // sentence still fits: a truncated warning would drop the qualifier first.
-    String captured;
+    // sentence still fits. It runs on a host where that buffer is 256, so the
+    // length below is checked rather than provoked — and it is checked at the
+    // *worst* case, two ten-digit unsigned longs, not at the six-digit figures
+    // the campaign happened to measure. Feeding smaller numbers would have left
+    // eight unmeasured characters of slack on the one platform that has none.
+    //
+    // `captured` is static and the callback is removed in a Unity-safe order:
+    // a failed TEST_ASSERT longjmps out of this function, and a lambda holding a
+    // reference to a dead stack String would then be written through by every
+    // later DLOG in the suite. That is the cascade class SEC-8 already recorded.
+    static String captured;
+    captured = "";
     LoggerCallbacks::CallbackId id = LoggerCallbacks::addCallback(
-        [&captured](LogLevel level, const char* tag, const char* message) {
+        [](LogLevel level, const char* tag, const char* message) {
             if (level == LOG_LEVEL_WARN && String(tag) == LOG_OTA) captured = message;
         });
 
     OTAConfig config = quietConfig();
-    config.maxDownloadSize = 100000;
+    config.maxDownloadSize = 4294967294UL;  // one below the widest 32-bit figure
 
     OTAComponent ota(config);
     ota.begin();
-    TEST_ASSERT_FALSE(ota.beginUpload(475452));
+    const bool refused = !ota.beginUpload(4294967295UL);
 
     LoggerCallbacks::removeCallback(id);
 
+    TEST_ASSERT_TRUE_MESSAGE(refused, "an upload over the ceiling was accepted");
     TEST_ASSERT_TRUE_MESSAGE(captured.length() > 0, "the refusal logged no warning at all");
-    TEST_ASSERT_TRUE_MESSAGE(captured.indexOf("475452") >= 0,
+    TEST_ASSERT_TRUE_MESSAGE(captured.indexOf("4294967295") >= 0,
                              "the warning does not name the figure it compared");
     TEST_ASSERT_TRUE_MESSAGE(captured.indexOf("announced") >= 0,
                              "the warning does not say the figure is what the sender announced");
     TEST_ASSERT_TRUE_MESSAGE(captured.indexOf("framing included") >= 0,
                              "the qualifier is gone — truncated, or edited out");
     TEST_ASSERT_TRUE_MESSAGE(captured.length() < 128,
-                             "the warning would be truncated by ESP8266's 128-byte log buffer");
+                             "at its widest the warning would be truncated by ESP8266's "
+                             "128-byte DOMOTICS_DLOG_BUF_SIZE");
 }
 
 void test_ota_upload_completion_reports_the_bytes_that_arrived() {
