@@ -35,15 +35,47 @@ using namespace DomoticsCore::Components;
 // CONFIGURATION
 // ============================================================================
 
+// Credentials. Put a `secrets.h` at the repository root — or anywhere on the
+// include path — to run this example against a real network without editing,
+// and without committing, anything. It is gitignored, and the macros it must
+// define are listed below. Build with the root on the include path, e.g.
+//     PLATFORMIO_BUILD_FLAGS="-I/path/to/DomoticsCore" pio run -e esp8266dev
+// Without the file the defaults are unchanged: an empty SSID means AP mode and
+// an empty broker disables MQTT.
+#if defined(__has_include)
+#  if __has_include("secrets.h")
+#    include "secrets.h"
+#  endif
+#endif
+
+#ifndef DC_WIFI_SSID
+#  define DC_WIFI_SSID ""
+#endif
+#ifndef DC_WIFI_PASSWORD
+#  define DC_WIFI_PASSWORD ""
+#endif
+#ifndef DC_MQTT_BROKER
+#  define DC_MQTT_BROKER ""
+#endif
+#ifndef DC_MQTT_PORT
+#  define DC_MQTT_PORT 1883
+#endif
+#ifndef DC_MQTT_USER
+#  define DC_MQTT_USER ""
+#endif
+#ifndef DC_MQTT_PASSWORD
+#  define DC_MQTT_PASSWORD ""
+#endif
+
 // WiFi credentials
-const char* WIFI_SSID = "";  // Leave empty for AP mode
-const char* WIFI_PASSWORD = "";
+const char* WIFI_SSID = DC_WIFI_SSID;  // Leave empty for AP mode
+const char* WIFI_PASSWORD = DC_WIFI_PASSWORD;
 
 // MQTT broker (required for FullStack)
-const char* MQTT_BROKER = ""; // Leave empty to disable MQTT
-const uint16_t MQTT_PORT = 1883;
-const char* MQTT_USER = "";  // Optional
-const char* MQTT_PASSWORD = "";  // Optional
+const char* MQTT_BROKER = DC_MQTT_BROKER; // Leave empty to disable MQTT
+const uint16_t MQTT_PORT = DC_MQTT_PORT;
+const char* MQTT_USER = DC_MQTT_USER;  // Optional
+const char* MQTT_PASSWORD = DC_MQTT_PASSWORD;  // Optional
 
 // ============================================================================
 // GLOBAL VARIABLES
