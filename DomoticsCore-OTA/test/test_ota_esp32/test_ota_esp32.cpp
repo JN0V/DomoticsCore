@@ -292,6 +292,62 @@ void test_require_upload_hash_refuses_before_erasing_flash() {
     TEST_ASSERT_EQUAL_STRING("Firmware hash required", up.ota.getLastError().c_str());
 }
 
+// ============================================================================
+// SEC-8 — the size ceiling, on the path anybody can POST to
+// ============================================================================
+//
+// maxDownloadSize was enforced on the transfer this device initiates and not on
+// the one arriving from outside. Both tests assert on the error *message*, not
+// merely on the refusal: Update has size limits of its own, and a test content
+// with "it said no" would be crediting the platform for our check — the trap
+// the synthetic payload set for the SHA tests above.
+//
+// BUG-21's events are not tested here. Nothing about emitting them is
+// platform-specific, and the native suite pins the topics and their ordering.
+
+namespace {
+
+void configureCappedUpload(OTAComponent& ota, size_t cap) {
+    OTAConfig cfg;
+    cfg.autoReboot = false;
+    cfg.maxDownloadSize = cap;
+    ota.setConfig(cfg);
+    ota.begin();
+}
+
+} // namespace
+
+void test_upload_over_the_cap_is_refused_before_erasing_flash() {
+    OTAComponent ota;
+    configureCappedUpload(ota, SYNTH_SIZE / 2);
+
+    TEST_ASSERT_FALSE(ota.beginUpload(SYNTH_SIZE, HASH_THAT_CANNOT_MATCH));
+
+    TEST_ASSERT_FALSE(bootPartitionMoved());
+    TEST_ASSERT_FALSE(Update.isRunning());  // never opened an update at all
+    TEST_ASSERT_EQUAL_STRING("Firmware too large", ota.getLastError().c_str());
+}
+
+void test_upload_streaming_past_the_cap_leaves_the_boot_partition_alone() {
+    // The case an announced-size check cannot see: Content-Length is optional, so
+    // beginUpload(0) opens an update sized to the whole OTA partition and Update
+    // will take every one of these 64 KB. Only counting what arrives stops it.
+    OTAComponent ota;
+    configureCappedUpload(ota, SYNTH_SIZE / 2);
+
+    TEST_ASSERT_TRUE(ota.beginUpload(0));
+    TEST_ASSERT_TRUE_MESSAGE(Update.isRunning(), "flash was never opened: nothing to release");
+
+    const bool refused = !streamSynthetic([&ota](const uint8_t* d, size_t n) {
+        return ota.acceptUploadChunk(d, n);
+    });
+
+    TEST_ASSERT_TRUE_MESSAGE(refused, "64 KB went past a 32 KB ceiling");
+    TEST_ASSERT_EQUAL_STRING("Firmware too large", ota.getLastError().c_str());
+    TEST_ASSERT_FALSE(bootPartitionMoved());
+    TEST_ASSERT_EQUAL(OTAComponent::State::Error, ota.getState());
+}
+
 void setup() {
     delay(2000);  // let the host attach before Unity starts printing
     UNITY_BEGIN();
@@ -303,6 +359,9 @@ void setup() {
 
     RUN_TEST(test_upload_with_mismatched_hash_leaves_the_boot_partition_alone);
     RUN_TEST(test_require_upload_hash_refuses_before_erasing_flash);
+
+    RUN_TEST(test_upload_over_the_cap_is_refused_before_erasing_flash);
+    RUN_TEST(test_upload_streaming_past_the_cap_leaves_the_boot_partition_alone);
 
     UNITY_END();
 }

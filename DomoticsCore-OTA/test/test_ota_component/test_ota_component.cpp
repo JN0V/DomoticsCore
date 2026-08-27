@@ -23,6 +23,8 @@
 #include <DomoticsCore/OTAEvents.h>
 #include <DomoticsCore/Update_HAL.h>
 
+#include <vector>
+
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
@@ -397,6 +399,374 @@ void test_ota_require_upload_hash_refuses_before_touching_flash() {
 }
 
 // ============================================================================
+// Lifecycle Events (BUG-21) and Upload Size Cap (SEC-8)
+// ============================================================================
+//
+// `ota/start` and `ota/end` were declared in OTAEvents.h from the first release
+// and emitted by nothing — three documents said so and told readers not to
+// subscribe. These tests are what stops that happening again: they assert the
+// topics reach the bus, and on the mismatch path they assert `ota/end` precedes
+// the verification failure, which is the whole point of an event named "transfer
+// ended, not yet verified".
+//
+// They subscribe on the raw EventBus rather than `Core::on<String>`. The payload
+// publishStatusEvent hands over is a `String` byte-copied into the queue, so it
+// is not safe to read back once the publisher's local has gone out of scope.
+// What is under test is the topic, and the topic is a copy the queue owns.
+
+namespace {
+
+// The lifecycle topics that reached the bus, in dispatch order.
+struct TopicLog {
+    std::vector<String> seen;
+
+    void watch(Core& core, const char* topic) {
+        const String t = topic;
+        core.getEventBus().subscribe(t, [this, t](const void*) { seen.push_back(t); }, this);
+    }
+
+    void watchLifecycle(Core& core) {
+        watch(core, OTAEvents::EVENT_START);
+        watch(core, OTAEvents::EVENT_END);
+        watch(core, OTAEvents::EVENT_COMPLETED);
+        watch(core, OTAEvents::EVENT_ERROR);
+    }
+
+    int indexOf(const char* topic) const {
+        for (size_t i = 0; i < seen.size(); ++i) {
+            if (seen[i] == topic) return static_cast<int>(i);
+        }
+        return -1;
+    }
+
+    bool sawTopic(const char* topic) const { return indexOf(topic) >= 0; }
+};
+
+// A component reached through a Core, because emit() is a no-op on a component
+// that has no bus — which is why the bare-OTAComponent tests above can say
+// nothing about events.
+OTAComponent* attachOta(Core& core, const OTAConfig& cfg) {
+    core.addComponent(std::make_unique<OTAComponent>(cfg));
+    CoreConfig coreCfg;
+    coreCfg.deviceName = "OtaTest";
+    core.begin(coreCfg);
+    return core.getComponent<OTAComponent>("OTA");
+}
+
+// poll() dispatches 8 events per call; boot publishes its own. Drain generously.
+void drain(Core& core) {
+    for (int i = 0; i < 10; ++i) core.loop();
+}
+
+OTAConfig quietConfig() {
+    OTAConfig cfg;
+    cfg.checkIntervalMs = 0;  // no periodic check racing the explicit one
+    cfg.autoReboot = false;   // do not arm the reboot timer in a host test
+    return cfg;
+}
+
+// A downloader that announces `announced` bytes and then streams `streamed` of
+// them. The two differ only where a lying server is the thing under test.
+OTAComponent::Downloader downloaderOf(size_t announced, size_t streamed) {
+    return [announced, streamed](const String&, size_t& totalSize,
+                                 OTAComponent::DownloadCallback onChunk) {
+        totalSize = announced;
+        std::vector<uint8_t> firmware(streamed, 0xE9);
+        return onChunk(firmware.data(), firmware.size());
+    };
+}
+
+} // namespace
+
+void test_ota_download_emits_start_then_end_then_completed() {
+    Core core;
+    OTAComponent* ota = attachOta(core, quietConfig());
+    TEST_ASSERT_NOT_NULL(ota);
+
+    TopicLog log;
+    log.watchLifecycle(core);
+
+    ota->setDownloader(downloaderOf(8, 8));
+    ota->triggerUpdateFromUrl("http://example.com/fw.bin");
+    drain(core);
+
+    TEST_ASSERT_TRUE_MESSAGE(log.sawTopic(OTAEvents::EVENT_START), "ota/start never reached the bus");
+    TEST_ASSERT_TRUE_MESSAGE(log.sawTopic(OTAEvents::EVENT_END), "ota/end never reached the bus");
+    TEST_ASSERT_FALSE(log.sawTopic(OTAEvents::EVENT_ERROR));
+
+    TEST_ASSERT_TRUE(log.indexOf(OTAEvents::EVENT_START) < log.indexOf(OTAEvents::EVENT_END));
+    TEST_ASSERT_TRUE(log.indexOf(OTAEvents::EVENT_END) < log.indexOf(OTAEvents::EVENT_COMPLETED));
+
+    core.shutdown();
+}
+
+void test_ota_download_end_precedes_the_hash_verdict() {
+    // "Transfer ended, before verification" is the documented meaning of ota/end.
+    // An event that only fired on success would carry no information the
+    // completion event does not already carry.
+    Core core;
+    OTAConfig cfg = quietConfig();
+    cfg.manifestUrl = "http://example.com/manifest.json";
+    OTAComponent* ota = attachOta(core, cfg);
+    TEST_ASSERT_NOT_NULL(ota);
+
+    TopicLog log;
+    log.watchLifecycle(core);
+
+    ota->setManifestFetcher([](const String&, String& outJson) {
+        outJson = String("{\"version\":\"9.9.9\",\"url\":\"http://example.com/fw.bin\",\"sha256\":\"")
+                + SHA_THAT_CANNOT_MATCH + "\"}";
+        return true;
+    });
+    ota->setDownloader(downloaderOf(8, 8));
+    ota->triggerImmediateCheck(true);
+    drain(core);
+
+    TEST_ASSERT_TRUE(log.sawTopic(OTAEvents::EVENT_START));
+    TEST_ASSERT_TRUE(log.sawTopic(OTAEvents::EVENT_END));
+    TEST_ASSERT_TRUE(log.sawTopic(OTAEvents::EVENT_ERROR));
+    TEST_ASSERT_FALSE(log.sawTopic(OTAEvents::EVENT_COMPLETED));
+
+    TEST_ASSERT_TRUE(log.indexOf(OTAEvents::EVENT_END) < log.indexOf(OTAEvents::EVENT_ERROR));
+    TEST_ASSERT_EQUAL(OTAComponent::State::Error, ota->getState());
+
+    core.shutdown();
+}
+
+void test_ota_failed_transfer_emits_start_but_no_end() {
+    // Nothing arrived, so nothing ended. A start with no end is the signal a
+    // subscriber needs to distinguish a dead transfer from a rejected image.
+    Core core;
+    OTAComponent* ota = attachOta(core, quietConfig());
+    TEST_ASSERT_NOT_NULL(ota);
+
+    TopicLog log;
+    log.watchLifecycle(core);
+
+    ota->setDownloader([](const String&, size_t& totalSize, OTAComponent::DownloadCallback) {
+        totalSize = 0;
+        return false;
+    });
+    ota->triggerUpdateFromUrl("http://example.com/fw.bin");
+    drain(core);
+
+    TEST_ASSERT_TRUE(log.sawTopic(OTAEvents::EVENT_START));
+    TEST_ASSERT_FALSE_MESSAGE(log.sawTopic(OTAEvents::EVENT_END), "a transfer that never ran cannot end");
+    TEST_ASSERT_TRUE(log.sawTopic(OTAEvents::EVENT_ERROR));
+
+    core.shutdown();
+}
+
+void test_ota_upload_emits_start_then_end_then_completed() {
+    Core core;
+    OTAComponent* ota = attachOta(core, quietConfig());
+    TEST_ASSERT_NOT_NULL(ota);
+
+    TopicLog log;
+    log.watchLifecycle(core);
+
+    const uint8_t firmware[16] = {0xE9, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                                  0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10};
+    TEST_ASSERT_TRUE(ota->beginUpload(sizeof(firmware)));
+    TEST_ASSERT_TRUE(ota->acceptUploadChunk(firmware, sizeof(firmware)));
+    TEST_ASSERT_TRUE(ota->finalizeUpload());
+    drain(core);
+
+    TEST_ASSERT_TRUE_MESSAGE(log.sawTopic(OTAEvents::EVENT_START), "ota/start never reached the bus");
+    TEST_ASSERT_TRUE_MESSAGE(log.sawTopic(OTAEvents::EVENT_END), "ota/end never reached the bus");
+    TEST_ASSERT_TRUE(log.indexOf(OTAEvents::EVENT_START) < log.indexOf(OTAEvents::EVENT_END));
+    TEST_ASSERT_TRUE(log.indexOf(OTAEvents::EVENT_END) < log.indexOf(OTAEvents::EVENT_COMPLETED));
+
+    core.shutdown();
+}
+
+void test_ota_upload_start_still_emits_the_documented_info_event() {
+    // The published reference names EVENT_INFO as the upload-start signal, and
+    // this library is installed by version. Adding ota/start must not take it
+    // away from whoever followed the documentation.
+    Core core;
+    OTAComponent* ota = attachOta(core, quietConfig());
+    TEST_ASSERT_NOT_NULL(ota);
+
+    TopicLog log;
+    log.watch(core, OTAEvents::EVENT_INFO);
+
+    TEST_ASSERT_TRUE(ota->beginUpload(16));
+    drain(core);
+
+    TEST_ASSERT_TRUE(log.sawTopic(OTAEvents::EVENT_INFO));
+
+    ota->abortUpload("test teardown");
+    core.shutdown();
+}
+
+// --- SEC-8: maxDownloadSize was enforced on downloads and not on uploads ----
+//
+// The download path checked the announced size and the upload path checked
+// nothing at all, so the ceiling a deployment configured applied to the transfer
+// it did not initiate and not to the one anybody could POST. The announced-size
+// check is also not sufficient on its own: it trusts a number the sender chose.
+
+void test_ota_upload_over_the_cap_is_refused_before_touching_flash() {
+    // Same ordering as SEC-7: the refusal has to land before
+    // HAL::OTAUpdate::begin(), which erases flash.
+    HAL::OTAUpdate::s_stubBytesWritten = 12345;  // sentinel: begin() would zero it
+
+    OTAConfig config = quietConfig();
+    config.maxDownloadSize = 16;
+
+    OTAComponent ota(config);
+    ota.begin();
+
+    TEST_ASSERT_FALSE_MESSAGE(ota.beginUpload(32), "an upload twice the ceiling was accepted");
+    TEST_ASSERT_EQUAL_STRING("Firmware too large", ota.getLastError().c_str());
+    TEST_ASSERT_EQUAL_UINT32(12345, HAL::OTAUpdate::s_stubBytesWritten);  // untouched
+}
+
+void test_ota_upload_within_the_cap_is_accepted() {
+    OTAConfig config = quietConfig();
+    config.maxDownloadSize = 64;
+
+    OTAComponent ota(config);
+    ota.begin();
+
+    TEST_ASSERT_TRUE(ota.beginUpload(16));
+    ota.abortUpload("test teardown");
+}
+
+void test_ota_upload_streaming_past_the_cap_is_refused() {
+    // An upload may announce no size at all — Content-Length is optional, and
+    // beginUpload(0) means "unknown". The announced-size check cannot see this
+    // one coming; only counting what arrives can.
+    OTAConfig config = quietConfig();
+    config.maxDownloadSize = 16;
+
+    OTAComponent ota(config);
+    ota.begin();
+
+    TEST_ASSERT_TRUE(ota.beginUpload(0));
+
+    std::vector<uint8_t> chunk(32, 0xE9);
+    TEST_ASSERT_FALSE_MESSAGE(ota.acceptUploadChunk(chunk.data(), chunk.size()),
+                              "32 bytes went past a 16 byte ceiling");
+    TEST_ASSERT_EQUAL_STRING("Firmware too large", ota.getLastError().c_str());
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::OTAUpdate::s_stubEndCalls);
+    TEST_ASSERT_EQUAL(OTAComponent::State::Error, ota.getState());
+}
+
+void test_ota_download_streaming_past_the_cap_is_refused() {
+    // The server announces a size inside the ceiling and then sends more. The
+    // check that reads `totalSize` believes it; the check that counts bytes
+    // does not.
+    Core core;
+    OTAConfig cfg = quietConfig();
+    cfg.maxDownloadSize = 16;
+    OTAComponent* ota = attachOta(core, cfg);
+    TEST_ASSERT_NOT_NULL(ota);
+
+    ota->setDownloader(downloaderOf(/*announced=*/8, /*streamed=*/32));
+    ota->triggerUpdateFromUrl("http://example.com/fw.bin");
+    drain(core);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, HAL::OTAUpdate::s_stubEndCalls,
+                                     "an oversized image was committed");
+    TEST_ASSERT_EQUAL(OTAComponent::State::Error, ota->getState());
+    TEST_ASSERT_EQUAL_STRING("Firmware too large", ota->getLastError().c_str());
+
+    core.shutdown();
+}
+
+// ============================================================================
+// State Machine Transitions (TEST-3)
+// ============================================================================
+//
+// The state tests above read the initial state and the accessors. None of them
+// watched the machine move, which is where a state machine goes wrong.
+
+void test_ota_upload_holds_downloading_while_it_runs() {
+    OTAComponent ota(quietConfig());
+    ota.begin();
+    TEST_ASSERT_TRUE(ota.isIdle());
+
+    TEST_ASSERT_TRUE(ota.beginUpload(16));
+    TEST_ASSERT_EQUAL(OTAComponent::State::Downloading, ota.getState());
+    TEST_ASSERT_TRUE(ota.isBusy());
+    TEST_ASSERT_FALSE(ota.isIdle());
+
+    ota.abortUpload("test teardown");
+}
+
+void test_ota_upload_settles_in_idle_without_autoreboot() {
+    OTAComponent ota;
+    TEST_ASSERT_TRUE(runUpload(ota, ""));  // runUpload sets autoReboot = false
+
+    TEST_ASSERT_EQUAL(OTAComponent::State::Idle, ota.getState());
+    TEST_ASSERT_TRUE(ota.isIdle());
+    TEST_ASSERT_FALSE(ota.isBusy());
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, ota.getProgress());
+}
+
+void test_ota_upload_settles_in_reboot_pending_with_autoreboot() {
+    OTAConfig config;
+    config.checkIntervalMs = 0;
+    config.autoReboot = true;
+
+    OTAComponent ota(config);
+    ota.begin();
+
+    const uint8_t firmware[16] = {0xE9};
+    TEST_ASSERT_TRUE(ota.beginUpload(sizeof(firmware)));
+    TEST_ASSERT_TRUE(ota.acceptUploadChunk(firmware, sizeof(firmware)));
+    TEST_ASSERT_TRUE(ota.finalizeUpload());
+
+    // No loop() here on purpose: loop() is what arms the 2 s reboot, and this
+    // test is about the state the upload leaves behind, not about rebooting.
+    TEST_ASSERT_EQUAL(OTAComponent::State::RebootPending, ota.getState());
+    TEST_ASSERT_FALSE(ota.isBusy());
+}
+
+void test_ota_abort_mid_transfer_lands_in_error_and_commits_nothing() {
+    OTAConfig config = quietConfig();
+    OTAComponent ota(config);
+    ota.begin();
+
+    const uint8_t firmware[8] = {0xE9, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+    TEST_ASSERT_TRUE(ota.beginUpload(64));
+    TEST_ASSERT_TRUE(ota.acceptUploadChunk(firmware, sizeof(firmware)));
+
+    ota.abortUpload("Client disconnected");
+
+    TEST_ASSERT_EQUAL(OTAComponent::State::Error, ota.getState());
+    TEST_ASSERT_EQUAL_STRING("Client disconnected", ota.getLastError().c_str());
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::OTAUpdate::s_stubEndCalls);
+    TEST_ASSERT_EQUAL_UINT32(1, HAL::OTAUpdate::s_stubAbortCalls);
+
+    // ...and the session is closed: a chunk arriving late must not be written.
+    TEST_ASSERT_FALSE(ota.acceptUploadChunk(firmware, sizeof(firmware)));
+}
+
+void test_ota_upload_progress_tracks_the_bytes_written() {
+    OTAConfig config = quietConfig();
+    OTAComponent ota(config);
+    ota.begin();
+
+    const uint8_t half[8] = {0xE9, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+    TEST_ASSERT_TRUE(ota.beginUpload(16));
+    TEST_ASSERT_EQUAL(16, ota.getTotalBytes());
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, ota.getProgress());
+
+    TEST_ASSERT_TRUE(ota.acceptUploadChunk(half, sizeof(half)));
+    TEST_ASSERT_EQUAL(8, ota.getDownloadedBytes());
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, ota.getProgress());
+
+    TEST_ASSERT_TRUE(ota.acceptUploadChunk(half, sizeof(half)));
+    TEST_ASSERT_EQUAL(16, ota.getDownloadedBytes());
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, ota.getProgress());
+
+    ota.abortUpload("test teardown");
+}
+
+// ============================================================================
 // Lifecycle Tests
 // ============================================================================
 
@@ -605,6 +975,26 @@ int main(int argc, char** argv) {
     RUN_TEST(test_ota_upload_sha_match_commits);
     RUN_TEST(test_ota_upload_without_hash_still_commits);
     RUN_TEST(test_ota_require_upload_hash_refuses_before_touching_flash);
+
+    // Lifecycle events (BUG-21)
+    RUN_TEST(test_ota_download_emits_start_then_end_then_completed);
+    RUN_TEST(test_ota_download_end_precedes_the_hash_verdict);
+    RUN_TEST(test_ota_failed_transfer_emits_start_but_no_end);
+    RUN_TEST(test_ota_upload_emits_start_then_end_then_completed);
+    RUN_TEST(test_ota_upload_start_still_emits_the_documented_info_event);
+
+    // Upload size cap (SEC-8)
+    RUN_TEST(test_ota_upload_over_the_cap_is_refused_before_touching_flash);
+    RUN_TEST(test_ota_upload_within_the_cap_is_accepted);
+    RUN_TEST(test_ota_upload_streaming_past_the_cap_is_refused);
+    RUN_TEST(test_ota_download_streaming_past_the_cap_is_refused);
+
+    // State machine transitions (TEST-3)
+    RUN_TEST(test_ota_upload_holds_downloading_while_it_runs);
+    RUN_TEST(test_ota_upload_settles_in_idle_without_autoreboot);
+    RUN_TEST(test_ota_upload_settles_in_reboot_pending_with_autoreboot);
+    RUN_TEST(test_ota_abort_mid_transfer_lands_in_error_and_commits_nothing);
+    RUN_TEST(test_ota_upload_progress_tracks_the_bytes_written);
 
     // Lifecycle tests
     RUN_TEST(test_ota_begin_returns_ok);

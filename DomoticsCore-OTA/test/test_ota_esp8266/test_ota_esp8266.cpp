@@ -263,6 +263,70 @@ void test_require_upload_hash_refuses_before_erasing_flash() {
     TEST_ASSERT_EQUAL_STRING("Firmware hash required", up.ota.getLastError().c_str());
 }
 
+// ============================================================================
+// SEC-8 — the size ceiling, on the path anybody can POST to
+// ============================================================================
+//
+// maxDownloadSize was enforced on the transfer this device initiates and not on
+// the one arriving from outside. Both tests assert on the error *message*, not
+// merely on the refusal: the Updater has size limits of its own, and a test that
+// only checks "it said no" would pass on the platform's reasons rather than ours
+// — the trap the ESP32 suite walked into with the synthetic payload.
+//
+// BUG-21's events are not tested here. Nothing about emitting them is
+// platform-specific, and the native suite pins the topics and their ordering.
+
+namespace {
+
+OTAComponent* configureCappedUpload(OTAComponent& ota, size_t cap) {
+    OTAConfig cfg;
+    cfg.autoReboot = false;
+    cfg.maxDownloadSize = cap;
+    ota.setConfig(cfg);
+    ota.begin();
+    return &ota;
+}
+
+} // namespace
+
+void test_upload_over_the_cap_is_refused_before_erasing_flash() {
+    OTAComponent ota;
+    configureCappedUpload(ota, PAYLOAD_SIZE / 2);
+
+    TEST_ASSERT_FALSE(ota.beginUpload(PAYLOAD_SIZE, payloadHash()));
+
+    // Never opened an update at all: the staging sectors are untouched, on the
+    // same ordering SEC-7 established for the hash refusal.
+    TEST_ASSERT_FALSE(Update.isRunning());
+    TEST_ASSERT_FALSE(copyCommandStaged());
+    TEST_ASSERT_EQUAL_STRING("Firmware too large", ota.getLastError().c_str());
+}
+
+void test_upload_streaming_past_the_cap_releases_flash_and_stages_nothing() {
+    // The case an announced-size check cannot see. Content-Length is optional, so
+    // beginUpload(0) opens an update sized to the whole free sketch space — the
+    // Updater will accept every one of these 4 KB. Only counting what arrives
+    // stops it, and by then flash is erased, which is the ESP8266 trap SEC-2
+    // documented: releasing an update must not stage the copy.
+    OTAComponent ota;
+    configureCappedUpload(ota, PAYLOAD_SIZE / 2);
+
+    TEST_ASSERT_TRUE(ota.beginUpload(0));
+    TEST_ASSERT_TRUE_MESSAGE(Update.isRunning(), "flash was never opened: nothing to release");
+
+    bool refused = false;
+    for (size_t offset = 0; offset < PAYLOAD_SIZE; offset += 512) {
+        if (!ota.acceptUploadChunk(g_payload + offset, 512)) { refused = true; break; }
+        yield();
+    }
+
+    TEST_ASSERT_TRUE_MESSAGE(refused, "4 KB went past a 2 KB ceiling");
+    TEST_ASSERT_EQUAL_STRING("Firmware too large", ota.getLastError().c_str());
+    TEST_ASSERT_FALSE(copyCommandStaged());
+    TEST_ASSERT_FALSE_MESSAGE(Update.isRunning(), "the update was left open after the refusal");
+    TEST_ASSERT_EQUAL(OTAComponent::State::Error, ota.getState());
+}
+
 void setup() {
     delay(2000);  // let the host attach before Unity starts printing
     UNITY_BEGIN();
@@ -274,6 +338,9 @@ void setup() {
     RUN_TEST(test_upload_with_mismatched_hash_stages_nothing);
     RUN_TEST(test_upload_with_matching_hash_stages_the_copy);
     RUN_TEST(test_require_upload_hash_refuses_before_erasing_flash);
+
+    RUN_TEST(test_upload_over_the_cap_is_refused_before_erasing_flash);
+    RUN_TEST(test_upload_streaming_past_the_cap_releases_flash_and_stages_nothing);
 
     UNITY_END();
 }
