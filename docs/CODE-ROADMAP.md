@@ -300,10 +300,17 @@ Unenforced security configurations are the most dangerous class of defect — us
   2026-08-26 lesson in mirror image: a hardware test can *fail* for the
   platform's reasons rather than yours, and a red result invites no scrutiny at
   all. Ask what a failure actually reached, not only whether it failed.
-- **The ESP8266 removal check still needs redoing** on the corrected suite. The
-  cascade means test 8 is proven non-vacuous on the ESP32 and not yet on the
-  ESP8266, where only test 7's failure was ever independent. The board was not
-  attached when this was found.
+- **Redone on the ESP8266** (2026-08-27, `nodemcuv2` on `/dev/ttyUSB1`). With
+  SEC-8 disabled on the corrected suite, both tests fail independently — test 7
+  on `Expected FALSE Was TRUE`, test 8 on its own message,
+  `4 KB went past a 2 KB ceiling`. No cascade, and the six pre-existing tests
+  still pass. SEC-8 restored: 8/8.
+
+  That message is the claim PR #32 made before anything had measured it. It
+  happens to be true. It was still an inference dressed as a reading, and it took
+  a third run on the corrected suite to become a fact.
+- **Both tests are therefore proven non-vacuous on both platforms.** Test 7 always
+  was; test 8 became so on the ESP32 with PR #33 and on the ESP8266 here.
 - **On the ESP32-CAM dropping off the USB bus.** It happened once, mid-check, and
   was written up here as the documented brownout. On a replug the same firmware
   ran to completion, and four consecutive flash-and-run cycles followed without
@@ -311,6 +318,11 @@ Unenforced security configurations are the most dangerous class of defect — us
   confidence the evidence did not support. Worth knowing that a stalled sketch
   cannot explain it either: the FTDI is a separate chip on USB power, so a hung
   ESP32 gives silence on the port, not a port that ceases to exist.
+
+  Both boards were then run with both adapters attached at once — ESP32-CAM on
+  `FTB6SPL3`/`ttyUSB0`, `nodemcuv2` on `A5069RR4`/`ttyUSB1`, including the cable
+  that was under suspicion — and neither left the bus across the flash-and-run
+  cycles this entry describes. Nothing here supports blaming a cable.
 - **Not covered**: the ceiling is a byte count, not a rate limit or a concurrency
   bound. An upload within the ceiling can still be repeated.
 
