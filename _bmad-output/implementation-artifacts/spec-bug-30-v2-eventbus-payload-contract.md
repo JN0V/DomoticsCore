@@ -1,8 +1,16 @@
 # BUG-30 v2 — the EventBus payload contract
 
-**Status**: design proposal, **reviewed and not yet ready to implement**. Nothing
-implemented. Replaces `spec-bug-30-eventbus-string-payload.md`, which the review
-of 2026-08-27 refuted and which is marked superseded.
+**Status**: **SUPERSEDED on 2026-08-28 by `spec-bug-30-v3-eventbus-payload-contract.md`.**
+Not refuted — overtaken. Its recommendation was contingent on a question nobody had
+put to `marianorenzi`; reading his fork answered it. He does not need non-POD
+payloads, he needs variable-length ones, and the overloads for that are already
+merged here — his commit `b6660b78`. Seven of the sites below do not exist in his
+rewrite. Nothing in this document should be implemented; it is kept for the option
+space and the hardware measurements, which v3 cites.
+
+*Original status: design proposal, reviewed and not yet ready to implement.
+Replaced `spec-bug-30-eventbus-string-payload.md`, which the review of 2026-08-27
+refuted.*
 
 > **Adversarial review, 2026-08-27** — `review-bug-30-v2-adversarial.md`, 17
 > findings. Four block implementation: §4's measurement was taken on option A/B,

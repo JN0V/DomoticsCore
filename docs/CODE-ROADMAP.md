@@ -883,24 +883,50 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
   characters — every one of these JSON payloads is well past that, so every one
   of them is a heap read after free. On an ESP8266 that is a crash or silent
   corruption rather than mojibake.
-- **Latent today, and documented as though it were not.** `OTA.cpp`'s
-  `publishStatusEvent()` is the only `emit<String>` caller in the repository, and
-  nothing subscribes with `on<String>` — the examples use `on<bool>` and
-  `on<MQTTMessageEvent>`, both trivially copyable. But
+- **Latent today, and documented as though it were not.** Nothing subscribes with
+  `on<String>` — the examples use `on<bool>` and `on<MQTTMessageEvent>`, both
+  trivially copyable — so nothing dereferences the corpse. But
   `docs/components/ota/technical-reference.md` has always listed the payload
   fields of all six OTA events, which is an invitation to read a payload that
   cannot be read. A warning now sits above that table.
-- **Not a one-liner, which is why it is not in the BUG-21 lot.** Adding the
-  assert breaks both `emit<String>` call sites at compile time by design. The
-  repair is to publish the bytes rather than the object — the
-  `publish(topic, const void*, size_t)` overload already deep-copies, so
-  `emit(topic, payload.c_str(), payload.length() + 1, sticky)` gives subscribers
-  a null-terminated `const char*` they can actually use. That changes the payload
-  contract of every OTA event and touches Core, so it wants its own lot and its
-  own decision.
-- **Check before fixing**: whether MQTT, WebUI or RemoteConsole publish any other
-  non-trivially-copyable payload on a topic. The assert will find them all at
-  once, which is the cheapest way to enumerate them.
+- **This entry said `OTA.cpp` was the only caller. It was wrong, and wrong in the
+  direction that mattered** (corrected 2026-08-28). That claim came from grepping
+  `emit<String>`, which misses every site that lets the template deduce. There are
+  **nine** live sites, and the seven this missed are the severe ones:
+
+  | Site | Payload | Lifetime |
+  |---|---|---|
+  | `Wifi.h:141,221,234,268,740,799,834` | `emit(EVENT_NETWORK_READY, HAL::WiFiHAL::getAPIP())` | **temporary** — already destroyed when `publish` returns |
+  | `OTA.cpp:791` | serialised JSON local | local, always heap |
+  | `OTA.cpp:780` | serialised JSON local | dead code (`broadcastProgress`, DEAD-1) |
+
+  A temporary is worse than a local: the local at least survives to the end of the
+  enclosing statement. On ESP8266 the `String` SSO buffer means any IP of eleven
+  characters or more is a heap read after free — which is most of them, and
+  `192.168.4.1` exactly.
+- **The blocking question was answered by reading the fork, not by asking**
+  (2026-08-28). v2 of the design was contingent on whether `marianorenzi`'s
+  transport-neutral rewrite needs the bus to carry non-POD payloads. It does not:
+  it needs *variable-length* payloads, and **he already wrote that mechanism and it
+  is already merged here** — his commit `b6660b78`, "feat(eventbus): publish
+  overloads for variable-length payloads", is what put `publish(topic, const void*,
+  size_t)` at `EventBus.h:133`. On his branch `Wifi.h` publishes no `String` at
+  all; `EVENT_NETWORK_READY` is gone, replaced by `NetworkEvents::EVENT_PROVIDER_*`
+  carrying structs. **Seven of the nine sites do not exist in his rewrite.**
+- **So the fix is small, and the guard is finally landable.** Publish bytes at the
+  nine sites through the overload that already exists, then put the
+  `static_assert` on the topic overload. That assert was unlandable while handing
+  the bus an object was the only way to publish something variable-length — it
+  would have refused legitimate callers with nothing to offer them. `b6660b78`
+  gave them the alternative; after the conversions there are no non-trivially-
+  copyable publishers left, so the assert breaks nothing that exists and stops the
+  next one being written. No POD event structs, no `= delete`d overloads, no
+  version bump, **no public contract break** — which also retires the review
+  finding that a root `v3.0.0` would protect nobody.
+- **Design**: `_bmad-output/implementation-artifacts/spec-bug-30-v3-eventbus-payload-contract.md`.
+  v2 is superseded — overtaken rather than refuted — and v1 was refuted by its own
+  review. All four of v2's blocking findings were downstream of a shape that no
+  longer applies.
 
 ### BUG-29 — MQTT: the publish rate limit silently drops discovery [HIGH] — **DONE (2026-08-26)**
 
