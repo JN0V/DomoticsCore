@@ -88,8 +88,31 @@ would have overwritten it. Only `total` discriminates, and the script says so.
 
 `--commit` also sends a correctly-hashed copy, which the device installs and
 reboots into. Uploading the image the board is already running makes that safe
-and repeatable. **That path is written and has not been exercised** — the board
-dropped off USB before it was reached.
+and repeatable.
+
+**It requires the device to stop answering before it answers again.** Waiting
+only for a reply would pass just as well if the device had never rebooted — it
+answers throughout. Verified by setting `autoReboot = false` in the example and
+watching the check fail with *"the device never stopped answering"*.
+
+### A staged eboot command outlives a serial reflash
+
+After any successful upload on an ESP8266 the bootloader is armed, and it acts on
+the **next reset** — including the one `esptool` performs at the end of a serial
+flash. So the sequence
+
+```
+upload firmware A over HTTP   (staged, device does not reboot)
+flash firmware B over serial  (written, then reset)
+```
+
+leaves the board running **A**, not B: eboot copied the staged image over the one
+just written. It looks exactly like a flash that silently did not take, and the
+build log says SUCCESS.
+
+Flashing a second time works, because the command was consumed by the first
+reset. Cost two flashes and one wrong conclusion on 2026-08-27 before
+`/api/ota/status` was asked what the device thought its own config was.
 
 Needs `DC_OTA_PREFER_STA` in `secrets.h` and `OTAWithWebUI` flashed, so the
 endpoint is on the LAN rather than behind the device's own access point.

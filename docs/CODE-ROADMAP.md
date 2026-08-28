@@ -37,7 +37,7 @@ versions may sit still while fixes land.
 | OTA | SEC-9 | PR #36 — 2026-08-27, filed by the real-conditions campaign and closed the same day, minus all three of its recorded consequences; raised TEST-8. Stacked on PR #35, where SEC-9 was filed |
 | OTA | TEST-8 (part) | **Merged** — PR #37, 2026-08-27, the two holes reachable without HTTP, closed on both boards. Found that the ESP8266 suite's one-sector payload had been hiding the Updater's flush |
 | OTA | TEST-8 hole 3 | **Merged** — PR #39, 2026-08-27, the download path reported the size the server announced, in both directions |
-| OTA | TEST-8 hole 4 (part) | 2026-08-27 — a real multipart POST against a board, with a removal check that discriminates. The accepted path is unrun: the board left the USB bus |
+| OTA | TEST-8 hole 4 (part) | PR #40 — 2026-08-27, a real multipart POST against a board, refused and accepted paths both run, each with a removal check that discriminates. What remains of TEST-8 is the browser's own view |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -1080,14 +1080,26 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
      `finalizeUpdateOperation()`. Only `total` moves, and the script says so
      rather than claiming two assertions where there is one.
 
-     **Still open**: the accepted-and-committed path is written behind `--commit`
-     and **has not been run** — the board's FTDI adapter dropped off USB before it
-     was reached. And nothing yet measures what a *browser* renders: `progress`
+     **The accepted path now runs too** (2026-08-27): a correctly-hashed copy of
+     the running image is installed and the device reboots into it. The check
+     requires it to **stop** answering before it answers again — waiting only for
+     a reply would pass if it had never rebooted, since it answers throughout.
+     Verified by setting `autoReboot = false` and watching the check fail with
+     *"the device never stopped answering"*.
+
+     **Still open**: nothing yet measures what a *browser* renders. `progress`
      reaches 100, but the SSE cadence is ~5.4 s against an `autoReboot` that
      restarts the device 2 s after completion, so SEC-9's first recorded
      consequence may still have been right about the screen and wrong about the
      cause. The harness for that is `webui_check.py`, and it has not been pointed
      at an upload.
+- **A staged eboot command outlives a serial reflash**, found while doing this and
+  worth more than the item that found it. After any successful ESP8266 upload the
+  bootloader is armed and acts on the *next* reset — including `esptool`'s at the
+  end of a serial flash. Upload A over HTTP without rebooting, then flash B over
+  serial, and the board runs **A**: eboot copied the staged image over the one just
+  written. The build log says SUCCESS and it looks like a flash that did not take.
+  Flashing twice works. Recorded in `tools/on-device/README.md`.
 - **What closing the first two cost, and it is the finding worth keeping.** The
   ESP8266 payload was one flash sector, on the reasoning that one sector is enough
   for the Updater to fill and flush its buffer. It is not.
@@ -1655,7 +1667,7 @@ not.
 | 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences having been refuted against the Arduino cores) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **2H**, 7M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
-| 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth part-closed** — a real multipart POST now runs against a board and its removal check discriminates; the accepted-and-committed path is written and unrun) |
+| 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
