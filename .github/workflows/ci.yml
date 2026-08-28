@@ -172,12 +172,15 @@ jobs:
   # 2-3 of the 6 failing against the pre-fix code — but CI still only compiles
   # them, like the rest.
   #
-  # The five are listed rather than discovered, unlike the native job. Discovery
-  # over "declares esp8266dev and has a test/ directory" also matches
-  # DomoticsCore-HomeAssistant, whose esp8266dev environment carries no ESP8266
-  # suite and no test_filter, so pio cross-compiles its native suites and fails
-  # on Platform_Stub.h (CI-11). Until that is settled, a list that is checked
-  # for existence beats a loop that silently matches the wrong thing.
+  # HomeAssistant joined on 2026-08-28 with MEM-2's hot half. Its esp8266dev
+  # environment was the reason this job lists its projects instead of discovering
+  # them: it declared test settings, carried no ESP8266 suite and no test_filter,
+  # so pio cross-compiled its native suites for the board and died on
+  # Platform_Stub.h (CI-11). It now has both a suite and a filter. CI-11 stays
+  # open for the coverage it actually asks for, and the list stays a list —
+  # discovery over "declares esp8266dev and has a test/ directory" would still
+  # match any component that acquires the same shape tomorrow, and a list that is
+  # checked for existence beats a loop that silently matches the wrong thing.
   # ---------------------------------------------------------------------------
   build-device-tests:
     name: Build on-device suites
@@ -210,6 +213,7 @@ jobs:
             DomoticsCore-WebUI/test/test_schema_memory
             DomoticsCore-System/examples/FullStack
             DomoticsCore-OTA
+            DomoticsCore-HomeAssistant
           "
           failed=""
           for project in $projects; do

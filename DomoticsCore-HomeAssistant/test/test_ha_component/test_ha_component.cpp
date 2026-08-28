@@ -538,6 +538,22 @@ void test_switch_command_auto_publishes_state() {
     TEST_ASSERT_TRUE(statePublished);
     TEST_ASSERT_EQUAL_STRING("ON", capturedPayload.c_str());
 
+    // And then OFF, which is the half that makes this test discriminating.
+    // publishState is overloaded on String, const char* and bool, and the bug-008
+    // misresolution sends every payload through the bool overload — which prints
+    // "ON" for any non-null pointer. A suite that only ever commands ON passes
+    // just as well against that bug: it was demonstrated here, by replacing the
+    // call site in HomeAssistant.h with publishState(entity->id, (bool)payload),
+    // and all 91 native cases stayed green.
+    statePublished = false;
+    capturedPayload = "";
+    simulateSwitchCommand(core, "test_node", "sw1", "OFF");
+
+    TEST_ASSERT_TRUE(statePublished);
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("OFF", capturedPayload.c_str(),
+        "the auto-publish resolved to the bool overload: it publishes \"ON\" for "
+        "every command, and a switch turned off in Home Assistant reappears on");
+
     core.shutdown();
 }
 
@@ -868,6 +884,267 @@ void test_ha_node_id_processing() {
     TEST_ASSERT_EQUAL_STRING("my_device_name", config.nodeId);
 }
 
+// ============================================================================
+// MEM-2 — the command parse, pinned where the char* rewrite could drop it
+// ============================================================================
+//
+// These five cases are behaviour, not cost. They cannot show an allocation was
+// avoided: the native String is std::string (Platform_Stub.h:27), and every id
+// and payload below fits its own small-string buffer or is copied into a char[]
+// before it is measured. What they hold in place is what the rewrite could
+// silently change while still passing everything else — the two truncation
+// points, the two malformed-topic refusals, and the fact that an id longer than
+// the event field still finds its entity.
+
+// Log capture. The rules are the OTA suite's (test_ota_component.cpp:723): the
+// buffers are static, not stack Strings captured by reference, and the callback
+// is removed before the first assertion. A failed TEST_ASSERT longjmps out of
+// the test, and a callback still holding a reference to a dead stack object
+// would then be written through by every later DLOG in the suite.
+//
+// Removing it before the asserts is necessary and not sufficient: the longjmp
+// can also come from an assertion that runs *before* the removal, which is why
+// tearDown() below removes it again. The callback list is a process-wide
+// singleton, so a probe left installed by one test appends to the buffers of
+// every test after it.
+static String g_capturedWarn;
+static String g_capturedError;
+static bool g_captureActive = false;
+static LoggerCallbacks::CallbackId g_captureId = 0;
+
+static void startLogCapture() {
+    if (g_captureActive) LoggerCallbacks::removeCallback(g_captureId);
+    g_capturedWarn = "";
+    g_capturedError = "";
+    g_captureId = LoggerCallbacks::addCallback(
+        [](LogLevel level, const char* tag, const char* message) {
+            if (strcmp(tag, LOG_HA) != 0) return;
+            if (level == LOG_LEVEL_WARN) {
+                g_capturedWarn += message;
+                g_capturedWarn += "\n";
+            } else if (level == LOG_LEVEL_ERROR) {
+                g_capturedError += message;
+                g_capturedError += "\n";
+            }
+        });
+    g_captureActive = true;
+}
+
+static void stopLogCapture() {
+    if (!g_captureActive) return;
+    LoggerCallbacks::removeCallback(g_captureId);
+    g_captureActive = false;
+}
+
+// The helpers above build the topic from its parts, which cannot express a
+// malformed one. This sends the topic verbatim.
+static void simulateRawMessage(Core& core, const char* topic, const char* payload) {
+    // The event's buffers are what MQTT delivers through, and silently cutting a
+    // fixture to fit them would leave the test measuring a different topic from
+    // the one it reads in the source. Refuse instead.
+    TEST_ASSERT_TRUE_MESSAGE(strlen(topic) < MQTT_EVENT_TOPIC_SIZE,
+        "the test's topic does not fit MQTTMessageEvent::topic — it would be "
+        "truncated, and the case below would not be the case that was written");
+    TEST_ASSERT_TRUE_MESSAGE(strlen(payload) < MQTT_EVENT_PAYLOAD_SIZE,
+        "the test's payload does not fit MQTTMessageEvent::payload — it would be "
+        "truncated, and the case below would not be the case that was written");
+
+    MQTTMessageEvent msg{};
+    strncpy(msg.topic, topic, MQTT_EVENT_TOPIC_SIZE - 1);
+    msg.topic[MQTT_EVENT_TOPIC_SIZE - 1] = '\0';
+    strncpy(msg.payload, payload, MQTT_EVENT_PAYLOAD_SIZE - 1);
+    msg.payload[MQTT_EVENT_PAYLOAD_SIZE - 1] = '\0';
+    core.emit<MQTTMessageEvent>(DomoticsCore::MQTTEvents::EVENT_MESSAGE, msg);
+    for (int i = 0; i < 5; i++) core.loop();
+}
+
+void test_ha_command_entity_id_over_63_truncates_and_warns() {
+    // 70 characters, against the 64-byte HACommandEvent::entityId. The entity is
+    // registered under the full id, so this also pins the half of the rewrite
+    // that is easiest to lose: the lookup compares the whole extracted id, not
+    // the copy that has already been cut to fit the event.
+    char longId[71];
+    memset(longId, 'e', 70);
+    longId[70] = '\0';
+
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSwitch(longId, "Overlong Switch");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    bool eventFired = false;
+    char evEntityId[64] = {};
+    core.getEventBus().subscribe(String(HAEvents::EVENT_COMMAND), [&](const void* data) {
+        auto& ev = *reinterpret_cast<const HAEvents::HACommandEvent*>(data);
+        eventFired = true;
+        strncpy(evEntityId, ev.entityId, sizeof(evEntityId) - 1);
+    }, nullptr);
+
+    simulateMqttConnect(core);
+
+    String topic = String("homeassistant/switch/test_node/") + longId + "/set";
+    startLogCapture();
+    simulateRawMessage(core, topic.c_str(), "ON");
+    stopLogCapture();
+    String warn = g_capturedWarn;
+
+    // Non-vacuity: everything below is about what the event carried, and there
+    // is no event if the 70-character id failed to match its entity.
+    TEST_ASSERT_TRUE_MESSAGE(eventFired,
+        "no ha/command event: the overlong id never matched its entity, so the "
+        "truncation this test measures never happened");
+
+    char expected[64];
+    memcpy(expected, longId, 63);
+    expected[63] = '\0';
+    TEST_ASSERT_EQUAL_STRING(expected, evEntityId);
+    TEST_ASSERT_EQUAL_MESSAGE(63, strlen(evEntityId), "the id was not cut at the field's 63 characters");
+
+    TEST_ASSERT_TRUE_MESSAGE(warn.indexOf("Entity ID truncated") >= 0,
+        "the id was truncated with no warning at all");
+    TEST_ASSERT_TRUE_MESSAGE(warn.indexOf("(70 > 63)") >= 0,
+        "the warning does not name the overflow it dropped");
+
+    core.shutdown();
+}
+
+void test_ha_command_payload_over_127_truncates_and_warns() {
+    // 200 characters against the 128-byte HACommandEvent::command.
+    char longPayload[201];
+    memset(longPayload, 'p', 200);
+    longPayload[200] = '\0';
+
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSwitch("sw1", "Switch 1");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    bool eventFired = false;
+    char evCommand[128] = {};
+    core.getEventBus().subscribe(String(HAEvents::EVENT_COMMAND), [&](const void* data) {
+        auto& ev = *reinterpret_cast<const HAEvents::HACommandEvent*>(data);
+        eventFired = true;
+        strncpy(evCommand, ev.command, sizeof(evCommand) - 1);
+    }, nullptr);
+
+    simulateMqttConnect(core);
+
+    startLogCapture();
+    simulateRawMessage(core, "homeassistant/switch/test_node/sw1/set", longPayload);
+    stopLogCapture();
+    String warn = g_capturedWarn;
+
+    TEST_ASSERT_TRUE_MESSAGE(eventFired,
+        "no ha/command event: the oversized payload never reached the event, so "
+        "the truncation this test measures never happened");
+    TEST_ASSERT_EQUAL_MESSAGE(127, strlen(evCommand),
+        "the payload was not cut at the field's 127 characters");
+
+    TEST_ASSERT_TRUE_MESSAGE(warn.indexOf("Command payload truncated") >= 0,
+        "the payload was truncated with no warning at all");
+    TEST_ASSERT_TRUE_MESSAGE(warn.indexOf("(200 > 127)") >= 0,
+        "the warning does not name the overflow it dropped");
+
+    core.shutdown();
+}
+
+void test_ha_command_topic_without_slash_is_refused() {
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSwitch("sw1", "Switch 1");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    bool eventFired = false;
+    core.getEventBus().subscribe(String(HAEvents::EVENT_COMMAND), [&](const void*) {
+        eventFired = true;
+    }, nullptr);
+
+    simulateMqttConnect(core);
+
+    startLogCapture();
+    simulateRawMessage(core, "homeassistant", "ON");
+    stopLogCapture();
+    String err = g_capturedError;
+
+    TEST_ASSERT_FALSE_MESSAGE(eventFired, "a topic with no slash at all produced a command event");
+    TEST_ASSERT_TRUE_MESSAGE(err.indexOf("Invalid topic format - no trailing slash") >= 0,
+        "the topic was discarded silently");
+
+    core.shutdown();
+}
+
+void test_ha_command_topic_with_one_slash_is_refused() {
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSwitch("sw1", "Switch 1");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    bool eventFired = false;
+    core.getEventBus().subscribe(String(HAEvents::EVENT_COMMAND), [&](const void*) {
+        eventFired = true;
+    }, nullptr);
+
+    simulateMqttConnect(core);
+
+    startLogCapture();
+    simulateRawMessage(core, "homeassistant/set", "ON");
+    stopLogCapture();
+    String err = g_capturedError;
+
+    TEST_ASSERT_FALSE_MESSAGE(eventFired, "a topic with one slash produced a command event");
+    TEST_ASSERT_TRUE_MESSAGE(err.indexOf("Invalid topic format - missing entity ID") >= 0,
+        "the topic was discarded silently");
+
+    core.shutdown();
+}
+
+void test_ha_commands_received_counts_only_known_entities() {
+    // stats.commandsReceived increments after the unknown-entity return and
+    // before the payload is validated. Both halves of that position are load
+    // bearing and neither is visible in any other test: a discarded message must
+    // not count, and a command an entity rejects must.
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addButton("btn1", "Button");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    simulateMqttConnect(core);
+    TEST_ASSERT_EQUAL_UINT32(0, haPtr->getStatistics().commandsReceived);
+
+    simulateRawMessage(core, "homeassistant/button/test_node/nobody_here/set", "PRESS");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, haPtr->getStatistics().commandsReceived,
+        "a command for an unregistered entity was counted as received");
+
+    // HAButton::handleCommand returns false for anything but PRESS, so this one
+    // is counted and then dropped without an event.
+    simulateRawMessage(core, "homeassistant/button/test_node/btn1/set", "NONSENSE");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, haPtr->getStatistics().commandsReceived,
+        "the counter moved to after validation: a rejected command is no longer counted");
+
+    core.shutdown();
+}
+
 void test_ha_config_no_heap_allocation() {
     // Verify HAConfig uses no heap (all stack/struct storage)
     size_t heapBefore = HAL::Platform::getFreeHeap();
@@ -890,7 +1167,15 @@ void test_ha_config_no_heap_allocation() {
 // ============================================================================
 
 void setUp() {}
-void tearDown() {}
+
+// The log probe is the only state in this file that outlives a test: the
+// LoggerCallbacks list is a process-wide singleton, and a Unity assertion that
+// fails before stopLogCapture() longjmps straight past it. Left installed, it
+// would append every later test's HA warnings to the capture buffers and let one
+// failure be read as several.
+void tearDown() {
+    stopLogCapture();
+}
 
 int runAllTests() {
     UNITY_BEGIN();
@@ -975,6 +1260,13 @@ int runAllTests() {
     RUN_TEST(test_publish_state_bool_still_works);
     RUN_TEST(test_publish_state_string_still_works);
     RUN_TEST(test_publish_state_string_literal);
+
+    // MEM-2 — command parse behaviours the char* rewrite could drop
+    RUN_TEST(test_ha_command_entity_id_over_63_truncates_and_warns);
+    RUN_TEST(test_ha_command_payload_over_127_truncates_and_warns);
+    RUN_TEST(test_ha_command_topic_without_slash_is_refused);
+    RUN_TEST(test_ha_command_topic_with_one_slash_is_refused);
+    RUN_TEST(test_ha_commands_received_counts_only_known_entities);
 
     // R6 — char[] field tests
     RUN_TEST(test_ha_set_field_truncation);
