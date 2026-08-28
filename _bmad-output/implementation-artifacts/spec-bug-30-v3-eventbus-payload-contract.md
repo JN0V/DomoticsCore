@@ -1,8 +1,26 @@
 # BUG-30 v3 — the EventBus payload contract
 
-**Status**: design proposal. Replaces `spec-bug-30-v2-eventbus-payload-contract.md`,
-which is superseded — not refuted this time, **overtaken**.
+**Status**: **IMPLEMENTED 2026-08-28.** Replaced
+`spec-bug-30-v2-eventbus-payload-contract.md`, which is superseded — not refuted,
+**overtaken**.
 **Date**: 2026-08-28
+
+> **Two corrections the implementation forced, recorded rather than edited away.**
+>
+> **The count was ten, not nine.** §3's table was built by grep and missed three:
+> `ComponentRegistry.h:128` and `:175` construct `String("")` inline on
+> `eventBus.publish`, and `Storage.h:149` passes a `String` *member*. None spells
+> `emit<String>` or a String-returning call. The `static_assert` found all three,
+> one compile at a time — which is what §5 step 3 was for, and it worked.
+>
+> **§5's instruction to leave `OTA.cpp:780` was wrong.** Dead code still compiles,
+> so `broadcastProgress()`'s `emit<String>` would have blocked the assert. It was
+> deleted, which is what DEAD-1 wanted anyway.
+>
+> **And §1's "it is latent" was wrong.** `test_storage_events.cpp:67` and `:94` do
+> `*static_cast<const String*>(payload)` by hand — the v1 review said so on
+> 2026-08-27 and v2 and v3 both lost it. They survived because Storage publishes a
+> member rather than a temporary. That subscriber now reads `const char*`.
 
 > **What overtook it.** v2's recommendation was contingent on a question nobody had
 > put to `marianorenzi`: does his transport-neutral rewrite need the bus to carry

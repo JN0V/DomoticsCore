@@ -120,6 +120,21 @@ public:
     // Topic-based publish (with payload copy)
     template<typename PayloadT>
     void publish(const String& topic, const PayloadT& payload) {
+        // BUG-30: the same guard the EventType overload above has carried since
+        // BUG-1, and for the same reason — this reinterpret_cast copies the
+        // object's bytes, so a type that owns anything (a String's pointer, length
+        // and capacity) is dispatched after the original has been destroyed and
+        // its storage freed.
+        //
+        // It could not be added until there was somewhere for legitimate
+        // variable-length callers to go: refusing them with no alternative would
+        // have been a worse defect than the one it prevents. publish(topic, const
+        // void*, size_t) below is that alternative, and everything that used to
+        // need this overload for a String now uses it.
+        static_assert(std::is_trivially_copyable<PayloadT>::value,
+                      "EventBus payload must be trivially copyable. For a String or "
+                      "any other owning type, publish the bytes instead: "
+                      "emit(topic, s.c_str(), s.length() + 1, sticky). See BUG-30.");
         if (topic.length() == 0) return;
         QueuedEvent qe;
         qe.topic = topic;

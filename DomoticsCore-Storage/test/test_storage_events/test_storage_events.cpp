@@ -64,7 +64,14 @@ void test_storage_ready_event_published(void) {
     testCore->getEventBus().subscribe(StorageEvents::EVENT_READY, [](const void* payload) {
         storageReadyReceived = true;
         if (payload) {
-            storageReadyNamespace = *static_cast<const String*>(payload);
+            // BUG-30: the payload is bytes now, not a String object. It used to
+            // be `*static_cast<const String*>(payload)` — reading a String whose
+            // pointer, length and capacity had been byte-copied out of the
+            // component's config member. That worked only because the member
+            // outlived dispatch; it was the same defect as Wifi.h's seven, on a
+            // slower fuse. Storage publishes `namespace_name.c_str()` with its
+            // NUL, so a subscriber reads a plain C string.
+            storageReadyNamespace = static_cast<const char*>(payload);
         }
     });
 
@@ -91,7 +98,7 @@ void test_storage_ready_event_contains_namespace(void) {
     testCore->getEventBus().subscribe(StorageEvents::EVENT_READY, [](const void* payload) {
         storageReadyReceived = true;
         if (payload) {
-            storageReadyNamespace = *static_cast<const String*>(payload);
+            storageReadyNamespace = static_cast<const char*>(payload);  // BUG-30, see above
         }
     });
 

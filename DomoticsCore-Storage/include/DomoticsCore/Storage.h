@@ -146,7 +146,15 @@ public:
 
         // Emit storage ready event if successful
         if (status == ComponentStatus::Success && __dc_eventBus) {
-            emit(StorageEvents::EVENT_READY, storageConfig.namespace_name);
+            // BUG-30: publish the bytes, not the String. This one is a member
+            // rather than a temporary, so the copied pointer stays valid while the
+            // config does — and stops the moment setConfig() replaces it. Same
+            // defect class, slower fuse. The sized overload copies the characters
+            // themselves; length() + 1 carries the NUL.
+            emit(StorageEvents::EVENT_READY,
+                 storageConfig.namespace_name.c_str(),
+                 storageConfig.namespace_name.length() + 1,
+                 false);
         }
 
         return status;

@@ -37,6 +37,7 @@ versions may sit still while fixes land.
 | OTA | SEC-9 | PR #36 — 2026-08-27, filed by the real-conditions campaign and closed the same day, minus all three of its recorded consequences; raised TEST-8. Stacked on PR #35, where SEC-9 was filed |
 | OTA | TEST-8 (part) | **Merged** — PR #37, 2026-08-27, the two holes reachable without HTTP, closed on both boards. Found that the ESP8266 suite's one-sector payload had been hiding the Updater's flush |
 | OTA | TEST-8 hole 3 | **Merged** — PR #39, 2026-08-27, the download path reported the size the server announced, in both directions |
+| Core, Wifi, Storage, OTA | BUG-30 | 2026-08-28 — the guard, and the ten sites the assert enumerated |
 | Core | BUG-2 | 2026-08-28 — both recorded fixes measured impossible; contract narrowed, severity re-argued HIGH → MEDIUM, no code change |
 | OTA | TEST-8 hole 4 (part) | PR #40 — 2026-08-27, a real multipart POST against a board, refused and accepted paths both run, each with a removal check that discriminates. What remains of TEST-8 is the browser's own view |
 
@@ -863,7 +864,7 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 
 ---
 
-### BUG-30 — Core: the topic overload of `EventBus::publish` has no trivially-copyable guard [HIGH]
+### BUG-30 — Core: the topic overload of `EventBus::publish` has no trivially-copyable guard [HIGH] — **DONE (2026-08-28)**
 
 - **File**: `DomoticsCore-Core/include/DomoticsCore/EventBus.h:121-129`
 - **Found by**: BUG-21, 2026-08-27, while writing tests that subscribe to the OTA
@@ -883,9 +884,14 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
   characters — every one of these JSON payloads is well past that, so every one
   of them is a heap read after free. On an ESP8266 that is a crash or silent
   corruption rather than mojibake.
-- **Latent today, and documented as though it were not.** Nothing subscribes with
-  `on<String>` — the examples use `on<bool>` and `on<MQTTMessageEvent>`, both
-  trivially copyable — so nothing dereferences the corpse. But
+- **"Latent" was wrong too, and the v1 review had already said so.** This entry
+  claimed nothing dereferences the payload, on the strength of a grep for
+  `on<String>` finding nothing. `test_storage_events.cpp:67` and `:94` do it by
+  hand — `*static_cast<const String*>(payload)` — on `storage/ready`. Two running
+  native tests, exactly as the review of v1 recorded on 2026-08-27 before v2 and v3
+  lost the fact. They survived because Storage publishes a config *member* rather
+  than a temporary, so the copied pointer stayed valid: the same defect on a slower
+  fuse. But
   `docs/components/ota/technical-reference.md` has always listed the payload
   fields of all six OTA events, which is an invitation to read a payload that
   cannot be read. A warning now sits above that table.
@@ -927,6 +933,37 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
   v2 is superseded — overtaken rather than refuted — and v1 was refuted by its own
   review. All four of v2's blocking findings were downstream of a shape that no
   longer applies.
+- **Fixed (2026-08-28), and the assert enumerated the sites the grep could not.**
+  v3 planned for nine. There were **ten**, and the three greps miss are the reason
+  the entry recommended letting the compiler find them:
+
+  | Site | Was | Now |
+  |---|---|---|
+  | `Wifi.h` ×7 | `emit(EVENT_NETWORK_READY, getAPIP())` — a **temporary** | `emitNetworkReady()`, one private helper that takes `const String&` and publishes `c_str(), length() + 1` |
+  | `OTA.cpp:791` | `emit<String>(topic, payload, sticky)` | the sized overload |
+  | `OTA.cpp:780` | `emit<String>` in dead `broadcastProgress()` | **deleted** — dead code still compiles, so the assert forced the choice v3 got wrong when it said to leave it |
+  | `ComponentRegistry.h:128,175` | `publish(EVENT_SYSTEM_READY, String(""))`, same for `EVENT_SHUTDOWN_START` | the no-payload overload — an empty payload carried nothing to convert |
+  | `Storage.h:149` | `emit(EVENT_READY, storageConfig.namespace_name)` | the sized overload |
+
+  Grep found seven of ten. The three it missed spell neither `emit<String>` nor a
+  String-returning call: two construct `String("")` inline on `eventBus.publish`,
+  and one passes a `String` *member*. **This is the third time this week a grep has
+  been mistaken for an enumeration.**
+- **The payload contract changed, and one subscriber had to change with it.**
+  `test_storage_events.cpp` read `*static_cast<const String*>(payload)`; it now
+  reads `static_cast<const char*>(payload)`. That is the whole cost, and it is the
+  cost the entry always predicted.
+- **Verified**: twelve native suites, **724 cases, all green**, each from a cleaned
+  `.pio`. FullStack builds on `esp8266dev` and `esp32dev`; both OTA device suites
+  cross-compile. On a `nodemcuv2`, `OTAWithWebUI` boots, joins the network and
+  serves — which is the converted `Wifi.h` STA path running on silicon.
+  **Removal check**: a fresh `publish(String("t"), s)` fails to compile with the
+  authored message, which names the alternative. The assert is not decoration.
+- **What it did not cost**: no POD event structs, no `= delete`d overloads, no
+  version bump, no public contract break beyond the payload type on topics that
+  already documented themselves as unreadable. RAM on FullStack/esp8266dev moved
+  50904 → 50888 bytes.
+
 
 ### BUG-29 — MQTT: the publish rate limit silently drops discovery [HIGH] — **DONE (2026-08-26)**
 
@@ -1749,7 +1786,7 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences having been refuted against the Arduino cores) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **1H**, 8M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **0H**, 8M (**21 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
@@ -1757,11 +1794,13 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **115 items** | | **0C, 8H, 31M, 34L** (55 resolved) |
+| **Total** | **115 items** | | **0C, 7H, 31M, 34L** (56 resolved) |
 
-The severity columns sum across the rows: 1 + 1 + 2 + 2 + 2 = 8 HIGH, in Memory
-Safety, Code Safety, Test Coverage, File Size and Architecture. The eight are
-MEM-2, BUG-30, TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1, ARCH-2.
+The severity columns sum across the rows: 1 + 2 + 2 + 2 = 7 HIGH, in Memory
+Safety, Test Coverage, File Size and Architecture. The seven are MEM-2, TEST-4,
+TEST-6, SIZE-1, SIZE-2, ARCH-1, ARCH-2. **Code Safety is at zero HIGH for the
+first time**, and this time the row was checked against the section headings
+rather than only re-summed.
 
 **BUG-2 was found on 2026-08-27 by the same method that found BUG-21, one day
 later, in a file that had just been edited to warn about exactly this.** It had

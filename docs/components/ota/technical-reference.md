@@ -364,20 +364,27 @@ Defined in `DomoticsCore/OTAEvents.h`. Namespace: `DomoticsCore::OTAEvents`.
 
 All events are emitted via the Core EventBus with JSON string payloads. Each payload includes `state`, `progress`, and `lastResult` fields in addition to event-specific data.
 
-> **Do not read these payloads yet (BUG-30).** `publishStatusEvent()` publishes a
-> `String` through `EventBus::publish(topic, PayloadT)`, which byte-copies the
-> object — pointer, length, capacity — into a queue that dispatches after the
-> publisher's local has been destroyed. A subscriber registered with
-> `core.on<String>("ota/start", …)` gets a `String` reporting the right length
-> over freed heap; measured on 2026-08-27 as 114 characters of garbage. The
-> guard that would have caught this exists on the sibling `EventType` overload
-> (BUG-1) and not on this one.
+> **Read these payloads as bytes, not as a `String` (BUG-30, fixed 2026-08-28).**
+> `publishStatusEvent()` used to publish a `String` through
+> `EventBus::publish(topic, PayloadT)`, which byte-copies the object — pointer,
+> length, capacity — into a queue that dispatches after the publisher's local has
+> been destroyed. A subscriber taking it as a `String` got the right length over
+> freed heap; measured on 2026-08-27 as 114 characters of garbage.
 >
-> **Subscribe to the topics, not the payloads.** The topic and its timing carry
-> the lifecycle information — see the `EVENT_END` note below — and are safe:
-> `core.getEventBus().subscribe("ota/end", [](const void*) { … })` ignores the
-> payload pointer and works today. The columns below describe what the payload
-> *contains*, and will describe what it *delivers* once BUG-30 is fixed.
+> It now publishes the characters themselves, NUL included, through
+> `emit(topic, s.c_str(), s.length() + 1, sticky)`. **The payload is a
+> `const char*`:**
+>
+> ```cpp
+> core.getEventBus().subscribe("ota/end", [](const void* payload) {
+>     const char* json = static_cast<const char*>(payload);   // a C string
+> });
+> ```
+>
+> `core.on<String>("ota/…", …)` no longer compiles, by design: the guard that
+> BUG-1 put on the sibling `EventType` overload is now on this one too, and it
+> names the alternative in its message. Subscribing to the topic alone and
+> ignoring the payload — `[](const void*) { … }` — works as it always did.
 
 | Constant | Topic String | When Emitted | Additional Payload Fields |
 |----------|-------------|--------------|---------------------------|

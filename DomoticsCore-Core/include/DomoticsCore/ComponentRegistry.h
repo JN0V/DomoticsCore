@@ -124,8 +124,16 @@ public:
         initialized = true;
         DLOG_I(LOG_CORE, "All components initialized successfully (%zu components)", initializationOrder.size());
 
-        // Publish system ready event
-        eventBus.publish(Events::EVENT_SYSTEM_READY, String(""));
+        // Publish system ready event.
+        //
+        // BUG-30: this passed `String("")`, which handed the bus an owning object
+        // to byte-copy — the same defect as the seven in `Wifi.h`, and the eighth
+        // site, found by the static_assert rather than by grep because it neither
+        // spells `emit<String>` nor mentions a String-returning call. The payload
+        // was empty and carried nothing, so there is nothing to convert to bytes:
+        // the no-payload overload is what this always meant. The only subscriber
+        // takes `const void*` and ignores it.
+        eventBus.publish(Events::EVENT_SYSTEM_READY);
 
         // Post-initialization hooks for components
         for (auto* component : initializationOrder) {
@@ -164,7 +172,7 @@ public:
 
         // Publish shutdown start event and dispatch immediately
         // so listeners can react before components are shut down
-        eventBus.publish(Events::EVENT_SHUTDOWN_START, String(""));
+        eventBus.publish(Events::EVENT_SHUTDOWN_START);  // BUG-30: see EVENT_SYSTEM_READY above
         eventBus.poll();
 
         // Shutdown in reverse order
