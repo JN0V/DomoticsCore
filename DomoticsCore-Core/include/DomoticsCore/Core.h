@@ -92,13 +92,38 @@ public:
         return componentRegistry.getComponent(name);
     }
     
-    template<typename T>
     /**
-     * @brief Fetch a component by name and cast to the desired type.
+     * @brief Fetch a component by name and cast it to `T`.
+     *
+     * **The name is the lookup. `T` is your claim about what that name holds, and
+     * nothing checks it** (BUG-2). Pair them correctly:
+     *
+     * @code
+     * auto* storage = core.getComponent<StorageComponent>("Storage");  // ok
+     * auto* wrong   = core.getComponent<StorageComponent>("MQTT");     // undefined
+     * @endcode
+     *
+     * A name that is not registered returns `nullptr`. A name that is registered
+     * under a *different* type does not: it returns a pointer that is not valid
+     * for `T`, and using it is undefined behaviour. For `WebUIComponent` and
+     * `WifiComponent`, which inherit from more than one base, the cast also
+     * applies a pointer adjustment for a subobject the real component does not
+     * have — so the result points outside the object rather than merely carrying
+     * the wrong vtable.
+     *
+     * There is no runtime check because there is nothing to check against:
+     * `dynamic_cast` does not compile (`-fno-rtti` on both Arduino platforms), and
+     * `getTypeKey()` is a WebUI mechanism that ten of the twelve components leave
+     * at `""`. Adding a static type identity to the component API would work and
+     * is deliberately not done — see BUG-2 in `docs/CODE-ROADMAP.md`.
+     *
      * @tparam T Target component type deriving from `IComponent`.
      * @param name Registered component name.
-     * @return Pointer to component cast to T or nullptr if not found.
+     * @return The component as `T*`, or `nullptr` if no component is registered
+     *         under `name`. **Not** `nullptr` when the name is registered under
+     *         another type.
      */
+    template<typename T>
     T* getComponent(const String& name) {
         auto* component = componentRegistry.getComponent(name);
         return component ? static_cast<T*>(component) : nullptr;
