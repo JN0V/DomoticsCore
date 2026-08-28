@@ -37,6 +37,7 @@ versions may sit still while fixes land.
 | OTA | SEC-9 | PR #36 — 2026-08-27, filed by the real-conditions campaign and closed the same day, minus all three of its recorded consequences; raised TEST-8. Stacked on PR #35, where SEC-9 was filed |
 | OTA | TEST-8 (part) | **Merged** — PR #37, 2026-08-27, the two holes reachable without HTTP, closed on both boards. Found that the ESP8266 suite's one-sector payload had been hiding the Updater's flush |
 | OTA | TEST-8 hole 3 | **Merged** — PR #39, 2026-08-27, the download path reported the size the server announced, in both directions |
+| Core | BUG-2 | 2026-08-28 — both recorded fixes measured impossible; contract narrowed, severity re-argued HIGH → MEDIUM, no code change |
 | OTA | TEST-8 hole 4 (part) | PR #40 — 2026-08-27, a real multipart POST against a board, refused and accepted paths both run, each with a removal check that discriminates. What remains of TEST-8 is the browser's own view |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
@@ -567,12 +568,68 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 - **Problem**: `publish()` template uses `reinterpret_cast` to byte-copy payloads. Publishing a `std::string` or `String` results in dangling pointers in the event queue.
 - **Fix**: Add `static_assert(std::is_trivially_copyable<PayloadT>::value, ...)`.
 
-### BUG-2 — Core: unsafe `static_cast` downcast [HIGH]
+### BUG-2 — Core: `getComponent<T>()` promises a safety it does not provide [MEDIUM]
 
 - **Ref**: CORE-F2
-- **File**: `Core.h:104`
-- **Problem**: `getComponent<T>()` uses `static_cast<T*>` with no runtime type check. Wrong type = undefined behavior.
-- **Fix**: Add type-key verification before cast, or use `dynamic_cast` (if RTTI enabled).
+- **File**: `DomoticsCore-Core/include/DomoticsCore/Core.h`
+- **Both fixes this entry used to recommend are impossible**, measured on
+  2026-08-28 rather than assumed:
+  - **`dynamic_cast` does not compile.** Not "if RTTI enabled" — RTTI is off on
+    *both* Arduino platforms: `error: 'dynamic_cast' not permitted with
+    '-fno-rtti'`, from `pio run -e esp8266dev` and `-e esp32dev` on the `FullStack`
+    example, the only one that pulls all twelve components.
+  - **Type-key verification would check nothing.** `getTypeKey()` defaults to `""`
+    (`IComponent.h:129`) and is documented as a WebUI mechanism. **Two of twelve
+    components override it** — `OTAComponent` and `SystemInfoComponent`. For the
+    other ten the comparison is `"" == ""`, which matches everything.
+- **A probe that proved nothing, recorded because the pattern keeps recurring.**
+  Building `test_ota_esp8266`, `test_ota_esp32` and `native` with a `dynamic_cast`
+  in place succeeded on all three. The device suites construct `OTAComponent`
+  directly and never call `getComponent<T>()`, so the template was never
+  instantiated and never type-checked; the native environment does instantiate it,
+  and the host toolchain has RTTI on. Three green builds, none of them about the
+  question. Only `FullStack` answered it.
+- **What the defect actually is.** Not "UB in theory". The function's own
+  documentation promised *"Pointer to component cast to T or nullptr if not
+  found"*. It honours that for an unregistered name and silently breaks it for a
+  registered name held by another type. A public accessor that returns `nullptr`
+  on one failure mode and undefined behaviour on the other is a contract that lies.
+- **And the damage is worse than a wrong vtable on two components.**
+  `WebUIComponent` (`IComponent`, `CachingWebUIProvider`,
+  `IComponentLifecycleListener`) and `WifiComponent` (`IComponent`,
+  `INetworkProvider`) inherit from more than one base, so `static_cast` performs a
+  **pointer adjustment** for a subobject the real component does not have. The
+  result points outside the object. `WebUIComponent` is among the most frequently
+  fetched components in the repository.
+- **What triggers it**: an application pairing a valid name with the wrong type —
+  `getComponent<StorageComponent>("MQTT")`. A *misspelled* name returns `nullptr`,
+  and that is the common slip. All 70 in-repo call sites pair name and type
+  correctly, and nothing in the library calls it with a caller-supplied string.
+  Component names are ordinary strings, so an application registering its own
+  component as `"Storage"` and fetching it as one would reach it.
+- **Fixed by narrowing the contract, not the code.** The documentation now states
+  that the name is the lookup and `T` is an unchecked claim, names the two
+  multiple-inheritance components, and says why no runtime check exists. Nothing
+  else changes: there is no guard that can be added without a new concept.
+- **Not done, and deliberately.** A static type identity on the component API
+  would work — a macro in `IComponent.h`, one line per component, checked by
+  SFINAE so non-adopters keep today's behaviour. It is rejected for now because it
+  adds a concept to the public API of a library people install by version, and a
+  partial adoption protects partially and *silently* — the same shape as SEC-2's
+  inert fix, the `end(false)` pin that stopped at the HAL, and the probe above. If
+  the component API moves for other reasons — `marianorenzi`'s transport-neutral
+  rewrite is the obvious one — this grafts onto that change rather than preceding
+  it.
+- **Downgraded HIGH → MEDIUM (2026-08-28).** The severity had never been argued,
+  only inherited: it arrived at HIGH on 2026-08-27 when enumerating the `[HIGH]`
+  headings found it missing from both the rows and the total. Re-argued on merit:
+  no path in the repository reaches it and the common failure mode is already
+  safe, which rules out HIGH; the consequence on the two multiple-inheritance
+  components is an out-of-object pointer rather than a theoretical curiosity,
+  which rules out LOW.
+- **No test.** Undefined behaviour cannot be asserted on, and the only assertion
+  that would mean anything — "a wrong type returns `nullptr`" — is true only if
+  the guard exists. Writing a test here would be circular.
 
 ### BUG-3 — Core: `removeCallback()` nukes ALL callbacks [MEDIUM]
 
@@ -1666,7 +1723,7 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences having been refuted against the Arduino cores) |
 | 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **2H**, 7M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **1H**, 8M (**20 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
@@ -1674,25 +1731,35 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **115 items** | | **0C, 9H, 30M, 34L** (55 resolved) |
+| **Total** | **115 items** | | **0C, 8H, 31M, 34L** (55 resolved) |
 
-The severity columns sum across the rows: 1 + 2 + 2 + 2 + 2 = 9 HIGH, in Memory
-Safety, Code Safety, Test Coverage, File Size and Architecture. The nine are
-MEM-2, **BUG-2**, BUG-30, TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1, ARCH-2.
+The severity columns sum across the rows: 1 + 1 + 2 + 2 + 2 = 8 HIGH, in Memory
+Safety, Code Safety, Test Coverage, File Size and Architecture. The eight are
+MEM-2, BUG-30, TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1, ARCH-2.
 
 **BUG-2 was found on 2026-08-27 by the same method that found BUG-21, one day
-later, in a file that had just been edited to warn about exactly this.** It has
-no DONE marker, appears in no release table and in no merged lot, and
-`Core.h:104` still reads `return component ? static_cast<T*>(component) : nullptr;`
-— no type check, as filed. The rows and the total had been re-summed by script
-hours earlier and agreed, because the item was missing from both.
+later, in a file that had just been edited to warn about exactly this.** It had
+no DONE marker, appeared in no release table and in no merged lot, and the rows
+and the total had been re-summed by script hours earlier and agreed — because the
+item was missing from both.
+
+**It left the HIGH column on 2026-08-28, by argument rather than by fix.** Its two
+recorded remedies were measured and found impossible, and its severity turned out
+never to have been argued at all — only inherited from the sweep that discovered
+it. Re-argued on merit it is MEDIUM: no path in the repository reaches it, and the
+common slip already returns `nullptr`. `static_cast<T*>` is still there, now
+above a contract that says so. See the entry.
 
 The lesson stands and needs sharpening: **summing the rows proves nothing about
 items that are in neither.** The only check that finds this class is enumerating
 every `[HIGH]` section heading and demanding, for each, a DONE marker or a row in
 a resolved table or a merged lot — then verifying the survivors against the code.
 That sweep is cheap, it is scriptable, and it should be run before any statement
-about how many items remain.
+about how many items remain. It was run on 2026-08-28, all three criteria this
+time rather than only the DONE marker: **33 `[HIGH]` headings, 25 with evidence,
+8 open**, and the eight are the eight this summary names. A first pass that
+checked only for a DONE marker reported 23 open — the recipe needs all three or it
+cries wolf.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
