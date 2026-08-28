@@ -149,16 +149,40 @@ def main() -> int:
         if '"success":true' not in body.replace(" ", ""):
             failures.append(f"a correctly-hashed upload was not accepted: {body.strip()!r}")
         else:
-            print("    waiting for the device to come back...")
-            for _ in range(30):
-                time.sleep(2)
+            # Two phases, and the first one is the point. Waiting only for the
+            # device to answer would pass just as well if it had never rebooted
+            # at all — it answers throughout. Requiring it to go away first is
+            # what separates "installed and restarted" from "said yes and sat
+            # there". autoReboot fires 2 s after completion and the ESP8266 takes
+            # a few more to boot, so the gap is seconds wide; polled fast enough
+            # to see it.
+            went_away = False
+            deadline = time.time() + 30
+            while time.time() < deadline:
                 try:
-                    get_status(base)
+                    get_status(base, timeout=1)
+                except Exception:
+                    went_away = True
+                    print("    it stopped answering — rebooting")
+                    break
+                time.sleep(0.3)
+
+            if not went_away:
+                failures.append(
+                    "the device never stopped answering: it accepted the image and did not "
+                    "reboot into it, or rebooted faster than this could observe")
+
+            came_back = False
+            deadline = time.time() + 60
+            while time.time() < deadline:
+                try:
+                    get_status(base, timeout=2)
+                    came_back = True
                     print("    it answered again")
                     break
                 except Exception:
-                    continue
-            else:
+                    time.sleep(1)
+            if not came_back:
                 failures.append("the device never came back after committing")
 
     print()
