@@ -145,9 +145,16 @@ public:
             mqttConnected = false;
         });
         
-        // Subscribe to incoming MQTT messages
+        // Subscribe to incoming MQTT messages.
+        //
+        // MEM-2: ev.topic and ev.payload are already char[], and every message the
+        // shared client receives arrives here — before findEntity has decided the
+        // message concerns HomeAssistant at all. Wrapping them in Strings asked the
+        // allocator for the topic on every single message (38 characters and up,
+        // where both cores' small-string buffer stops at 14), to parse text the
+        // component was handed as characters. They are passed through as they are.
         on<DomoticsCore::Components::MQTTMessageEvent>(DomoticsCore::MQTTEvents::EVENT_MESSAGE, [this](const DomoticsCore::Components::MQTTMessageEvent& ev) {
-            handleCommand(String(ev.topic), String(ev.payload));
+            handleCommand(ev.topic, ev.payload);
         });
         
         // Note: Initial MQTT state will be signaled via mqtt/connected event
@@ -519,6 +526,25 @@ private:
         }
         return nullptr;
     }
+
+    /**
+     * @brief Find entity by ID given as a range of characters
+     *
+     * MEM-2: the command path knows the id as a slice of the topic buffer, and
+     * building a String from it to call the overload above is the allocation this
+     * lot removes. The comparison is on the full extent deliberately — the id is
+     * copied into the event's 64-byte field afterwards, and looking up the
+     * truncated copy instead would stop matching an entity registered with a
+     * longer id, which is a behaviour change and not a cost one.
+     */
+    HAEntity* findEntity(const char* id, size_t len) {
+        for (const auto& entity : entities) {
+            if ((size_t)entity->id.length() == len && strncmp(entity->id.c_str(), id, len) == 0) {
+                return entity.get();
+            }
+        }
+        return nullptr;
+    }
     
     /**
      * @brief Publish MQTT message via EventBus
@@ -607,36 +633,67 @@ private:
     
     /**
      * @brief Handle incoming command
+     *
+     * MEM-2: takes the topic and payload as the characters MQTT delivered them as.
+     * Everything up to and including the entity lookup — the work done for every
+     * message on the shared client, most of which are not ours — now runs without
+     * touching the allocator. The one String that survives is the temporary bound
+     * to HAEntity::handleCommand(const String&), built after the message has been
+     * accepted; that virtual keeps its signature, so a subclass written against it
+     * still compiles and still runs.
+     *
+     * Private, so the parameter change is not a change to any published API.
      */
-    void handleCommand(const String& topic, const String& payload) {
-        DLOG_I(LOG_HA, "Received MQTT command - Topic: %s, Payload: %s", topic.c_str(), payload.c_str());
-        
+    void handleCommand(const char* topic, const char* payload) {
+        DLOG_I(LOG_HA, "Received MQTT command - Topic: %s, Payload: %s", topic, payload);
+
         // Extract entity ID from topic
         // Format: homeassistant/{component}/{node_id}/{entity_id}/set
-        int lastSlash = topic.lastIndexOf('/');
-        if (lastSlash == -1) {
+        const char* lastSlash = strrchr(topic, '/');
+        if (!lastSlash) {
             DLOG_E(LOG_HA, "Invalid topic format - no trailing slash");
             return;
         }
-        
-        int secondLastSlash = topic.lastIndexOf('/', lastSlash - 1);
-        if (secondLastSlash == -1) {
+
+        // Walk back from the last slash rather than from the end: the id is the
+        // segment between the last two. The loop stops at `topic` itself, so a
+        // topic whose only slash is its first character falls through to the
+        // missing-id branch, as it did before.
+        const char* secondLastSlash = nullptr;
+        for (const char* p = lastSlash; p != topic; ) {
+            --p;
+            if (*p == '/') { secondLastSlash = p; break; }
+        }
+        if (!secondLastSlash) {
             DLOG_E(LOG_HA, "Invalid topic format - missing entity ID");
             return;
         }
-        
-        String entityId = topic.substring(secondLastSlash + 1, lastSlash);
-        
-        DLOG_I(LOG_HA, "Extracted entity ID: '%s', looking up entity...", entityId.c_str());
-        HAEntity* entity = findEntity(entityId);
+
+        const char* idStart = secondLastSlash + 1;
+        const size_t idLen = (size_t)(lastSlash - idStart);
+
+        // Sized to the event field it will fill, so the truncation point is the
+        // one strncpy() applied here before — 63 characters plus the terminator.
+        // idLen keeps the true length, which the logs and the warning below both
+        // need: they report the id as it was delivered, not the copy that was
+        // stored, which is what the String version did and what an operator
+        // reading them has to be able to match against the broker's traffic.
+        // Hence %.*s over idStart everywhere the id is printed.
+        char entityId[sizeof(HAEvents::HACommandEvent::entityId)];
+        const size_t idCopy = idLen < sizeof(entityId) ? idLen : sizeof(entityId) - 1;
+        memcpy(entityId, idStart, idCopy);
+        entityId[idCopy] = '\0';
+
+        DLOG_I(LOG_HA, "Extracted entity ID: '%.*s', looking up entity...", (int)idLen, idStart);
+        HAEntity* entity = findEntity(idStart, idLen);
         if (!entity) {
-            DLOG_W(LOG_HA, "Command for unknown entity: %s", entityId.c_str());
+            DLOG_W(LOG_HA, "Command for unknown entity: %.*s", (int)idLen, idStart);
             return;
         }
-        
+
         stats.commandsReceived++;
-        DLOG_D(LOG_HA, "Command for %s: %s", entityId.c_str(), payload.c_str());
-        
+        DLOG_D(LOG_HA, "Command for %.*s: %s", (int)idLen, idStart, payload);
+
         // R24: Virtual dispatch — replaces static_cast chain
         // R26: handleCommand returns false if command is invalid (e.g., button with wrong payload, light with garbage)
         bool valid = entity->handleCommand(payload);
@@ -644,18 +701,21 @@ private:
 
         // R26: Emit ha/command EventBus event
         HAEvents::HACommandEvent ev{};
-        strncpy(ev.entityId, entityId.c_str(), sizeof(ev.entityId) - 1);
+        strncpy(ev.entityId, entityId, sizeof(ev.entityId) - 1);
         strncpy(ev.component, entity->component.c_str(), sizeof(ev.component) - 1);
-        strncpy(ev.command, payload.c_str(), sizeof(ev.command) - 1);
+        strncpy(ev.command, payload, sizeof(ev.command) - 1);
 
-        // Log warning if entity ID or payload was truncated (use .length() for O(1))
-        if (entityId.length() >= sizeof(ev.entityId)) {
-            DLOG_W(LOG_HA, "Entity ID truncated: %s (%u > %zu)",
-                   entityId.c_str(), entityId.length(), sizeof(ev.entityId) - 1);
+        // Log warning if entity ID or payload was truncated. idLen is already
+        // known; the payload is measured once here rather than on the discard
+        // path, where nothing needs its length.
+        const size_t payloadLen = strlen(payload);
+        if (idLen >= sizeof(ev.entityId)) {
+            DLOG_W(LOG_HA, "Entity ID truncated: %.*s (%zu > %zu)",
+                   (int)idLen, idStart, idLen, sizeof(ev.entityId) - 1);
         }
-        if (payload.length() >= sizeof(ev.command)) {
-            DLOG_W(LOG_HA, "Command payload truncated for entity %s (%u > %zu)",
-                   entityId.c_str(), payload.length(), sizeof(ev.command) - 1);
+        if (payloadLen >= sizeof(ev.command)) {
+            DLOG_W(LOG_HA, "Command payload truncated for entity %.*s (%zu > %zu)",
+                   (int)idLen, idStart, payloadLen, sizeof(ev.command) - 1);
         }
 
         // Populate code field for alarm_control_panel
@@ -672,7 +732,11 @@ private:
         if (entity->component == "switch") {
             auto* sw = static_cast<HASwitch*>(entity);
             if (!sw->optimistic && sw->autoPublishState) {
-                publishState(entityId, payload);
+                // entity->id rather than the local buffer, which saves building
+                // a String for the id and nothing else: publishState looks the
+                // entity up again by String and builds one for the state. This
+                // is the accepted path, where the cost was never the claim.
+                publishState(entity->id, payload);
             }
         }
     }

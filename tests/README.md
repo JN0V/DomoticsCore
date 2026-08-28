@@ -43,6 +43,7 @@ Each component has its own `test/` directory with tests that run on the native p
 | Test | Description |
 |------|-------------|
 | `test_ha_component` | HA discovery, entity registration, availability |
+| `test_ha_heap_esp8266` | ESP8266 in-dispatch heap measurement of the command parse (MEM-2) |
 
 ### OTA (`DomoticsCore-OTA/test/`)
 | Test | Description |

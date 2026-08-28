@@ -62,11 +62,11 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 729 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list |
+| ✅ | The 13 native projects run — 739 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, and summing the thirteen runs gave 734 *before* MEM-2's five were added |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
-| ⚠️ | **The six on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev`. Five are ESP8266; `DomoticsCore-OTA` also carries an `esp32cam` one |
+| ⚠️ | **The seven on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev`. Six are ESP8266 — `DomoticsCore-HomeAssistant` is the newest, added with MEM-2's hot half — and `DomoticsCore-OTA` also carries an `esp32cam` one |
 | ❌ | **No test runs on hardware in CI.** A host build proves compilation, not behaviour on a board — BUG-4 is what that costs, and STOR-ESP-1 is what a board proves when nobody checks what the suite is actually measuring |
 
 That last line is not a formality. BUG-4, the SNTP server-name use-after-free,
@@ -529,9 +529,9 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 
 | Component | Location | Hot path? | Description |
 |-----------|----------|-----------|-------------|
-| **HomeAssistant** | `HomeAssistant.h:150` | YES (every MQTT msg) | `String(ev.topic)` + `String(ev.payload)` in mqtt/message handler |
-| **HomeAssistant** | `HomeAssistant.h:623-690` | YES | `topic.substring()` in handleCommand |
-| **SystemInfo** | formatBytes/getFormattedUptime | YES (every 5s) | String concat in metrics formatting |
+| **HomeAssistant** | `HomeAssistant.h:157` | YES (every MQTT msg) | **DONE (2026-08-28)** — was `String(ev.topic)` + `String(ev.payload)`; the subscriber now hands `handleCommand` the `char[]` it was given |
+| **HomeAssistant** | `HomeAssistant.h:647-737` | YES | **DONE (2026-08-28)** — was `topic.substring()`; the id is scanned with pointers and copied into a stack buffer the size of the event field |
+| **SystemInfo** | `formatBytes` / `getFormattedUptime` | Cadence yes, cost no | **REFUTED ON COST (2026-08-28)** — the 5-second cadence is real and lives in `DomoticsCore-SystemInfo/examples/BasicSystemInfo/src/main.cpp:26-40`, which calls the two public wrappers eight times a tick. The component itself never calls them: the only other sites are `test/test_systeminfo_metrics` and the wrappers at `SystemInfo.h:213-214`. Every result — `"45.3 KB"`, `"12d 5h"`, `"1.8 MB"` — is at most nine characters, `"4096.0 MB"` being the widest a `uint32_t` can produce, and every intermediate is narrower still. All of it fits both cores' 14-character small-string buffer, so none of it ever reaches the allocator |
 | **WiFi** | scan loop, `getDetailedStatus()` | Moderate | `summary += ...` in for loop |
 | **LED** | `getLEDStatus()` | Moderate | 6+ String concats |
 | **RemoteConsole** | `help` handler, telnet negotiation | Cold | Character-by-character String building |
@@ -542,7 +542,91 @@ Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprin
 | **WebUI** | BaseWebUIComponents methods | Cold (setup) | String concat in selectDropdown/radioGroup loops |
 
 - **Refs**: HA-F1, HA-F6, SI-F1, WIFI-F2, WIFI-F3, LED-F3, RC-F1, RC-F2, NTP-F8, OTA-F8, OTA-F9, SYS-F8, SYS-F9, STOR-F8, WEB-F7
-- **Fix**: Replace with `snprintf()` + stack buffers, or `String::reserve()` before loops. Priority: hot-path items first (HA, SystemInfo).
+- **Fix**: Replace with `snprintf()` + stack buffers, or `String::reserve()` before loops. Both hot rows are now settled — HomeAssistant fixed, SystemInfo refuted on cost — so what is left is the eight cold ones, and the first question for each is whether it allocates at all: a `String` of 14 characters or fewer never reaches the allocator on either core. Four of the eight are in files `marianorenzi`'s `esp32-ethernet` branch is rewriting, so coordinate before touching them.
+
+#### The hot half, 2026-08-28 — one row fixed, one refuted
+
+**Still open, still HIGH.** Three of the eleven rows moved — two HomeAssistant
+rows fixed and the SystemInfo row refuted — leaving eight, and four of those live
+in `Wifi.h`, `NTP.h`, `RemoteConsole.h` and `System.h`, which `marianorenzi`'s
+`esp32-ethernet` branch is rewriting.
+
+- **The threshold this sweep was filed without.** Both cores give `String` a
+  small-string buffer of 14 characters — `WString.h:316` on ESP8266,
+  `WString.h:303` on ESP32, both computing `SSOSIZE = sizeof(_ptr) + 4 - 1` and
+  both reporting `capacity() == 14`. (The ESP32 header's "up to 11" comment is
+  stale; `capacity()` is the authority.) A `String` of 14 characters or fewer
+  never reaches the allocator on either board. Every row above was written as if
+  every `String` allocates, and that is why one of these two turned out to cost
+  nothing at all.
+- **What HomeAssistant actually cost.** Not three allocations per message —
+  **one to three**, by length. The topic always allocates (38 characters and up).
+  The entity id allocates when it is longer than 14 (`"living_room"` is 11,
+  `"living_room_ceiling"` is 19). The payload allocates when it is longer than 14
+  (`"ON"` is 2, a light's `{"state":"ON","brightness":128}` is 31). So a switch
+  command with a short id cost **1** and now costs **0**; a light command with a
+  long id cost **3** and now costs **1** — the surviving one being the temporary
+  bound to `HAEntity::handleCommand(const String&)`, which keeps its signature.
+- **Why it was worth doing anyway**: all of it ran *before* `findEntity` decided
+  the message was HomeAssistant's. `MQTT_impl.h:552` emits `mqtt/message` for
+  every message on the shared client, so the framework was asking the allocator
+  for memory on its most repeated path to parse a string it had been handed as a
+  `char[]`.
+- **What the fix is not**: `HAEntity::handleCommand(const String&)` was left
+  alone, and no `const char*` sibling was added. The overload would have worked —
+  a default implementation delegating to the `String` one keeps every user
+  override live — and it was refused on shape rather than feasibility: two
+  virtuals for one concept, on a base class users are documented to subclass, to
+  remove an allocation that only happens for payloads over 14 characters. Recorded
+  here so the next reader argues with it instead of rediscovering it.
+- **Measured on a `nodemcuv2`** (2026-08-28, `A5069RR4` on `/dev/ttyUSB1`).
+  `DomoticsCore-HomeAssistant/test/test_ha_heap_esp8266` runs **4/4** in about 46
+  seconds. **112 bytes** is the figure: with the parse reverted to `bea43842` and
+  `.pio` cleared so the run could not compile the fixed copy, the same suite
+  reports `Expected 0 Was 112` — 45 360 bytes free at the dispatch sample, 45 248
+  at the warning — for a 26-character id in a 60-character topic. Two tests go
+  red and **both reach the assertion they were written for**, printing their own
+  measurements rather than dying earlier; the two that do not measure allocation
+  stay green, so the failure is not a cascade. Restored and re-run: 4/4 again.
+  CI's `Build on-device suites` job compiles the suite and cannot run it.
+- **What the suite does, so the run is reproducible.** Two free-heap samples
+  **inside a single EventBus dispatch** — the first from an `mqtt/message`
+  subscriber registered before the component, the second from the
+  `LoggerCallbacks` hook that fires on the unknown-entity warning, with the topic
+  and the extracted id both still live — asserted to differ by zero. Both are
+  inside one dispatch because the queue's own `std::vector` copy of the 828-byte
+  event (`EventBus.h:28-34`) is live for both and cancels. A net-heap assertion
+  would have been vacuous: the Strings were function-local temporaries, freed
+  before the function returned, so free heap returns to baseline in both
+  versions — the suite carries one anyway, across twenty messages, and says in
+  place that it is a leak check and not evidence for this row. The data is
+  deliberately on the allocating side of SSO — a 26-character id — because a
+  removal check built on an 11-character id and a payload of `"ON"` passes green
+  against unfixed code.
+- **Native coverage is behaviour, never cost**: the native `String` is
+  `std::string` (`Platform_Stub.h:27`). Five suites, 91 cases, five of them added
+  here for what the rewrite could silently drop — the two truncation points (63
+  for the id, 127 for the command, both with their warnings), the two
+  malformed-topic refusals, and `stats.commandsReceived` counting after the
+  unknown-entity return and before validation. Two of them are non-vacuous by
+  construction rather than by hope: the id test registers a 70-character entity,
+  so it fails if the lookup is ever done on the copy already cut to fit the event
+  field (verified by making exactly that change); and the switch auto-publish test
+  now commands OFF as well as ON, because every assertion in the file passed while
+  the call site was made to resolve to `publishState(id, bool)`, which publishes
+  `"ON"` for everything.
+- **Checked while there, and not worth a row**: `SystemInfoWebUI.h:84-85` builds
+  `String((uint32_t)metrics.cpuFreq) + " MHz"`, which the table never listed. It
+  sits under `contextId == "system_info"`, whose `hasDataChanged()` returns
+  `false` unconditionally (`SystemInfoWebUI.h:139-141`), so it serializes on
+  context load rather than on a timer — and the result is 8 characters, so it is
+  free either way.
+- **Size**: FullStack `esp8266dev` goes from 717,075 to 717,127 bytes of flash —
+  **52 bytes more, not less** — with RAM unchanged at 50,808. Removing the
+  Strings saved code; printing the entity id as it was delivered rather than as
+  it was stored (`%.*s` over the topic, so a log line still matches what the
+  broker sent) cost more than that back. The lot is a heap change, and the flash
+  figure is recorded as measured rather than as hoped for.
 
 ### MEM-3 — HomeAssistant entity String properties should be `char[]` [MEDIUM]
 
@@ -1529,12 +1613,32 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   `pio test -e esp8266dev` cross-compiles the component's **native** suites for
   the board. They include `Platform_Stub.h` explicitly, which collides with the
   real platform header: `redefinition of 'class String'`, and a dozen more.
-- **Why it matters now**: it is the reason `build-device-tests` lists its four
-  projects instead of discovering them. "Declares `esp8266dev` and has a `test/`
-  directory" is otherwise the right rule, and it matches this one too.
+- **Why it matters now**: it is the reason `build-device-tests` lists its
+  projects instead of discovering them — four when this was filed, six since
+  2026-08-28. "Declares `esp8266dev` and has a `test/` directory" is otherwise the
+  right rule, and it matches this one too.
 - **Fix**: decide what that environment is for. Either give it a `test_filter`
   naming a real ESP8266 suite, or drop the test settings and leave it a build
   environment. Then the CI job can discover rather than list.
+- **Half supplied on 2026-08-28, and the item stays open.** MEM-2's hot half gave
+  HomeAssistant its first ESP8266 suite —
+  `test/test_ha_heap_esp8266`, the in-dispatch heap measurement — and with it the
+  `test_filter` this entry asked for, plus `test_ignore` in `[env:native]` and
+  `[env:esp32dev]` so neither of those builds it. `pio test -e esp8266dev` now
+  compiles one suite instead of colliding with `Platform_Stub.h`, and
+  `DomoticsCore-HomeAssistant` has joined the `build-device-tests` list.
+- **What is still missing, and it is the part the entry is about**: one suite is
+  not ESP8266 coverage of HomeAssistant. Nothing on a board exercises discovery,
+  availability, the alarm panel or the entity types; the new suite measures the
+  command parse and asserts one accepted command routes. And the CI job still
+  lists its projects rather than discovering them — see the note in `ci.yml`.
+- **The same defect exists on `[env:esp32dev]`, unfixed.** It also declares
+  `test_framework` and `test_build_src` with no ESP32 suite, so
+  `pio test -e esp32dev` cross-compiles `test_ha_events` and `test_ha_entity` for
+  the board and dies on the same `redefinition of 'class String'` — 41 errors,
+  verified at `bea43842` as well as after. No workflow runs that command, so it
+  breaks nothing today; it is recorded so the next person does not read it as a
+  regression.
 
 ### CI-12 — Every commit on a branch with an open PR ran the suite twice [MEDIUM] — **DONE (2026-08-26)**
 
@@ -1785,7 +1889,7 @@ not.
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences having been refuted against the Arduino cores) |
-| 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus) |
+| 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2's hot half landed 2026-08-28** — one row fixed, one refuted on cost, nine cold rows untouched, so it stays open and stays HIGH and this row does not move) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **0H**, 8M (**21 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
