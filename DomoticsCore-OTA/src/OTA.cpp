@@ -769,17 +769,6 @@ bool OTAComponent::finalizeUpdateOperation(const String& source, bool autoReboot
     return true;
 }
 
-void OTAComponent::broadcastProgress() {
-    JsonDocument doc;
-    doc["percent"] = progress;
-    doc["downloaded"] = downloadedBytes;
-    doc["total"] = totalBytes;
-    doc["state"] = stateToString(state);
-    String payload;
-    serializeJson(doc, payload);
-    emit<String>(DomoticsCore::OTAEvents::EVENT_PROGRESS, payload, false);
-}
-
 void OTAComponent::publishStatusEvent(const String& topic, std::function<void(JsonDocument&)> fn, bool sticky) {
     JsonDocument doc;
     fn(doc);
@@ -788,5 +777,10 @@ void OTAComponent::publishStatusEvent(const String& topic, std::function<void(Js
     doc["lastResult"] = lastResult.c_str();
     String payload;
     serializeJson(doc, payload);
-    emit<String>(topic, payload, sticky);
+    // BUG-30: publish the bytes, not the object. emit<String> byte-copies a String
+    // — pointer, length, capacity — into a queue that dispatches after `payload`
+    // has been destroyed and its buffer freed. The sized overload deep-copies what
+    // it is given and the queued event owns the copy, so subscribers receive a
+    // NUL-terminated char buffer they can actually read. Length + 1 carries the NUL.
+    emit(topic, payload.c_str(), payload.length() + 1, sticky);
 }
