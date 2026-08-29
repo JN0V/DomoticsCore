@@ -71,6 +71,25 @@ inline uint64_t getChipId() {
 }
 
 /**
+ * @brief Fill a buffer with cryptographically-usable random bytes (ESP32).
+ *
+ * Uses the hardware RNG via esp_random(). NOT Arduino's random(), which
+ * WMath.cpp downgrades to a millis-seeded rand() as soon as any sketch calls
+ * randomSeed() — unusable for a CSRF token. Used by the WebUI per-boot token.
+ */
+inline void getRandomBytes(void* buf, size_t len) {
+    uint8_t* p = static_cast<uint8_t*>(buf);
+    size_t i = 0;
+    while (i < len) {
+        uint32_t r = esp_random();
+        for (size_t b = 0; b < sizeof(r) && i < len; ++b, ++i) {
+            p[i] = static_cast<uint8_t>(r & 0xFF);
+            r >>= 8;
+        }
+    }
+}
+
+/**
  * @brief Get free heap memory for ESP32
  */
 inline uint32_t getFreeHeap() {

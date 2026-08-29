@@ -371,6 +371,19 @@ inline uint64_t getChipId() {
 }
 
 /**
+ * @brief Fill a buffer with bytes (stub — NOT random).
+ *
+ * The host has no hardware RNG and no security context: WebUI.h, the only
+ * caller, needs <ESPAsyncWebServer.h> and never compiles natively. This exists
+ * so any host translation unit that references the symbol links; it fills a
+ * fixed, visible pattern rather than pretending to be random.
+ */
+inline void getRandomBytes(void* buf, size_t len) {
+    uint8_t* p = static_cast<uint8_t*>(buf);
+    for (size_t i = 0; i < len; ++i) p[i] = static_cast<uint8_t>(0xA5 ^ (i & 0xFF));
+}
+
+/**
  * @brief Get free heap memory (stub - returns realistic value)
  * Returns 65536 to avoid triggering low-heap guards in components
  * like WifiComponent that gate functionality on heap thresholds.
