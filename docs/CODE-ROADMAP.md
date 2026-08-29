@@ -187,8 +187,16 @@ Unenforced security configurations are the most dangerous class of defect — us
 
 - **Ref**: WEB-F9
 - **File**: `WebUI.h` — `/api/ui/action` endpoint
-- **Problem**: HTTP GET used for mutations (enable/disable, password changes). Passwords appear in query strings, browser history, and server logs.
+- **Problem** (original framing, preserved): HTTP GET used for mutations (enable/disable, password changes). Passwords appear in query strings, browser history, and server logs.
 - **Fix**: At minimum add `Cache-Control: no-store` and document the security trade-off. Ideally use POST for mutations.
+- **Re-pointed by SEC-10 (2026-08-29), not closed.** This filed the right route on
+  the wrong axis: the GET is dangerous less because passwords land in history than
+  because it makes `/api/ui/action` reachable as a cross-origin `<img>` with no
+  CSRF defence — the CRITICAL that SEC-10 measured and closed. SEC-10 moved the
+  route to `POST` and added a per-boot token, which resolves this item's "ideally
+  use POST" as a side effect. What remains under SEC-5's own heading is the narrow
+  original point — `Cache-Control` on responses that echo secrets — kept MEDIUM
+  and open, so the history-leak observation is not lost inside the CSRF fix.
 
 ### SEC-6 — WebUI: CORS `Access-Control-Allow-Origin: *` with auth enabled [MEDIUM]
 
@@ -454,6 +462,111 @@ Unenforced security configurations are the most dangerous class of defect — us
   cycles this entry describes. Nothing here supports blaming a cable.
 - **Not covered**: the ceiling is a byte count, not a rate limit or a concurrency
   bound. An upload within the ceiling can still be repeated.
+
+### SEC-10 — WebUI: unauthenticated cross-origin state change reaches firmware install [CRITICAL] — **DONE (2026-08-29)**
+
+- **File**: `WebUI.h` (dispatcher, `/api/ui/action`), `OTAWebUI.h` (`/api/ota/upload`)
+- **Found**: 2026-08-29, while scoping TEST-6; measured the same day on a `nodemcuv2`.
+- **Problem**: every state-changing WebUI route was reachable by a request that did
+  not originate from the device's own page. `enableAuth` defaults false, so no
+  credential is required; and authentication would not close it anyway, because a
+  browser attaches cached Basic credentials to cross-origin requests. The
+  dispatcher registered `/api/ui/action` as `HTTP_GET` (`WebUI.h:544`) and
+  synthesised the method string `"POST"` (`WebUI.h:871`), so every provider's
+  method guard passed a GET — an `<img>` tag could drive any provider mutation.
+- **The measured worst effect is firmware install, via `/api/ota/upload`.** An
+  unauthenticated `multipart/form-data` POST — no auth, no `X-Firmware-SHA256`
+  header, no `sha256` parameter — installs arbitrary firmware and reboots
+  (`requireUploadHash` and `enableAuth` both default false; `enableWebUIUpload`
+  defaults true). It is reachable cross-origin because `multipart/form-data` is
+  CORS-safelisted and the request carries no custom header, so no preflight
+  stands in the way of `fetch(url, {mode:'no-cors', body: formData})`. Confirmed
+  on the board: uptime dropped 212567→47177, the device rebooted into the image.
+- **What was refuted.** The finding was first written as "one `<img>` tag installs
+  firmware" via `/api/ui/action?field=start_update`. Measured, that path is inert
+  as shipped: the request is accepted but `installFromUrl` returns at `"No
+  downloader set"` (`OTA.cpp:566`), because nothing wires a downloader outside the
+  test suites. It installs only for a downstream app that supplies one — kept as
+  SEC-11/SEC-12, not the CRITICAL. **A filed finding is a hypothesis**; this one's
+  scariest sentence fell at the first curl, the same lesson as SEC-9.
+- **Fix**: a per-boot CSRF token, minted in `WebUIComponent::begin()` from
+  `HAL::Platform::getRandomBytes` (`esp_random` / `os_get_random`, never Arduino
+  `random()`). `GET /api/ui/token` serves it and never carries CORS headers, so
+  cross-origin script cannot read it. A public `checkCsrf()` (header `X-DC-Token`
+  or `token` query, checked unconditionally, independent of `enableAuth`) gates
+  every state-changing route: `/api/ui/action` (now `POST`, parameters still in
+  the query string), `/api/ota/upload` (at the completion handler and at upload
+  chunk index 0, before flash is erased), `/api/ota/check`, the action branch of
+  `/api/ota/update`, and `/api/components/enable`. `app.js` fetches the token at
+  init and refetches once on a 403, because this lot's own paths reboot the device
+  and rotate the token.
+- **Verified on the board, both directions** (2026-08-29, `nodemcuv2` running
+  `OTAWithWebUI`; FullStack cannot serve — CI-14). Old GET `/api/ui/action` shape
+  → 404; POST action without token → 403; upload without token → 403 and flash
+  untouched. With the token: action takes effect (`theme` flips live), upload
+  installs and reboots. Token rotates per boot and the stale one is then refused.
+  Nothing here compiles natively (`WebUI.h` needs `<ESPAsyncWebServer.h>`), so
+  there is no native test; the browser-origin leg is reasoned from the CORS
+  safelist and curl-confirmed for auth/hash. Compiles esp32dev + esp32c3.
+- **The token route never calls `addCorsHeaders`**, so its response carries no
+  `Access-Control-Allow-Origin` and stays unreadable to cross-origin script
+  regardless of `enableCORS`. Keeping `enableCORS` false is still correct (SEC-6),
+  but the missing CORS header at this call site — not the flag — is what protects
+  the token.
+
+### SEC-11 — OTA: `/api/ota/update` and `/api/ota/check` have no authentication [HIGH] — **DONE (2026-08-29)**
+
+- **File**: `OTAWebUI.h` — `/api/ota/update` (`:287`), `/api/ota/check` (`:280`)
+- **Problem**: both carried **no authentication check at all**, even when
+  `enableAuth` was true, while the sibling upload routes checked inline — so the
+  omission read as an oversight, not a decision. Reachable cross-origin by an
+  auto-submitted form.
+- **Downgraded from CRITICAL to HIGH by measurement.** Their firmware payload runs
+  through `triggerUpdateFromUrl` → `installFromUrl`, which is downloader-gated and
+  inert as shipped (see SEC-10). The auth gap is real; the takeover through it is
+  conditional on a downstream downloader.
+- **Fix**: `checkCsrf()` now gates `/api/ota/check` and the action branch of
+  `/api/ota/update` (the no-parameter read branch stays open, since `ota_manager`
+  polls it). The token closes the unauthenticated-reach hole regardless of
+  `enableAuth`. Verified with the SEC-10 board run.
+
+### SEC-12 — OTA: a URL install has no integrity check [MEDIUM]
+
+- **File**: `DomoticsCore-OTA/src/OTA.cpp` — `installFromUrl(url, "", …)` (`:135`)
+- **Problem**: when a downstream app wires a downloader, `triggerUpdateFromUrl`
+  installs from a URL with `expectedSha256 = ""` — no hash, no signature, plain
+  HTTP. The download counterpart to SEC-7's upload gap.
+- **MEDIUM, by parity with SEC-7, argued rather than inherited.** It was first
+  filed HIGH; re-argued 2026-08-29 it is MEDIUM, for the same reason its upload
+  counterpart SEC-7 is MEDIUM. It is a legitimate-user-installs-corrupt-firmware
+  risk, not an unauthenticated takeover: it is **doubly conditional** — it needs a
+  downloader wired to be reachable at all, and once SEC-10 lands it needs
+  credentials — so the unauthenticated half of the risk is already closed by
+  SEC-10. Rating it HIGH while its identical-shape sibling SEC-7 sits at MEDIUM one
+  entry away was the unargued inflation this repository has corrected before (BUG-2).
+- **Filed, not fixed.** Requiring a digest for a URL install is a behaviour change
+  for legitimate users and needs a decision about where the hash comes from (a
+  manifest).
+
+### SEC-13 — WebUI: the SSE stream and `/api/system/info` ignore `enableAuth` [MEDIUM]
+
+- **File**: `WebUI.h` (`/api/system/info`, `:569`), `WebSocketHandler.h` (`AsyncEventSource`, `:65`)
+- **Problem**: `/api/system/info` has no auth gate at all, and the SSE source is
+  added without `setAuthentication`/an auth middleware, so both serve an
+  unauthenticated client full live state even when `enableAuth` is on.
+- **Filed, not fixed** — out of this lot's scope (it closes the state-change path,
+  not every read). The SSE handler can take an auth middleware; `/api/system/info`
+  needs the same gate as its siblings.
+
+### SEC-14 — WebUI: authentication can be enabled with an empty password [MEDIUM]
+
+- **File**: `WebUI.h:374` — `handleWebUIRequest`, `webui_settings`
+- **Problem**: the password setter skips an empty value (`if (value.length() > 0)`),
+  so `enable_auth=true` with no password yields a device that looks protected and
+  accepts `admin` with an empty password. And an attacker who can set credentials
+  then enable auth (pre-SEC-10) could lock the owner out.
+- **Filed, not fixed** — SEC-10 closes the unauthenticated route to it; the
+  empty-password guard itself is a separate one-line refusal, deferred.
 
 ---
 
@@ -2175,7 +2288,7 @@ not.
 
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
-| 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences having been refuted against the Arduino cores) |
+| 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 6M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-13/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266, with the board run still owed; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **0H**, 8M (**22 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders) |
@@ -2185,14 +2298,16 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-13, PERSIST-1 | IV (YAGNI) | 0C, 0H, 8M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, **DC-13 new** — three public helpers this repository never calls and users are told to) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **118 items** | | **0C, 6H, 34M, 34L** (57 resolved) |
+| **Total** | **123 items** | | **0C, 6H, 37M, 34L** (59 resolved) |
 
 The severity columns sum across the rows: 2 + 2 + 2 = 6 HIGH, in Test Coverage,
 File Size and Architecture. The six are TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1,
-ARCH-2. **Memory Safety joins Code Safety at zero HIGH**, and both rows were
-checked against the section headings rather than only re-summed — the sweep below
-was re-run for this change and reports 33 `[HIGH]` headings, 27 with evidence, 6
-open, and the six are the six named here.
+ARCH-2 — the same six as the previous lot: the SEC-10 lot closed a CRITICAL and
+added **no** open HIGH, its one new HIGH candidate (SEC-12) having been re-argued
+to MEDIUM by parity with SEC-7. **Security, Memory Safety and Code Safety all sit
+at zero HIGH.** The rows were checked against the section headings rather than only
+re-summed — the sweep below was re-run for this change and reports 34 `[HIGH]`
+headings, 28 with evidence, 6 open, and the six are the six named here.
 
 **Two stale sentences were found by re-running that sweep, and are corrected
 above rather than left.** The Code Safety cell still said "BUG-30 new and open"
@@ -2245,6 +2360,12 @@ number. Re-run on 2026-08-29 with MEM-2 closed: **33 headings, 27 with evidence,
 recipe needs all three or it cries wolf. Five of the survivors clear only on the
 third criterion, having neither a marker nor a table row: SEC-3, BUG-4, BUG-5 and
 BUG-6 are in the merged-lot table at the top of this file, and BUG-15 with them.
+Re-run again after the SEC-10 lot: **34 headings, 28 with evidence, 6 open**. The
+two new `[HIGH]` headings are SEC-11 (DONE, so evidence) and — transiently — a
+SEC-12 filed HIGH; SEC-12 was re-argued to MEDIUM in the same lot, so it leaves
+the `[HIGH]` count and the open six are unchanged (TEST-4, TEST-6, SIZE-1, SIZE-2,
+ARCH-1, ARCH-2). SEC-10 is a `[CRITICAL]` heading, filed and DONE in-lot, so it
+never enters this `[HIGH]` sweep at all.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
@@ -2265,6 +2386,22 @@ Memory Safety's row 1H → 0H), **MEM-5, MEM-6 and DC-13 are filed and left open
 (31 → 34 MEDIUM: two into Memory Safety, one into Dead Code). Items 115 → 118 for
 the three new IDs, resolved 56 → 57. No item opens and shuts inside this lot, so
 the six remaining HIGH are the seven of the last lot minus MEM-2 and nothing else.
+
+**The lot after it (2026-08-29, SEC-10 the WebUI CSRF lot):** five new IDs,
+SEC-10 through SEC-14. **SEC-10 (CRITICAL) and SEC-11 (HIGH) are filed and fixed
+in the same lot** — they open and shut here, like SEC-8 did, so neither the
+CRITICAL nor the HIGH column moves for them; **SEC-12, SEC-13 and SEC-14 are filed
+and left open, all MEDIUM (34 → 37 MEDIUM)** — SEC-12 was first filed HIGH and
+re-argued to MEDIUM by parity with SEC-7 before this row was written, so it never
+enters the HIGH column. Items 118 → 123 for the five new IDs, resolved 57 → 59 for
+the two closed in-lot. The six remaining HIGH are unchanged from the last lot; this
+lot closes a CRITICAL and adds no HIGH. **The CRITICAL column
+returns to 0 in the same lot it left it**: SEC-10 is the first CRITICAL filed
+since 2026-08-28, and it is fixed before the lot closes — "no CRITICAL remains"
+was briefly false and is true again, which is the honest way for it to read, not
+a claim that none was ever found. The board proof, both directions, is under the
+SEC-10 entry; nothing here runs in CI, because `WebUI.h` does not compile
+natively.
 
 Both new findings came out of the work rather than out of a review, which is the
 pattern every lot has repeated: SEC-2's re-fix raised SEC-7, SEC-7 raised SEC-8,
@@ -2310,6 +2447,14 @@ plus remaining goes 56 + 72 = 128 to 57 + 74 = 131; and the ID ranges in the Ite
 column gain the same three. The 13-item disagreement between the first two is
 therefore exactly where it was. Closing MEM-2 moves one item from remaining to
 resolved and changes no gap at all.
+
+**The SEC-10 lot moves all three by exactly five**, the five new IDs SEC-10
+through SEC-14: the stated total goes 118 → 123; resolved plus remaining goes
+57 + 74 = 131 to 59 + 77 = 136 (resolved +2 for SEC-10 and SEC-11, remaining +3
+for SEC-12/13/14); and the ID ranges in the Items column gain the same five. The
+13-item disagreement is still exactly where it was — SEC-10 and SEC-11 opening and
+shutting inside the lot moves resolved and remaining in step, not the gap between
+them.
 
 ---
 

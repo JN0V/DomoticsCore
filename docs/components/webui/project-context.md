@@ -132,7 +132,7 @@ Schema responses use `beginChunkedResponse()` with `StreamingContextSerializer` 
 ### ESP8266 Optimizations
 
 - **Combined asset mode**: When `MemoryManager::isLowMemory()` is true, the server inlines CSS+JS into HTML and serves a single gzipped response, avoiding multiple concurrent HTTP connections.
-- **GET for actions**: UI actions use `GET /api/ui/action?contextId=X&field=Y&value=Z` instead of POST body, to avoid the ~500 B body parser allocation that crashes ESP8266 at < 2.5 KB free heap.
+- **POST for actions, params in the query string**: UI actions use `POST /api/ui/action?contextId=X&field=Y&value=Z` — the method is POST (with a CSRF token, SEC-10) but the parameters stay in the query string, which is parsed for every method. Body accumulation only engages for a urlencoded body, so this costs the same heap as a GET; an earlier note here claimed a ~500 B body parser forced a GET, which was wrong as applied and is what allowed the cross-origin `<img>` shape.
 - **Buffer sizes**: WS buffer is 1 KB on ESP8266 vs 8 KB on ESP32. The `buildUpdateJson()` method truncates gracefully if the buffer fills.
 - **Polling mode**: When heap < 20 KB at startup, SSE is not created. The frontend polls instead.
 
