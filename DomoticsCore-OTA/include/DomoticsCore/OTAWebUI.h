@@ -278,6 +278,13 @@ private:
         });
 
         webui->registerApiRoute("/api/ota/check", HTTP_POST, [this](AsyncWebServerRequest* request) {
+            // SEC-10/SEC-11: triggering a check is a state change; gate it on the
+            // WebUI's per-boot CSRF token. This route previously had no auth
+            // check at all, even when enableAuth was on.
+            if (!webui || !webui->checkCsrf(request)) {
+                request->send(403, "application/json", "{\"success\":false,\"error\":\"Bad or missing CSRF token\"}");
+                return;
+            }
             if (ota) ota->triggerImmediateCheck(true);
             respondJson(request, [](JsonDocument& doc) {
                 doc["success"] = true;
@@ -308,7 +315,14 @@ private:
                 return;
             }
             
-            // Action request: trigger update
+            // Action request: trigger update — a state change. Gate on the
+            // WebUI's per-boot CSRF token (the no-param read branch above stays
+            // open, since the ota_manager card polls it). SEC-10/SEC-11: this
+            // route previously had no auth check at all.
+            if (!webui || !webui->checkCsrf(request)) {
+                request->send(403, "application/json", "{\"success\":false,\"error\":\"Bad or missing CSRF token\"}");
+                return;
+            }
             String url = request->hasParam("url", true) ? request->getParam("url", true)->value() : ota->getConfig().updateUrl;
             bool force = false;
             if (request->hasParam("force", true)) {
@@ -352,6 +366,16 @@ private:
             webui->registerApiUploadRoute(
                 "/api/ota/upload",
                 [this](AsyncWebServerRequest* request) {
+                    // SEC-10: this is the measured CRITICAL — an unauthenticated
+                    // cross-origin multipart POST installs firmware and reboots.
+                    // Gate on the WebUI's per-boot CSRF token, which cross-origin
+                    // script cannot read. The token is also checked at upload
+                    // chunk index 0 (below), before any flash is erased; this
+                    // completion gate is what turns a refusal into a clean 403.
+                    if (!webui || !webui->checkCsrf(request)) {
+                        request->send(403, "application/json", "{\"success\":false,\"error\":\"Bad or missing CSRF token\"}");
+                        return;
+                    }
                     // SEC-3: Check authentication before processing upload result.
                     // NOTE: WebUIComponent::authenticate() is private, so we inline the
                     // auth check using getConfig() fields directly. This mirrors the same
@@ -381,6 +405,17 @@ private:
                     // NOTE: WebUIConfig.username is char[32] and .password is char[48] (not String)
                     if (index == 0) {
                         uploadState = UploadState{};  // Reset ALL state (clears stale rejected)
+                        // SEC-10: refuse before beginUpload() erases flash. The
+                        // completion handler returns the 403; here the point is
+                        // to reject at index 0 so no flash write is ever opened
+                        // for a request that lacks this boot's CSRF token.
+                        if (!webui || !webui->checkCsrf(request)) {
+                            uploadState.success = false;
+                            uploadState.error = "Bad or missing CSRF token";
+                            uploadState.rejected = true;
+                            ota->abortUpload("CSRF token missing");
+                            return;
+                        }
                         if (webui && webui->getConfig().enableAuth) {
                             if (!request->authenticate(
                                     webui->getConfig().username,
