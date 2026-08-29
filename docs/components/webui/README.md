@@ -95,7 +95,8 @@ ptr->registerApiRoute("/api/sensor", HTTP_GET, [](AsyncWebServerRequest* req) {
 |---|---|---|
 | `/api/ui/schema` | GET | Full UI schema (chunked streaming) |
 | `/api/ui/updates` | GET | Polling updates; add `?schema=1` for schema |
-| `/api/ui/action` | GET | Client-to-server UI action (query params) |
+| `/api/ui/token` | GET | Per-boot CSRF token for state-changing requests (SEC-10) |
+| `/api/ui/action` | POST | Client-to-server UI action (query params); requires CSRF token |
 | `/api/ui/context?id=X` | GET | Single context schema by ID |
 | `/api/ui/events` | SSE | Server-Sent Events stream (ESP32) |
 | `/api/components` | GET | List registered providers |

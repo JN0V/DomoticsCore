@@ -608,9 +608,15 @@ Returns JSON with system info and all context data:
 ```
 Add `?schema=1` to receive the full schema instead of data updates.
 
-### `GET /api/ui/action`
+### `POST /api/ui/action`
 
-Query params: `contextId`, `field`, `value`. Routes the action to the owning provider's `handleWebUIRequest()`.
+Query params: `contextId`, `field`, `value`. Routes the action to the owning provider's `handleWebUIRequest()`. Requires this boot's CSRF token in the `X-DC-Token` header or a `token` query parameter (SEC-10); fetch it from `GET /api/ui/token`. A request without a valid token is refused `403`.
+
+### `GET /api/ui/token`
+
+Returns `{"token":"..."}` — a per-boot CSRF token the page echoes on every state-changing request. Never carries CORS headers, so cross-origin script cannot read it; that is what makes it a CSRF defence.
+
+> **Integrators:** the token check is opt-in per route. The framework's own state-changing routes call it, but a custom route you register with `registerApiRoute(..., HTTP_POST, ...)` that mutates device state must gate itself — call `webui->checkCsrf(request)` (returns `bool`) and reply `403` when it fails, the same way `/api/ui/action` and `/api/ota/upload` do. A route that only reads state needs nothing.
 
 ### `GET /api/ui/context?id=X`
 
