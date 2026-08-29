@@ -2,6 +2,7 @@ class DomoticsApp {
     constructor() {
         this.pollInterval = null;
         this.sseSource = null;
+        this.csrfToken = null;   // SEC-10: per-boot token echoed on state-changing requests
         this.uiSchema = [];
         this.isEditingDeviceName = false;
         this.editingContexts = new Set();
@@ -29,7 +30,42 @@ class DomoticsApp {
         // (?schema=1) to avoid a separate TCP connection that would fail during
         // the ~50s TIME_WAIT after the 14KB HTML response on ESP8266.
         console.log('[DC] load done, starting polling (schema via poll endpoint)');
+        // SEC-10: fetch the per-boot CSRF token before any state-changing
+        // request. tokenedFetch() also lazy-fetches, so this is a warm-up, not a
+        // hard dependency — polling (a read) does not need it.
+        await this.fetchCsrfToken();
         this.startPolling();
+    }
+
+    // SEC-10: get this boot's CSRF token. Cross-origin script cannot read this
+    // response (enableCORS defaults false), which is what makes the token a CSRF
+    // defence. Refetched on a 403, because the device rotates it on reboot and
+    // this lot's own actions (firmware install, wifi toggle) reboot the device.
+    async fetchCsrfToken() {
+        try {
+            const r = await fetch('/api/ui/token');
+            if (r.ok) this.csrfToken = (await r.json()).token;
+        } catch (e) {
+            console.warn('[DC] CSRF token fetch failed:', e);
+        }
+        return this.csrfToken;
+    }
+
+    // Issue a state-changing request carrying the CSRF token in X-DC-Token. On a
+    // 403 (stale token after a reboot), refetch once and retry.
+    async tokenedFetch(url, opts = {}) {
+        if (!this.csrfToken) await this.fetchCsrfToken();
+        const build = () => {
+            const o = Object.assign({}, opts);
+            o.headers = Object.assign({}, opts.headers, { 'X-DC-Token': this.csrfToken || '' });
+            return o;
+        };
+        let resp = await fetch(url, build());
+        if (resp.status === 403) {
+            await this.fetchCsrfToken();
+            resp = await fetch(url, build());
+        }
+        return resp;
     }
 
     async loadUISchema() {
@@ -868,7 +904,7 @@ class DomoticsApp {
                         const enabled = e.target.checked;
                         try {
                             const body = new URLSearchParams({ name, enabled: String(enabled) }).toString();
-                            const resp = await fetch('/api/components/enable', {
+                            const resp = await this.tokenedFetch('/api/components/enable', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                                 body
@@ -960,8 +996,11 @@ class DomoticsApp {
                         
                         try {
                             // Endpoint is in field.endpoint
+                            // SEC-10: firmware upload is the load-bearing CRITICAL
+                            // route — it must carry the CSRF token like every
+                            // other state-changing request.
                             const endpoint = field.endpoint || `/api/upload/${context.contextId}/${field.name}`;
-                            const resp = await fetch(endpoint, {
+                            const resp = await this.tokenedFetch(endpoint, {
                                 method: 'POST',
                                 body: formData
                             });
@@ -1222,7 +1261,8 @@ class DomoticsApp {
             value: Array.isArray(value) ? JSON.stringify(value) : String(value)
         });
         try {
-            const resp = await fetch('/api/ui/action?' + params.toString());
+            // SEC-10: POST + CSRF token; parameters stay in the query string.
+            const resp = await this.tokenedFetch('/api/ui/action?' + params.toString(), { method: 'POST' });
             if (resp.ok) {
                 const data = await resp.json();
                 if (data.error) {

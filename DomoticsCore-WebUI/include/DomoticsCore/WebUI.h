@@ -56,6 +56,12 @@ private:
     // State
     bool forceNextUpdate = false; // force full contexts send on next tick (e.g., after WS reconnect)
 
+    // SEC-10: per-boot CSRF token. 64 bits of hardware randomness, hex-encoded.
+    // Regenerated every begin(); no persistence and no expiry by design — a
+    // reader who can obtain it already has same-origin access, which is the one
+    // case this cannot defend against anyway.
+    char csrfToken_[17] = {0};
+
     // Shared WS send buffer (single-threaded, safe to share between sendWebSocketUpdate/sendWebSocketUpdates)
     static char wsBuffer_[WEBUI_WS_BUFFER_SIZE];
 
@@ -117,6 +123,8 @@ public:
             // Recreate WebSocketHandler with updated config
             webSocket = std::unique_ptr<WebUI::WebSocketHandler>(new WebUI::WebSocketHandler(config));
         }
+
+        generateCsrfToken();
 
         webServer->begin();
         webServer->setAuthHandler([this](AsyncWebServerRequest* request) {
@@ -258,6 +266,31 @@ public:
         webServer->registerUploadRoute(uri, handler, uploadHandler);
     }
 
+    /**
+     * @brief SEC-10: accept a request only if it carries this boot's CSRF token.
+     *
+     * The token is read from the `X-DC-Token` header or a `token` query
+     * parameter — header for scripted clients, query for the browser, mirroring
+     * how the OTA upload already accepts its hash either way. The check is
+     * UNCONDITIONAL: it does not consult `enableAuth`, because auth-off is the
+     * default and precisely the configuration the token must protect.
+     * Authentication, where enabled, is an independent second layer applied by
+     * each route after this. Public so sibling providers (OTAWebUI) gate their
+     * own state-changing routes through the same check instead of copying it.
+     */
+    bool checkCsrf(AsyncWebServerRequest* request) const {
+        if (csrfToken_[0] == '\0') return false;  // not yet generated — fail closed
+        String tok;
+        if (const AsyncWebHeader* h = request->getHeader("X-DC-Token")) {
+            tok = h->value();
+        } else if (request->hasParam("token")) {
+            tok = request->getParam("token")->value();
+        } else {
+            return false;
+        }
+        return tok.length() == 16 && strcmp(tok.c_str(), csrfToken_) == 0;
+    }
+
     // IComponent override: post-initialization hook
     void onComponentsReady(const Components::ComponentRegistry& registry) override {
         this->registry->discoverProviders(registry);
@@ -391,6 +424,24 @@ private:
     bool authenticate(AsyncWebServerRequest* request) {
         if (!config.enableAuth) return true;
         return request->authenticate(config.username, config.password);
+    }
+
+    /**
+     * @brief SEC-10: mint a fresh 64-bit CSRF token for this boot.
+     *
+     * Hardware RNG via HAL::Platform::getRandomBytes — never Arduino random(),
+     * which WMath.cpp downgrades to a millis-seeded rand() the moment any sketch
+     * calls randomSeed(). Hex-encoded to 16 characters.
+     */
+    void generateCsrfToken() {
+        uint8_t raw[8];
+        HAL::Platform::getRandomBytes(raw, sizeof(raw));
+        static const char hex[] = "0123456789abcdef";
+        for (size_t i = 0; i < sizeof(raw); ++i) {
+            csrfToken_[i * 2]     = hex[raw[i] >> 4];
+            csrfToken_[i * 2 + 1] = hex[raw[i] & 0x0F];
+        }
+        csrfToken_[16] = '\0';
     }
 
     /**
@@ -538,14 +589,37 @@ private:
             }
         });
 
-        // GET endpoint for client→server UI actions — uses query params instead
-        // of POST body to avoid body-parser heap allocation (~500B) that crashes
-        // ESP8266 at <2.5KB free heap.
-        webServer->registerRoute("/api/ui/action", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        // SEC-10: per-boot CSRF token. The page fetches this once and echoes it
+        // on every state-changing request. Cross-origin script cannot read this
+        // response body while enableCORS stays false — that is what makes it a
+        // CSRF defence rather than a formality. This route MUST NOT call
+        // addCorsHeaders (ten neighbours do; this one must not), and carries no
+        // expiry: a reader with same-origin access is already past every defence.
+        webServer->registerRoute("/api/ui/token", HTTP_GET, [this](AsyncWebServerRequest* request) {
             if (config.enableAuth && !authenticate(request)) {
                 return request->requestAuthentication();
             }
-            
+            char body[40];
+            snprintf(body, sizeof(body), "{\"token\":\"%s\"}", csrfToken_);
+            request->send(200, "application/json", body);
+        });
+
+        // POST endpoint for client→server UI actions. Parameters stay in the
+        // query string on purpose: query params are parsed for every method, and
+        // body accumulation engages only for a urlencoded body, so POST-with-
+        // query costs the same heap as the old GET did. (The former comment here
+        // claimed a POST body parser costs ~500B and chose GET to avoid it — that
+        // was wrong as applied, and the GET is what allowed the cross-origin
+        // <img> shape.) Gated by the per-boot CSRF token; enableAuth, where on,
+        // is an independent second layer.
+        webServer->registerRoute("/api/ui/action", HTTP_POST, [this](AsyncWebServerRequest* request) {
+            if (!checkCsrf(request)) {
+                return request->send(403, "application/json", "{\"error\":\"Bad or missing CSRF token\"}");
+            }
+            if (config.enableAuth && !authenticate(request)) {
+                return request->requestAuthentication();
+            }
+
             String contextId, field, value;
             if (request->hasParam("contextId")) {
                 contextId = request->getParam("contextId")->value();
@@ -591,6 +665,9 @@ private:
 
         // API components enable
         webServer->registerRoute("/api/components/enable", HTTP_POST, [this](AsyncWebServerRequest* request) {
+            if (!checkCsrf(request)) {
+                return request->send(403, "application/json", "{\"error\":\"Bad or missing CSRF token\"}");
+            }
             if (config.enableAuth && !authenticate(request)) {
                 return request->requestAuthentication();
             }

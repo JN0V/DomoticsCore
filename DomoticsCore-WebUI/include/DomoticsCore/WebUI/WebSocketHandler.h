@@ -19,7 +19,8 @@ namespace WebUI {
  * - High heap (≥20KB, typical ESP32): SSE via AsyncEventSource for instant push.
  * - Low heap (<20KB, typical ESP8266): Client polls GET /api/ui/updates every 2s.
  *
- * Client→server actions always use HTTP GET /api/ui/action (both modes).
+ * Client→server actions always use HTTP POST /api/ui/action (both modes),
+ * carrying the per-boot CSRF token (SEC-10).
  */
 class WebSocketHandler {
 public:
