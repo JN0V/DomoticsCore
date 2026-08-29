@@ -1,9 +1,14 @@
 #pragma once
 
 #include "DomoticsCore/HomeAssistant.h"
+// IWebUIProvider.h carries everything this provider uses — CachingWebUIProvider,
+// WebUIContext, WebUIField. WebUI.h was included too and pulls
+// <ESPAsyncWebServer.h> (WebUI.h:11), which exists on no host toolchain, so the
+// provider could not be compiled by any native test until that line went.
 #include "DomoticsCore/IWebUIProvider.h"
-#include "DomoticsCore/WebUI.h"
 #include <ArduinoJson.h>
+#include <cstdio>
+#include <cstring>
 
 namespace DomoticsCore {
 namespace Components {
@@ -138,47 +143,99 @@ public:
         return json;
     }
 
+    /**
+     * @brief Apply one settings field, following the framework's only convention.
+     *
+     * The dispatcher (`WebUI.h:865-876`) builds exactly two parameters, `field`
+     * and `value`, for both the HTTP route and the WebSocket action. This handler
+     * used to read six parameters by their own names, so no read could ever hit:
+     * HA settings could not be saved at all, while `setConfig`, the persistence
+     * callback and `publishDiscovery()` ran on every request and the answer was
+     * `success`. That is BUG-31.
+     *
+     * Refusals carry no `error` key: `app.js` inspects only `data.error`, so an
+     * error key pops a modal alert where a silent refusal is intended.
+     */
     String handleWebUIRequest(const String& contextId, const String& endpoint,
                               const String& method, const std::map<String, String>& params) override {
-        if (!ha) return "{\"error\":\"Component not available\"}";
+        if (!ha || method != "POST") return "{\"success\":false}";
+        if (contextId != "ha_settings") return "{\"success\":false}";
 
-        if (contextId == "ha_settings" && method == "POST") {
-            // Update configuration
-            HomeAssistant::HAConfig newCfg = ha->getConfig();
+        auto fieldIt = params.find("field");
+        auto valueIt = params.find("value");
+        if (fieldIt == params.end() || valueIt == params.end()) return "{\"success\":false}";
+        const String& field = fieldIt->second;
+        const String& value = valueIt->second;
 
-            using namespace HomeAssistant;
-            auto it = params.find("node_id");
-            if (it != params.end()) HA::setField(newCfg.nodeId, it->second.c_str(), HA::MAX_NODE_ID);
+        using namespace HomeAssistant;
+        const HAConfig& cur = ha->getConfig();
+        HAConfig newCfg = cur;
 
-            it = params.find("device_name");
-            if (it != params.end()) HA::setField(newCfg.deviceName, it->second.c_str(), HA::MAX_DEVICE_NAME);
+        // Where the new value goes, what it may not exceed, and what it is today.
+        char* dest = nullptr;
+        const char* currentValue = nullptr;
+        size_t maxLen = 0;
+        // node_id and discovery_prefix are what a generated availability topic is
+        // built from; moving either has to move the topic with it.
+        bool namesTheAvailabilityTopic = false;
 
-            it = params.find("manufacturer");
-            if (it != params.end()) HA::setField(newCfg.manufacturer, it->second.c_str(), HA::MAX_MANUFACTURER);
-
-            it = params.find("model");
-            if (it != params.end()) HA::setField(newCfg.model, it->second.c_str(), HA::MAX_MODEL);
-
-            it = params.find("discovery_prefix");
-            if (it != params.end()) HA::setField(newCfg.discoveryPrefix, it->second.c_str(), HA::MAX_DISCOVERY_PREFIX);
-
-            it = params.find("suggested_area");
-            if (it != params.end()) HA::setField(newCfg.suggestedArea, it->second.c_str(), HA::MAX_SUGGESTED_AREA);
-
-            ha->setConfig(newCfg);
-
-            // Invoke persistence callback if set
-            if (onConfigSaved) {
-                onConfigSaved(newCfg);
-            }
-
-            // Republish discovery with new configuration
-            ha->publishDiscovery();
-
-            return "{\"success\":true,\"message\":\"Configuration updated and discovery republished\"}";
+        if (field == "node_id") {
+            dest = newCfg.nodeId;           currentValue = cur.nodeId;
+            maxLen = HA::MAX_NODE_ID;       namesTheAvailabilityTopic = true;
+        } else if (field == "device_name") {
+            dest = newCfg.deviceName;       currentValue = cur.deviceName;
+            maxLen = HA::MAX_DEVICE_NAME;
+        } else if (field == "manufacturer") {
+            dest = newCfg.manufacturer;     currentValue = cur.manufacturer;
+            maxLen = HA::MAX_MANUFACTURER;
+        } else if (field == "model") {
+            dest = newCfg.model;            currentValue = cur.model;
+            maxLen = HA::MAX_MODEL;
+        } else if (field == "discovery_prefix") {
+            dest = newCfg.discoveryPrefix;  currentValue = cur.discoveryPrefix;
+            maxLen = HA::MAX_DISCOVERY_PREFIX; namesTheAvailabilityTopic = true;
+        } else if (field == "suggested_area") {
+            dest = newCfg.suggestedArea;    currentValue = cur.suggestedArea;
+            maxLen = HA::MAX_SUGGESTED_AREA;
+        } else {
+            return "{\"success\":false}";   // unknown field, nothing touched
         }
 
-        return "{\"error\":\"Unsupported operation\"}";
+        // HA::setField is the only validation these fields have: a truncation with
+        // a warning. Comparing after it means an over-long value that truncates to
+        // what is already stored counts as unchanged, as it should.
+        HA::setField(dest, value.c_str(), maxLen);
+        if (strcmp(currentValue, dest) == 0) {
+            // Nothing moved: no setConfig, no persistence write, no republish.
+            return "{\"success\":true}";
+        }
+
+        if (namesTheAvailabilityTopic) {
+            // setConfig regenerates the topic only when it is empty
+            // (HomeAssistant.h:465-475), so a changed node id would otherwise keep
+            // publishing availability on the previous node's topic. Clear it only
+            // when it is the generated one — a topic somebody set deliberately is
+            // not ours to rewrite (test_ha_component.cpp:126-135 pins that).
+            char generatedFromOld[HA::MAX_AVAIL_TOPIC];
+            snprintf(generatedFromOld, sizeof(generatedFromOld), "%s/%s/availability",
+                     cur.discoveryPrefix, cur.nodeId);
+            if (cur.availabilityTopic[0] == '\0' ||
+                strcmp(cur.availabilityTopic, generatedFromOld) == 0) {
+                newCfg.availabilityTopic[0] = '\0';
+            }
+        }
+
+        ha->setConfig(newCfg);
+
+        // Invoke persistence callback if set
+        if (onConfigSaved) {
+            onConfigSaved(ha->getConfig());
+        }
+
+        // Republish discovery with new configuration
+        ha->publishDiscovery();
+
+        return "{\"success\":true}";
     }
 
 private:

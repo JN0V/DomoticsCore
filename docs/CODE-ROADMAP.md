@@ -40,6 +40,7 @@ versions may sit still while fixes land.
 | Core, Wifi, Storage, OTA | BUG-30 | 2026-08-28 — the guard, and the ten sites the assert enumerated |
 | Core | BUG-2 | 2026-08-28 — both recorded fixes measured impossible; contract narrowed, severity re-argued HIGH → MEDIUM, no code change |
 | OTA | TEST-8 hole 4 (part) | PR #40 — 2026-08-27, a real multipart POST against a board, refused and accepted paths both run, each with a removal check that discriminates. What remains of TEST-8 is the browser's own view |
+| HomeAssistant | BUG-31 | 2026-08-29 — TEST-6's lot A. The HA settings handler read six parameters the dispatcher never sends; filed and closed in the same lot, raising TEST-9 and DC-14. **TEST-6 stays open** — its lot B is `SystemInfoWebUI`'s escaping |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -62,7 +63,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 747 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28 and 739 after MEM-2's hot half; 747 is the sum of the thirteen runs on 2026-08-29, the eight new ones being the scan-format net |
+| ✅ | The 13 native projects run — 767 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half and 747 after its closing lot; 767 is the sum of the thirteen runs on 2026-08-29, the twenty new ones being BUG-31's provider suite |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -1394,6 +1395,119 @@ one worth a one-line change, and six rows that are not defects.
   50904 → 50888 bytes.
 
 
+### BUG-31 — HomeAssistant: the settings handler reads parameters nothing sends, and writes flash on every request [HIGH] — **DONE (2026-08-29)**
+
+- **File**: `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistantWebUI.h:145-179`
+  (before the fix).
+- **Found by**: TEST-6, 2026-08-29, while establishing what the four untested
+  WebUI providers actually do before writing tests over them. Writing the tests
+  first would have encoded this as expected behaviour.
+- **Problem**: the handler read six parameters by their own names — `node_id`,
+  `device_name`, `manufacturer`, `model`, `discovery_prefix`, `suggested_area` —
+  at `:150,154,157,160,163,166`. The framework's only dispatcher
+  (`WebUI.h:865-876`) builds exactly two entries, `field` and `value`, for both
+  the HTTP route and the WebSocket action callback. **No read could hit**, so no
+  Home Assistant setting could be saved from the UI at all. Verified against the
+  other nine providers: `HomeAssistantWebUI` was the only one reading other
+  names.
+- **And the miss was not silent.** Every request still ran `ha->setConfig(newCfg)`
+  with `newCfg` identical to the current config (`:168`), the persistence callback
+  (`:172`) — three `putString` calls to flash at `SystemWebUISetup.h:383-385` —
+  and `ha->publishDiscovery()` (`:176`), then answered
+  `{"success":true,"message":"Configuration updated and discovery republished"}`.
+  A browser was told the save worked; what actually happened was a flash write and
+  an MQTT discovery republish carrying the unchanged identity.
+- **Why HIGH, argued rather than inherited.** Two independent counts. It is a
+  user-facing feature that cannot work at all, on a settings card the WebUI
+  advertises. And the side effects are reachable by anyone on the network at the
+  caller's rate: the route is registered **`HTTP_GET`** (`WebUI.h:544`) — the
+  string `"POST"` the handler checked is fabricated by the dispatcher at `:871`
+  — and `enableAuth` defaults to **false** (`WebUIConfig.h:27`), so
+  `<img src="http://device/api/ui/action?contextId=ha_settings&field=x&value=y">`
+  on any page a user opens needs no credentials and no CORS cooperation. Flash
+  endurance is finite. It opens and shuts in this lot, so the HIGH column does not
+  move.
+- **Fixed (2026-08-29)**: the handler follows the convention every other provider
+  uses (`LEDWebUI.h:116-200`) — one `field`/`value` pair, method and context
+  checked, unknown fields refused, per-field application, **and mutation only when
+  the value actually changed**. The comparison happens *after* `HA::setField`, so
+  an over-long value that truncates to what is already stored counts as unchanged.
+- **Refusals carry no `error` key.** `app.js` inspects only `data.error`, so an
+  error key pops a modal alert where a silent refusal is meant. The old handler
+  returned `{"error":"Unsupported operation"}` and `{"error":"Component not
+  available"}`; both are now `{"success":false}`.
+- **Making `node_id` settable would have broken the thing it names.**
+  `setConfig` (`HomeAssistant.h:465-475`) regenerates `availabilityTopic` only
+  when it is empty, so a changed node id would have left the device publishing
+  availability on the previous node's topic — a regression the fix would have
+  introduced rather than a defect it found. The handler now clears the topic
+  before `setConfig` when `node_id` or `discovery_prefix` moved, **and only when
+  the stored topic is the generated one**: a topic somebody set deliberately is
+  not the handler's to rewrite, which is the contract
+  `test_ha_component.cpp:126-135` already holds `setConfig` to.
+- **The provider could not be compiled by any native test, and that is why it had
+  none.** `HomeAssistantWebUI.h:5` included `WebUI.h`, which includes
+  `<ESPAsyncWebServer.h>` (`WebUI.h:11`) — a header present nowhere in the
+  repository or the toolchain. The file already included `IWebUIProvider.h`, which
+  carries everything it uses, so the line was one too many rather than one
+  missing. Dropped. The four sibling providers with the same over-include are
+  **TEST-9**.
+- **Tests**: `DomoticsCore-HomeAssistant/test/test_ha_webui/` — 20 cases, and
+  `DomoticsCore-HomeAssistant/platformio.ini` gains the WebUI include path and
+  `file://` dependency, with `ESPAsyncWebServer, AsyncTCP, ESP Async WebServer`
+  appended to `lib_ignore` (the pattern at `DomoticsCore-LED/platformio.ini:7`).
+  The `esp32dev` environment ignores the new suite: it does not depend on WebUI,
+  and the provider is compiled for all three targets by the FullStack example
+  through `SystemWebUISetup.h:377`.
+- **The open question the design left, settled by running it**: yes,
+  `getStatistics().discoveryCount` increments natively with no MQTT.
+  `publishDiscovery()` increments it before any publish, and the publish path goes
+  through `emit()`, which returns immediately without an EventBus
+  (`IComponent.h:223-227`). `test_the_discovery_counter_is_a_usable_observable`
+  pins that, because the rest of the suite rests on it. Flash itself is not
+  observable natively — the `putString` calls live in a lambda no native project
+  compiles — so the tests observe the `onConfigSaved` callback instead.
+- **Removal check, run rather than reasoned**: the whole suite against the
+  unfixed handler (the original file with only the include line removed, from a
+  cleaned `.pio`) — **18 of 20 fail**. The two that pass are marked in the file as
+  guards, not evidence: the discovery-counter observable, which tests the
+  component; and "changing the model leaves the availability topic alone", which
+  passes because the unfixed handler changes nothing at all. Three tests that
+  would have passed on outcome — non-POST, wrong context, null component — fail
+  only because they also assert the absence of the `error` key. That is the
+  difference between a guard and a test.
+- **Verified**: `DomoticsCore-HomeAssistant` native, cleaned `.pio` — six suites,
+  **111 cases green**, the device suite still ignored. `pio test -e esp8266dev
+  --without-uploading --without-testing` compiles the device suite alone.
+  FullStack on `esp8266dev`: RAM 50808 → **50660** bytes, flash 716967 →
+  **716787** — the fix is smaller than the code it replaces, six `find()` calls
+  and a long success message being more than a switch. **No board run in this
+  lot**: every claim here is behavioural and native.
+- **Three residuals this fix does not bound**, all recorded rather than implied:
+  1. **A caller that varies the value.** The change-guard removes the idempotent
+     repeat, not the caller. A script alternating `node_id=a` / `node_id=b` still
+     costs one `setConfig`, three `putString` and one `publishDiscovery` per
+     request. Rate-limiting `/api/ui/action` is not attempted here.
+  2. **Normal use now costs more, not less.** `app.js` sends one request per
+     changed field (`applySave` iterates `card.dataset.pending`) and the
+     persistence callback writes all three keys every time, so a user changing six
+     fields gets **six republishes and eighteen `putString`**. Coalescing the
+     callback to the next `loop()` — the pattern `WifiWebUI.h:157,165,209` already
+     uses — is the proposal, and it is not done here.
+  3. **A degenerate value is accepted.** `HA::setField` is the only validation, so
+     `field=node_id&value=` (empty) counts as a change, blanks the node id, and
+     regenerates `availabilityTopic` as `homeassistant//availability` with an empty
+     MQTT client id; `value=a/b` yields `homeassistant/a/b/availability`. The
+     handler answers `{"success":true}`. This is now page-only — SEC-10's token
+     gates the route, so it is a footgun for the owner, not an attacker vector —
+     and charset/emptiness validation on `node_id`/`discovery_prefix` is deferred,
+     not done here. No test in the suite pins it; the twin custom-availability-topic
+     survives-a-change assertion is likewise present for `node_id` and not for
+     `discovery_prefix`, though the code path is the same flag.
+- **Design**: `_bmad-output/implementation-artifacts/spec-bug-31-ha-settings-handler.md`,
+  from `_bmad-output/specs/spec-test-6-webui-provider-inputs/`.
+
+
 ### BUG-29 — MQTT: the publish rate limit silently drops discovery [HIGH] — **DONE (2026-08-26)**
 
 - **Filed**: 2026-08-26, found on hardware while validating a WaterMeter build
@@ -1692,6 +1806,33 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   `/dev/ttyUSB0` was; its adapter is a CP2102, which `CLAUDE.md` did not list.
   52/52 native, unchanged. Each new test proved non-vacuous by the HAL removal
   check above, from a cleaned `.pio`.
+
+### TEST-9 — Four WebUI providers cannot be compiled by any native test [MEDIUM] — **NEW (2026-08-29)**
+
+- **Files**: `MQTTWebUI.h:5`, `NTPWebUI.h:5`, `OTAWebUI.h:16`,
+  `RemoteConsoleWebUI.h:6`.
+- **Opened by**: BUG-31, 2026-08-29, which hit the same thing in
+  `HomeAssistantWebUI.h:5` and fixed it there.
+- **Problem**: each includes `DomoticsCore/WebUI.h`, which includes
+  `<ESPAsyncWebServer.h>` (`WebUI.h:11`) — a header present nowhere in the
+  repository or the host toolchain. A native test including any of these four
+  fails with `fatal error: ESPAsyncWebServer.h: No such file or directory`, so
+  **none of them can have a native suite until the include changes**. That is
+  the mechanical reason four of the six untested providers are untested, and it
+  is not a coverage decision anybody made.
+- **Established by compiling, not by reading.** `SystemInfoWebUI.h:3-4` and
+  `StorageWebUI.h:3-4` include only `IWebUIProvider.h` and compile clean;
+  `LEDWebUI.h:4,7` is the working shape and is the one provider with a native
+  suite. HomeAssistant's copy of the line went in BUG-31 — the file already
+  included `IWebUIProvider.h`, which carries everything a provider uses, so the
+  over-include was one line too many rather than one line missing. The same is
+  expected of these four and has not been verified per file.
+- **Not a behavioural claim**: nothing is broken at runtime, and the ESP32/ESP8266
+  builds are unaffected. What it costs is testability, which is why it is filed
+  under Test Coverage rather than as dead code.
+- **Bounded by**: whatever else each of the four actually uses from `WebUI.h`. The
+  fix is per file, and each one needs its own compile to prove the include is
+  redundant.
 
 ---
 
@@ -2209,6 +2350,27 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   and would need a replacement first. That difference is what makes them one
   entry with two answers rather than one.
 
+### DC-14 — Every provider declares a REST endpoint that is never registered [MEDIUM] — **NEW (2026-08-29)**
+
+- **Opened by**: BUG-31, 2026-08-29. It is the reason the wrong belief behind
+  BUG-31 was plausible in the first place.
+- **Files**: `HomeAssistantWebUI.h:56,68,81,95` (`/api/ha/status`,
+  `/api/ha/dashboard`, `/api/ha/settings`, `/api/ha/detail`),
+  `WifiWebUI.h:118` (`/api/wifi`), and the other providers' `.withAPI(...)` calls.
+- **Problem**: `.withAPI("/api/ha/settings")` and its siblings declare per-context
+  REST endpoints, and **none is ever registered** — the only HTTP routes in the
+  framework are the ones `WebUI.h` sets up itself, of which
+  `/api/ui/action?contextId=&field=&value=` (`WebUI.h:544-566`) is the single path
+  from a browser to a provider.
+- **It is worse than unused, because it is published.** `serializeContext`
+  (`WebUI.h:827`) ships `apiEndpoint` to every connected client, so a third-party
+  front end reading the context schema would reasonably POST a whole form to an
+  address that answers 404. The handler that expected such a form is what BUG-31
+  turned out to be.
+- **The remedy is a choice, not a cleanup**: register the endpoints, or stop
+  declaring and serialising them. Removing `apiEndpoint` from the wire is a schema
+  change and belongs with DC-12's decision about what the context schema is for.
+
 **DC-5, on keeping `ledConfigs`.** "Clear the internal vectors" was filed as one
 action; it is two. `ledStates` is runtime churn and is released, per Constitution
 XIV. `ledConfigs` is the user's registration — the pins, names and brightness
@@ -2290,24 +2452,28 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 6M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-13/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266, with the board run still owed; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **0H**, 8M (**22 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-2 never closed and never counted** — see below) |
-| 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-31 | Multiple | 0C, **0H**, 8M (**23 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, opening and shutting inside its lot so no column moves — **BUG-2 never closed and never counted** — see below) |
+| 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, 2H, 4M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
-| 9. Dead Code | DC-1 to DC-13, PERSIST-1 | IV (YAGNI) | 0C, 0H, 8M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, **DC-13 new** — three public helpers this repository never calls and users are told to) |
+| 9. Dead Code | DC-1 to DC-14, PERSIST-1 | IV (YAGNI) | 0C, 0H, 9M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **123 items** | | **0C, 6H, 37M, 34L** (59 resolved) |
+| **Total** | **126 items** | | **0C, 6H, 39M, 34L** (60 resolved) |
 
 The severity columns sum across the rows: 2 + 2 + 2 = 6 HIGH, in Test Coverage,
 File Size and Architecture. The six are TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1,
-ARCH-2 — the same six as the previous lot: the SEC-10 lot closed a CRITICAL and
-added **no** open HIGH, its one new HIGH candidate (SEC-12) having been re-argued
-to MEDIUM by parity with SEC-7. **Security, Memory Safety and Code Safety all sit
-at zero HIGH.** The rows were checked against the section headings rather than only
-re-summed — the sweep below was re-run for this change and reports 34 `[HIGH]`
-headings, 28 with evidence, 6 open, and the six are the six named here.
+ARCH-2 — unchanged across the last three lots: MEM-2's close, the SEC-10 lot (which
+closed a CRITICAL and added no HIGH, its one HIGH candidate SEC-12 re-argued to
+MEDIUM by parity with SEC-7), and BUG-31's lot (HIGH, opening and shutting inside
+it). **Security, Memory Safety and Code Safety all sit at zero HIGH.** The rows were
+checked against the section headings rather than only re-summed — the sweep below,
+re-run for the SEC-10 and BUG-31 lots together, reports 35 `[HIGH]` headings, 29
+with evidence, 6 open, and the six are the six named here. The two new closed-in-lot
+HIGH headings are SEC-11 and BUG-31; SEC-10 is a `[CRITICAL]` heading and never
+enters the `[HIGH]` sweep. The MEDIUM column sums to 39: 6 + 4 + 8 + 4 + 3 + 0 + 5
++ 9 + 0.
 
 **Two stale sentences were found by re-running that sweep, and are corrected
 above rather than left.** The Code Safety cell still said "BUG-30 new and open"
@@ -2365,7 +2531,14 @@ two new `[HIGH]` headings are SEC-11 (DONE, so evidence) and — transiently —
 SEC-12 filed HIGH; SEC-12 was re-argued to MEDIUM in the same lot, so it leaves
 the `[HIGH]` count and the open six are unchanged (TEST-4, TEST-6, SIZE-1, SIZE-2,
 ARCH-1, ARCH-2). SEC-10 is a `[CRITICAL]` heading, filed and DONE in-lot, so it
-never enters this `[HIGH]` sweep at all.
+never enters this `[HIGH]` sweep at all. Re-run once more after BUG-31 (TEST-6's
+lot A) landed on top: **35 headings, 29 with evidence, 6 open**. BUG-31 is the
+thirty-fifth `[HIGH]` heading and the twenty-ninth with evidence — it opens and
+shuts inside its lot — and the open six are still the six named above. The two
+lots each independently computed a 34/28/6 sweep against the pre-SEC-10 base; the
+combined figure is 35/29/6, not 34/28/6, because both add a distinct closed HIGH
+heading (SEC-11 and BUG-31) — a collision the rebase had to resolve rather than
+copy either lot's number.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
@@ -2381,11 +2554,12 @@ and left open** (7 → 8 HIGH), SEC-8 is filed and closed in the same lot (no ch
 to any severity column since it opens and shuts here). Items 109 → 111 for the two
 new IDs, resolved 51 → 54.
 
-**This change (2026-08-29, MEM-2's closing lot):** MEM-2 closes (7 → 6 HIGH, and
-Memory Safety's row 1H → 0H), **MEM-5, MEM-6 and DC-13 are filed and left open**
-(31 → 34 MEDIUM: two into Memory Safety, one into Dead Code). Items 115 → 118 for
-the three new IDs, resolved 56 → 57. No item opens and shuts inside this lot, so
-the six remaining HIGH are the seven of the last lot minus MEM-2 and nothing else.
+The lot before this one (2026-08-29, MEM-2's closing lot): MEM-2 closes
+(7 → 6 HIGH, and Memory Safety's row 1H → 0H), **MEM-5, MEM-6 and DC-13 are filed
+and left open** (31 → 34 MEDIUM: two into Memory Safety, one into Dead Code).
+Items 115 → 118 for the three new IDs, resolved 56 → 57. No item opened and shut
+inside that lot, so the six remaining HIGH were the seven of the lot before it
+minus MEM-2 and nothing else.
 
 **The lot after it (2026-08-29, SEC-10 the WebUI CSRF lot):** five new IDs,
 SEC-10 through SEC-14. **SEC-10 (CRITICAL) and SEC-11 (HIGH) are filed and fixed
@@ -2402,6 +2576,22 @@ was briefly false and is true again, which is the honest way for it to read, not
 a claim that none was ever found. The board proof, both directions, is under the
 SEC-10 entry; nothing here runs in CI, because `WebUI.h` does not compile
 natively.
+
+**This change (2026-08-29, TEST-6's lot A), stacked on the SEC-10 lot:** **BUG-31
+is filed and closed in the same lot**, HIGH — so no severity column moves, exactly
+as SEC-8 did, and the six remaining HIGH are the same six. **TEST-9 and DC-14 are
+filed and left open** (37 → 39 MEDIUM: one into Test Coverage, one into Dead Code).
+Items 123 → 126 for the three new IDs, resolved 59 → 60 for BUG-31 alone. BUG-31
+was authored before the SEC-10 lot and held; rebased on top of it, its figures are
+re-derived here from the 123 items / 37 MEDIUM / 59 resolved the SEC-10 lot left,
+not the 118 / 34 / 57 it was first written against.
+
+**TEST-6 does not move, and that is deliberate.** BUG-31 is the first of its two
+lots. The second fixes `SystemInfoWebUI`'s unescaped device name at the sink,
+covers `StorageWebUI`, and only then corrects TEST-6's row — which is wrong in
+both directions today, `LEDWebUI` having had a dedicated 23-test suite the whole
+time. Closing TEST-6 here would claim coverage of three providers this lot never
+touched.
 
 Both new findings came out of the work rather than out of a review, which is the
 pattern every lot has repeated: SEC-2's re-fix raised SEC-7, SEC-7 raised SEC-8,
@@ -2455,6 +2645,15 @@ for SEC-12/13/14); and the ID ranges in the Items column gain the same five. The
 13-item disagreement is still exactly where it was — SEC-10 and SEC-11 opening and
 shutting inside the lot moves resolved and remaining in step, not the gap between
 them.
+
+**TEST-6's lot A (BUG-31) moves all three by exactly three**, on top of the SEC-10
+lot: three new IDs (BUG-31, TEST-9, DC-14), so the stated total goes 123 → 126;
+resolved plus remaining goes 59 + 77 = 136 to 60 + 79 = 139, because BUG-31 opens
+and shuts and lands in resolved without entering remaining, while TEST-9 and DC-14
+enter remaining; and the ID ranges in the Items column gain the same three. The
+13-item gap is still 13. Ordering note: BUG-31 was authored before the SEC-10 lot
+and held; rebased on top of it, its figures are re-derived here from the 123/136
+the SEC-10 lot left, not the 118/131 it was first written against.
 
 ---
 
