@@ -62,11 +62,11 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 739 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, and summing the thirteen runs gave 734 *before* MEM-2's five were added |
+| ✅ | The 13 native projects run — 747 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28 and 739 after MEM-2's hot half; 747 is the sum of the thirteen runs on 2026-08-29, the eight new ones being the scan-format net |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
-| ⚠️ | **The seven on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev`. Six are ESP8266 — `DomoticsCore-HomeAssistant` is the newest, added with MEM-2's hot half — and `DomoticsCore-OTA` also carries an `esp32cam` one |
+| ⚠️ | **The eight on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev`. Seven are ESP8266 — `DomoticsCore-Wifi` is the newest, added with MEM-2's closing lot, and it is also the only one whose result depends on the runner being in radio range of something — and `DomoticsCore-OTA` also carries an `esp32cam` one |
 | ❌ | **No test runs on hardware in CI.** A host build proves compilation, not behaviour on a board — BUG-4 is what that costs, and STOR-ESP-1 is what a board proves when nobody checks what the suite is actually measuring |
 
 That last line is not a formality. BUG-4, the SNTP server-name use-after-free,
@@ -523,50 +523,99 @@ Multiple `clear()`/`erase()` operations without `shrink_to_fit()`, violating Con
   checkpoint node to the window that follows it. Both are recorded in
   `_bmad-output/implementation-artifacts/deferred-work.md`.
 
-### MEM-2 — String concatenation in hot paths across 9 components [HIGH]
+### MEM-2 — String concatenation in hot paths across 10 components [HIGH] — **DONE (2026-08-29)**
 
 Constitution XIV bans `String` concatenation in loops and hot paths. Use `snprintf()` with static buffers.
+
+> **What DONE means here, stated at the top rather than six bullets down.** Every
+> row has a verdict, the code changes are landed, and the text both rewritten
+> loops produce is pinned by tests that run in CI — including a mutation check
+> proving those tests fail against a wrong rewrite. **The `nodemcuv2` run has
+> happened** (2026-08-29): 3/3, and the removal check against the reverted loops
+> puts **40 bytes live at the last iteration** where the fix holds 8 or fewer.
+> One qualification the suite makes itself: the *synchronous* loop is what that
+> figure measures. The async summary loop has no per-iteration hook, so its test
+> passes in both versions and its fix rests on the two loops being the same
+> rewrite — stated here rather than folded into the number.
+
+The heading said *9 components* from the day it was filed and the table below has
+always listed ten — HomeAssistant, SystemInfo, WiFi, LED, RemoteConsole, NTP,
+OTA, System, Storage, WebUI — across its eleven rows. Corrected here rather than
+left to be re-counted by the next reader.
+
+**The threshold this finding was reasoned against was wrong on the board it
+matters on, and correcting it is what resolved most of the rows.** `String`'s
+small-string buffer is **10 characters on ESP8266 and 14 on ESP32**, not 14 on
+both. `SSOSIZE = sizeof(struct _ptr) + 4 - 1`, and `_ptr` differs by core:
+`{char*, uint16_t, uint16_t}` — 8 bytes — on the 8266 (`WString.h:309-316`,
+`SSOSIZE` 11, `capacity()` 10), and `{char*, uint32_t, uint32_t}` — 12 bytes — on
+the ESP32 (`WString.h:299-305`, 15 and 14). The 8266 header's "up to 11 (10 +
+\0)" comment is correct, and it was dismissed as stale because the *ESP32*
+header carries the same words and there it is wrong. Both were read; only one was
+believed, and it was the wrong one. **Every count below states which core it is
+about.** The measured board is a `nodemcuv2`.
+
+The second fact governing every row is that growth costs less than it looks.
+`WString.cpp:229` rounds capacity to a 16-byte multiple, so an accumulator
+reallocates once per 16 bytes crossed — but the ESP8266 core builds `umm_malloc`
+with `UMM_REALLOC_DEFRAG` (`umm_malloc_cfg.h:514`, `UMM_REALLOC_MINIMIZE_COPY`
+commented out just above it), and that path assimilates the following block when
+it is free, growing **in place with no copy**. For a string growing at the top of
+the heap — the shape of all four accumulators this finding names — that is the
+ordinary case, not the exception. An early draft of this lot costed the rows at
+"~2.5 KB of cumulative `memcpy`"; that is a worst-case upper bound the allocator
+usually does not perform, and it is quoted here only to be withdrawn.
 
 | Component | Location | Hot path? | Description |
 |-----------|----------|-----------|-------------|
 | **HomeAssistant** | `HomeAssistant.h:157` | YES (every MQTT msg) | **DONE (2026-08-28)** — was `String(ev.topic)` + `String(ev.payload)`; the subscriber now hands `handleCommand` the `char[]` it was given |
 | **HomeAssistant** | `HomeAssistant.h:647-737` | YES | **DONE (2026-08-28)** — was `topic.substring()`; the id is scanned with pointers and copied into a stack buffer the size of the event field |
-| **SystemInfo** | `formatBytes` / `getFormattedUptime` | Cadence yes, cost no | **REFUTED ON COST (2026-08-28)** — the 5-second cadence is real and lives in `DomoticsCore-SystemInfo/examples/BasicSystemInfo/src/main.cpp:26-40`, which calls the two public wrappers eight times a tick. The component itself never calls them: the only other sites are `test/test_systeminfo_metrics` and the wrappers at `SystemInfo.h:213-214`. Every result — `"45.3 KB"`, `"12d 5h"`, `"1.8 MB"` — is at most nine characters, `"4096.0 MB"` being the widest a `uint32_t` can produce, and every intermediate is narrower still. All of it fits both cores' 14-character small-string buffer, so none of it ever reaches the allocator |
-| **WiFi** | scan loop, `getDetailedStatus()` | Moderate | `summary += ...` in for loop |
-| **LED** | `getLEDStatus()` | Moderate | 6+ String concats |
-| **RemoteConsole** | `help` handler, telnet negotiation | Cold | Character-by-character String building |
-| **NTP** | `getFormattedUptime()` | Cold | `result += String(days) + "d "...` |
-| **OTA** | `transition()`, `broadcastProgress()` | Moderate | String concat + JsonDocument per broadcast |
-| **System** | NTP server parsing/saving | Cold (boot) | String operations in loop |
-| **Storage** | `dumpContents()` | Cold | `String +=` in loop |
-| **WebUI** | BaseWebUIComponents methods | Cold (setup) | String concat in selectDropdown/radioGroup loops |
+| **SystemInfo** | `formatBytes` / `getFormattedUptime` | Cadence yes, cost no | **REFUTED ON COST (2026-08-28)** — the 5-second cadence is real and lives in `DomoticsCore-SystemInfo/examples/BasicSystemInfo/src/main.cpp:26-40`, which calls the two public wrappers eight times a tick. The component itself never calls them: the only other sites are `test/test_systeminfo_metrics` and the wrappers at `SystemInfo.h:213-214`. Every result — `"45.3 KB"`, `"12d 5h"`, `"1.8 MB"` — is at most nine characters, `"4096.0 MB"` being the widest a `uint32_t` can produce, and every intermediate is narrower still. All of it fits both cores' small-string buffer — **10 characters on ESP8266, 14 on ESP32**, corrected 2026-08-29 from "14 on both" — so none of it ever reaches the allocator. Nine is under ten, so the refutation survives the correction unchanged |
+| **WiFi** | scan loop, `getDetailedStatus()` | Moderate | **DONE (2026-08-29) for the scan loop; `getDetailedStatus()` REFUTED ON CADENCE** — the row named one scan loop and there were **two**, character for character identical: the async summary at `Wifi.h:305-308` and the same expression inside public `scanNetworks()` at `:510`. Both now `snprintf` each entry into a stack buffer with one `reserve()` on the accumulator, and `scanNetworks()` moves the entry into the vector instead of copying it. `getDetailedStatus()` (`Wifi.h:471-494`) is five `+=` totalling ~105-120 characters, run once per `wifi` typed at a telnet prompt (registered at `System.h:300`, dispatched at `:576`) — cadence, not cost |
+| **LED** | `getLEDStatus()` | Moderate | **MOVED OUT (2026-08-29) → DC-13** — 75-85 characters, and no caller inside the library. That is not the same as no caller: this library is installed by version from the PlatformIO registry, so its callers are other people's sketches, and `getLEDStatus` is documented at `docs/components/led/technical-reference.md:216`. Not a memory fix; a release decision |
+| **RemoteConsole** | `help` handler, telnet negotiation | Cold | **DONE (2026-08-29)** — the help handler's 427-character constant part was ten run-time appends of compile-time literals and is now one stored literal, the returned text byte for byte what it was. The row's other half was stale: the "character-by-character String building" it describes was fixed in place long ago (`RemoteConsole.h:572-583` uses a fixed `char[]`, `:665-671` reserves once per line). Not measured on a board, deliberately — `registerBuiltInCommands()` is private, the lambda is reachable only through the telnet read loop, and this component declares no ESP8266 environment |
+| **NTP** | `getFormattedUptime()` | Cold | **REFUTED ON COST (2026-08-29), against the corrected boundary** — on the ESP8266 the free cases are `"15s"` (3), `"32m 15s"` (7) and `"5h 32m 15s"` (10, exactly at capacity); the first allocating case is `"1d 0h 0m 0s"` (11), because `days > 0` forces every field to be emitted (`NTP.h:409-413`). So the boundary is **one day of uptime, not the ten days a 14-character reading gives**, and above it the cost is one 16-byte allocation per call. It has no caller inside the library — only `examples/BasicNTP/src/main.cpp:150`, `examples/NTPWithWebUI/src/main.cpp:127` and `test_ntp_component.cpp:345` |
+| **OTA** | `transition()`, `broadcastProgress()` | Moderate | **RE-POINTED (2026-08-29) → MEM-5** — `broadcastProgress()` does not exist: removed by `bea43842`, absent from the tree outside planning documents, so half this row named a function that had already been deleted. `transition()` builds `String(" | ") + reason`; `" | Downloading firmware"` is 23 characters, so one ~32-byte allocation per state change, four or five per update — cadence, not cost. What actually costs is `publishStatusEvent` (`OTA.cpp:772-786`) at 1 Hz during an upload, and `snprintf` is not its fix. Filed as MEM-5 |
+| **System** | NTP server parsing/saving | Cold (boot) | **REFUTED ON CADENCE (2026-08-29), not on the threshold** — an earlier draft had this backwards. `"pool.ntp.org"` is 12 characters, above the 8266's 10, so even a single default server allocates on Save (`SystemWebUISetup.h:270-276`) and again on load, where `substring` then `push_back` copies it twice (`SystemPersistence.h:247-261`). What closes the row is that it runs once per WebUI Save and once at boot. No test references `ntp_servers` anywhere |
+| **Storage** | `dumpContents()` | Cold | **REFUTED ON CADENCE (2026-08-29)** — each entry already goes through `snprintf` into `headerBuf[128]`/`entryBuf[256]`; what remains is `result += entryBuf` per key plus four literal appends, 400-800 characters for 10-20 keys, run once per `storage` typed at a telnet prompt (`System.h:579-586`). An earlier draft said no test calls it, which was false: `test_system_persistence.cpp:242, 247, 258, 268` calls it four times and asserts on its formatted output — a regression net if this row is ever revisited, recorded as an asset rather than a gap |
+| **WebUI** | BaseWebUIComponents methods | Cold (setup) | **MOVED OUT (2026-08-29) → DC-13** — `radioGroup` ~840 bytes for four options, `selectDropdown` ~310, both unused inside this repository and both handed to users as copy-paste calls at `DomoticsCore-WebUI/README.md:103,110`, with signatures documented at `docs/components/webui/technical-reference.md:341,345`. Same verdict as the LED row and the same reason |
 
-- **Refs**: HA-F1, HA-F6, SI-F1, WIFI-F2, WIFI-F3, LED-F3, RC-F1, RC-F2, NTP-F8, OTA-F8, OTA-F9, SYS-F8, SYS-F9, STOR-F8, WEB-F7
-- **Fix**: Replace with `snprintf()` + stack buffers, or `String::reserve()` before loops. Both hot rows are now settled — HomeAssistant fixed, SystemInfo refuted on cost — so what is left is the eight cold ones, and the first question for each is whether it allocates at all: a `String` of 14 characters or fewer never reaches the allocator on either core. Four of the eight are in files `marianorenzi`'s `esp32-ethernet` branch is rewriting, so coordinate before touching them.
+- **Refs**: HA-F1, HA-F6, SI-F1, WIFI-F2, WIFI-F3, RC-F1, RC-F2, NTP-F8, SYS-F8, SYS-F9, STOR-F8. `LED-F3` and `WEB-F7` went to DC-13 with the rows they describe; `OTA-F8` and `OTA-F9` went to MEM-5. A closed finding should not still be carrying the references its successors answer to.
+- **Fix**: Replace with `snprintf()` + stack buffers, or `String::reserve()` before loops — where anything reaches the allocator at all, which the corrected threshold is what decides. Of the eleven rows: **three fixed** (two HomeAssistant, the WiFi scan loop), **one one-line change** (RemoteConsole help), **four refuted** (SystemInfo on cost, NTP on cost against the corrected boundary, Storage dump and the System pair on cadence), **one re-pointed** (OTA → MEM-5) and **two moved out** (LED and WebUI → DC-13). That is 3 + 1 + 4 + 1 + 2 = 11. The WiFi row is counted **once**, under "fixed", although it carries two verdicts — its scan loop was fixed and its `getDetailedStatus()` half was refuted on cadence — because it is one row. An earlier draft of this line counted it in both columns and totalled twelve for eleven rows, in a file whose surrounding prose is about exactly that.
+- **Coordination**: four rows live in files `marianorenzi`'s `esp32-ethernet` branch is rewriting — `Wifi.h`, `NTP.h`, `RemoteConsole.h` and `System.h` — and two of those, `Wifi.h` and `RemoteConsole.h`, were changed here. That is part of what he is owed when the notification goes out.
 
 #### The hot half, 2026-08-28 — one row fixed, one refuted
 
-**Still open, still HIGH.** Three of the eleven rows moved — two HomeAssistant
-rows fixed and the SystemInfo row refuted — leaving eight, and four of those live
-in `Wifi.h`, `NTP.h`, `RemoteConsole.h` and `System.h`, which `marianorenzi`'s
-`esp32-ethernet` branch is rewriting.
+**Open at the time, and closed by the lot below.** Three of the eleven rows moved
+— two HomeAssistant rows fixed and the SystemInfo row refuted — leaving eight, and
+four of those live in `Wifi.h`, `NTP.h`, `RemoteConsole.h` and `System.h`, which
+`marianorenzi`'s `esp32-ethernet` branch is rewriting.
 
-- **The threshold this sweep was filed without.** Both cores give `String` a
-  small-string buffer of 14 characters — `WString.h:316` on ESP8266,
-  `WString.h:303` on ESP32, both computing `SSOSIZE = sizeof(_ptr) + 4 - 1` and
-  both reporting `capacity() == 14`. (The ESP32 header's "up to 11" comment is
-  stale; `capacity()` is the authority.) A `String` of 14 characters or fewer
-  never reaches the allocator on either board. Every row above was written as if
-  every `String` allocates, and that is why one of these two turned out to cost
-  nothing at all.
+- **The threshold this sweep was filed without — and got wrong, corrected
+  2026-08-29.** This bullet used to read: "Both cores give `String` a small-string
+  buffer of 14 characters — `WString.h:316` on ESP8266, `WString.h:303` on ESP32
+  — and the ESP32 header's 'up to 11' comment is stale." The first half is false
+  and the parenthesis is backwards. `SSOSIZE = sizeof(struct _ptr) + 4 - 1` on
+  both, but `_ptr` is `{char*, uint16_t, uint16_t}` = 8 bytes on the 8266 and
+  `{char*, uint32_t, uint32_t}` = 12 on the ESP32, so `capacity()` is **10 on
+  ESP8266 and 14 on ESP32**. The "up to 11 (10 + \0)" comment is *correct* in the
+  8266 header and stale only in the ESP32 one, where it was copied. Both headers
+  were opened; the wrong one was believed. The point the bullet was making
+  survives — every row above was written as if every `String` allocates, and that
+  is why one of these two cost nothing at all — but every figure it implied for
+  the 8266 was four characters too generous.
 - **What HomeAssistant actually cost.** Not three allocations per message —
-  **one to three**, by length. The topic always allocates (38 characters and up).
-  The entity id allocates when it is longer than 14 (`"living_room"` is 11,
-  `"living_room_ceiling"` is 19). The payload allocates when it is longer than 14
-  (`"ON"` is 2, a light's `{"state":"ON","brightness":128}` is 31). So a switch
-  command with a short id cost **1** and now costs **0**; a light command with a
-  long id cost **3** and now costs **1** — the surviving one being the temporary
-  bound to `HAEntity::handleCommand(const String&)`, which keeps its signature.
+  **one to three**, by length, and the length that matters is per core. The topic
+  always allocates (38 characters and up). The entity id allocates above the
+  buffer: `"living_room"` is 11, so it is free on an ESP32 and **allocates on the
+  ESP8266**, which the original wording had wrong; `"living_room_ceiling"` is 19
+  and allocates on both. The payload likewise (`"ON"` is 2, a light's
+  `{"state":"ON","brightness":128}` is 31). So on the measured `nodemcuv2` a
+  switch command with a short id cost **1** and now costs **0**; a light command
+  with a long id cost **3** and now costs **1** — the surviving one being the
+  temporary bound to `HAEntity::handleCommand(const String&)`, which keeps its
+  signature. **The 112-byte figure below is unaffected**: it was measured on a
+  board with a 26-character id, not derived from the threshold.
 - **Why it was worth doing anyway**: all of it ran *before* `findEntity` decided
   the message was HomeAssistant's. `MQTT_impl.h:552` emits `mqtt/message` for
   every message on the shared client, so the framework was asking the allocator
@@ -577,8 +626,10 @@ in `Wifi.h`, `NTP.h`, `RemoteConsole.h` and `System.h`, which `marianorenzi`'s
   a default implementation delegating to the `String` one keeps every user
   override live — and it was refused on shape rather than feasibility: two
   virtuals for one concept, on a base class users are documented to subclass, to
-  remove an allocation that only happens for payloads over 14 characters. Recorded
-  here so the next reader argues with it instead of rediscovering it.
+  remove an allocation that only happens for payloads over the small-string
+  buffer — over 10 characters on the ESP8266, over 14 on the ESP32; this line
+  said "over 14 characters" on both until 2026-08-29. Recorded here so the next
+  reader argues with it instead of rediscovering it.
 - **Measured on a `nodemcuv2`** (2026-08-28, `A5069RR4` on `/dev/ttyUSB1`).
   `DomoticsCore-HomeAssistant/test/test_ha_heap_esp8266` runs **4/4** in about 46
   seconds. **112 bytes** is the figure: with the parse reverted to `bea43842` and
@@ -628,6 +679,135 @@ in `Wifi.h`, `NTP.h`, `RemoteConsole.h` and `System.h`, which `marianorenzi`'s
   broker sent) cost more than that back. The lot is a heap change, and the flash
   figure is recorded as measured rather than as hoped for.
 
+#### The closing lot, 2026-08-29 — one site fixed, one one-liner, six rows resolved by argument
+
+**MEM-2 is closed.** The eight cold rows were verified individually at
+`baf5151d`, then attacked by an adversarial pass that overturned three of the
+verification's own foundations — the threshold, the cost of growth, and the
+instrument. What was left, on the corrected numbers, is one site worth fixing,
+one worth a one-line change, and six rows that are not defects.
+
+- **The correction is the finding.** Three of this lot's own conclusions were
+  wrong before the pass and are recorded above as withdrawn, not quietly
+  replaced: the 14-character threshold (it is 10 on the ESP8266), the "~2.5 KB of
+  cumulative `memcpy`" (`UMM_REALLOC_DEFRAG` grows a top-of-heap string in place),
+  and the planned allocation counter (`String` grows through `realloc`, never
+  `malloc` — `WString.cpp:246` — so a `malloc` counter would have read zero and
+  been believed).
+- **A grep found one scan loop and there were two.** `Wifi.h:305-308` is the
+  async summary; `Wifi.h:510`, inside public `scanNetworks()`, is the same
+  expression character for character, exercised by `test_wifi_component.cpp:508`
+  and called from `examples/BasicWifi/src/main.cpp:207`. The second site also did
+  `networks.push_back(network)` on an lvalue, copying the entry it had just
+  built. This is the third time in three lots that a grep has been mistaken for
+  an enumeration.
+- **What the fix is.** `snprintf` each entry into a 64-byte stack buffer, one
+  `reserve()` on the accumulator instead of a reallocation every 16 bytes
+  crossed, and `std::move` into the vector at the second site. Text unchanged:
+  `"<ssid> (<rssi> dBm)"`, joined by `", "`, capped at ten entries.
+- **Residue, stated rather than hidden.** One allocation per network survives,
+  because `HAL::WiFiHAL::getScannedSSID` returns `String` by value (`Wifi_HAL.h:92`,
+  `Wifi_ESP8266.h:71`), and on the 8266 every scan entry is above the 10-character
+  buffer — the shortest possible, `"X (-70 dBm)"`, is 11. Removing it needs a
+  `getScannedSSID(char*, size_t)` overload across three platform headers. Out of
+  scope, and it is the reason the target here is the temporary chain and the
+  copy, not a single-digit allocation count.
+- **What runs in CI, which is the half that is actually proven.** The WiFi stub
+  returned a hard `0` from `scanNetworks()` (`Wifi_Stub.h:33`), so **neither loop
+  body had ever executed on a platform CI can run** — a rewrite could have
+  changed the separator, truncated an entry or dropped the ten-entry cap and all
+  seven required checks would have stayed green. The stub now takes a scripted
+  result table, and eight native cases pin the exact entry text, the `", "` join,
+  the ten-entry cap, the zero-network branch, both scan-failure codes, and that
+  the async summary is exactly the join of the synchronous entries. **They were
+  shown to catch a wrong rewrite** rather than assumed to, with four mutations
+  run from a cleared `.pio` each time: shrinking the stack buffer to 16 bytes
+  fails three cases, dropping the separator argument fails two, removing the
+  ten-entry cap fails one, and restoring the old `n == -1` guard aborts the
+  runner outright on `reserve(4294967294)`. That check is what makes these tests
+  a net rather than decoration.
+- **The measurement, shipped as a suite and not yet run.**
+  `DomoticsCore-Wifi/test/test_wifi_scan_esp8266` — `ESP.getCycleCount()` across
+  the loop, and a free-heap sample taken *inside* the last iteration while the
+  entry String is still live. `DomoticsCore-Wifi` had **no board environment at
+  all** before this lot: it declared `[env:native]` and nothing else. It now has
+  an `esp8266dev` environment, a `test_ignore` on the native side, and a place in
+  CI's `Build on-device suites` list.
+- **The async loop has no self-contained discriminating assertion, and the suite
+  says so in place.** It has no per-iteration log line, so there is nothing to
+  hook inside it; and a free-heap sample *after* it would read **higher** for the
+  fixed code, which reserves the worst case up front — a naive threshold there
+  would reward the unfixed version. What stands in for it: the native suite pins
+  that the async summary is character-for-character the join of the synchronous
+  entries, so the loop that *can* be measured and the loop that cannot are held
+  to the same output; and the async cycle figure is reported for the two-run
+  removal check rather than compared against a threshold. Recorded because the
+  honest answer was to state the gap, not to invent a fourth instrument after
+  three had already been withdrawn.
+- **Why not a free-heap assertion after the loop.** Because it passes with the
+  fix removed. Net free heap is identical either way — the copy the `std::move`
+  removes is a *transient*, freed when `network` goes out of scope at the end of
+  each iteration. The only moment it is visible is inside the iteration, which is
+  why the suite hooks `LoggerCallbacks` on the per-entry log line rather than
+  measuring around the call. Same reason the cycle count is sampled from that
+  hook and not around `scanNetworks()`: that call blocks for ~2 s inside the SDK
+  scan, and 160 M cycles of radio would bury the ~10⁴ the loop costs.
+- **Measured on a `nodemcuv2`** (2026-08-29, FTDI `A5069RR4`, identified by
+  adapter rather than by device node). The suite runs **3/3** in about 49
+  seconds. Removal check, with `Wifi.h` restored to `baf5151d` and `rm -rf .pio`
+  in *both* directions — these headers arrive through a `file://` dependency that
+  `pio` copies once and never refreshes, so a reverted header that is not
+  recopied reports the fixed figure twice and concludes the opposite of the
+  truth: `scanNetworks() still copies each entry: 40 B were live at the last
+  iteration and freed by the return, over 4 networks, threshold=8 B, loop cost
+  335188 cycles`. Restored and re-run: 3/3. The derived threshold survived its
+  own caveat — the failure message says to suspect the threshold if the figure
+  is small and the fix if it is ~24 B or more, and 40 B answers that without
+  ambiguity. **What the check does not cover**: the async loop, whose test passes
+  in both versions because there is no per-iteration hook to sample from.
+- **RemoteConsole's help handler** is one line: 427 characters of compile-time
+  literals that were appended ten times at run time are now one stored constant.
+  **The method, since the conclusion is only worth what produced it**: both
+  bodies — the ten appends and the single literal — were compiled on the host
+  with the per-command loop attached and a twelve-command registry, and the two
+  results compared byte for byte. 454 bytes each, identical. Not measured on a
+  board and the row above says why.
+- **Two pre-existing defects fixed in passing**, both inside the function being
+  rewritten and both recorded so they are not mistaken for part of the MEM-2
+  argument: `scanNetworks()` guarded `n == -1` while `WIFI_SCAN_FAILED` is `-2`,
+  and then did `reserve(static_cast<size_t>(n))` — a failed scan reserved
+  4,294,967,294 entries on a 40 KB heap. And its loop index is an `int` passed to
+  a `uint8_t` parameter, so more than 255 networks wrapped to 0 and returned
+  duplicates. Both are now guarded and both are pinned natively.
+- **Three findings filed, all out of MEM-2 rather than out of a review**: MEM-5
+  (OTA's `publishStatusEvent` at 1 Hz — the cost the OTA row was pointing past),
+  MEM-6 (the synchronous scan never frees the SDK's result list — a larger cost
+  than the copy this lot removed from the same function, and a behaviour change
+  to fix), and DC-13 (three public helpers with no non-test caller here and
+  documented for other people's sketches — a release decision, not a memory fix).
+- **Three more went to `deferred-work.md`, and two of them bear on this lot's own
+  justification.** `WifiComponent::loop()` returns early whenever the SSID is
+  empty, forty lines before the scan poll — which is the state a user is in when
+  they press the WebUI scan button during AP provisioning, so that path cannot
+  complete a scan at all. And nothing reads `getLastScanSummary()` back:
+  `WifiWebUI` keeps its own copy and never asks the component for the one it
+  built. **So "the site a user can trigger repeatedly", which is how the fix was
+  prioritised, is not true today.** The rewrite is still right — the loop is
+  public API, it runs, and `scanNetworks()` is reachable from a sketch — but the
+  urgency was borrowed from a path that is broken upstream of it. Recorded rather
+  than quietly dropped.
+- **Size**: FullStack `esp8266dev` goes from 717,127 to **716,967** bytes of
+  flash — 160 bytes smaller — with RAM unchanged at 50,808. Both figures measured
+  from a cleared build tree on either side. Note what the RAM figure does *not*
+  say: the help text is a non-`PROGMEM` literal, so its 427 bytes sit in ESP8266
+  DRAM exactly as the ten separate literals did. Moving it with `FPSTR` was
+  neither done nor argued, and is recorded in `deferred-work.md`.
+- **Native**: 59 cases in `DomoticsCore-Wifi` — 51 before this lot, plus the
+  eight that pin the scan format — and 32 in `DomoticsCore-RemoteConsole`, green
+  from a cleared `.pio`. None of it proves cost: the native `String` is
+  `std::string` (`Platform_Stub.h:27`). It proves the text, which is the half
+  that can be proven without a board.
+
 ### MEM-3 — HomeAssistant entity String properties should be `char[]` [MEDIUM]
 
 - **Ref**: HA-F5
@@ -641,6 +821,58 @@ in `Wifi.h`, `NTP.h`, `RemoteConsole.h` and `System.h`, which `marianorenzi`'s
 - **File**: `WebUI.h:60`
 - **Problem**: `static char wsBuffer_[WEBUI_WS_BUFFER_SIZE]` (8KB ESP32, 1KB ESP8266) permanently allocated even when no clients connected.
 - **Fix**: Lazy allocation on first use, or document rationale for permanent allocation.
+
+### MEM-5 — OTA: `publishStatusEvent` allocates a document, a string and a queue entry at 1 Hz during an upload [MEDIUM] — **NEW (2026-08-29)**
+
+- **Opened by**: MEM-2's closing lot, which re-pointed the OTA row here.
+- **File**: `DomoticsCore-OTA/src/OTA.cpp:772-786`, driven from `:348-357`
+- **What the MEM-2 row got wrong, and why this entry exists.** The row read
+  "`transition()`, `broadcastProgress()` — String concat + JsonDocument per
+  broadcast". `broadcastProgress()` **does not exist**: removed by `bea43842`,
+  and absent from the tree outside planning documents — half the row named a
+  deleted function. `transition()` is real and costs one ~32-byte allocation per
+  state change, four or five per update, which is cadence rather than cost. The
+  cost is in neither of them.
+- **Problem**: `publishStatusEvent()` constructs a `JsonDocument`, calls
+  `serializeJson` into a `String` that is never reserved, and hands the bytes to
+  `emit(topic, payload.c_str(), payload.length() + 1, sticky)`. `EventBus`
+  deep-copies into a `QueuedEvent` that owns a `String topic` and a
+  `std::vector<uint8_t> data` (`EventBus.h:28-34`), so one call is an
+  ArduinoJson pool allocation, a growing serialization buffer, and two more
+  allocations inside the queue entry. `OTA.cpp:348-357` runs it **once per second
+  for the whole duration of an upload**, on the platform with 40 KB of usable
+  heap, while a firmware image is streaming through.
+- **`snprintf` is not the fix**, which is why this is not a MEM-2 row. The
+  candidates are reserving the serialization buffer to the payload's known
+  ceiling, serializing straight into a stack buffer with
+  `serializeJson(doc, buf, sizeof(buf))`, or lengthening the 1-second throttle
+  during an upload.
+- **Not measured.** The 1 Hz cadence and the allocation sites are read from the
+  code; nothing has counted the bytes on a board. TEST-8's multipart harness is
+  the place that could.
+- **Refs**: OTA-F8, OTA-F9 (inherited from MEM-2's OTA row).
+
+### MEM-6 — WiFi: the synchronous scan never frees the SDK's result list [MEDIUM] — **NEW (2026-08-29)**
+
+- **Opened by**: MEM-2's closing lot, from reading the two scan paths side by
+  side. **Filed, not fixed** — deliberately.
+- **File**: `DomoticsCore-Wifi/include/DomoticsCore/Wifi.h`, `scanNetworks()`
+- **Problem**: the asynchronous path calls `HAL::WiFiHAL::scanDelete()` once it
+  has built its summary (`Wifi.h:341`). The synchronous `scanNetworks()` does
+  not, so the SDK's scan-result list — every SSID, BSSID, channel and RSSI it
+  found — stays allocated after the function returns, until the next scan
+  replaces it or something else deletes it. That is a larger and far
+  longer-lived cost than the per-entry copy this lot removed from the same
+  function, which is the uncomfortable part: the loop was optimised and the
+  allocation next to it was not.
+- **Why it is not fixed here**: adding `scanDelete()` is a behaviour change, not
+  a memory fix. Anything that calls `getScannedSSID()` after `scanNetworks()`
+  returns — legitimate, since both are public HAL surface — would start reading
+  a freed list. Deciding that needs a look at what users do with the HAL, and
+  `Wifi.h` is being rewritten on `esp32-ethernet` in any case.
+- **Fix, when it is decided**: either delete inside `scanNetworks()`, since it
+  has already copied everything it needs into the caller's vector, or document
+  the ownership and give the component an explicit release. Not both.
 
 ---
 
@@ -1206,6 +1438,24 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 
 - **Ref**: WIFI-F13
 - **Problem**: Key untested paths: STA fallback timer, AP mode, scan failure handling, reconnection logic.
+- **One path left the list on 2026-08-29, and the item stays open.** MEM-2's
+  closing lot gave `DomoticsCore-Wifi` its first board environment and its first
+  device suite, `test/test_wifi_scan_esp8266`. Before it, the async scan branch
+  in `WifiComponent::loop()` had **never been executed on any platform**:
+  `test_wifi_component.cpp:228` calls `startScanAsync()` and never calls `loop()`,
+  and the native stub returns zero networks so the loop body would not have been
+  entered anyway. **Both loops now run in CI**, against a scriptable WiFi stub
+  that replaces the hard `return 0` — eight cases covering exact entry text, the
+  `", "` join, the ten-entry cap, the zero-network branch, both scan-failure
+  codes, and that the async summary is the join of the synchronous entries. Four
+  deliberately wrong rewrites were run against them and every one was caught.
+  A suite that runs the same loops against a radio ships with the same lot and
+  **has not been run yet**.
+- **What it is not**: coverage of the rest of this list. STA fallback, AP mode
+  and reconnection are all still untested, and the new device suite is a
+  measurement of one loop that happens to need a board, not a WiFi behavioural
+  suite. Scan failure has left the list — both `-1` and `-2` are now pinned
+  natively — so what remains of this item is the other three paths.
 
 ### TEST-5 — NTP: inadequate coverage [MEDIUM]
 
@@ -1615,8 +1865,9 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   real platform header: `redefinition of 'class String'`, and a dozen more.
 - **Why it matters now**: it is the reason `build-device-tests` lists its
   projects instead of discovering them — four when this was filed, six since
-  2026-08-28. "Declares `esp8266dev` and has a `test/` directory" is otherwise the
-  right rule, and it matches this one too.
+  2026-08-28, seven since 2026-08-29 when `DomoticsCore-Wifi` joined. "Declares
+  `esp8266dev` and has a `test/` directory" is otherwise the right rule, and it
+  matches this one too.
 - **Fix**: decide what that environment is for. Either give it a `test_filter`
   naming a real ESP8266 suite, or drop the test settings and leave it a build
   environment. Then the CI job can discover rather than list.
@@ -1809,6 +2060,42 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   asserts the behaviour as it is, not as the branch intends, so whoever settles
   this sees the test change with it.
 
+### DC-13 — Three public helpers with no non-test caller here, and users are told to call them [MEDIUM] — **NEW (2026-08-29)**
+
+- **Opened by**: MEM-2's closing lot, which moved two of its rows here.
+- **Refs**: LED-F3, WEB-F7 (inherited from MEM-2's LED and WebUI rows).
+- **The heading is precise on purpose.** An earlier draft said "no code in this
+  repository calls", which the entry's own body then contradicts three lines
+  later: `getLEDStatus` has twenty-odd calls across three test files. The claim
+  that survives is **no non-test caller** — no component, no example, no
+  library code.
+- **Files**: `DomoticsCore-LED/include/DomoticsCore/LED.h:337-354`
+  (`getLEDStatus`), `DomoticsCore-WebUI/include/DomoticsCore/BaseWebUIComponents.h:285-303`
+  (`selectDropdown`) and `:358-380` (`radioGroup`).
+- **Why they were MEM-2 rows**: each builds its result by `String` concatenation
+  in a loop — `getLEDStatus` produces 75-85 characters, `selectDropdown` ~310,
+  `radioGroup` ~840 for four options.
+- **"No caller anywhere" was the wrong claim and the wrong test.** Wrong claim:
+  `getLEDStatus` is called in **three** test files, not the one the draft named —
+  `test_led_component.cpp`, `test_led_webui.cpp` and `test_system_lifecycle.cpp`
+  — and it is the only window those suites have onto LED state, so deleting it
+  guts them. Wrong test: this library is installed by version from the
+  PlatformIO registry as `jn0v/DomoticsCore`, so its callers are **other people's
+  sketches**. `DomoticsCore-WebUI/README.md:103,110` hands users copy-paste calls
+  to exactly the two WebUI helpers, and all three signatures are documented —
+  `docs/components/webui/technical-reference.md:341,345` and
+  `docs/components/led/technical-reference.md:216`.
+- **The finding is therefore**: unused within this repository, documented as
+  public. Not a memory defect. Nothing here runs in a loop or on a timer, so
+  optimising them buys a published library nothing measurable.
+- **The remedy is a release decision, and it is constrained**: keep and fix, keep
+  and document as unmeasured, or deprecate — and deprecating or deleting a
+  documented public method at a patch or minor version breaks downstream
+  sketches, so it belongs on a major boundary. The two WebUI helpers have no
+  caller at all in the tree; `getLEDStatus` has three test files depending on it
+  and would need a replacement first. That difference is what makes them one
+  entry with two answers rather than one.
+
 **DC-5, on keeping `ledConfigs`.** "Clear the internal vectors" was filed as one
 action; it is two. `ledStates` is runtime churn and is released, per Constitution
 XIV. `ledConfigs` is the user's registration — the pins, names and brightness
@@ -1889,22 +2176,44 @@ not.
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-9 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences having been refuted against the Arduino cores) |
-| 2. Memory Safety | MEM-1 to MEM-4, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, 1H, 2M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2's hot half landed 2026-08-28** — one row fixed, one refuted on cost, nine cold rows untouched, so it stays open and stays HIGH and this row does not move) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **0H**, 8M (**21 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, BUG-30 new and open, **BUG-2 never closed and never counted** — see below) |
+| 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266, with the board run still owed; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-30 | Multiple | 0C, **0H**, 8M (**22 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-8 | II (NON-NEGOTIABLE) | 0C, 2H, 3M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
-| 9. Dead Code | DC-1 to DC-12, PERSIST-1 | IV (YAGNI) | 0C, 0H, 7M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new) |
+| 9. Dead Code | DC-1 to DC-13, PERSIST-1 | IV (YAGNI) | 0C, 0H, 8M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, **DC-13 new** — three public helpers this repository never calls and users are told to) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **115 items** | | **0C, 7H, 31M, 34L** (56 resolved) |
+| **Total** | **118 items** | | **0C, 6H, 34M, 34L** (57 resolved) |
 
-The severity columns sum across the rows: 1 + 2 + 2 + 2 = 7 HIGH, in Memory
-Safety, Test Coverage, File Size and Architecture. The seven are MEM-2, TEST-4,
-TEST-6, SIZE-1, SIZE-2, ARCH-1, ARCH-2. **Code Safety is at zero HIGH for the
-first time**, and this time the row was checked against the section headings
-rather than only re-summed.
+The severity columns sum across the rows: 2 + 2 + 2 = 6 HIGH, in Test Coverage,
+File Size and Architecture. The six are TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1,
+ARCH-2. **Memory Safety joins Code Safety at zero HIGH**, and both rows were
+checked against the section headings rather than only re-summed — the sweep below
+was re-run for this change and reports 33 `[HIGH]` headings, 27 with evidence, 6
+open, and the six are the six named here.
+
+**Two stale sentences were found by re-running that sweep, and are corrected
+above rather than left.** The Code Safety cell still said "BUG-30 new and open"
+and "21 done" while BUG-30's own heading had carried **DONE (2026-08-28)** since
+`bea43842` landed later the same day; and the sweep paragraph below still
+reported "8 open" from the run made before that fix, against a summary that said
+seven. Neither error changed the `0H` figure, which is exactly why neither was
+noticed: **a cell can be self-consistent in the column that gets checked and
+wrong in the prose that nobody re-reads.** That is the same shape as the BUG-21
+slip recorded further down, one lot later.
+
+**Correcting that prose moves no figure, and the reasoning is written down
+because the alternative is not obviously wrong.** If the 56 had been computed
+with BUG-30 still counted as open, correcting "21 done" to "22 done" would owe
+the resolved column a second increment, and this lot would take it 56 → 58. It
+does not, because the same 2026-08-28 edit that wrote the 56 also wrote the `0H`
+in that row and named seven open HIGH items *excluding* BUG-30 — so BUG-30 was
+already counted as closed everywhere the arithmetic touched it, and only the
+narrative sentence beside it was left behind. **One item closes in this lot and
+the resolved column moves by one.** Anyone who finds evidence the other way
+should move it to 58 and say so here.
 
 **BUG-2 was found on 2026-08-27 by the same method that found BUG-21, one day
 later, in a file that had just been edited to warn about exactly this.** It had
@@ -1926,9 +2235,16 @@ a resolved table or a merged lot — then verifying the survivors against the co
 That sweep is cheap, it is scriptable, and it should be run before any statement
 about how many items remain. It was run on 2026-08-28, all three criteria this
 time rather than only the DONE marker: **33 `[HIGH]` headings, 25 with evidence,
-8 open**, and the eight are the eight this summary names. A first pass that
-checked only for a DONE marker reported 23 open — the recipe needs all three or it
-cries wolf.
+8 open** — the eight being MEM-2, TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1, ARCH-2
+and BUG-30, which was still open when the sweep ran and was fixed later the same
+day. This paragraph said "the eight are the eight this summary names" while the
+summary named seven; **that sentence was stale for a day and is corrected here**,
+which is the whole argument for re-running the sweep rather than editing the
+number. Re-run on 2026-08-29 with MEM-2 closed: **33 headings, 27 with evidence,
+6 open**. A first pass that checks only for a DONE marker reports 23 open — the
+recipe needs all three or it cries wolf. Five of the survivors clear only on the
+third criterion, having neither a marker nor a table row: SEC-3, BUG-4, BUG-5 and
+BUG-6 are in the merged-lot table at the top of this file, and BUG-15 with them.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
@@ -1939,10 +2255,16 @@ recorded here previously, which at least made the two disagree loudly: this one
 was self-consistent and false. Adding up the rows is necessary and not sufficient
 — an item that is in neither the row nor the total balances perfectly.
 
-This change: BUG-21 and TEST-3 close (9 → 7 HIGH), **BUG-30 is filed and left
-open** (7 → 8 HIGH), SEC-8 is filed and closed in the same lot (no change to any
-severity column since it opens and shuts here). Items 109 → 111 for the two new
-IDs, resolved 51 → 54.
+The lot before this one: BUG-21 and TEST-3 close (9 → 7 HIGH), **BUG-30 is filed
+and left open** (7 → 8 HIGH), SEC-8 is filed and closed in the same lot (no change
+to any severity column since it opens and shuts here). Items 109 → 111 for the two
+new IDs, resolved 51 → 54.
+
+**This change (2026-08-29, MEM-2's closing lot):** MEM-2 closes (7 → 6 HIGH, and
+Memory Safety's row 1H → 0H), **MEM-5, MEM-6 and DC-13 are filed and left open**
+(31 → 34 MEDIUM: two into Memory Safety, one into Dead Code). Items 115 → 118 for
+the three new IDs, resolved 56 → 57. No item opens and shuts inside this lot, so
+the six remaining HIGH are the seven of the last lot minus MEM-2 and nothing else.
 
 Both new findings came out of the work rather than out of a review, which is the
 pattern every lot has repeated: SEC-2's re-fix raised SEC-7, SEC-7 raised SEC-8,
@@ -1979,8 +2301,15 @@ The **item count still does not reconcile**, and did not before this change:
 ranges in the Items column gives 119 (118 with STOR-ESP-1 withdrawn). Three
 figures, three answers. Left as found rather than re-baselined to whichever one
 looks tidiest — someone has to decide what the column is counting before it can
-be corrected. Each of the three moved by exactly one here — one new ID, TEST-8 —
-so the gaps are unchanged; nothing was hidden and nothing was fixed.
+be corrected. Each of the three moved by exactly one in that lot — one new ID,
+TEST-8 — so the gaps were unchanged; nothing was hidden and nothing was fixed.
+
+**MEM-2's closing lot moves all three by exactly three**, on the same principle:
+three new IDs (MEM-5, MEM-6, DC-13), so the stated total goes 115 → 118; resolved
+plus remaining goes 56 + 72 = 128 to 57 + 74 = 131; and the ID ranges in the Items
+column gain the same three. The 13-item disagreement between the first two is
+therefore exactly where it was. Closing MEM-2 moves one item from remaining to
+resolved and changes no gap at all.
 
 ---
 

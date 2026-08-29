@@ -33,6 +33,9 @@ void tearDown(void) {
         delete testCore;
         testCore = nullptr;
     }
+    // The scripted scan table is process-global. Leaving one test's networks
+    // behind would make the next one pass or fail for the previous test's data.
+    HAL::WiFiImpl::resetScanForTest();
 }
 
 // ============================================================================
@@ -507,9 +510,184 @@ void test_wifi_scan_networks_sync(void) {
     std::vector<String> networks;
     bool result = wifiPtr->scanNetworks(networks);
 
-    // On stub, scan returns 0 networks
+    // Nothing scripted the scan table, so the stub reports no networks — the
+    // behaviour this stub had unconditionally before the table existed.
     TEST_ASSERT_TRUE(result); // Should not fail
     TEST_ASSERT_EQUAL(0, networks.size());
+}
+
+// ============================================================================
+// Scan summary formatting (MEM-2)
+//
+// These exist because the two loops that build the scan text had never run on
+// any platform CI can execute: the stub reported zero networks, and neither
+// loop body is entered when the scan finds nothing. A rewrite could change the
+// separator, truncate an entry or drop the ten-entry cap and every required
+// check would still have been green. The device suite that measures the same
+// loops needs a radio in range; this needs nothing.
+//
+// The text asserted here is what the concatenation these loops replaced
+// produced: "<ssid> (<rssi> dBm)", joined by ", ".
+// ============================================================================
+
+// A component whose loop() reaches the async scan poll and does nothing else.
+//
+// The SSID must be non-empty: WifiComponent::loop() returns early when it is
+// (`if (ssid.isEmpty()) return;`), forty lines before the poll — so a fixture
+// with the default empty config never reaches the loop under test at all.
+// autoConnect=false keeps shouldConnect false, so no connection is attempted
+// and no timer branch fires.
+static void makeIdle(WifiComponent& wifi) {
+    WifiConfig cfg;
+    cfg.ssid = "scan-fixture";  // non-empty, never connected to
+    cfg.autoConnect = false;
+    cfg.enableAP = false;
+    wifi.setConfig(cfg);
+}
+
+void test_wifi_scan_entry_format(void) {
+    HAL::WiFiImpl::setScannedNetworksForTest({
+        {String("HomeNet"), -42},
+        {String("ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"), -100},  // 32 chars, the SSID maximum
+        {String(""), -70},                                    // a hidden AP reports no SSID
+    });
+
+    WifiComponent wifi;
+    std::vector<String> networks;
+
+    TEST_ASSERT_TRUE(wifi.scanNetworks(networks));
+    TEST_ASSERT_EQUAL(3, networks.size());
+
+    TEST_ASSERT_EQUAL_STRING("HomeNet (-42 dBm)", networks[0].c_str());
+    // The whole 32-character SSID survives the stack buffer the rewrite formats
+    // into. Shrink that buffer and this is the assertion that goes red.
+    TEST_ASSERT_EQUAL_STRING("ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 (-100 dBm)", networks[1].c_str());
+    TEST_ASSERT_EQUAL_STRING(" (-70 dBm)", networks[2].c_str());
+}
+
+void test_wifi_scan_failure_returns_false(void) {
+    // WIFI_SCAN_FAILED is -2, not -1. The guard used to test `n == -1` only and
+    // then reserve(static_cast<size_t>(n)) — 4 GB on a 40 KB heap.
+    HAL::WiFiImpl::setScanFailedForTest(-2);
+
+    WifiComponent wifi;
+    std::vector<String> networks;
+
+    TEST_ASSERT_FALSE(wifi.scanNetworks(networks));
+    TEST_ASSERT_EQUAL(0, networks.size());
+}
+
+void test_wifi_scan_failure_minus_one_returns_false(void) {
+    HAL::WiFiImpl::setScanFailedForTest(-1);
+
+    WifiComponent wifi;
+    std::vector<String> networks;
+
+    TEST_ASSERT_FALSE(wifi.scanNetworks(networks));
+}
+
+void test_wifi_async_summary_format(void) {
+    HAL::WiFiImpl::setScannedNetworksForTest({
+        {String("HomeNet"), -42},
+        {String("ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"), -100},
+        {String(""), -70},
+    });
+
+    WifiComponent wifi;
+    makeIdle(wifi);
+
+    wifi.startScanAsync();
+    TEST_ASSERT_EQUAL_STRING("Scanning...", wifi.getLastScanSummary().c_str());
+
+    wifi.loop();
+
+    TEST_ASSERT_EQUAL_STRING(
+        "HomeNet (-42 dBm), ABCDEFGHIJKLMNOPQRSTUVWXYZ012345 (-100 dBm),  (-70 dBm)",
+        wifi.getLastScanSummary().c_str());
+}
+
+void test_wifi_async_summary_is_the_join_of_the_sync_entries(void) {
+    // The two loops are separate code building the same text, and only one of
+    // them can be measured on a board — the synchronous one, which logs each
+    // entry and so can be sampled from inside its last iteration. The device
+    // suite's evidence therefore only carries over to the async loop for as
+    // long as the two produce identical entries. This is what says they do.
+    HAL::WiFiImpl::setScannedNetworksForTest({
+        {String("HomeNet"), -42},
+        {String("ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"), -100},
+        {String(""), -70},
+    });
+
+    WifiComponent syncWifi;
+    std::vector<String> networks;
+    TEST_ASSERT_TRUE(syncWifi.scanNetworks(networks));
+
+    String expected;
+    for (size_t i = 0; i < networks.size(); ++i) {
+        if (i) expected += ", ";
+        expected += networks[i];
+    }
+
+    WifiComponent asyncWifi;
+    makeIdle(asyncWifi);
+    asyncWifi.startScanAsync();
+    asyncWifi.loop();
+
+    TEST_ASSERT_EQUAL_STRING(expected.c_str(), asyncWifi.getLastScanSummary().c_str());
+}
+
+void test_wifi_async_summary_caps_at_ten(void) {
+    std::vector<HAL::WiFiImpl::StubNetwork> many;
+    for (int i = 0; i < 12; ++i) {
+        many.push_back({String("net") + String(i), -50 - i});
+    }
+    HAL::WiFiImpl::setScannedNetworksForTest(many);
+
+    WifiComponent wifi;
+    makeIdle(wifi);
+
+    wifi.startScanAsync();
+    wifi.loop();
+
+    String summary = wifi.getLastScanSummary();
+
+    // Ten entries, nine separators.
+    int separators = 0;
+    for (int at = summary.indexOf(", "); at >= 0; at = summary.indexOf(", ", at + 2)) {
+        separators++;
+    }
+    TEST_ASSERT_EQUAL(9, separators);
+
+    TEST_ASSERT_TRUE(summary.startsWith("net0 (-50 dBm), "));
+    TEST_ASSERT_TRUE(summary.endsWith("net9 (-59 dBm)"));
+    // The eleventh and twelfth must not appear at all.
+    TEST_ASSERT_TRUE(summary.indexOf("net10") < 0);
+    TEST_ASSERT_TRUE(summary.indexOf("net11") < 0);
+}
+
+void test_wifi_async_summary_empty_scan(void) {
+    // Zero networks: the loop is not entered and the summary is empty. This is
+    // also the state a CI runner is always in, which is why the on-device suite
+    // refuses to pass on it.
+    WifiComponent wifi;
+    makeIdle(wifi);
+
+    wifi.startScanAsync();
+    wifi.loop();
+
+    TEST_ASSERT_EQUAL_STRING("", wifi.getLastScanSummary().c_str());
+}
+
+void test_wifi_async_summary_scan_failed(void) {
+    HAL::WiFiImpl::setScanFailedForTest(-2);  // WIFI_SCAN_FAILED
+
+    WifiComponent wifi;
+    makeIdle(wifi);
+
+    wifi.startScanAsync();
+    wifi.loop();
+
+    TEST_ASSERT_EQUAL_STRING("Scan failed", wifi.getLastScanSummary().c_str());
 }
 
 void test_wifi_network_info_contains_all_fields(void) {
@@ -635,6 +813,16 @@ int main(int argc, char **argv) {
     RUN_TEST(test_wifi_credentials_with_reconnect);
     RUN_TEST(test_wifi_scan_networks_sync);
     RUN_TEST(test_wifi_network_info_contains_all_fields);
+
+    // Scan summary formatting (MEM-2) — the loops the stub could not reach
+    RUN_TEST(test_wifi_scan_entry_format);
+    RUN_TEST(test_wifi_scan_failure_returns_false);
+    RUN_TEST(test_wifi_scan_failure_minus_one_returns_false);
+    RUN_TEST(test_wifi_async_summary_format);
+    RUN_TEST(test_wifi_async_summary_is_the_join_of_the_sync_entries);
+    RUN_TEST(test_wifi_async_summary_caps_at_ten);
+    RUN_TEST(test_wifi_async_summary_empty_scan);
+    RUN_TEST(test_wifi_async_summary_scan_failed);
 
     // Memory leak detection tests (HeapTracker)
     RUN_TEST(test_wifi_memory_stability_lifecycle);
