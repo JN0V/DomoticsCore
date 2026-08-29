@@ -53,3 +53,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-ha-message-strings.md`
   summary: A topic with two adjacent slashes (`homeassistant/switch/node//set`) yields an empty entity id, and the lookup matches any entity whose id is empty rather than refusing the message. Identical in both versions of the parse — `strncmp` with `n == 0` returns 0, exactly as the `String` comparison against `""` did — so it is neither caused nor worsened by MEM-2, and no entity in the shipped code can have an empty id. Recorded because the lot added the malformed-topic tests and covered neither this shape nor a trailing-slash topic.
   evidence: `HomeAssistant.h:540` (`findEntity(const char*, size_t)`) and the pre-change `findEntity(const String&)`; surfaced by two independent reviewers of the MEM-2 diff.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-close-scan-and-rows.md`
+  summary: The WebUI scan button cannot complete a scan in the state a user presses it. `scan_networks` is what an operator clicks during AP provisioning — when no SSID is configured — and `WifiComponent::loop()` returns at `Wifi.h:251-254` whenever `ssid.isEmpty()`, forty lines before the `if (scanInProgress)` poll that reads the results and builds the summary. In that state the scan is started and never harvested, so the UI sits at "Scanning..." indefinitely.
+  evidence: `WifiWebUI.h:176` starts the scan; `Wifi.h:251-254` is the early return; `Wifi.h:296-343` is the poll it never reaches. Pre-existing on both sides of the MEM-2 rewrite — surfaced because the new device suite's fixture hit the same early return and could not reach the loop it was written to measure.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-close-scan-and-rows.md`
+  summary: Nothing displays the async scan summary. `WifiWebUI` declares its own `String lastScanSummary` (`WifiWebUI.h:24`), sets it to "Scanning..." when the scan is requested (`:176-177`), and never reads `WifiComponent::getLastScanSummary()` back. Outside `test_wifi_component.cpp:231` and the new device suite, that getter has no caller, so the summary the component builds reaches no user.
+  evidence: repository-wide search for `getLastScanSummary`. This bears on the MEM-2 lot's own justification for fixing that site first, and is recorded rather than quietly relied upon.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-close-scan-and-rows.md`
+  summary: RemoteConsole's help text is 427 bytes of ESP8266 DRAM. The MEM-2 lot turned ten run-time appends into one stored literal, but a non-`PROGMEM` literal links into `.rodata`, which the ESP8266 places in DRAM — which is what `F()`/`FPSTR` exist to avoid. Moving it off DRAM was neither done nor argued; the portability of `FPSTR` across the ESP32 core is the question that decides it.
+  evidence: `RemoteConsole.h`, the help handler's constant part; the lot reports "RAM unchanged at 50,808" without touching this.

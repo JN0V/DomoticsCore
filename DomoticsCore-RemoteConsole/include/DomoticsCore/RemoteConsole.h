@@ -393,17 +393,34 @@ private:
     void registerBuiltInCommands() {
         // Help command
         registerCommand("help", [this](const String& args) {
-            String help = "\nAvailable commands:\n";
-            help += "  help              - Show this help\n";
-            help += "  clear             - Clear log buffer\n";
-            help += "  level <level>     - Set log level (0-4: NONE/ERROR/WARN/INFO/DEBUG)\n";
-            help += "  filter <tag>      - Filter logs by tag (empty = show all)\n";
-            help += "  info              - System information\n";
-            help += "  heap              - Memory usage\n";
-            help += "  reboot            - Restart device\n";
-            help += "  auth <password>   - Authenticate (if auth required)\n";
-            help += "  quit              - Disconnect\n";
-            
+            // MEM-2. The constant part used to be ten run-time appends of
+            // compile-time literals — ten length scans and up to ten growth
+            // steps, since String rounds capacity to a 16-byte multiple
+            // (WString.cpp:229) and this text is 427 characters. Adjacent
+            // string literals are concatenated by the compiler, so the text
+            // below is one stored constant and one copy, byte for byte what
+            // the ten appends produced.
+            //
+            // Not measured on a board, and deliberately so:
+            // registerBuiltInCommands() is private, this lambda is reachable
+            // only through the telnet read loop, and DomoticsCore-RemoteConsole
+            // declares no ESP8266 environment. Measuring it would mean
+            // inventing public API and a device suite for a string built once
+            // per typed command.
+            static const char HELP_TEXT[] =
+                "\nAvailable commands:\n"
+                "  help              - Show this help\n"
+                "  clear             - Clear log buffer\n"
+                "  level <level>     - Set log level (0-4: NONE/ERROR/WARN/INFO/DEBUG)\n"
+                "  filter <tag>      - Filter logs by tag (empty = show all)\n"
+                "  info              - System information\n"
+                "  heap              - Memory usage\n"
+                "  reboot            - Restart device\n"
+                "  auth <password>   - Authenticate (if auth required)\n"
+                "  quit              - Disconnect\n";
+
+            String help = HELP_TEXT;
+
             // Add custom commands
             for (const auto& cmd : commands) {
                 if (cmd.first != "help" && cmd.first != "clear" && 

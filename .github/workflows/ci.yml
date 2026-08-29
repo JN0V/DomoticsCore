@@ -181,6 +181,15 @@ jobs:
   # discovery over "declares esp8266dev and has a test/ directory" would still
   # match any component that acquires the same shape tomorrow, and a list that is
   # checked for existence beats a loop that silently matches the wrong thing.
+  #
+  # Wifi joined on 2026-08-29 with MEM-2's closing lot, and it had no board
+  # environment at all before that — the project declared `[env:native]` and
+  # nothing else. Its suite measures the scan-summary loop against a radio
+  # seeing real networks, so this job cannot run it and would not learn much if
+  # it could: the one input that makes the suite vacuous is a scan returning
+  # zero networks, which is exactly what a runner in a datacentre would produce.
+  # It is here so the suite cannot rot unseen, which is the whole reason this
+  # job exists.
   # ---------------------------------------------------------------------------
   build-device-tests:
     name: Build on-device suites
@@ -214,6 +223,7 @@ jobs:
             DomoticsCore-System/examples/FullStack
             DomoticsCore-OTA
             DomoticsCore-HomeAssistant
+            DomoticsCore-Wifi
           "
           failed=""
           for project in $projects; do
