@@ -21,6 +21,7 @@
 
 extern "C" {
 #include <user_interface.h>
+#include <osapi.h>  // os_get_random() — hardware RNG for the WebUI CSRF token
 }
 
 // ESP8266 logging macros (ESP32 has these built-in)
@@ -97,6 +98,17 @@ inline uint8_t getChipRevision() {
  */
 inline uint64_t getChipId() {
     return ESP.getChipId();
+}
+
+/**
+ * @brief Fill a buffer with cryptographically-usable random bytes (ESP8266).
+ *
+ * Uses the SDK hardware RNG via os_get_random(). NOT Arduino's random(), which
+ * WMath.cpp downgrades to a millis-seeded rand() as soon as any sketch calls
+ * randomSeed() — unusable for a CSRF token. Used by the WebUI per-boot token.
+ */
+inline void getRandomBytes(void* buf, size_t len) {
+    os_get_random(static_cast<unsigned char*>(buf), len);
 }
 
 /**
