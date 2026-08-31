@@ -14,6 +14,7 @@
 
 #include <DomoticsCore/IWebUIProvider.h>
 #include <DomoticsCore/Platform_HAL.h>
+#include <DomoticsCore/WebUI/JsonStreamWriter.h>
 
 namespace DomoticsCore {
 namespace Components {
@@ -34,7 +35,11 @@ namespace WebUI {
  * }
  * @endcode
  */
-class StreamingContextSerializer {
+// Privately inherits the resumable streaming primitives (SIZE-2): the two
+// state machines below keep calling writeLiteral()/writeJsonString()/
+// isLiteralComplete() and reading stringOffset/numBuf exactly as when those
+// lived in this class — the extraction changed no call site.
+class StreamingContextSerializer : private JsonStreamWriter {
 public:
     enum class State {
         NotStarted,
@@ -67,14 +72,6 @@ private:
     const WebUIContext* ctx = nullptr;
     State state = State::NotStarted;
 
-    // For string streaming
-    size_t stringOffset = 0;  // Position within current string being written
-    const String* currentString = nullptr;  // Pointer to string being streamed
-
-    // For literal streaming (supports buffers smaller than literal strings)
-    const char* currentLiteral = nullptr;
-    size_t literalOffset = 0;
-
     // For fields iteration
     size_t fieldIndex = 0;
 
@@ -84,7 +81,7 @@ private:
         Name, NameValue, NameComma,
         Label, LabelValue, LabelComma,
         Type, TypeValue, TypeComma,
-        Value, ValueValue, ValueComma,
+        Value, ValueValue, ValuesArrayOpen, ValuesArrayValue, ValuesArrayComma, ValuesArrayClose, ValueComma,
         Unit, UnitValue, UnitComma,
         ReadOnly, ReadOnlyValue, ReadOnlyComma,
         MinValue, MinValueValue, MinValueComma,
@@ -98,11 +95,8 @@ private:
         Complete
     };
     FieldState fieldState = FieldState::OpenBrace;
-    size_t optionIndex = 0;
+    size_t arrayIndex = 0;
 
-    // Temporary number buffer for integer conversions
-    char numBuf[16];
-    
     // Memory metrics (T034)
     size_t totalBytesWritten_ = 0;
     size_t chunkCount_ = 0;
@@ -129,13 +123,10 @@ public:
     void begin(const WebUIContext& context) {
         ctx = &context;
         state = State::OpenBrace;
-        stringOffset = 0;
-        currentString = nullptr;
-        currentLiteral = nullptr;
-        literalOffset = 0;
+        resetWriter();  // production reuses one serializer across contexts
         fieldIndex = 0;
         fieldState = FieldState::OpenBrace;
-        optionIndex = 0;
+        arrayIndex = 0;
         totalBytesWritten_ = 0;
         chunkCount_ = 0;
     }
@@ -379,7 +370,7 @@ public:
                     if (isLiteralComplete()) {
                         state = State::FieldObject;
                         fieldState = FieldState::OpenBrace;
-                        optionIndex = 0;
+                        arrayIndex = 0;
                     }
                     break;
 
@@ -421,208 +412,6 @@ public:
     }
 
 private:
-    /**
-     * @brief Write a literal string to buffer, supporting partial writes
-     * @return Bytes written (may be partial if buffer is smaller than remaining literal)
-     *
-     * Uses currentLiteral and literalOffset to track position for streaming.
-     * Returns true via pointer parameter when literal is complete.
-     */
-    size_t writeLiteral(uint8_t* buffer, size_t maxLen, const char* str) {
-        // Start new literal or continue existing one
-        if (currentLiteral != str) {
-            currentLiteral = str;
-            literalOffset = 0;
-        }
-
-        size_t totalLen = strlen(str);
-        size_t remaining = totalLen - literalOffset;
-
-        if (remaining == 0) {
-            currentLiteral = nullptr;
-            literalOffset = 0;
-            return 0;
-        }
-
-        size_t toWrite = (remaining < maxLen) ? remaining : maxLen;
-        memcpy(buffer, str + literalOffset, toWrite);
-        literalOffset += toWrite;
-
-        // Check if complete
-        if (literalOffset >= totalLen) {
-            currentLiteral = nullptr;
-            literalOffset = 0;
-        }
-
-        return toWrite;
-    }
-
-    /**
-     * @brief Check if current literal is complete (or no literal in progress)
-     */
-    bool isLiteralComplete() const {
-        return currentLiteral == nullptr;
-    }
-
-    /**
-     * @brief Write a JSON-escaped string, streaming across multiple calls
-     * @return Bytes written
-     *
-     * Uses stringOffset to track position within string for resumable writing.
-     * Handles JSON escaping for special characters.
-     */
-    size_t writeJsonString(uint8_t* buffer, size_t maxLen, const String& str) {
-        size_t written = 0;
-
-        // Opening quote
-        if (stringOffset == 0) {
-            if (maxLen < 1) return 0;
-            buffer[written++] = '"';
-            stringOffset = 1;  // Mark that we've written opening quote
-        }
-
-        // String content with escaping
-        // stringOffset-1 is the position in the actual string
-        size_t strPos = stringOffset - 1;
-
-        while (written < maxLen && strPos < str.length()) {
-            char c = str[strPos];
-            const char* escaped = nullptr;
-
-            // Check if character needs escaping
-            switch (c) {
-                case '"':  escaped = "\\\""; break;
-                case '\\': escaped = "\\\\"; break;
-                case '\n': escaped = "\\n"; break;
-                case '\r': escaped = "\\r"; break;
-                case '\t': escaped = "\\t"; break;
-                default:
-                    if (c < 0x20) {
-                        // Control character - write as \u00XX
-                        if (written + 6 > maxLen) {
-                            stringOffset = strPos + 1;
-                            return written;
-                        }
-                        static const char hex[] = "0123456789abcdef";
-                        buffer[written++] = '\\';
-                        buffer[written++] = 'u';
-                        buffer[written++] = '0';
-                        buffer[written++] = '0';
-                        buffer[written++] = hex[(c >> 4) & 0xF];
-                        buffer[written++] = hex[c & 0xF];
-                        strPos++;
-                        continue;
-                    }
-                    break;
-            }
-
-            if (escaped) {
-                size_t escLen = strlen(escaped);
-                if (written + escLen > maxLen) {
-                    stringOffset = strPos + 1;
-                    return written;
-                }
-                memcpy(buffer + written, escaped, escLen);
-                written += escLen;
-            } else {
-                buffer[written++] = c;
-            }
-            strPos++;
-        }
-
-        // Closing quote
-        if (strPos >= str.length()) {
-            if (written < maxLen) {
-                buffer[written++] = '"';
-                stringOffset = 0;  // Reset for next string
-                return written;
-            }
-        }
-
-        stringOffset = strPos + 1;
-        return written;
-    }
-
-    /**
-     * @brief Write a JSON-escaped C-string (const char*), null-safe
-     * @return Bytes written
-     */
-    size_t writeJsonString(uint8_t* buffer, size_t maxLen, const char* str) {
-        // Normalize null and empty inputs, then let the resumable logic below
-        // write the quotes across chunk boundaries when necessary.
-        if (str == nullptr) {
-            str = "";
-        }
-        
-        size_t written = 0;
-        size_t strLen = strlen(str);
-
-        // Opening quote
-        if (stringOffset == 0) {
-            if (maxLen < 1) return 0;
-            buffer[written++] = '"';
-            stringOffset = 1;  // Mark that we've written opening quote
-        }
-
-        // String content with escaping
-        size_t strPos = stringOffset - 1;
-
-        while (written < maxLen && strPos < strLen) {
-            char c = str[strPos];
-            const char* escaped = nullptr;
-
-            switch (c) {
-                case '"':  escaped = "\\\""; break;
-                case '\\': escaped = "\\\\"; break;
-                case '\n': escaped = "\\n"; break;
-                case '\r': escaped = "\\r"; break;
-                case '\t': escaped = "\\t"; break;
-                default:
-                    if (c < 0x20) {
-                        if (written + 6 > maxLen) {
-                            stringOffset = strPos + 1;
-                            return written;
-                        }
-                        static const char hex[] = "0123456789abcdef";
-                        buffer[written++] = '\\';
-                        buffer[written++] = 'u';
-                        buffer[written++] = '0';
-                        buffer[written++] = '0';
-                        buffer[written++] = hex[(c >> 4) & 0xF];
-                        buffer[written++] = hex[c & 0xF];
-                        strPos++;
-                        continue;
-                    }
-                    break;
-            }
-
-            if (escaped) {
-                size_t escLen = strlen(escaped);
-                if (written + escLen > maxLen) {
-                    stringOffset = strPos + 1;
-                    return written;
-                }
-                memcpy(buffer + written, escaped, escLen);
-                written += escLen;
-            } else {
-                buffer[written++] = c;
-            }
-            strPos++;
-        }
-
-        // Closing quote
-        if (strPos >= strLen) {
-            if (written < maxLen) {
-                buffer[written++] = '"';
-                stringOffset = 0;  // Reset for next string
-                return written;
-            }
-        }
-
-        stringOffset = strPos + 1;
-        return written;
-    }
-
     /**
      * @brief Write current field object
      * @return Bytes written
@@ -694,22 +483,64 @@ private:
 
                 case FieldState::Value:
                     n = writeLiteral(buffer + written, remaining, "\"value\":");
-                    if (isLiteralComplete()) fieldState = FieldState::ValueValue;
+                    if (isLiteralComplete()) {
+                        fieldState = (field.type == WebUIFieldType::Multiselect)
+                            ? FieldState::ValuesArrayOpen
+                            : FieldState::ValueValue;
+                    }
                     break;
 
                 case FieldState::ValueValue:
-                    if (field.type == WebUIFieldType::Multiselect) {
-                        JsonDocument valuesDoc;
-                        JsonArray values = valuesDoc.to<JsonArray>();
-                        for (const String& value : field.selectedValues) values.add(value);
-                        String serializedValues;
-                        serializeJson(valuesDoc, serializedValues);
-                        n = writeLiteral(buffer + written, remaining, serializedValues.c_str());
-                        if (isLiteralComplete()) fieldState = FieldState::ValueComma;
-                    } else {
-                        n = writeJsonString(buffer + written, remaining, field.getValueCStr());
-                        if (stringOffset == 0) fieldState = FieldState::ValueComma;
+                    n = writeJsonString(buffer + written, remaining, field.getValueCStr());
+                    if (stringOffset == 0) fieldState = FieldState::ValueComma;
+                    break;
+
+                // Multiselect values stream like the options array below —
+                // marianorenzi's design (esp32-ethernet), adapted to the
+                // current field API. The JsonDocument-into-a-temporary this
+                // replaces rebuilt the array on every resume and relied on
+                // the temporary reallocating at the same address for
+                // writeLiteral's pointer-identity resume to hold.
+                case FieldState::ValuesArrayOpen:
+                    n = writeLiteral(buffer + written, remaining, "[");
+                    if (isLiteralComplete()) {
+                        arrayIndex = 0;
+                        // Inline empty check, as FieldsArrayOpen does for
+                        // fields: ValuesArrayValue is never entered with
+                        // nothing to write, so the n==0 guard list below
+                        // stays unchanged.
+                        fieldState = field.selectedValues.empty()
+                            ? FieldState::ValuesArrayClose
+                            : FieldState::ValuesArrayValue;
                     }
+                    break;
+
+                case FieldState::ValuesArrayValue:
+                    // Defensive bound, mirroring OptionValue below: unreachable
+                    // while ctx stays valid (ValuesArrayOpen never enters this
+                    // state empty), stated so both array states carry the same
+                    // contract.
+                    if (arrayIndex < field.selectedValues.size()) {
+                        n = writeJsonString(buffer + written, remaining, field.selectedValues[arrayIndex]);
+                        if (stringOffset == 0) {
+                            arrayIndex++;
+                            fieldState = arrayIndex < field.selectedValues.size()
+                                ? FieldState::ValuesArrayComma
+                                : FieldState::ValuesArrayClose;
+                        }
+                    } else {
+                        fieldState = FieldState::ValuesArrayClose;
+                    }
+                    break;
+
+                case FieldState::ValuesArrayComma:
+                    n = writeLiteral(buffer + written, remaining, ",");
+                    if (isLiteralComplete()) fieldState = FieldState::ValuesArrayValue;
+                    break;
+
+                case FieldState::ValuesArrayClose:
+                    n = writeLiteral(buffer + written, remaining, "]");
+                    if (isLiteralComplete()) fieldState = FieldState::ValueComma;
                     break;
 
                 case FieldState::ValueComma:
@@ -793,7 +624,7 @@ private:
                 case FieldState::OptionsCheck:
                     if (!field.options.empty()) {
                         fieldState = FieldState::OptionsKey;
-                        optionIndex = 0;
+                        arrayIndex = 0;
                     } else {
                         fieldState = FieldState::OptionLabelsCheck;
                     }
@@ -810,11 +641,11 @@ private:
                     break;
 
                 case FieldState::OptionValue:
-                    if (optionIndex < field.options.size()) {
-                        n = writeJsonString(buffer + written, remaining, field.options[optionIndex]);
+                    if (arrayIndex < field.options.size()) {
+                        n = writeJsonString(buffer + written, remaining, field.options[arrayIndex]);
                         if (stringOffset == 0) {
-                            optionIndex++;
-                            if (optionIndex < field.options.size()) {
+                            arrayIndex++;
+                            if (arrayIndex < field.options.size()) {
                                 fieldState = FieldState::OptionComma;
                             } else {
                                 fieldState = FieldState::OptionsArrayClose;
@@ -839,7 +670,7 @@ private:
                 case FieldState::OptionLabelsCheck:
                     if (!field.optionLabels.empty()) {
                         fieldState = FieldState::OptionLabelsKey;
-                        optionIndex = 0;
+                        arrayIndex = 0;
                     } else {
                         fieldState = FieldState::CloseBrace;
                     }
@@ -857,7 +688,7 @@ private:
 
                 case FieldState::OptionLabelKey: {
                     auto it = field.optionLabels.begin();
-                    std::advance(it, optionIndex);
+                    std::advance(it, arrayIndex);
                     if (it != field.optionLabels.end()) {
                         n = writeJsonString(buffer + written, remaining, it->first);
                         if (stringOffset == 0) {
@@ -876,12 +707,12 @@ private:
 
                 case FieldState::OptionLabelValue: {
                     auto it = field.optionLabels.begin();
-                    std::advance(it, optionIndex);
+                    std::advance(it, arrayIndex);
                     if (it != field.optionLabels.end()) {
                         n = writeJsonString(buffer + written, remaining, it->second);
                         if (stringOffset == 0) {
-                            optionIndex++;
-                            fieldState = optionIndex < field.optionLabels.size()
+                            arrayIndex++;
+                            fieldState = arrayIndex < field.optionLabels.size()
                                 ? FieldState::OptionLabelComma
                                 : FieldState::OptionLabelsClose;
                         }

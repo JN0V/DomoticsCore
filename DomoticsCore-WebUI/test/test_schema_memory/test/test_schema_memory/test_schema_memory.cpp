@@ -66,10 +66,19 @@ protected:
             .withCustomCss(".test-container { padding: 1rem; background: #f0f0f0; }")
             .withRealTime(1000));
 
+        // SIZE-2: a multiselect field, so the heap-stability loops actually
+        // enter the one path whose allocation behaviour that lot changed —
+        // the old code built a JsonDocument plus a temporary String for every
+        // multiselect value serialization; the streaming states allocate
+        // nothing. Without this field the suite never runs the changed code.
+        WebUIField networks("networks", "Networks", WebUIFieldType::Multiselect);
+        networks.choices({"office-2.4ghz", "office-5g", "guest"})
+                .values({"office-2.4ghz", "guest"});
         contexts.push_back(WebUIContext::settings("cached_settings", "Cached Settings")
             .withField(WebUIField("enabled", "Enabled", WebUIFieldType::Boolean, "true"))
             .withField(WebUIField("name", "Name", WebUIFieldType::Text, "Test Device"))
-            .withField(WebUIField("interval", "Interval", WebUIFieldType::Number, "5000", "ms")));
+            .withField(WebUIField("interval", "Interval", WebUIFieldType::Number, "5000", "ms"))
+            .withField(networks));
 
         contexts.push_back(WebUIContext::statusBadge("cached_status", "Status", "dc-info")
             .withField(WebUIField("state", "State", WebUIFieldType::Status, "OK")));
