@@ -42,6 +42,7 @@ versions may sit still while fixes land.
 | OTA | TEST-8 hole 4 (part) | PR #40 — 2026-08-27, a real multipart POST against a board, refused and accepted paths both run, each with a removal check that discriminates. What remains of TEST-8 is the browser's own view |
 | HomeAssistant | BUG-31 | 2026-08-29 — TEST-6's lot A. The HA settings handler read six parameters the dispatcher never sends; filed and closed in the same lot, raising TEST-9 and DC-14. TEST-6 stayed open for lot B |
 | WebUI, SystemInfo, Storage | BUG-32, TEST-6 | 2026-08-31 — TEST-6's lot B. `device_name` was interpolated raw into every update; escaped at the sink (an extracted `buildSystemHeader`, the first slice of SIZE-1), with `SystemInfoWebUI` validation and Storage coverage. **BUG-32 filed and closed, TEST-6 closed** (6 → 5 open HIGH) |
+| Core, Wifi | TEST-4 | 2026-08-31 — the stubs were the blocker: scriptable millis/heap/restart in `Platform_Stub.h`, a stateful mode/AP/connect record in `Wifi_Stub.h` (defaults byte-identical), and a 16-case behavioural suite over the fallback ladder, AP mode and reconnection; five mutations all caught; the MEM-2 device suite finally ran, 3/3 on a real radio. **TEST-4 closed** (5 → 4 open HIGH), DC-15 filed |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -64,11 +65,11 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 788 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, and 767 after BUG-31's provider suite on 2026-08-29; 788 adds BUG-32's twenty-one on 2026-08-31 — eight in `test_system_header`, eight in `test_systeminfo_webui`, four in `test_storage_webui` and one in `test_system_persistence` |
+| ✅ | The 13 native projects run — 804 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, 767 after BUG-31's provider suite on 2026-08-29, and 788 after BUG-32's twenty-one; 804 adds TEST-4's sixteen in `test_wifi_behaviour` on 2026-08-31 (the Wifi project runs 75: 46 component + 16 behaviour + 13 WebUI) |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
-| ⚠️ | **The eight on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev`. Seven are ESP8266 — `DomoticsCore-Wifi` is the newest, added with MEM-2's closing lot, and it is also the only one whose result depends on the runner being in radio range of something — and `DomoticsCore-OTA` also carries an `esp32cam` one |
+| ⚠️ | **The eight on-device suites compile in CI, and nothing runs them.** No runner has a board (CI-10). Run them by hand: `cd DomoticsCore-Storage && pio test -e esp8266dev`. Seven are ESP8266 — `DomoticsCore-Wifi` is the newest, added with MEM-2's closing lot, first executed 2026-08-31 (3/3 on a `nodemcuv2`), and it is also the only one whose result depends on the runner being in radio range of something — and `DomoticsCore-OTA` also carries an `esp32cam` one |
 | ❌ | **No test runs on hardware in CI.** A host build proves compilation, not behaviour on a board — BUG-4 is what that costs, and STOR-ESP-1 is what a board proves when nobody checks what the suite is actually measuring |
 
 That last line is not a formality. BUG-4, the SNTP server-name use-after-free,
@@ -841,7 +842,9 @@ one worth a one-line change, and six rows that are not defects.
   ten-entry cap fails one, and restoring the old `n == -1` guard aborts the
   runner outright on `reserve(4294967294)`. That check is what makes these tests
   a net rather than decoration.
-- **The measurement, shipped as a suite and not yet run.**
+- **The measurement, shipped as a suite — and run at last on 2026-08-31, 3/3
+  on a `nodemcuv2`, by TEST-4's closing lot.** (This bullet said "not yet run"
+  for the two days in between.)
   `DomoticsCore-Wifi/test/test_wifi_scan_esp8266` — `ESP.getCycleCount()` across
   the loop, and a free-heap sample taken *inside* the last iteration while the
   entry String is still live. `DomoticsCore-Wifi` had **no board environment at
@@ -1694,11 +1697,11 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   recorded as DEAD-1 in `docs/components/ota/technical-reference.md` and is not
   this lot's to remove.
 
-### TEST-4 — WiFi: superficial coverage [HIGH]
+### TEST-4 — WiFi: superficial coverage [HIGH] — **DONE (2026-08-31)**
 
 - **Ref**: WIFI-F13
-- **Problem**: Key untested paths: STA fallback timer, AP mode, scan failure handling, reconnection logic.
-- **One path left the list on 2026-08-29, and the item stays open.** MEM-2's
+- **Problem (as filed)**: Key untested paths: STA fallback timer, AP mode, scan failure handling, reconnection logic.
+- **One path left the list on 2026-08-29, and the item stayed open.** MEM-2's
   closing lot gave `DomoticsCore-Wifi` its first board environment and its first
   device suite, `test/test_wifi_scan_esp8266`. Before it, the async scan branch
   in `WifiComponent::loop()` had **never been executed on any platform**:
@@ -1709,13 +1712,47 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   `", "` join, the ten-entry cap, the zero-network branch, both scan-failure
   codes, and that the async summary is the join of the synchronous entries. Four
   deliberately wrong rewrites were run against them and every one was caught.
-  A suite that runs the same loops against a radio ships with the same lot and
-  **has not been run yet**.
-- **What it is not**: coverage of the rest of this list. STA fallback, AP mode
-  and reconnection are all still untested, and the new device suite is a
-  measurement of one loop that happens to need a board, not a WiFi behavioural
-  suite. Scan failure has left the list — both `-1` and `-2` are now pinned
-  natively — so what remains of this item is the other three paths.
+- **The other three paths closed on 2026-08-31, and the blocker was the stubs,
+  not the tests.** Every remaining path reads state the native stubs could not
+  script: the clock was the wall clock (a 15 s timeout test would take 15 real
+  seconds), the heap was frozen at 65536 (the fallback ladder's
+  2000/2500/3500/6500/10000 guards are all "heap too low" branches, so **none
+  was reachable on any platform CI can run**), and the WiFi stub was stateless —
+  `getMode()` always `Off`, `startAP()` always `false`, which makes the
+  skip-restart branch (`Wifi.h:856`) unreachable and AP success flows
+  unobservable. The lot is therefore two seams plus one suite:
+  `Platform_Stub.h` gains a scriptable millis/heap/restart-count,
+  `Wifi_Stub.h` gains a mode/AP/connect record — every default byte-identical
+  to the old stubs, `ForTest` suffix, the pattern MEM-2's scan table set — and
+  `test/test_wifi_behaviour/` runs 16 cases: reconnection (success events,
+  the 15 s timeout with its **same-tick retry**, deliberately pinned; disconnect
+  stops retrying; the 2500-byte connect guard defers then retries), the STA
+  fallback timer (arming at low heap, stay-STA-only vs restart-AP on the 6500
+  boundary, the 30 s timeout with its anti-boot-loop `autoConnect=false` save,
+  reboot-to-STA counted via the restart seam, the <2000 guard proven to make
+  zero WiFi-HAL calls, channel-sync vs direct AP+STA), and AP mode (the
+  autogenerated open `DomoticsCore-000000` from the MAC, the preconfigured-AP
+  branch, the skip-restart branch as a **count delta**, the stale-config guard).
+  **Five deliberate mutations were run against the suite and every one was
+  caught by exactly the test that names it** (invert the 6500 comparison, drop
+  the anti-boot-loop save, stretch the connect timeout, delete the skip-restart
+  branch, delete the connect heap guard), `rm -rf .pio` between runs.
+- **The contract was adversarially reviewed before implementation, and the
+  review refuted two tests as first specified** — the fallback-success-with-AP
+  test pinned the wrong branch (heap 20000 never arms the fallback timer; every
+  observable it asserted was satisfied by the direct AP+STA path, so the
+  removal check would not have moved it), and the skip-restart test asserted a
+  total where correct code produces two calls before the scenario starts. Both
+  were repaired at spec time. `spec-test-4-wifi-behaviour-coverage.md` v2.
+- **The device-suite debt is paid**: `test_wifi_scan_esp8266` ran against a
+  real radio for the first time — 3/3 on the `nodemcuv2`, 2026-08-31.
+- **What it is not**: radio-level behaviour. Association timing, real AP
+  bring-up, channel sync against a physical router remain untested on silicon —
+  the suite pins the component's decision logic through `isConnected()`/heap/
+  millis, which is host-testable by construction; what a radio adds has no
+  assertion a hidden neighbourhood AP cannot corrupt. Filed out of the work:
+  **DC-15** — `WifiConfig.reconnectInterval` and `connectionTimeout` are
+  accepted and ignored, found while writing the spec's non-goals.
 
 ### TEST-5 — NTP: inadequate coverage [MEDIUM]
 
@@ -2426,6 +2463,28 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   declaring and serialising them. Removing `apiEndpoint` from the wire is a schema
   change and belongs with DC-12's decision about what the context schema is for.
 
+### DC-15 — WifiConfig's advanced settings are accepted and ignored [MEDIUM] — **NEW (2026-08-31)**
+
+- **Opened by**: TEST-4's closing lot, 2026-08-31, while writing the spec's
+  non-goals.
+- **Files**: `Wifi.h:49-50` (the fields, commented "Advanced settings"),
+  `Wifi.h:684-701` (`setConfig` — never reads them), `Wifi.h:675-676`
+  (`getConfig` — returns the hardcoded 5000 and `CONNECTION_TIMEOUT` regardless
+  of what was set).
+- **Problem**: `WifiConfig.reconnectInterval` and `WifiConfig.connectionTimeout`
+  are dead. `setConfig()` applies neither — `reconnectTimer` keeps the
+  constructor's 5000 ms and the timeout is a `static const` — and `getConfig()`
+  hands back the constants, so a round trip silently discards what the caller
+  wrote. An integrator who sets `reconnectInterval = 60000` to save battery
+  gets a retry every five seconds and no error. The only readers in the
+  repository are the struct's own defaults and one test asserting them.
+- **Same family as the C1–C3 dead config fields** removed by
+  `tech-spec-remove-dead-config-fields-c1-c3`. The remedy is a choice: plumb
+  the two fields through (`NonBlockingDelay::setInterval` exists; the timeout
+  would have to stop being `static const`), or remove them from the struct.
+  Removing is an API change for anyone who sets them today — which, per the
+  defect itself, changes nothing at runtime.
+
 **DC-5, on keeping `ledConfigs`.** "Clear the internal vectors" was filed as one
 action; it is two. `ledStates` is runtime churn and is released, per Constitution
 XIV. `ledConfigs` is the user's registration — the pins, names and brightness
@@ -2506,28 +2565,28 @@ not.
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 6M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-13/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
-| 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266, with the board run still owed; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
+| 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-32 | Multiple | 0C, **0H**, 8M (**24 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, and **BUG-32 filed and fixed 2026-08-31**, MEDIUM, each opening and shutting inside its lot so no column moves — **BUG-2 never closed and never counted** — see below) |
-| 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, 1H, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
+| 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
-| 9. Dead Code | DC-1 to DC-14, PERSIST-1 | IV (YAGNI) | 0C, 0H, 9M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client) |
+| 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **127 items** | | **0C, 5H, 39M, 34L** (62 resolved) |
+| **Total** | **128 items** | | **0C, 4H, 40M, 34L** (63 resolved) |
 
-The severity columns sum across the rows: 1 + 2 + 2 = 5 HIGH, in Test Coverage,
-File Size and Architecture. The five are TEST-4, SIZE-1, SIZE-2, ARCH-1, ARCH-2 —
-the six of the last three lots minus **TEST-6, which the BUG-32 lot closed** (its
-Lot A had already landed as BUG-31, and Lot B closed the item). **Security, Memory
-Safety and Code Safety all sit at zero HIGH.** The rows were checked against the
-section headings rather than only re-summed — the sweep below, re-run for the
-BUG-32 lot, reports 35 `[HIGH]` headings, 30 with evidence, 5 open, and the five
-are the five named here. TEST-6 gained its DONE marker this lot, so it moves from
-the open column to the evidenced one; BUG-32 is a `[MEDIUM]` heading and never
-enters the `[HIGH]` sweep. The MEDIUM column sums to 39: 6 + 4 + 8 + 4 + 3 + 0 + 5
-+ 9 + 0.
+The severity columns sum across the rows: 2 + 2 = 4 HIGH, in File Size and
+Architecture only. The four are SIZE-1, SIZE-2, ARCH-1, ARCH-2 — the five of the
+BUG-32 lot minus **TEST-4, which this lot closed**. **Security, Memory Safety,
+Code Safety and now Test Coverage all sit at zero HIGH** — Test Coverage for the
+first time since the roadmap was filed, and what remains of the HIGH column is
+refactoring, not defects or coverage. The rows were checked against the section
+headings rather than only re-summed — the sweep below, re-run for this lot,
+reports 35 `[HIGH]` headings, 31 with evidence, 4 open, and the four are the four
+named here. TEST-4 gained its DONE marker this lot, so it moves from the open
+column to the evidenced one; DC-15 is a `[MEDIUM]` heading and never enters the
+`[HIGH]` sweep. The MEDIUM column sums to 40: 6 + 4 + 8 + 4 + 3 + 0 + 5 + 10 + 0.
 
 **Two stale sentences were found by re-running that sweep, and are corrected
 above rather than left.** The Code Safety cell still said "BUG-30 new and open"
@@ -2596,6 +2655,10 @@ copy either lot's number. Re-run after BUG-32 (TEST-6's lot B): **35 headings, 3
 with evidence, 5 open**. No heading is added or removed — BUG-32 is `[MEDIUM]` —
 but TEST-6 gains a DONE marker, so it crosses from the open column to the evidenced
 one: open 6 → 5 (TEST-4, SIZE-1, SIZE-2, ARCH-1, ARCH-2), with-evidence 29 → 30.
+Re-run after TEST-4's closing lot (2026-08-31): **35 headings, 31 with evidence,
+4 open**. Again no heading is added or removed — DC-15, the lot's one new ID, is
+`[MEDIUM]` — and TEST-4 crosses from open to evidenced: open 5 → 4 (SIZE-1,
+SIZE-2, ARCH-1, ARCH-2), with-evidence 30 → 31.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
@@ -2643,12 +2706,23 @@ alone. BUG-31 was authored before the SEC-10 lot and held; rebased on top of it,
 its figures are re-derived here from the 123 items / 37 MEDIUM / 59 resolved the
 SEC-10 lot left, not the 118 / 34 / 57 it was first written against.
 
-**This change (2026-08-31, TEST-6's lot B — BUG-32):** **BUG-32 is filed and closed
-in the same lot**, MEDIUM — so no severity column moves for it — and **TEST-6
-itself closes**, taking the open HIGH it held to resolved. Items 126 → 127 for the
-one new ID; resolved 60 → 62 (BUG-32 and TEST-6); the open HIGH count falls **6 →
-5**, the first drop in the run. The `hasDataChanged` cost claim is recorded under
-TEST-6 without an ID — a board-owed observation, not a counted item.
+**The lot before this one (2026-08-31, TEST-6's lot B — BUG-32):** **BUG-32 is
+filed and closed in the same lot**, MEDIUM — so no severity column moves for it —
+and **TEST-6 itself closes**, taking the open HIGH it held to resolved. Items
+126 → 127 for the one new ID; resolved 60 → 62 (BUG-32 and TEST-6); the open HIGH
+count falls **6 → 5**, the first drop in the run. The `hasDataChanged` cost claim
+is recorded under TEST-6 without an ID — a board-owed observation, not a counted
+item.
+
+**This change (2026-08-31, TEST-4's closing lot):** **TEST-4 closes** — the open
+HIGH it held moves to resolved — and **DC-15 is filed and left open**, MEDIUM
+(39 → 40 MEDIUM, into Dead Code). Items 127 → 128 for the one new ID; resolved
+62 → 63 (TEST-4 alone); the open HIGH count falls **5 → 4**, the second drop in
+the run, and **Test Coverage joins Security, Memory Safety and Code Safety at
+zero HIGH** — every remaining HIGH is a refactor (File Size, Architecture). No
+code under test changed in this lot: the diff is two test seams whose defaults
+are byte-identical to the old stubs, one new native suite, and two tearDown
+lines — which is why no CHANGELOG entry accrues and no component version moves.
 
 **Why TEST-6 waited for lot B.** BUG-31 was the first of its two lots and did not
 close TEST-6: doing so then would have claimed coverage of three providers it never
@@ -2731,6 +2805,15 @@ first lot in the run to **lower** the open HIGH count, 6 → 5: the six lots bef
 it either held it flat or, once, raised it. Remaining 78 = 5 HIGH + 39 MEDIUM + 34
 LOW. The `hasDataChanged` cost claim is recorded under TEST-6 without an ID, so it
 moves none of the three figures — a board-owed observation, not a counted item.
+
+**TEST-4's closing lot moves all three by exactly one.** One new ID, DC-15, filed
+and left open; and **TEST-4 closes**. The stated total goes 127 → 128; resolved
+plus remaining goes 62 + 78 = 140 to 63 + 78 = 141 — TEST-4 crosses from
+remaining to resolved (resolved +1, remaining −1) while DC-15 enters remaining
+(remaining +1), so remaining nets to zero movement; the ID ranges gain DC-15. The
+13-item gap is still 13. Remaining 78 = 4 HIGH + 40 MEDIUM + 34 LOW — the HIGH
+that left was replaced in the count by the MEDIUM that entered, which is why
+remaining is flat while both severity columns moved.
 
 ---
 
