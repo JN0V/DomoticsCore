@@ -403,6 +403,26 @@ private:
     }
 
     /**
+     * @brief BUG-34: the ONE place the chunked-schema retry decision exists.
+     *
+     * writeChunk() returns 0 with `finished` still false when it cannot make
+     * progress — transiently when the serializer's check-state chain is exited
+     * in a call that wrote nothing yet (ordinary chunk sizes, ordinary
+     * content), or until the buffer grows when an atomic escape sequence does
+     * not fit. Returning that 0 from a chunked-response callback ends the
+     * response: truncated JSON. v1.5.0 (b961e43a) fixed exactly that on the
+     * poll route and /api/ui/schema never received the fix — because the
+     * policy lived in two copied lambdas. Both routes now call this helper,
+     * so the pair cannot drift again.
+     */
+    static size_t writeSchemaChunkHttp(WebUI::ProviderRegistry::SchemaChunkState& state,
+                                       uint8_t* buffer, size_t maxLen) {
+        size_t written = state.writeChunk(buffer, maxLen);
+        if (written == 0 && !state.finished) return RESPONSE_TRY_AGAIN;
+        return written;
+    }
+
+    /**
      * @brief Add CORS headers to response if enabled in config
      */
     void addCorsHeaders(AsyncWebServerResponse* response) {
@@ -429,11 +449,7 @@ private:
                     "application/json",
                     [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
                         if (!state) return 0;
-                        size_t written = state->writeChunk(buffer, maxLen);
-                        // If nothing was written but serialization isn't done,
-                        // tell the server to retry instead of ending the response
-                        if (written == 0 && !state->finished) return RESPONSE_TRY_AGAIN;
-                        return written;
+                        return writeSchemaChunkHttp(*state, buffer, maxLen);
                     });
                 addCorsHeaders(response);
                 response->addHeader("Connection", "close");
@@ -658,7 +674,9 @@ private:
                 "application/json",
                 [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
                     if (!state) return 0;
-                    return state->writeChunk(buffer, maxLen);
+                    // BUG-34: was `return state->writeChunk(...)` raw — a zero
+                    // return ended the response mid-schema (see the helper).
+                    return writeSchemaChunkHttp(*state, buffer, maxLen);
                 });
 
             addCorsHeaders(response);
