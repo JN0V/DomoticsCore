@@ -104,27 +104,41 @@ public:
     }
 
     String handleWebUIRequest(const String& contextId, const String& /*endpoint*/, const String& method, const std::map<String, String>& params) override {
+        // BUG-32/TEST-6: guard the component, as getWebUIData and hasDataChanged
+        // already do. Without it a POST dereferences a null sys below and crashes.
+        if (!sys) return "{\"success\":false}";
+
         if (contextId == "system_settings" && method == "POST") {
             auto fieldIt = params.find("field");
             auto valueIt = params.find("value");
             if (fieldIt != params.end() && valueIt != params.end()) {
                 const String& field = fieldIt->second;
                 const String& value = valueIt->second;
-                
+
                 if (field == "device_name") {
+                    // Refusals carry no "error" key: app.js inspects only
+                    // data.error, so an error key would pop a modal alert.
+                    if (value.length() == 0) {
+                        return "{\"success\":false}";  // an empty name would blank the device
+                    }
+                    // Cap at 31, the char[31] the browser header and WebUIConfig
+                    // already truncate to (WebUIConfig.h:17). SystemConfig keeps the
+                    // untruncated String, so this makes two ends agree, not all.
+                    String capped = value.length() > 31 ? value.substring(0, 31) : value;
+
                     // Use Get → Override → Set pattern
                     SystemInfoConfig cfg = sys->getConfig();
-                    cfg.deviceName = value;
+                    cfg.deviceName = capped;
                     sys->setConfig(cfg);
-                    
+
                     // Invoke persistence callback
                     if (onDeviceNameChanged) {
-                        onDeviceNameChanged(value);
+                        onDeviceNameChanged(capped);
                     }
-                    
+
                     // Force state reset to push update immediately
                     systemInfoState.reset();
-                    
+
                     return "{\"success\":true}";
                 }
             }
