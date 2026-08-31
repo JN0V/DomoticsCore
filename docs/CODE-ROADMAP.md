@@ -45,6 +45,7 @@ versions may sit still while fixes land.
 | Core, Wifi | TEST-4 | 2026-08-31 — the stubs were the blocker: scriptable millis/heap/restart in `Platform_Stub.h`, a stateful mode/AP/connect record in `Wifi_Stub.h` (defaults byte-identical), and a 16-case behavioural suite over the fallback ladder, AP mode and reconnection; five mutations all caught; the MEM-2 device suite finally ran, 3/3 on a real radio. **TEST-4 closed** (5 → 4 open HIGH), DC-15 filed |
 | WebUI | SIZE-2, BUG-26, BUG-28, BUG-33 | 2026-08-31 — 933 → 756 + a 216-line `JsonStreamWriter.h`, extracted as a privately-inherited base so the fork's serializer hunks still land, with marianorenzi's own streaming-multiselect design adopted and credited. **SIZE-2 closed** (4 → 3 open HIGH), **BUG-28 closed** with it, **BUG-26 found already fixed** since July (`dc8886f1`, his), **BUG-33 filed and fixed** (host-only UTF-8 mangling, char signedness — measured against all three toolchains). Board: schema-memory suite 3/3, heap drift zero with a multiselect in the loop |
 | WebUI | SIZE-1, BUG-34 | 2026-08-31 — WebUI.h 1008 → 769 + `SchemaMemProbe.h` (121) + `UpdateBuilder.h` (90); the schema chunk loop, which existed three times, deduplicated into `SchemaChunkState::writeChunk` (ProviderRegistry.h 345 → 441) and finally testable — ten new native tests, component count 92 → 102. **SIZE-1 closed** (3 → 2 open HIGH — only ARCH-1/ARCH-2 remain), **BUG-34 filed and fixed**: `/api/ui/schema` had never received v1.5.0's truncation fix, and the tests found the stall fires at ordinary chunk sizes, not only below the escape floor. Fork's two WebUI.h regions untouched. Board: heap suite 6/6 and schema-memory 3/3 on the nodemcuv2 |
+| LED (docs only) | ARCH-2 | 2026-08-31 — closed **by measurement, no code change**: the prescribed remedy already existed (LEDWebUI.h separate since ≥2025-09-26, so "WebUI in one class" was false at filing; the pure effect engine landed with PR #17). BUG-19 cited as the structure's one recorded defect, closed by tests not by splitting. LED-F1, the cited source, does not exist in the repository. **ARCH-2 closed** (2 → 1 open HIGH — ARCH-1 is the last) |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -2174,11 +2175,49 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Problem**: Orchestrates 10 components, handles registration, persistence, events, state, console commands, boot diagnostics.
 - **Fix**: Extract `SystemComponentRegistrar`, `SystemEventOrchestrator`, `SystemConsoleCommands`.
 
-### ARCH-2 — LED: God Object [HIGH]
+### ARCH-2 — LED: God Object [HIGH] — **DONE (2026-08-31, by measurement — the prescribed remedy already existed)**
 
-- **Ref**: LED-F1
-- **Problem**: Combines config management, hardware pin control, PWM, effect calculations, state management, WebUI in one class.
-- **Fix**: Extract effect engine and WebUI into separate classes.
+- **Ref**: LED-F1 — **which does not exist in the repository**; like BUG-2's,
+  this severity was inherited from a sweep whose reasoning cannot be read,
+  and was never argued in the entry.
+- **Problem (as filed)**: Combines config management, hardware pin control,
+  PWM, effect calculations, state management, WebUI in one class.
+- **Fix (as filed)**: Extract effect engine and WebUI into separate classes.
+- **Both halves of that remedy exist, dated**: "WebUI in one class" was
+  **false at filing** (2026-03-10) — `LEDWebUI.h` has been a separate class
+  since at least 2025-09-26, the filing-era LED.h (482 lines) does not even
+  override `getWebUIProvider()`, and `LEDWebUI` is referenced by no
+  production code, only its 23-test suite and the `LEDWithWebUI` example
+  that pairs it manually — the opt-in design LED.h's own comment describes.
+  The effect engine was extracted by **PR #17 (2026-08-23)** as pure statics
+  (`effectBrightness`/`rainbowColor`/`scaleToMax`/`pwmValue` — "no hardware
+  and no member state"), `updateEffects()` calls them with no curve math
+  left inline, and `test_led_effects` (29 tests) tests them directly. The
+  entry never moved — the BUG-26 staleness shape.
+- **The structure's one recorded defect is cited, not hidden**: BUG-19
+  (`addLED()` after `begin()` desynchronized `ledConfigs` from `ledStates`,
+  MEDIUM) is exactly the shared-state harm a god-object entry predicts — and
+  it was closed in PR #17 by a local fix and a 35-test suite; no split of
+  this class would have prevented it, the two vectors would still have to
+  agree across whatever boundary separated them.
+- **What remains passes every measurement Constitution XIII provides** (its
+  Code Smell Indicators — the qualitative principle reduced to its stated
+  measurables, explicitly): 544 lines (< 800); largest function
+  `updateEffects` ~33 (< 50); inheritance depth 1 (< 3); declared
+  dependencies 0 (< 5). Several responsibilities remain by SRP's
+  reason-to-change test — conceded; KISS and YAGNI carry the same
+  constitutional force, no measured harm remains, and the component holds
+  **103 native tests, run green from clean at this closure** (35/29/23/16
+  across its four suites).
+- **Not ARCH-1's template**: System orchestrates ten components across three
+  files behind 54 `__has_include` directives with persistence, console and
+  boot diagnostics — the indicators that all pass here are the ones System
+  strains. This closure rests on ARCH-2's prescribed extractions existing
+  and being tested, which ARCH-1 does not share.
+- No code changed in this lot. Argument:
+  `_bmad-output/implementation-artifacts/spec-arch-2-led-god-object.md`
+  (v2 after adversarial review — whose central catch was BUG-19, thirty
+  lines from this entry, contradicting v1's "no defect" claim).
 
 ### ARCH-3 — System: `__has_include` count comment wrong [MEDIUM] — **DONE (2026-08-23, PR #18)**
 
@@ -2758,22 +2797,20 @@ not.
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
-| 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
+| 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 1H, 0M (**ARCH-3 done**; **ARCH-2 done 2026-08-31 by measurement** — both halves of its prescribed remedy already existed, one false at filing, one delivered by PR #17; no code changed) |
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **130 items** | | **0C, 2H, 38M, 34L** (69 resolved) |
+| **Total** | **130 items** | | **0C, 1H, 38M, 34L** (70 resolved) |
 
-The severity columns sum across the rows: 2 HIGH, both Architecture's —
-ARCH-1 and ARCH-2, the two items that do not measure. **Security, Memory
-Safety, Code Safety, Test Coverage and now File Size all sit at zero HIGH**;
-what remains of the HIGH column is architecture, nothing else. The rows were
-checked against the section headings rather than only re-summed — the sweep
-below, re-run for the SIZE-1 lot, reports 35 `[HIGH]` headings, 33 with
-evidence, 2 open, and the two are the two named here. SIZE-1 gained its DONE
-marker this lot; BUG-34 is a `[MEDIUM]` heading, so it never enters the
-`[HIGH]` sweep. The MEDIUM column sums to 38: 6 + 4 + 6 + 4 + 3 + 0 + 5 +
-10 + 0.
+The severity columns sum across the rows: **1 HIGH — ARCH-1, alone.** Every
+other section sits at zero HIGH for the first time in this roadmap's
+existence. The rows were checked against the section headings rather than
+only re-summed — the sweep below, re-run for the ARCH-2 lot, reports 35
+`[HIGH]` headings, 34 with evidence, 1 open, and the one is ARCH-1. ARCH-2
+gained its DONE marker this lot with no code change — its prescribed remedy
+was measured to already exist. The MEDIUM column sums to 38: 6 + 4 + 6 +
+4 + 3 + 0 + 5 + 10 + 0.
 
 One lot earlier (TEST-4's): the total row read **128 items, 0C, 4H, 40M, 34L,
 63 resolved**, the four open HIGH being SIZE-1, SIZE-2, ARCH-1, ARCH-2 — kept
@@ -2856,7 +2893,12 @@ crosses; BUG-33 (LOW) and the BUG-26/BUG-28 closures (MEDIUM) never enter this
 sweep: open 4 → 3 (SIZE-1, ARCH-1, ARCH-2), with-evidence 31 → 32. Re-run
 after SIZE-1's lot (2026-08-31, same day again): **35 headings, 33 with
 evidence, 2 open** — SIZE-1 crosses; BUG-34 (MEDIUM) never enters this sweep:
-open 3 → 2 (ARCH-1, ARCH-2), with-evidence 32 → 33.
+open 3 → 2 (ARCH-1, ARCH-2), with-evidence 32 → 33. Re-run after ARCH-2's
+lot (2026-08-31 still): **35 headings, 34 with evidence, 1 open** — ARCH-2
+crosses on its new DONE marker, no heading added (the lot files no ID):
+open 2 → 1 (ARCH-1), with-evidence 33 → 34. Of the 17 headings without a
+marker, 15 clear on the resolved-table or merged-lot criteria as before;
+the survivor is ARCH-1.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
@@ -2935,7 +2977,7 @@ of built through ArduinoJson — byte-identical for the content any provider
 ships (pinned by parse-content tests; the 0x08/0x0C short-forms and the
 embedded-NUL asymmetry are recorded as unpinned residue in the SIZE-2 entry).
 
-**This change (2026-08-31, SIZE-1's lot — the third of the day):** **SIZE-1
+**The lot before this one (2026-08-31, SIZE-1's lot — the third of the day):** **SIZE-1
 closes** (HIGH 3 → 2), leaving the HIGH column entirely to Architecture, and
 **File Size joins the zero-HIGH sections**. **BUG-34 is filed and fixed
 in-lot**, MEDIUM — the `/api/ui/schema` truncation drift the dedup exposed,
@@ -2949,6 +2991,20 @@ isolated in its own commit: `/api/ui/schema` now retries where it silently
 truncated. The refactor commit changes none — both stall shapes, the skip
 logic and the crowding are pinned by ten new native tests that could not
 exist before the extraction.
+
+**This change (2026-08-31, ARCH-2's lot — the fourth of the day, and the
+first to close a HIGH without changing code):** **ARCH-2 closes by
+measurement** (HIGH 2 → 1 — **ARCH-1 is the last HIGH in the roadmap**).
+Its prescribed remedy was found already delivered: the WebUI half was false
+at filing (LEDWebUI.h separate since at least 2025-09-26), the effect-engine
+half landed with PR #17 on 2026-08-23, and the entry had simply never moved
+— the BUG-26 staleness shape, on a HIGH this time. The one recorded
+structural defect (BUG-19) is cited in-entry rather than hidden, with the
+argument for why the split would have relocated rather than removed it. No
+new ID is filed; the LED suites ran 103/103 green from clean as the
+closure's measurement. The decision standard is BUG-2's — severity and
+remedy checked against the code they blame — with the opposite outcome:
+nothing needed re-arguing, because the remedy existed.
 
 **Why TEST-6 waited for lot B.** BUG-31 was the first of its two lots and did not
 close TEST-6: doing so then would have claimed coverage of three providers it never
@@ -3060,6 +3116,14 @@ ID ranges gain BUG-34. The 13-item gap is still 13 (143 − 130). Remaining
 Safety item it never set out to find: BUG-34 fell out of diffing the two
 route lambdas before deduplicating them, the drift visible only once the two
 copies sat side by side.
+
+**ARCH-2's lot moves only the crossing.** No new ID — the first lot in the
+run to file nothing — so the stated total stays 130; ARCH-2 crosses from
+remaining to resolved (resolved +1, remaining −1): 69 + 74 = 143 to
+70 + 73 = 143. The 13-item gap is still 13 (143 − 130). Remaining 73 =
+1 HIGH + 38 MEDIUM + 34 LOW. All three families move by zero or by the one
+crossing, which is what a no-code, no-ID lot should look like in the
+arithmetic.
 
 ---
 
