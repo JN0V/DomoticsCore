@@ -36,6 +36,9 @@ void tearDown(void) {
     // The scripted scan table is process-global. Leaving one test's networks
     // behind would make the next one pass or fail for the previous test's data.
     HAL::WiFiImpl::resetScanForTest();
+    // Same for the mode/AP record (TEST-4): a recording setMode leaks
+    // AccessPoint from any AP fixture into the next test's isAPMode().
+    HAL::WiFiImpl::resetWifiStateForTest();
 }
 
 // ============================================================================

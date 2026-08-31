@@ -11,6 +11,7 @@
 
 #include <string>
 #include <algorithm>
+#include <cassert>  // advanceMillisForTest refuses to run without an installed override
 #include <cstdint>
 #include <cstring>
 #include <cmath>
@@ -271,10 +272,44 @@ inline bool isLoggerReady() {
     return false; // No logging on stub platforms
 }
 
+// ---------------------------------------------------------------------------
+// Scriptable clock (TEST-4).
+//
+// The WiFi component's remaining untested paths are all timer-gated — a 15 s
+// connection timeout, a 5 s retry, a 30 s STA fallback — and the native clock
+// was the wall clock, so a host test of the timeout would have taken 15 real
+// seconds. The override is off by default: every suite that does not opt in
+// sees the same steady_clock this file always returned.
+//
+// Install the override BEFORE constructing the component under test.
+// NonBlockingDelay captures getMillis() at construction; a timer anchored to
+// the wall clock and then read against an override at 0 wraps and reports
+// ready once before re-anchoring — one spurious tick, enough to corrupt a
+// scenario.
+// ---------------------------------------------------------------------------
+inline bool millisOverriddenForTest = false;
+inline unsigned long overriddenMillisForTest = 0;
+
+inline void setMillisForTest(unsigned long ms) {
+    millisOverriddenForTest = true;
+    overriddenMillisForTest = ms;
+}
+inline void advanceMillisForTest(unsigned long ms) {
+    // Advancing a clock that is not installed would silently leave the wall
+    // clock in charge — fail loudly instead.
+    assert(millisOverriddenForTest && "setMillisForTest() must be called before advanceMillisForTest()");
+    overriddenMillisForTest += ms;
+}
+inline void resetMillisForTest() {
+    millisOverriddenForTest = false;
+    overriddenMillisForTest = 0;
+}
+
 /**
  * @brief Get current milliseconds for stub platforms (native time)
  */
 inline unsigned long getMillis() {
+    if (millisOverriddenForTest) return overriddenMillisForTest;
     auto now = std::chrono::steady_clock::now();
     auto duration = now.time_since_epoch();
     return static_cast<unsigned long>(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count());
@@ -383,13 +418,22 @@ inline void getRandomBytes(void* buf, size_t len) {
     for (size_t i = 0; i < len; ++i) p[i] = static_cast<uint8_t>(0xA5 ^ (i & 0xFF));
 }
 
+// Scriptable heap (TEST-4). The fixed 65536 below was chosen to keep every
+// low-heap guard closed; the WiFi fallback ladder (2000/2500/3500/6500/10000)
+// is nothing but such guards, so none of its branches was reachable natively.
+// Default unchanged.
+inline uint32_t stubbedFreeHeapForTest = 65536;
+
+inline void setFreeHeapForTest(uint32_t bytes) { stubbedFreeHeapForTest = bytes; }
+inline void resetFreeHeapForTest() { stubbedFreeHeapForTest = 65536; }
+
 /**
  * @brief Get free heap memory (stub - returns realistic value)
  * Returns 65536 to avoid triggering low-heap guards in components
  * like WifiComponent that gate functionality on heap thresholds.
  */
 inline uint32_t getFreeHeap() {
-    return 65536;
+    return stubbedFreeHeapForTest;
 }
 
 /**
@@ -403,10 +447,18 @@ inline uint32_t getCpuFreqMHz() {
 #endif
 }
 
+// Restart observability (TEST-4). The native body is a no-op, which made the
+// WiFi reboot-to-STA path — whose only effect is this call — unassertable. The
+// count is per-call, not latched: a pending reboot whose timer keeps firing
+// increments it on every fire.
+inline unsigned int restartCountForTest = 0;
+inline void resetRestartCountForTest() { restartCountForTest = 0; }
+
 /**
  * @brief Software reset (stub)
  */
 inline void restart() {
+    ++restartCountForTest;
 #if defined(__AVR__)
     asm volatile ("jmp 0");
 #endif

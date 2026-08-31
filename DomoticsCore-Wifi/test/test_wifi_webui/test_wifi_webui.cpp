@@ -46,6 +46,10 @@ void tearDown(void) {
         delete testCore;
         testCore = nullptr;
     }
+    // The mode/AP record in the WiFi stub is process-global (TEST-4); every
+    // setUp here runs an AP fixture, so reset it rather than leak AccessPoint
+    // into the next test.
+    HAL::WiFiImpl::resetWifiStateForTest();
 }
 
 // ============================================================================
