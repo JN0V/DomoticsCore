@@ -59,6 +59,26 @@ void test_an_over_long_name_is_capped_at_31(void) {
     TEST_ASSERT_EQUAL_STRING("0123456789012345678901234567890", sys.getConfig().deviceName.c_str());
 }
 
+// --- the cap boundary: exactly 31 is kept whole, exactly 32 caps to 31 ---------
+void test_the_cap_boundary_at_31_and_32(void) {
+    const char* n31 = "0123456789012345678901234567890";   // 31
+    const char* n32 = "01234567890123456789012345678901";  // 32
+    {
+        SystemInfoComponent sys;
+        SystemInfoWebUI provider(&sys);
+        TEST_ASSERT_TRUE(ok(provider.handleWebUIRequest("system_settings", "/", "POST", action("device_name", n31))));
+        TEST_ASSERT_EQUAL_UINT(31u, sys.getConfig().deviceName.length());
+        TEST_ASSERT_EQUAL_STRING(n31, sys.getConfig().deviceName.c_str());  // kept whole
+    }
+    {
+        SystemInfoComponent sys;
+        SystemInfoWebUI provider(&sys);
+        TEST_ASSERT_TRUE(ok(provider.handleWebUIRequest("system_settings", "/", "POST", action("device_name", n32))));
+        TEST_ASSERT_EQUAL_UINT(31u, sys.getConfig().deviceName.length());   // capped by one
+        TEST_ASSERT_EQUAL_STRING(n31, sys.getConfig().deviceName.c_str());
+    }
+}
+
 // --- an empty name is refused, and changes nothing (fails vs unfixed: blanks it) -
 void test_an_empty_name_is_refused(void) {
     SystemInfoComponent sys;
@@ -106,6 +126,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_a_normal_name_is_accepted);
     RUN_TEST(test_an_over_long_name_is_capped_at_31);
+    RUN_TEST(test_the_cap_boundary_at_31_and_32);
     RUN_TEST(test_an_empty_name_is_refused);
     RUN_TEST(test_an_unknown_field_is_refused);
     RUN_TEST(test_a_non_post_is_refused);

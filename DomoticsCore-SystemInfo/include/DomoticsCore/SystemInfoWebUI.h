@@ -123,7 +123,10 @@ public:
                     }
                     // Cap at 31, the char[31] the browser header and WebUIConfig
                     // already truncate to (WebUIConfig.h:17). SystemConfig keeps the
-                    // untruncated String, so this makes two ends agree, not all.
+                    // untruncated String, so this makes two ends agree, not all. The
+                    // cap is byte-based, matching WebUIConfig: a UTF-8 name whose 31st
+                    // byte is mid-sequence loses that code point, which the escaper
+                    // renders as U+FFFD — cosmetic, not corruption, and consistent.
                     String capped = value.length() > 31 ? value.substring(0, 31) : value;
 
                     // Use Get → Override → Set pattern

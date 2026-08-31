@@ -26,6 +26,12 @@ namespace WebUI {
  * keeps its own resumable escaper for `uint8_t*` chunk boundaries; this does not
  * replace it. It replaces the dead `printJsonEscaped` that `WebUI.h` once carried
  * and nothing called (removed with BUG-32).
+ *
+ * It guarantees valid JSON *structure*, not valid UTF-8: bytes >= 0x80 pass
+ * through as data, so a caller whose `cap` runs out mid-way through a multi-byte
+ * sequence emits a truncated code point (still structurally valid JSON, which a
+ * browser renders as U+FFFD). The device-name sink cannot hit this — its input is
+ * <= 31 bytes into a 188-byte buffer — but a future caller with a tight buffer can.
  */
 inline size_t jsonEscape(char* out, size_t cap, const char* in) {
     if (!out || cap == 0) return 0;
