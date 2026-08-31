@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include "DomoticsCore/Platform_HAL.h"  // DSNPRINTF_P (flash format on ESP8266)
 #include "DomoticsCore/WebUI/JsonEscape.h"
 
 namespace DomoticsCore {
@@ -32,11 +33,18 @@ inline int buildSystemHeader(char* buf, size_t cap, uint32_t uptime, uint32_t he
                              int clients, const char* deviceName) {
     // 31 * 6 (\u00xx) + 1: the worst case for the char[32] WebUIConfig.deviceName,
     // which setDeviceName truncates at 31. Sized here so a longer name cannot make
-    // the escaper stop mid-name and drop the tail.
+    // the escaper stop mid-name and drop the tail. On the stack, not static: this
+    // is transient and the caller is not deeply nested, so 188 bytes of stack for
+    // the duration of one call beats 188 bytes of permanent BSS on a device whose
+    // constraint is available heap.
     char escaped[188];
     jsonEscape(escaped, sizeof(escaped), deviceName);
 
-    const int n = snprintf(buf, cap,
+    // DSNPRINTF_P keeps the format literal in flash on ESP8266 (its comment names
+    // "WebUI JSON" for exactly this call); a plain snprintf would put ~88 bytes in
+    // DRAM on the platform this framework treats as the tight one. Native falls
+    // back to snprintf (Platform_HAL.h).
+    const int n = DSNPRINTF_P(buf, cap,
         "{\"system\":{\"uptime\":%u,\"heap\":%u,\"clients\":%d,\"device_name\":\"%s\"},\"contexts\":{",
         static_cast<unsigned>(uptime), static_cast<unsigned>(heap), clients, escaped);
 

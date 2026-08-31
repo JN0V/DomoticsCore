@@ -40,7 +40,8 @@ versions may sit still while fixes land.
 | Core, Wifi, Storage, OTA | BUG-30 | 2026-08-28 — the guard, and the ten sites the assert enumerated |
 | Core | BUG-2 | 2026-08-28 — both recorded fixes measured impossible; contract narrowed, severity re-argued HIGH → MEDIUM, no code change |
 | OTA | TEST-8 hole 4 (part) | PR #40 — 2026-08-27, a real multipart POST against a board, refused and accepted paths both run, each with a removal check that discriminates. What remains of TEST-8 is the browser's own view |
-| HomeAssistant | BUG-31 | 2026-08-29 — TEST-6's lot A. The HA settings handler read six parameters the dispatcher never sends; filed and closed in the same lot, raising TEST-9 and DC-14. **TEST-6 stays open** — its lot B is `SystemInfoWebUI`'s escaping |
+| HomeAssistant | BUG-31 | 2026-08-29 — TEST-6's lot A. The HA settings handler read six parameters the dispatcher never sends; filed and closed in the same lot, raising TEST-9 and DC-14. TEST-6 stayed open for lot B |
+| WebUI, SystemInfo, Storage | BUG-32, TEST-6 | 2026-08-31 — TEST-6's lot B. `device_name` was interpolated raw into every update; escaped at the sink (an extracted `buildSystemHeader`, the first slice of SIZE-1), with `SystemInfoWebUI` validation and Storage coverage. **BUG-32 filed and closed, TEST-6 closed** (6 → 5 open HIGH) |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -63,7 +64,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 787 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, and 767 after BUG-31's provider suite on 2026-08-29; 787 adds BUG-32's twenty on 2026-08-31 — eight in `test_system_header`, seven in `test_systeminfo_webui`, four in `test_storage_webui` and one in `test_system_persistence` |
+| ✅ | The 13 native projects run — 788 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, and 767 after BUG-31's provider suite on 2026-08-29; 788 adds BUG-32's twenty-one on 2026-08-31 — eight in `test_system_header`, eight in `test_systeminfo_webui`, four in `test_storage_webui` and one in `test_system_persistence` |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -1530,7 +1531,7 @@ one worth a one-line change, and six rows that are not defects.
   guard as a second, separate measure. The escaper never emits a partial escape
   sequence; the worst case is a `char[32]` name at 31×6+1 = 188 bytes.
 - **Verified natively**, with removal checks: `test_system_header` (8 tests, five
-  red against the raw-`%s` builder), `test_systeminfo_webui` (7 tests; cap and
+  red against the raw-`%s` builder), `test_systeminfo_webui` (8 tests; cap and
   empty go red, the null test SEGFAULTs without its guard), `test_storage_webui`
   (4 coverage tests), and the persisted-quote round trip split across
   `test_system_persistence` and `test_system_header`. The ESP8266 crowding — up to
@@ -2686,9 +2687,12 @@ never reaches the table because a DONE item is not counted there — the same
 convention SEC-8 was recorded under.
 
 The **item count still does not reconcile**, and did not before this change:
-55 resolved + 72 remaining is 127, against a stated 115, while counting the ID
+56 resolved + 72 remaining is 128, against a stated 115, while counting the ID
 ranges in the Items column gives 119 (118 with STOR-ESP-1 withdrawn). Three
-figures, three answers. Left as found rather than re-baselined to whichever one
+figures, three answers. (This line read "55 … is 127" — a gap of 12 — until the
+BUG-32 lot's audit caught it against the constant 13 the paragraphs below assert
+and the "56 of 115" CLAUDE.md recorded; corrected here, a pre-existing slip, not
+this lot's.) Left as found rather than re-baselined to whichever one
 looks tidiest — someone has to decide what the column is counting before it can
 be corrected. Each of the three moved by exactly one in that lot — one new ID,
 TEST-8 — so the gaps were unchanged; nothing was hidden and nothing was fixed.
