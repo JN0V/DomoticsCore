@@ -293,6 +293,102 @@ public:
         const WebUIContext* currentContextPtr = nullptr;
         StreamingContextSerializer serializer;
         bool serializingContext = false;
+
+        /**
+         * @brief Write the next chunk of the `[context, context, ...]` schema array.
+         *
+         * Iterates providers/contexts, placing commas and resuming the streaming
+         * serializer across calls. Returns the number of bytes written and sets
+         * `finished` after the closing `]`. A return of 0 with `finished` still
+         * false means the serializer could not make progress in `maxLen` bytes
+         * (escape sequences are atomic within one write) — the HTTP layer decides
+         * whether that means retry or end; this function never encodes that
+         * policy. When a comma has been placed but the buffer is exhausted, the
+         * context index is rewound so the context is re-fetched next call.
+         */
+        size_t writeChunk(uint8_t* buffer, size_t maxLen) {
+            size_t written = 0;
+            if (finished) return 0;
+
+            if (!began) {
+                if (maxLen < 1) return 0;
+                buffer[written++] = '[';
+                began = true;
+            }
+
+            while (written < maxLen && !finished) {
+                if (serializingContext) {
+                    size_t n = serializer.write(buffer + written, maxLen - written);
+                    written += n;
+
+                    if (serializer.isComplete()) {
+                        serializingContext = false;
+                        needComma = true;
+                        currentContextPtr = nullptr;
+                    } else if (n == 0) {
+                        break;
+                    }
+                    continue;
+                }
+
+                bool hasNext = false;
+                while (providerIndex < providers.size()) {
+                    IWebUIProvider* provider = providers[providerIndex];
+                    if (!provider || !provider->isWebUIEnabled()) {
+                        providerIndex++;
+                        contextIndexInProvider = 0;
+                        continue;
+                    }
+
+                    const WebUIContext* ctxPtr = provider->getContextAtRef(contextIndexInProvider);
+                    if (ctxPtr) {
+                        currentContextPtr = ctxPtr;
+                        contextIndexInProvider++;
+                        hasNext = true;
+                        break;
+                    }
+
+                    providerIndex++;
+                    contextIndexInProvider = 0;
+                }
+
+                if (!hasNext) {
+                    if (written < maxLen) {
+                        buffer[written++] = ']';
+                    }
+                    finished = true;
+                    std::vector<IWebUIProvider*>().swap(providers);
+                    return written;
+                }
+
+                if (!currentContextPtr || !currentContextPtr->getContextIdCStr()[0]) continue;
+
+                if (needComma) {
+                    if (written < maxLen) {
+                        buffer[written++] = ',';
+                    } else {
+                        contextIndexInProvider--;
+                        return written;
+                    }
+                }
+
+                serializer.begin(*currentContextPtr);
+                serializingContext = true;
+
+                size_t n = serializer.write(buffer + written, maxLen - written);
+                written += n;
+
+                if (serializer.isComplete()) {
+                    serializingContext = false;
+                    needComma = true;
+                    currentContextPtr = nullptr;
+                } else if (n == 0) {
+                    break;
+                }
+            }
+
+            return written;
+        }
     };
 
     std::shared_ptr<SchemaChunkState> prepareSchemaGeneration() {

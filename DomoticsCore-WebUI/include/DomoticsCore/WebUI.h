@@ -31,6 +31,8 @@
 #include "DomoticsCore/WebUI/WebServerManager.h"
 #include "DomoticsCore/WebUI/WebSocketHandler.h"
 #include "DomoticsCore/WebUI/SystemHeader.h"
+#include "DomoticsCore/WebUI/SchemaMemProbe.h"
+#include "DomoticsCore/WebUI/UpdateBuilder.h"
 
 namespace DomoticsCore {
 namespace Components {
@@ -66,21 +68,8 @@ private:
     // Shared WS send buffer (single-threaded, safe to share between sendWebSocketUpdate/sendWebSocketUpdates)
     static char wsBuffer_[WEBUI_WS_BUFFER_SIZE];
 
-    struct SchemaMemProbe {
-        bool active = false;
-        uint32_t seq = 0;
-        unsigned long t0 = 0;
-        uint32_t heapBefore = 0;
-        uint32_t maxBefore = 0;
-        uint32_t heapAfterSend = 0;
-        uint32_t maxAfterSend = 0;
-        uint8_t stage = 0;
-    };
-
-    static constexpr uint8_t SCHEMA_PROBE_SLOTS = 6;
-    SchemaMemProbe schemaMemProbes[SCHEMA_PROBE_SLOTS];
-    uint32_t schemaProbeSeq = 0;
-    uint8_t schemaProbeNext = 0;
+    // Heap-staging diagnostics for /api/ui/schema (see WebUI/SchemaMemProbe.h)
+    WebUI::SchemaMemProbes schemaProbes_;
     
     // Config persistence callback
     std::function<void(const WebUIConfig&)> onConfigChanged;
@@ -165,39 +154,7 @@ public:
 
         webSocket->loop();
 
-        for (uint8_t i = 0; i < SCHEMA_PROBE_SLOTS; i++) {
-            SchemaMemProbe& p = schemaMemProbes[i];
-            if (!p.active) continue;
-
-            const unsigned long now = HAL::Platform::getMillis();
-            const unsigned long dt = now - p.t0;
-
-            if (p.stage == 0 && dt >= 500) {
-                const uint32_t h = HAL::Platform::getFreeHeap();
-                const uint32_t m = HAL::Platform::getMaxAllocHeap();
-                DLOG_D(LOG_WEB, "Schema mem #%u +500ms: heap=%u (delta=%d), max=%u (delta=%d)",
-                       (unsigned)p.seq,
-                       (unsigned)h, (int)h - (int)p.heapBefore,
-                       (unsigned)m, (int)m - (int)p.maxBefore);
-                p.stage = 1;
-            } else if (p.stage == 1 && dt >= 2000) {
-                const uint32_t h = HAL::Platform::getFreeHeap();
-                const uint32_t m = HAL::Platform::getMaxAllocHeap();
-                DLOG_D(LOG_WEB, "Schema mem #%u +2s: heap=%u (delta=%d), max=%u (delta=%d)",
-                       (unsigned)p.seq,
-                       (unsigned)h, (int)h - (int)p.heapBefore,
-                       (unsigned)m, (int)m - (int)p.maxBefore);
-                p.stage = 2;
-            } else if (p.stage == 2 && dt >= 10000) {
-                const uint32_t h = HAL::Platform::getFreeHeap();
-                const uint32_t m = HAL::Platform::getMaxAllocHeap();
-                DLOG_D(LOG_WEB, "Schema mem #%u +10s: heap=%u (delta=%d), max=%u (delta=%d)",
-                       (unsigned)p.seq,
-                       (unsigned)h, (int)h - (int)p.heapBefore,
-                       (unsigned)m, (int)m - (int)p.maxBefore);
-                p.active = false;
-            }
-        }
+        schemaProbes_.tick();
 
         if (webSocket->shouldSendUpdates()) {
             sendWebSocketUpdates();
@@ -471,67 +428,8 @@ private:
                 AsyncWebServerResponse* response = request->beginChunkedResponse(
                     "application/json",
                     [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
-                        size_t written = 0;
-                        if (!state || state->finished) return 0;
-                        if (!state->began) {
-                            if (maxLen < 1) return RESPONSE_TRY_AGAIN;
-                            buffer[written++] = '[';
-                            state->began = true;
-                        }
-                        while (written < maxLen && !state->finished) {
-                            if (state->serializingContext) {
-                                size_t n = state->serializer.write(buffer + written, maxLen - written);
-                                written += n;
-                                if (state->serializer.isComplete()) {
-                                    state->serializingContext = false;
-                                    state->needComma = true;
-                                    state->currentContextPtr = nullptr;
-                                } else if (n == 0) break;
-                                continue;
-                            }
-                            bool hasNext = false;
-                            while (state->providerIndex < state->providers.size()) {
-                                IWebUIProvider* provider = state->providers[state->providerIndex];
-                                if (!provider || !provider->isWebUIEnabled()) {
-                                    state->providerIndex++;
-                                    state->contextIndexInProvider = 0;
-                                    continue;
-                                }
-                                const WebUIContext* ctxPtr = provider->getContextAtRef(state->contextIndexInProvider);
-                                if (ctxPtr) {
-                                    state->currentContextPtr = ctxPtr;
-                                    state->contextIndexInProvider++;
-                                    hasNext = true;
-                                    break;
-                                }
-                                state->providerIndex++;
-                                state->contextIndexInProvider = 0;
-                            }
-                            if (!hasNext) {
-                                if (written < maxLen) buffer[written++] = ']';
-                                state->finished = true;
-                                std::vector<IWebUIProvider*>().swap(state->providers);
-                                return written;
-                            }
-                            if (!state->currentContextPtr || !state->currentContextPtr->getContextIdCStr()[0]) continue;
-                            if (state->needComma) {
-                                if (written < maxLen) {
-                                    buffer[written++] = ',';
-                                } else {
-                                    state->contextIndexInProvider--;
-                                    return written;
-                                }
-                            }
-                            state->serializer.begin(*state->currentContextPtr);
-                            state->serializingContext = true;
-                            size_t n = state->serializer.write(buffer + written, maxLen - written);
-                            written += n;
-                            if (state->serializer.isComplete()) {
-                                state->serializingContext = false;
-                                state->needComma = true;
-                                state->currentContextPtr = nullptr;
-                            } else if (n == 0) break;
-                        }
+                        if (!state) return 0;
+                        size_t written = state->writeChunk(buffer, maxLen);
                         // If nothing was written but serialization isn't done,
                         // tell the server to retry instead of ending the response
                         if (written == 0 && !state->finished) return RESPONSE_TRY_AGAIN;
@@ -745,25 +643,13 @@ private:
                 return;
             }
 
-            SchemaMemProbe& probe = schemaMemProbes[schemaProbeNext % SCHEMA_PROBE_SLOTS];
-            schemaProbeNext = (uint8_t)(schemaProbeNext + 1);
+            const WebUI::SchemaMemProbes::Armed probe = schemaProbes_.arm();
 
-            probe.active = true;
-            probe.seq = ++schemaProbeSeq;
-            const uint32_t schemaSeq = probe.seq;
-            probe.stage = 0;
-            probe.t0 = HAL::Platform::getMillis();
-            probe.heapBefore = HAL::Platform::getFreeHeap();
-            probe.maxBefore = HAL::Platform::getMaxAllocHeap();
-
-            const uint32_t heapBefore = probe.heapBefore;
-            const uint32_t maxBefore = probe.maxBefore;
-
-            request->onDisconnect([schemaSeq, heapBefore, maxBefore]() {
+            request->onDisconnect([probe]() {
                 DLOG_D(LOG_WEB, "Schema disconnect #%u: heap=%u (delta=%d), max=%u (delta=%d)",
-                       (unsigned)schemaSeq,
-                       (unsigned)HAL::Platform::getFreeHeap(), (int)HAL::Platform::getFreeHeap() - (int)heapBefore,
-                       (unsigned)HAL::Platform::getMaxAllocHeap(), (int)HAL::Platform::getMaxAllocHeap() - (int)maxBefore);
+                       (unsigned)probe.seq,
+                       (unsigned)HAL::Platform::getFreeHeap(), (int)HAL::Platform::getFreeHeap() - (int)probe.heapBefore,
+                       (unsigned)HAL::Platform::getMaxAllocHeap(), (int)HAL::Platform::getMaxAllocHeap() - (int)probe.maxBefore);
             });
 
             std::shared_ptr<WebUI::ProviderRegistry::SchemaChunkState> state = registry->prepareSchemaGeneration();
@@ -771,100 +657,15 @@ private:
             AsyncWebServerResponse* response = request->beginChunkedResponse(
                 "application/json",
                 [state](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
-                    size_t written = 0;
-
-                    if (!state || state->finished) return 0;
-
-                    if (!state->began) {
-                        if (maxLen < 1) return 0;
-                        buffer[written++] = '[';
-                        state->began = true;
-                    }
-
-                    while (written < maxLen && !state->finished) {
-                        if (state->serializingContext) {
-                            size_t n = state->serializer.write(buffer + written, maxLen - written);
-                            written += n;
-
-                            if (state->serializer.isComplete()) {
-                                state->serializingContext = false;
-                                state->needComma = true;
-                                state->currentContextPtr = nullptr;
-                            } else if (n == 0) {
-                                break;
-                            }
-                            continue;
-                        }
-
-                        bool hasNext = false;
-                        while (state->providerIndex < state->providers.size()) {
-                            IWebUIProvider* provider = state->providers[state->providerIndex];
-                            if (!provider || !provider->isWebUIEnabled()) {
-                                state->providerIndex++;
-                                state->contextIndexInProvider = 0;
-                                continue;
-                            }
-
-                            const WebUIContext* ctxPtr = provider->getContextAtRef(state->contextIndexInProvider);
-                            if (ctxPtr) {
-                                state->currentContextPtr = ctxPtr;
-                                state->contextIndexInProvider++;
-                                hasNext = true;
-                                break;
-                            }
-
-                            state->providerIndex++;
-                            state->contextIndexInProvider = 0;
-                        }
-
-                        if (!hasNext) {
-                            if (written < maxLen) {
-                                buffer[written++] = ']';
-                            }
-                            state->finished = true;
-                            std::vector<IWebUIProvider*>().swap(state->providers);
-                            return written;
-                        }
-
-                        if (!state->currentContextPtr || !state->currentContextPtr->getContextIdCStr()[0]) continue;
-
-                        if (state->needComma) {
-                            if (written < maxLen) {
-                                buffer[written++] = ',';
-                            } else {
-                                state->contextIndexInProvider--;
-                                return written;
-                            }
-                        }
-
-                        state->serializer.begin(*state->currentContextPtr);
-                        state->serializingContext = true;
-
-                        size_t n = state->serializer.write(buffer + written, maxLen - written);
-                        written += n;
-
-                        if (state->serializer.isComplete()) {
-                            state->serializingContext = false;
-                            state->needComma = true;
-                            state->currentContextPtr = nullptr;
-                        } else if (n == 0) {
-                            break;
-                        }
-                    }
-
-                    return written;
+                    if (!state) return 0;
+                    return state->writeChunk(buffer, maxLen);
                 });
 
             addCorsHeaders(response);
             response->addHeader("Connection", "close");
             request->send(response);
 
-            probe.heapAfterSend = HAL::Platform::getFreeHeap();
-            probe.maxAfterSend = HAL::Platform::getMaxAllocHeap();
-            DLOG_D(LOG_WEB, "Schema queued #%u: heap=%u (delta=%d), max=%u (delta=%d)",
-                   (unsigned)probe.seq,
-                   (unsigned)probe.heapAfterSend, (int)probe.heapAfterSend - (int)probe.heapBefore,
-                   (unsigned)probe.maxAfterSend, (int)probe.maxAfterSend - (int)probe.maxBefore);
+            schemaProbes_.logQueued(probe);
         });
     }
     
@@ -928,55 +729,15 @@ private:
     }
 
     // Build JSON update into wsBuffer_. Returns length, or 0 on failure.
-    // forceFull=true sends all contexts (for polling), false uses delta check (for SSE broadcast).
+    // forceFull=true sends all contexts (for polling), false uses delta check
+    // (for SSE broadcast). The assembly lives in WebUI/UpdateBuilder.h (SIZE-1)
+    // where native tests reach it — BUG-32's escaping and the crowding it can
+    // cause are pinned there, not here.
     int buildUpdateJson(bool forceFull) {
-        char* buffer = wsBuffer_;
-        const size_t bufSize = sizeof(wsBuffer_);
-        // BUG-32: device_name is JSON-escaped in buildSystemHeader — it was
-        // interpolated raw here, so a quote or backslash in the name corrupted
-        // every client update. The header step is extracted to WebUI/SystemHeader.h
-        // so a native test can assert against it (the first slice of SIZE-1).
-        int pos = WebUI::buildSystemHeader(buffer, bufSize,
-            HAL::Platform::getMillis(), HAL::Platform::getFreeHeap(), getWebSocketClients(), config.deviceName);
-
-        if (pos < 0 || pos >= (int)bufSize) return 0;
-        
-        int contextCount = 0;
-        const auto& contextProviders = registry->getContextProviders();
-        
-        for (const auto& pair : contextProviders) {
-            if (pos > (int)bufSize - 512) break;
-            
-            const String& contextId = pair.first;
-            IWebUIProvider* provider = pair.second;
-            
-            // Delta check - skip unchanged data (only for SSE broadcast, not polling)
-            if (!forceFull && !forceNextUpdate && !provider->hasDataChanged(contextId)) continue;
-            
-            String contextData = provider->getWebUIData(contextId);
-            if (contextData.isEmpty() || contextData == "{}") continue;
-            
-            int needed = contextId.length() + contextData.length() + 5;
-            if (pos + needed >= (int)bufSize - 10) break;
-            
-            if (contextCount > 0) buffer[pos++] = ',';
-            
-            int written = DSNPRINTF_P(buffer + pos, bufSize - pos,
-                "\"%s\":%s", contextId.c_str(), contextData.c_str());
-            
-            if (written > 0 && pos + written < (int)bufSize) {
-                pos += written;
-                contextCount++;
-            }
-        }
-        
-        if (pos < (int)bufSize - 3) {
-            buffer[pos++] = '}';
-            buffer[pos++] = '}';
-            buffer[pos] = '\0';
-            return pos;
-        }
-        return 0;
+        return WebUI::buildUpdateJson(wsBuffer_, sizeof(wsBuffer_),
+            registry->getContextProviders(), config.deviceName,
+            HAL::Platform::getMillis(), HAL::Platform::getFreeHeap(),
+            getWebSocketClients(), forceFull, forceNextUpdate);
     }
 
     void sendWebSocketUpdates() {
