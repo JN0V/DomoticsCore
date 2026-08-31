@@ -390,6 +390,179 @@ void test_hybrid_ptr_vs_string_identical_json(void) {
     TEST_ASSERT_EQUAL_STRING("sensor", doc["fields"][0]["name"].as<const char*>());
 }
 
+// Probe: a multiselect value that cannot fit the remaining buffer space must
+// resume, not restart. BUG-28's pin: the serializer USED to rebuild the array
+// into a temporary String on every resume, resuming on pointer identity —
+// correct only while the allocator handed the temporary the same address.
+// The streaming states removed the temporary; this keeps them honest.
+void test_multiselect_across_chunk_boundaries(void) {
+    WebUIField field("networks", "Networks", WebUIFieldType::Multiselect);
+    field.choices({"office,5g", "guest", "lab-2.4ghz"}).values({"office,5g", "guest", "lab-2.4ghz"});
+    WebUIContext ctx = WebUIContext::settings("network_test", "Network Test")
+        .withField(field);
+
+    // Reference at a chunk size that never splits the array.
+    std::string reference = serializeContextToStdString(ctx);
+
+    for (size_t chunkSize = 2; chunkSize <= 32; ++chunkSize) {
+        StreamingContextSerializer serializer;
+        serializer.begin(ctx);
+        std::string json;
+        std::vector<uint8_t> buffer(chunkSize);
+        size_t iterations = 0;
+        while (!serializer.isComplete() && iterations++ < 8192) {
+            const size_t written = serializer.write(buffer.data(), buffer.size());
+            json.append(reinterpret_cast<const char*>(buffer.data()), written);
+        }
+        TEST_ASSERT_TRUE_MESSAGE(serializer.isComplete(),
+                                 "Serializer must complete for every chunk size");
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Byte-identical output at chunk size %u",
+                 (unsigned)chunkSize);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(reference.c_str(), json.c_str(), msg);
+    }
+}
+
+// BUG-33's pin. The escaper classified control characters with a bare
+// `char c < 0x20`; with signed char (the native host — every shipped target
+// defines __CHAR_UNSIGNED__) each UTF-8 byte sign-extends negative and is
+// emitted as \u00XX of its low byte, so "é" (0xC3 0xA9) parses back as "Ã©".
+// Red natively before the one-line unsigned-char fix; green after — and
+// green is what every board already produced.
+void test_utf8_survives_serialization(void) {
+    WebUIField field("temp", "Température", WebUIFieldType::Number, "21.5", "°C");
+    WebUIField multi("réseaux", "Réseaux", WebUIFieldType::Multiselect);
+    multi.choices({"réseau-invité", "bureau"}).values({"réseau-invité", "bureau"});
+    WebUIContext ctx = WebUIContext::settings("utf8_test", "Température extérieure")
+        .withField(field)
+        .withField(multi);
+
+    std::string json = serializeContextToStdString(ctx);
+
+    JsonDocument doc;
+    TEST_ASSERT_EQUAL(DeserializationError::Ok, deserializeJson(doc, json).code());
+    TEST_ASSERT_EQUAL_STRING("Température extérieure", doc["title"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("Température", doc["fields"][0]["label"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("°C", doc["fields"][0]["unit"].as<const char*>());
+    TEST_ASSERT_EQUAL_STRING("réseau-invité",
+                             doc["fields"][1]["value"][0].as<const char*>());
+}
+
+// Builds a context exercising every optional branch of both state machines:
+// custom HTML/CSS/JS, options, optionLabels, a multiselect field, and an
+// escapable character in a value.
+static WebUIContext buildMaximalContext() {
+    // The \x01 forces the six-byte \u00XX escape path — without it the
+    // longest escape in this content is two bytes and the sweep floor of 6
+    // would be dishonest (and the \u00XX early-out untested anywhere).
+    WebUIField text("name", "Device \"Name\"", WebUIFieldType::Text, "line1\nline2\x01end");
+    WebUIField select("mode", "Mode", WebUIFieldType::Select, "b");
+    select.addOption("a", "First").addOption("b", "Second");
+    WebUIField multi("networks", "Networks", WebUIFieldType::Multiselect);
+    multi.choices({"office,5g", "guest"}).values({"office,5g", "guest"});
+    return WebUIContext::settings("maximal", "Maximal Context")
+        .withCustomHtml("<div class=\"x\">html</div>")
+        .withCustomCss(".x { color: red; }")
+        .withCustomJs("function f() { return 1; }")
+        .withField(text)
+        .withField(select)
+        .withField(multi);
+}
+
+static std::string serializeAtChunkSize(const WebUIContext& ctx, size_t chunkSize,
+                                        size_t iterationCap = 16384) {
+    StreamingContextSerializer serializer;
+    serializer.begin(ctx);
+    std::string json;
+    std::vector<uint8_t> buffer(chunkSize);
+    size_t iterations = 0;
+    while (!serializer.isComplete() && iterations++ < iterationCap) {
+        const size_t written = serializer.write(buffer.data(), buffer.size());
+        json.append(reinterpret_cast<const char*>(buffer.data()), written);
+    }
+    TEST_ASSERT_TRUE_MESSAGE(serializer.isComplete(),
+                             "Serializer must complete at every chunk size");
+    return json;
+}
+
+// Every resume path, byte-identical at every chunk size.
+//
+// The floor is 6, not 1: escape sequences are atomic within one write() —
+// on failure the resume position does not advance, so sizes below the
+// LONGEST ESCAPE IN THE CONTENT livelock. This content carries a \u00XX
+// (six bytes, from the \x01 above), hence 6; with only two-byte escapes
+// the floor would be 2, and only chunk size 1 would livelock.
+void test_maximal_context_byte_identical_across_chunk_sizes(void) {
+    WebUIContext ctx = buildMaximalContext();
+    std::string reference = serializeAtChunkSize(ctx, 1024);
+
+    JsonDocument doc;
+    TEST_ASSERT_EQUAL(DeserializationError::Ok,
+                      deserializeJson(doc, reference).code());
+
+    for (size_t chunkSize = 6; chunkSize <= 64; ++chunkSize) {
+        std::string json = serializeAtChunkSize(ctx, chunkSize);
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Byte-identical at chunk size %u",
+                 (unsigned)chunkSize);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(reference.c_str(), json.c_str(), msg);
+    }
+}
+
+// An empty multiselect must emit [] at every chunk size — the ArduinoJson
+// path's behaviour, and the discriminator for the streaming rewrite's
+// inline empty check.
+void test_empty_multiselect_emits_empty_array_across_chunk_sizes(void) {
+    WebUIField multi("networks", "Networks", WebUIFieldType::Multiselect);
+    WebUIContext ctx = WebUIContext::settings("empty_multi", "Empty Multi")
+        .withField(multi);
+
+    std::string reference = serializeAtChunkSize(ctx, 1024);
+    JsonDocument doc;
+    TEST_ASSERT_EQUAL(DeserializationError::Ok,
+                      deserializeJson(doc, reference).code());
+    TEST_ASSERT_TRUE(doc["fields"][0]["value"].is<JsonArray>());
+    TEST_ASSERT_EQUAL(0, doc["fields"][0]["value"].as<JsonArray>().size());
+
+    for (size_t chunkSize = 2; chunkSize <= 32; ++chunkSize) {
+        std::string json = serializeAtChunkSize(ctx, chunkSize);
+        TEST_ASSERT_EQUAL_STRING(reference.c_str(), json.c_str());
+    }
+}
+
+// Production reuses one serializer across contexts (ProviderRegistry,
+// WebUI.h); every other test constructs fresh, so a begin() that forgets to
+// reset a streaming member would survive the rest of this suite.
+void test_serializer_reuse_after_abandoned_run(void) {
+    WebUIContext first = buildMaximalContext();
+    WebUIContext second = WebUIContext::dashboard("second", "Second")
+        .withField(WebUIField("f", "Field", WebUIFieldType::Text, "value"));
+
+    std::string reference = serializeAtChunkSize(second, 1024);
+
+    StreamingContextSerializer serializer;
+    serializer.begin(first);
+    uint8_t buffer[16];
+    // Two small chunks in: the stream sits one byte into the title string
+    // (stringOffset == 1; the preceding literal completed, so the literal
+    // members are already clear — a resetWriter() that forgot THOSE would be
+    // self-healing anyway, since a new run's first literal is a new pointer;
+    // stringOffset is the member this test exists to pin).
+    serializer.write(buffer, sizeof(buffer));
+    serializer.write(buffer, sizeof(buffer));
+
+    // Abandon and reuse.
+    serializer.begin(second);
+    std::string json;
+    size_t iterations = 0;
+    while (!serializer.isComplete() && iterations++ < 4096) {
+        const size_t written = serializer.write(buffer, sizeof(buffer));
+        json.append(reinterpret_cast<const char*>(buffer), written);
+    }
+    TEST_ASSERT_TRUE(serializer.isComplete());
+    TEST_ASSERT_EQUAL_STRING(reference.c_str(), json.c_str());
+}
+
 void setUp(void) {
     // Setup before each test
 }
@@ -407,6 +580,11 @@ int main(int argc, char **argv) {
     RUN_TEST(test_field_with_options);
     RUN_TEST(test_option_labels_across_chunk_boundaries);
     RUN_TEST(test_multiselect_value_is_json_array);
+    RUN_TEST(test_multiselect_across_chunk_boundaries);
+    RUN_TEST(test_utf8_survives_serialization);
+    RUN_TEST(test_maximal_context_byte_identical_across_chunk_sizes);
+    RUN_TEST(test_empty_multiselect_emits_empty_array_across_chunk_sizes);
+    RUN_TEST(test_serializer_reuse_after_abandoned_run);
     RUN_TEST(test_caching_provider_caches_contexts);
     RUN_TEST(test_serialize_multiple_contexts);
     RUN_TEST(test_chunked_serialization);
