@@ -111,6 +111,23 @@ void test_device_name_without_a_storage_component(void) {
     TEST_ASSERT_EQUAL_STRING("DomoticsCore", config.deviceName.c_str());
 }
 
+// BUG-32, the persistence half of the join: a stored device name with a quote
+// must survive the load unstripped, so the render-time escaping is what makes it
+// safe — sanitising it here would be the wrong fix. The WebUIConfig-and-escape
+// half is pinned in DomoticsCore-WebUI's test_system_header, because System's
+// native env compiles WebUI out (its headers gate on __has_include<WebUI.h> and
+// pull the async server). The two halves meet across those two suites.
+void test_a_persisted_quote_survives_the_load_unstripped(void) {
+    Fixture f;
+    const char* quoted = "My\"Device";  // a quote, 9 chars, under the 31 cap
+    f.storage->putString("device_name", quoted);
+
+    SystemConfig config = storageEnabled();
+    loadDeviceName(f.core, config);
+
+    TEST_ASSERT_EQUAL_STRING(quoted, config.deviceName.c_str());
+}
+
 void test_device_name_reaches_systeminfo(void) {
     Fixture f(true, true);
     f.storage->putString("device_name", "Cellar");
@@ -299,6 +316,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_an_empty_stored_device_name_is_ignored);
     RUN_TEST(test_device_name_is_not_loaded_when_storage_is_disabled);
     RUN_TEST(test_device_name_without_a_storage_component);
+    RUN_TEST(test_a_persisted_quote_survives_the_load_unstripped);
     RUN_TEST(test_device_name_reaches_systeminfo);
 
     RUN_TEST(test_wifi_credentials_are_restored);
