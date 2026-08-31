@@ -63,7 +63,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 767 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half and 747 after its closing lot; 767 is the sum of the thirteen runs on 2026-08-29, the twenty new ones being BUG-31's provider suite |
+| ✅ | The 13 native projects run — 787 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, and 767 after BUG-31's provider suite on 2026-08-29; 787 adds BUG-32's twenty on 2026-08-31 — eight in `test_system_header`, seven in `test_systeminfo_webui`, four in `test_storage_webui` and one in `test_system_persistence` |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -1508,6 +1508,38 @@ one worth a one-line change, and six rows that are not defects.
   from `_bmad-output/specs/spec-test-6-webui-provider-inputs/`.
 
 
+### BUG-32 — WebUI: the device name is interpolated raw into every update [MEDIUM] — **DONE (2026-08-31)**
+
+- **Filed and fixed**: 2026-08-31, TEST-6's Lot B.
+- **File**: `WebUI.h` `buildUpdateJson` (the sink), `SystemInfoWebUI.h:117` (one source).
+- **Problem**: `device_name` was interpolated with a raw `%s` into a JSON string
+  literal, so a `"` or `\` corrupted every WebSocket and polling update for every
+  client, persistently after the next reboot; a name shaped `","injected":"`
+  inserted keys into a payload the browser parses. The name reaches that sink from
+  the WebUI settings handler, from `SystemConfig` and from persistence, so the fix
+  had to be at the sink, not at one handler.
+- **Severity MEDIUM, argued.** It corrupts the whole UI, but only for a name
+  containing a quote or backslash — not a default, and after SEC-10 the route is
+  token-gated, so it is a footgun for the owner rather than an attacker vector. It
+  opens and shuts inside this lot, so no severity column moves for it.
+- **Fix**: a stateless `jsonEscape` in `WebUI/JsonEscape.h` (replacing the dead
+  `printJsonEscaped` nothing called), applied by `buildSystemHeader` in
+  `WebUI/SystemHeader.h` — the header step extracted from the private
+  `buildUpdateJson` so a native test can reach it, which is also the first slice of
+  SIZE-1. `SystemInfoWebUI` gained a 31-char cap, an empty-name refusal and a null
+  guard as a second, separate measure. The escaper never emits a partial escape
+  sequence; the worst case is a `char[32]` name at 31×6+1 = 188 bytes.
+- **Verified natively**, with removal checks: `test_system_header` (8 tests, five
+  red against the raw-`%s` builder), `test_systeminfo_webui` (7 tests; cap and
+  empty go red, the null test SEGFAULTs without its guard), `test_storage_webui`
+  (4 coverage tests), and the persisted-quote round trip split across
+  `test_system_persistence` and `test_system_header`. The ESP8266 crowding — up to
+  ~155 escape bytes pushing contexts out of a 1024-byte update — is pinned as a
+  header-length cost natively and recorded as an owed board observation.
+- **Design**: `_bmad-output/specs/spec-test-6-webui-provider-inputs/` (SPEC.md,
+  companion providers.md).
+
+
 ### BUG-29 — MQTT: the publish rate limit silently drops discovery [HIGH] — **DONE (2026-08-26)**
 
 - **Filed**: 2026-08-26, found on hardware while validating a WaterMeter build
@@ -1689,10 +1721,32 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Ref**: NTP-F9
 - **Problem**: Missing: DST transitions, timezone edge cases, multi-server failover, wrap-around scenarios.
 
-### TEST-6 — WebUI-related tests: zero coverage [HIGH]
+### TEST-6 — WebUI-related tests: zero coverage [HIGH] — **DONE (2026-08-31)**
 
 - **Refs**: SI-F4, STOR-F16, LED-F14, HA-F17
-- **Problem**: `SystemInfoWebUI`, `StorageWebUI`, `LEDWebUI`, and `HomeAssistantWebUI` have zero tests. WebUI providers handle user input (device name, settings, config mutations) with no validation testing.
+- **Problem (as filed)**: `SystemInfoWebUI`, `StorageWebUI`, `LEDWebUI`, and `HomeAssistantWebUI` have zero tests. WebUI providers handle user input (device name, settings, config mutations) with no validation testing.
+- **The row was wrong in both directions, and closing it corrected both.**
+  `LEDWebUI` was never uncovered — `DomoticsCore-LED/test/test_led_webui/` is a
+  dedicated 23-test suite (brightness clamp, effect whitelist, unknown name,
+  non-POST refusal, null guard). For `HomeAssistantWebUI` and `SystemInfoWebUI`
+  the validation was not untested, it was **absent**, and writing tests without
+  fixing would have encoded two browser-reachable defects — BUG-31 (the HA handler
+  reads parameters nothing sends) and BUG-32 (a device name corrupts every update)
+  — as expected behaviour. So this closed as two lots, not a test-writing exercise.
+- **What became of the four Refs:**
+  - **HA-F17** → BUG-31 (Lot A): the handler fixed and pinned by
+    `DomoticsCore-HomeAssistant/test/test_ha_webui/` (20 tests).
+  - **SI-F4** → BUG-32 (Lot B): validation added and pinned by
+    `DomoticsCore-SystemInfo/test/test_systeminfo_webui/` (7 tests).
+  - **STOR-F16** → `DomoticsCore-Storage/test/test_storage_webui/` (4 tests),
+    recorded as coverage: `StorageWebUI` has no input surface to validate.
+  - **LED-F14** → already covered by the existing `test_led_webui` suite; the row
+    was stale.
+- **Filed, not fixed — needs a board, and this was a behaviour lot.**
+  `StorageWebUI`, `LEDWebUI` and `HomeAssistantWebUI` do not override
+  `hasDataChanged`, so all three inherit `return true` (`IWebUIProvider.h:525`) and
+  re-serialize every context on every tick. That is a cost claim, measurable only
+  on hardware; recorded here rather than given a bookkeeping ID it cannot yet earn.
 
 ### TEST-7 — Core: MemoryManager + ComponentConfig untested [MEDIUM]
 
@@ -2452,26 +2506,25 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 6M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-13/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266, with the board run still owed; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-31 | Multiple | 0C, **0H**, 8M (**23 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, opening and shutting inside its lot so no column moves — **BUG-2 never closed and never counted** — see below) |
-| 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, 2H, 4M (**TEST-1, TEST-2, TEST-3 done**; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-32 | Multiple | 0C, **0H**, 8M (**24 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, and **BUG-32 filed and fixed 2026-08-31**, MEDIUM, each opening and shutting inside its lot so no column moves — **BUG-2 never closed and never counted** — see below) |
+| 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, 1H, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-14, PERSIST-1 | IV (YAGNI) | 0C, 0H, 9M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **126 items** | | **0C, 6H, 39M, 34L** (60 resolved) |
+| **Total** | **127 items** | | **0C, 5H, 39M, 34L** (62 resolved) |
 
-The severity columns sum across the rows: 2 + 2 + 2 = 6 HIGH, in Test Coverage,
-File Size and Architecture. The six are TEST-4, TEST-6, SIZE-1, SIZE-2, ARCH-1,
-ARCH-2 — unchanged across the last three lots: MEM-2's close, the SEC-10 lot (which
-closed a CRITICAL and added no HIGH, its one HIGH candidate SEC-12 re-argued to
-MEDIUM by parity with SEC-7), and BUG-31's lot (HIGH, opening and shutting inside
-it). **Security, Memory Safety and Code Safety all sit at zero HIGH.** The rows were
-checked against the section headings rather than only re-summed — the sweep below,
-re-run for the SEC-10 and BUG-31 lots together, reports 35 `[HIGH]` headings, 29
-with evidence, 6 open, and the six are the six named here. The two new closed-in-lot
-HIGH headings are SEC-11 and BUG-31; SEC-10 is a `[CRITICAL]` heading and never
+The severity columns sum across the rows: 1 + 2 + 2 = 5 HIGH, in Test Coverage,
+File Size and Architecture. The five are TEST-4, SIZE-1, SIZE-2, ARCH-1, ARCH-2 —
+the six of the last three lots minus **TEST-6, which the BUG-32 lot closed** (its
+Lot A had already landed as BUG-31, and Lot B closed the item). **Security, Memory
+Safety and Code Safety all sit at zero HIGH.** The rows were checked against the
+section headings rather than only re-summed — the sweep below, re-run for the
+BUG-32 lot, reports 35 `[HIGH]` headings, 30 with evidence, 5 open, and the five
+are the five named here. TEST-6 gained its DONE marker this lot, so it moves from
+the open column to the evidenced one; BUG-32 is a `[MEDIUM]` heading and never
 enters the `[HIGH]` sweep. The MEDIUM column sums to 39: 6 + 4 + 8 + 4 + 3 + 0 + 5
 + 9 + 0.
 
@@ -2538,7 +2591,10 @@ shuts inside its lot — and the open six are still the six named above. The two
 lots each independently computed a 34/28/6 sweep against the pre-SEC-10 base; the
 combined figure is 35/29/6, not 34/28/6, because both add a distinct closed HIGH
 heading (SEC-11 and BUG-31) — a collision the rebase had to resolve rather than
-copy either lot's number.
+copy either lot's number. Re-run after BUG-32 (TEST-6's lot B): **35 headings, 30
+with evidence, 5 open**. No heading is added or removed — BUG-32 is `[MEDIUM]` —
+but TEST-6 gains a DONE marker, so it crosses from the open column to the evidenced
+one: open 6 → 5 (TEST-4, SIZE-1, SIZE-2, ARCH-1, ARCH-2), with-evidence 29 → 30.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
@@ -2577,21 +2633,27 @@ a claim that none was ever found. The board proof, both directions, is under the
 SEC-10 entry; nothing here runs in CI, because `WebUI.h` does not compile
 natively.
 
-**This change (2026-08-29, TEST-6's lot A), stacked on the SEC-10 lot:** **BUG-31
-is filed and closed in the same lot**, HIGH — so no severity column moves, exactly
-as SEC-8 did, and the six remaining HIGH are the same six. **TEST-9 and DC-14 are
-filed and left open** (37 → 39 MEDIUM: one into Test Coverage, one into Dead Code).
-Items 123 → 126 for the three new IDs, resolved 59 → 60 for BUG-31 alone. BUG-31
-was authored before the SEC-10 lot and held; rebased on top of it, its figures are
-re-derived here from the 123 items / 37 MEDIUM / 59 resolved the SEC-10 lot left,
-not the 118 / 34 / 57 it was first written against.
+**The lot before this one (2026-08-29, TEST-6's lot A), stacked on the SEC-10 lot:**
+**BUG-31 is filed and closed in the same lot**, HIGH — so no severity column moves,
+exactly as SEC-8 did, and the six remaining HIGH were the same six. **TEST-9 and
+DC-14 are filed and left open** (37 → 39 MEDIUM: one into Test Coverage, one into
+Dead Code). Items 123 → 126 for the three new IDs, resolved 59 → 60 for BUG-31
+alone. BUG-31 was authored before the SEC-10 lot and held; rebased on top of it,
+its figures are re-derived here from the 123 items / 37 MEDIUM / 59 resolved the
+SEC-10 lot left, not the 118 / 34 / 57 it was first written against.
 
-**TEST-6 does not move, and that is deliberate.** BUG-31 is the first of its two
-lots. The second fixes `SystemInfoWebUI`'s unescaped device name at the sink,
-covers `StorageWebUI`, and only then corrects TEST-6's row — which is wrong in
-both directions today, `LEDWebUI` having had a dedicated 23-test suite the whole
-time. Closing TEST-6 here would claim coverage of three providers this lot never
-touched.
+**This change (2026-08-31, TEST-6's lot B — BUG-32):** **BUG-32 is filed and closed
+in the same lot**, MEDIUM — so no severity column moves for it — and **TEST-6
+itself closes**, taking the open HIGH it held to resolved. Items 126 → 127 for the
+one new ID; resolved 60 → 62 (BUG-32 and TEST-6); the open HIGH count falls **6 →
+5**, the first drop in the run. The `hasDataChanged` cost claim is recorded under
+TEST-6 without an ID — a board-owed observation, not a counted item.
+
+**Why TEST-6 waited for lot B.** BUG-31 was the first of its two lots and did not
+close TEST-6: doing so then would have claimed coverage of three providers it never
+touched. Lot B fixes `SystemInfoWebUI`'s unescaped device name at the sink, covers
+`StorageWebUI`, and only then corrects the row — which was wrong in both directions,
+`LEDWebUI` having had a dedicated 23-test suite the whole time.
 
 Both new findings came out of the work rather than out of a review, which is the
 pattern every lot has repeated: SEC-2's re-fix raised SEC-7, SEC-7 raised SEC-8,
@@ -2654,6 +2716,17 @@ enter remaining; and the ID ranges in the Items column gain the same three. The
 13-item gap is still 13. Ordering note: BUG-31 was authored before the SEC-10 lot
 and held; rebased on top of it, its figures are re-derived here from the 123/136
 the SEC-10 lot left, not the 118/131 it was first written against.
+
+**TEST-6's lot B (BUG-32) closes the item and adds one.** One new ID, BUG-32,
+filed and fixed in-lot; and **TEST-6 itself closes**, the open HIGH it held moving
+to resolved. The stated total goes 126 → 127 (BUG-32); resolved plus remaining
+goes 60 + 79 = 139 to 62 + 78 = 140 — BUG-32 opens and shuts (resolved +1,
+remaining +0), while TEST-6 crosses from remaining to resolved (resolved +1,
+remaining −1); the ID ranges gain BUG-32. The 13-item gap is still 13. This is the
+first lot in the run to **lower** the open HIGH count, 6 → 5: the six lots before
+it either held it flat or, once, raised it. Remaining 78 = 5 HIGH + 39 MEDIUM + 34
+LOW. The `hasDataChanged` cost claim is recorded under TEST-6 without an ID, so it
+moves none of the three figures — a board-owed observation, not a counted item.
 
 ---
 
