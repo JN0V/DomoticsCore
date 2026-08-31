@@ -43,6 +43,7 @@ versions may sit still while fixes land.
 | HomeAssistant | BUG-31 | 2026-08-29 — TEST-6's lot A. The HA settings handler read six parameters the dispatcher never sends; filed and closed in the same lot, raising TEST-9 and DC-14. TEST-6 stayed open for lot B |
 | WebUI, SystemInfo, Storage | BUG-32, TEST-6 | 2026-08-31 — TEST-6's lot B. `device_name` was interpolated raw into every update; escaped at the sink (an extracted `buildSystemHeader`, the first slice of SIZE-1), with `SystemInfoWebUI` validation and Storage coverage. **BUG-32 filed and closed, TEST-6 closed** (6 → 5 open HIGH) |
 | Core, Wifi | TEST-4 | 2026-08-31 — the stubs were the blocker: scriptable millis/heap/restart in `Platform_Stub.h`, a stateful mode/AP/connect record in `Wifi_Stub.h` (defaults byte-identical), and a 16-case behavioural suite over the fallback ladder, AP mode and reconnection; five mutations all caught; the MEM-2 device suite finally ran, 3/3 on a real radio. **TEST-4 closed** (5 → 4 open HIGH), DC-15 filed |
+| WebUI | SIZE-2, BUG-26, BUG-28, BUG-33 | 2026-08-31 — 933 → 756 + a 216-line `JsonStreamWriter.h`, extracted as a privately-inherited base so the fork's serializer hunks still land, with marianorenzi's own streaming-multiselect design adopted and credited. **SIZE-2 closed** (4 → 3 open HIGH), **BUG-28 closed** with it, **BUG-26 found already fixed** since July (`dc8886f1`, his), **BUG-33 filed and fixed** (host-only UTF-8 mangling, char signedness — measured against all three toolchains). Board: schema-memory suite 3/3, heap drift zero with a multiselect in the loop |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -65,7 +66,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 804 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, 767 after BUG-31's provider suite on 2026-08-29, and 788 after BUG-32's twenty-one; 804 adds TEST-4's sixteen in `test_wifi_behaviour` on 2026-08-31 (the Wifi project runs 75: 46 component + 16 behaviour + 13 WebUI) |
+| ✅ | The 13 native projects run — 809 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, 767 after BUG-31's provider suite on 2026-08-29, 788 after BUG-32's twenty-one, and 804 after TEST-4's sixteen in `test_wifi_behaviour`; 809 adds SIZE-2's five in `test_streaming_serializer` on 2026-08-31 (that suite runs 15: the UTF-8 pin, two chunk sweeps, an empty-multiselect sweep and a serializer-reuse test on top of the original ten) |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -1261,15 +1262,40 @@ one worth a one-line change, and six rows that are not defects.
 - **Problem**: `enableComponent()` calls `component->shutdown()` or `begin()` directly inside an async HTTP handler. Blocking I/O in ESPAsyncWebServer context causes watchdog resets.
 - **Fix**: Queue enable/disable action, process in `loop()`.
 
-### BUG-26 — WebUI: OptionLabelPair serialization bug [MEDIUM]
+### BUG-26 — WebUI: OptionLabelPair serialization bug [MEDIUM] — **DONE (2026-08-31, fixed 2026-07-16)**
 
 - **Ref**: WEB-F12
-- **File**: `StreamingContextSerializer.h:849-879`
-- **Problem**: Key+colon+value written in one iteration. Partial value writes with small buffer cause malformed JSON because `optionIndex` not incremented but key already consumed.
-- **Fix**: Split key, colon, value into separate states for correct pause/resume.
+- **File**: `StreamingContextSerializer.h:849-879` (as filed)
+- **Problem (as filed)**: Key+colon+value written in one iteration. Partial value writes with small buffer cause malformed JSON because `optionIndex` not incremented but key already consumed.
+- **The row was stale at filing.** The recommended fix — split key, colon and
+  value into separate states — had already shipped in marianorenzi's
+  `dc8886f1` (2026-07-16, "Fixed split elements not being resumable"), which
+  also brought the test that pins it,
+  `test_option_labels_across_chunk_boundaries` (chunk sizes 2–32). SIZE-2's
+  lot found this while auditing the file it was splitting: the states
+  `OptionLabelKey`/`OptionLabelColon`/`OptionLabelValue` were already
+  separate, and the sweep already ran green. Same shape as TEST-6's
+  LED-F14 — an item describing code that no longer existed by the time the
+  sweep filed it. Closed on that evidence; nothing in this lot changed the
+  option-label states beyond the mechanical `arrayIndex` rename.
 
-### BUG-28 — WebUI: Multiselect value resumes from a destroyed `String` [MEDIUM]
+### BUG-28 — WebUI: Multiselect value resumes from a destroyed `String` [MEDIUM] — **DONE (2026-08-31)**
 
+- **Closed by SIZE-2's lot, with marianorenzi's own design.** His
+  `esp32-ethernet` branch had already replaced the block this entry blames —
+  `JsonDocument` + a case-local `String`, rebuilt on every resume — with
+  streaming array states; the lot adopted them (credited, adapted to the
+  current field API), so the destroyed-`String` resume and the indeterminate
+  pointer comparison no longer exist to go wrong. The test this entry said
+  the fix needs — one that forces a chunk boundary inside a multiselect
+  value — exists twice now: `test_multiselect_across_chunk_boundaries`
+  (chunk sizes 2–32, byte-identical against an unsplit reference) and the
+  maximal-context sweep. **Measured before the fix, the probe stayed green**:
+  on the native allocator the rebuilt temporary lands on the same address
+  every resume, so the UB's usual outcome was the accidental correctness
+  this entry predicted, not the malformed JSON — which is why no dashboard
+  ever showed the failure and why the entry's own "correct only by accident"
+  was the accurate half.
 - **Filed**: 2026-08-26, found while investigating DC-11. Not fixed there — it
   sits in the serializer, which is where marianorenzi's `Table` work will land.
   (BUG-27 is reserved for his separate WebUI report.)
@@ -1542,6 +1568,29 @@ one worth a one-line change, and six rows that are not defects.
   header-length cost natively and recorded as an owed board observation.
 - **Design**: `_bmad-output/specs/spec-test-6-webui-provider-inputs/` (SPEC.md,
   companion providers.md).
+
+### BUG-33 — WebUI: the streaming escaper's control-char test depends on char signedness [LOW] — **DONE (2026-08-31)**
+
+- **Filed and fixed**: 2026-08-31, SIZE-2's lot — surfaced by that spec's
+  adversarial review, which asked what the escaper does to a byte ≥ 0x80.
+- **File**: `StreamingContextSerializer.h`, both `writeJsonString` overloads
+  (now the one core in `WebUI/JsonStreamWriter.h`).
+- **Problem**: the control-character check was `char c = …; if (c < 0x20)`.
+  With signed `char`, every UTF-8 continuation byte sign-extends negative and
+  is emitted as `\u00XX` of its low byte: `"é"` came back from a parse as
+  `"Ã©"`, `"°C"` as `"Â°C"` — for titles, labels, values, units, options and
+  option labels alike.
+- **Severity LOW because no device was ever affected, and that is measured,
+  not assumed**: `__CHAR_UNSIGNED__` is defined by all three shipped
+  toolchains (xtensa-esp32, xtensa-lx106, riscv32-esp) and absent on host
+  gcc. The divergence was host-only — which means a native UTF-8 test
+  written before this fix would have pinned behaviour no board has. The
+  danger was to the test suite's fidelity, not to production.
+- **Fix**: `static_cast<unsigned char>(c) < 0x20` — one line, making host
+  match boards. Pinned by `test_utf8_survives_serialization` (title, unit
+  and a multiselect value round-trip through a parse), which was **red
+  natively before the fix** and describes what every board already did.
+  It opens and shuts inside its lot, so no severity column moves for it.
 
 
 ### BUG-29 — MQTT: the publish rate limit silently drops discovery [HIGH] — **DONE (2026-08-26)**
@@ -1951,10 +2000,58 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Refs**: WEB-F2, R-F1
 - **Fix**: Extract route setup + SSE broadcasting into `WebUIRoutes.h` / `BroadcastManager.h`.
 
-### SIZE-2 — StreamingContextSerializer.h (921 lines) [HIGH]
+### SIZE-2 — StreamingContextSerializer.h (921 lines) [HIGH] — **DONE (2026-08-31)**
 
 - **Ref**: WEB-F3
-- **Fix**: Unify duplicated `writeJsonString` overloads (const char* vs String&), extract field serialization helpers.
+- **Fix (as filed)**: Unify duplicated `writeJsonString` overloads (const char* vs String&), extract field serialization helpers.
+- **Measured**: 933 lines before (it had grown since filing) → **756**, plus a
+  new `WebUI/JsonStreamWriter.h` at **216** — both under Constitution VII's
+  800. The two 70-line `writeJsonString` near-copies are one core over
+  `(data, len)` with two thin adapters; `writeLiteral`/`isLiteralComplete`
+  and the streaming state (`currentLiteral`/`literalOffset`/`stringOffset`/
+  `numBuf`) moved with them.
+- **The shape was chosen for the fork, not for taste.** marianorenzi's
+  `esp32-ethernet` modifies this exact file (+49/−25: streaming multiselect
+  states, an `optionIndex` → `arrayIndex` rename). The primitives were
+  therefore extracted as a **privately-inherited base** — not one call site
+  in either state machine changed name or shape, so his hunks still land —
+  and his multiselect design was **adopted outright, credited**, adapted to
+  the current field API (`selectedValues`, `type == Multiselect`), his
+  rename included. His rebase of this file now approaches a no-op. The
+  BUG-30 pattern — the fork had already written the mechanism — applied
+  before the conflict instead of after.
+- **Closing it closed two Code Safety items in the same file**: BUG-28 (the
+  multiselect `JsonDocument`-into-a-temporary rebuilt per resume, resuming on
+  an indeterminate pointer — his streaming states remove the temporary
+  entirely) and BUG-26 (found **already fixed** by his `dc8886f1` of
+  2026-07-16; the row was stale at filing). BUG-33 was filed and fixed on
+  the way (host-only UTF-8 mangling — see its entry).
+- **Evidence**: the 10-test suite grew to 15 before the refactor ran —
+  UTF-8 round-trip (BUG-33's pin, red then green), a maximal-context byte
+  sweep at chunk sizes 6–64 (floor 6 because escape sequences are atomic
+  within one write and the content deliberately carries a control character
+  whose escape is six bytes; below the longest escape in the content, the
+  sweep livelocks — the review's second pass caught the v1 content whose
+  longest escape was two bytes, which made the floor dishonest and left the
+  six-byte early-out untested), an
+  empty-multiselect sweep, a serializer-reuse test (production reuses one
+  serializer across contexts; no prior test did) — all green on the old code
+  first, all green after, `rm -rf .pio` between. **Five named mutations on
+  the new code**: pointer-identity resume dropped → 7 red; the two-byte
+  escape early-out loses `stringOffset` → maximal sweep red at chunk 6
+  (duplicated bytes visible in the diff); `resetWriter()` forgets
+  `stringOffset` → the reuse test red, *alone* — proving the rest of the
+  suite cannot see it; `String&` adapter measured with `strlen` instead of
+  `length()` → **nothing red**, recorded: the embedded-NUL asymmetry is
+  unpinned, deliberately, rather than silently assumed; the six-byte
+  `\u00XX` early-out loses `stringOffset` → maximal sweep red — a mutation
+  that was **undetectable before the review's second pass** added a control
+  character to the content, because no test had ever entered that branch. Board:
+  `test_schema_memory` on the nodemcuv2 with a multiselect field added to
+  its cached provider (without one, the suite never entered the changed
+  path): 3/3, **heap drift zero** — flat at 44176 bytes across the
+  20-iteration cached run and all 50 stress iterations, per-iteration diff 0.
+- Dead member removed: `currentString`, declared and reset and never read.
 
 ### SIZE-3 — Wifi.h (880 lines) [MEDIUM]
 
@@ -2566,27 +2663,31 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 6M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-13/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-32 | Multiple | 0C, **0H**, 8M (**24 done**; BUG-28 new, BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, and **BUG-32 filed and fixed 2026-08-31**, MEDIUM, each opening and shutting inside its lot so no column moves — **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-33 | Multiple | 0C, **0H**, 6M (**26 done**; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
-| 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 2H, 3M, 1L |
+| 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 1H, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28) |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **128 items** | | **0C, 4H, 40M, 34L** (63 resolved) |
+| **Total** | **129 items** | | **0C, 3H, 38M, 34L** (67 resolved) |
 
-The severity columns sum across the rows: 2 + 2 = 4 HIGH, in File Size and
-Architecture only. The four are SIZE-1, SIZE-2, ARCH-1, ARCH-2 — the five of the
-BUG-32 lot minus **TEST-4, which this lot closed**. **Security, Memory Safety,
-Code Safety and now Test Coverage all sit at zero HIGH** — Test Coverage for the
-first time since the roadmap was filed, and what remains of the HIGH column is
-refactoring, not defects or coverage. The rows were checked against the section
-headings rather than only re-summed — the sweep below, re-run for this lot,
-reports 35 `[HIGH]` headings, 31 with evidence, 4 open, and the four are the four
-named here. TEST-4 gained its DONE marker this lot, so it moves from the open
-column to the evidenced one; DC-15 is a `[MEDIUM]` heading and never enters the
-`[HIGH]` sweep. The MEDIUM column sums to 40: 6 + 4 + 8 + 4 + 3 + 0 + 5 + 10 + 0.
+The severity columns sum across the rows: 1 + 2 = 3 HIGH — SIZE-1, ARCH-1,
+ARCH-2, the four of the TEST-4 lot minus **SIZE-2, which its lot closed**.
+**Security, Memory Safety, Code Safety, Test Coverage all sit at zero HIGH**,
+and what remains of the HIGH column is one file split and two architecture
+items. The rows were checked against the section headings rather than only
+re-summed — the sweep below, re-run for the SIZE-2 lot, reports 35 `[HIGH]`
+headings, 32 with evidence, 3 open, and the three are the three named here.
+SIZE-2 gained its DONE marker this lot; BUG-33 is a `[LOW]` heading and BUG-26/
+BUG-28 are `[MEDIUM]`, so none enters the `[HIGH]` sweep. The MEDIUM column
+sums to 38: 6 + 4 + 6 + 4 + 3 + 0 + 5 + 10 + 0.
+
+One lot earlier (TEST-4's): the total row read **128 items, 0C, 4H, 40M, 34L,
+63 resolved**, the four open HIGH being SIZE-1, SIZE-2, ARCH-1, ARCH-2 — kept
+here as the before-state the SIZE-2 arithmetic moves from, since both lots
+landed the same day.
 
 **Two stale sentences were found by re-running that sweep, and are corrected
 above rather than left.** The Code Safety cell still said "BUG-30 new and open"
@@ -2658,7 +2759,10 @@ one: open 6 → 5 (TEST-4, SIZE-1, SIZE-2, ARCH-1, ARCH-2), with-evidence 29 →
 Re-run after TEST-4's closing lot (2026-08-31): **35 headings, 31 with evidence,
 4 open**. Again no heading is added or removed — DC-15, the lot's one new ID, is
 `[MEDIUM]` — and TEST-4 crosses from open to evidenced: open 5 → 4 (SIZE-1,
-SIZE-2, ARCH-1, ARCH-2), with-evidence 30 → 31.
+SIZE-2, ARCH-1, ARCH-2), with-evidence 30 → 31. Re-run after SIZE-2's lot
+(2026-08-31, same day): **35 headings, 32 with evidence, 3 open** — SIZE-2
+crosses; BUG-33 (LOW) and the BUG-26/BUG-28 closures (MEDIUM) never enter this
+sweep: open 4 → 3 (SIZE-1, ARCH-1, ARCH-2), with-evidence 31 → 32.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
@@ -2714,15 +2818,28 @@ count falls **6 → 5**, the first drop in the run. The `hasDataChanged` cost cl
 is recorded under TEST-6 without an ID — a board-owed observation, not a counted
 item.
 
-**This change (2026-08-31, TEST-4's closing lot):** **TEST-4 closes** — the open
-HIGH it held moves to resolved — and **DC-15 is filed and left open**, MEDIUM
-(39 → 40 MEDIUM, into Dead Code). Items 127 → 128 for the one new ID; resolved
-62 → 63 (TEST-4 alone); the open HIGH count falls **5 → 4**, the second drop in
-the run, and **Test Coverage joins Security, Memory Safety and Code Safety at
-zero HIGH** — every remaining HIGH is a refactor (File Size, Architecture). No
-code under test changed in this lot: the diff is two test seams whose defaults
-are byte-identical to the old stubs, one new native suite, and two tearDown
-lines — which is why no CHANGELOG entry accrues and no component version moves.
+**The lot before this one (2026-08-31, TEST-4's closing lot):** **TEST-4
+closes** — the open HIGH it held moves to resolved — and **DC-15 is filed and
+left open**, MEDIUM (39 → 40 MEDIUM, into Dead Code). Items 127 → 128 for the
+one new ID; resolved 62 → 63 (TEST-4 alone); the open HIGH count falls
+**5 → 4**, the second drop in the run, and **Test Coverage joins Security,
+Memory Safety and Code Safety at zero HIGH**. No code under test changed in
+that lot: the diff is two test seams whose defaults are byte-identical to the
+old stubs, one new native suite, and two tearDown lines.
+
+**This change (2026-08-31, SIZE-2's lot):** **SIZE-2 closes** (HIGH 4 → 3),
+and it takes two Code Safety MEDIUMs with it — **BUG-28** (closed with the
+fork's own streaming multiselect design) and **BUG-26** (found already fixed
+by marianorenzi's `dc8886f1` since July; the row was stale at filing) —
+40 → 38 MEDIUM. **BUG-33 is filed and fixed in-lot**, LOW, host-only
+(char-signedness in the escaper), so it adds an ID and a resolved item and
+moves no severity column. Items 128 → 129; resolved 63 → 67 (SIZE-2, BUG-26,
+BUG-28, BUG-33). Three HIGH remain: SIZE-1, ARCH-1, ARCH-2 — one file split
+and the two architecture items that do not measure. One production behaviour
+changed knowingly: multiselect values are now streamed by our escaper instead
+of built through ArduinoJson — byte-identical for the content any provider
+ships (pinned by parse-content tests; the 0x08/0x0C short-forms and the
+embedded-NUL asymmetry are recorded as unpinned residue in the SIZE-2 entry).
 
 **Why TEST-6 waited for lot B.** BUG-31 was the first of its two lots and did not
 close TEST-6: doing so then would have claimed coverage of three providers it never
@@ -2814,6 +2931,16 @@ remaining to resolved (resolved +1, remaining −1) while DC-15 enters remaining
 13-item gap is still 13. Remaining 78 = 4 HIGH + 40 MEDIUM + 34 LOW — the HIGH
 that left was replaced in the count by the MEDIUM that entered, which is why
 remaining is flat while both severity columns moved.
+
+**SIZE-2's lot moves the total by one and resolved by four.** One new ID,
+BUG-33, filed and fixed in-lot (resolved +1, remaining +0); SIZE-2, BUG-26 and
+BUG-28 cross from remaining to resolved (resolved +3, remaining −3). The
+stated total goes 128 → 129; resolved plus remaining goes 63 + 78 = 141 to
+67 + 75 = 142; the ID ranges gain BUG-33. The 13-item gap is still 13
+(142 − 129). Remaining 75 = 3 HIGH + 38 MEDIUM + 34 LOW. This is the first
+lot in the run to close items it never set out to close: BUG-26 and BUG-28
+were Code Safety's, and both fell out of reading the file SIZE-2 was
+splitting against the fork that had already rewritten it.
 
 ---
 
