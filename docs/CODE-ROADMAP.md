@@ -44,7 +44,7 @@ versions may sit still while fixes land.
 | WebUI, SystemInfo, Storage | BUG-32, TEST-6 | 2026-08-31 — TEST-6's lot B. `device_name` was interpolated raw into every update; escaped at the sink (an extracted `buildSystemHeader`, the first slice of SIZE-1), with `SystemInfoWebUI` validation and Storage coverage. **BUG-32 filed and closed, TEST-6 closed** (6 → 5 open HIGH) |
 | Core, Wifi | TEST-4 | 2026-08-31 — the stubs were the blocker: scriptable millis/heap/restart in `Platform_Stub.h`, a stateful mode/AP/connect record in `Wifi_Stub.h` (defaults byte-identical), and a 16-case behavioural suite over the fallback ladder, AP mode and reconnection; five mutations all caught; the MEM-2 device suite finally ran, 3/3 on a real radio. **TEST-4 closed** (5 → 4 open HIGH), DC-15 filed |
 | WebUI | SIZE-2, BUG-26, BUG-28, BUG-33 | 2026-08-31 — 933 → 756 + a 216-line `JsonStreamWriter.h`, extracted as a privately-inherited base so the fork's serializer hunks still land, with marianorenzi's own streaming-multiselect design adopted and credited. **SIZE-2 closed** (4 → 3 open HIGH), **BUG-28 closed** with it, **BUG-26 found already fixed** since July (`dc8886f1`, his), **BUG-33 filed and fixed** (host-only UTF-8 mangling, char signedness — measured against all three toolchains). Board: schema-memory suite 3/3, heap drift zero with a multiselect in the loop |
-| WebUI | SIZE-1, BUG-34 | 2026-08-31 — WebUI.h 1008 → 769 + `SchemaMemProbe.h` (121) + `UpdateBuilder.h` (90); the schema chunk loop, which existed three times, deduplicated into `SchemaChunkState::writeChunk` (ProviderRegistry.h 345 → 441) and finally testable — ten new native tests, component count 92 → 102. **SIZE-1 closed** (3 → 2 open HIGH — only ARCH-1/ARCH-2 remain), **BUG-34 filed and fixed**: `/api/ui/schema` had never received v1.5.0's truncation fix, and the tests found the stall fires at ordinary chunk sizes, not only below the escape floor. Fork's two WebUI.h regions untouched. Board run owed |
+| WebUI | SIZE-1, BUG-34 | 2026-08-31 — WebUI.h 1008 → 769 + `SchemaMemProbe.h` (121) + `UpdateBuilder.h` (90); the schema chunk loop, which existed three times, deduplicated into `SchemaChunkState::writeChunk` (ProviderRegistry.h 345 → 441) and finally testable — ten new native tests, component count 92 → 102. **SIZE-1 closed** (3 → 2 open HIGH — only ARCH-1/ARCH-2 remain), **BUG-34 filed and fixed**: `/api/ui/schema` had never received v1.5.0's truncation fix, and the tests found the stall fires at ordinary chunk sizes, not only below the escape floor. Fork's two WebUI.h regions untouched. Board: heap suite 6/6 and schema-memory 3/3 on the nodemcuv2 |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -2083,9 +2083,10 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - Dead members removed with the probe extraction: `heapAfterSend` /
   `maxAfterSend`, written once and read only by the log line that now
   samples directly.
-- Cross-compilation: WebUIOnly `esp8266dev` green. Board run owed: the WebUI
-  on-device suites on the nodemcuv2 (`test_heap_esp8266`,
-  `test_schema_memory`) against this refactor.
+- Cross-compilation: WebUIOnly `esp8266dev` green on both commits. Board:
+  both WebUI on-device suites ran on the nodemcuv2 against this refactor —
+  `test_heap_esp8266` 6/6 (its `chunked_large_schema` exercises the moved
+  serialization on silicon) and `test_schema_memory` 3/3.
 - Design: `_bmad-output/implementation-artifacts/spec-size-1-webui-split.md`
   (v2, amended after adversarial review — which falsified the fork figures,
   the size arithmetic, and an undefined "verbatim" in the v1 draft).
