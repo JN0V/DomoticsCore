@@ -44,6 +44,7 @@ versions may sit still while fixes land.
 | WebUI, SystemInfo, Storage | BUG-32, TEST-6 | 2026-08-31 — TEST-6's lot B. `device_name` was interpolated raw into every update; escaped at the sink (an extracted `buildSystemHeader`, the first slice of SIZE-1), with `SystemInfoWebUI` validation and Storage coverage. **BUG-32 filed and closed, TEST-6 closed** (6 → 5 open HIGH) |
 | Core, Wifi | TEST-4 | 2026-08-31 — the stubs were the blocker: scriptable millis/heap/restart in `Platform_Stub.h`, a stateful mode/AP/connect record in `Wifi_Stub.h` (defaults byte-identical), and a 16-case behavioural suite over the fallback ladder, AP mode and reconnection; five mutations all caught; the MEM-2 device suite finally ran, 3/3 on a real radio. **TEST-4 closed** (5 → 4 open HIGH), DC-15 filed |
 | WebUI | SIZE-2, BUG-26, BUG-28, BUG-33 | 2026-08-31 — 933 → 756 + a 216-line `JsonStreamWriter.h`, extracted as a privately-inherited base so the fork's serializer hunks still land, with marianorenzi's own streaming-multiselect design adopted and credited. **SIZE-2 closed** (4 → 3 open HIGH), **BUG-28 closed** with it, **BUG-26 found already fixed** since July (`dc8886f1`, his), **BUG-33 filed and fixed** (host-only UTF-8 mangling, char signedness — measured against all three toolchains). Board: schema-memory suite 3/3, heap drift zero with a multiselect in the loop |
+| WebUI | SIZE-1, BUG-34 | 2026-08-31 — WebUI.h 1008 → 769 + `SchemaMemProbe.h` (121) + `UpdateBuilder.h` (90); the schema chunk loop, which existed three times, deduplicated into `SchemaChunkState::writeChunk` (ProviderRegistry.h 345 → 441) and finally testable — ten new native tests, component count 92 → 102. **SIZE-1 closed** (3 → 2 open HIGH — only ARCH-1/ARCH-2 remain), **BUG-34 filed and fixed**: `/api/ui/schema` had never received v1.5.0's truncation fix, and the tests found the stall fires at ordinary chunk sizes, not only below the escape floor. Fork's two WebUI.h regions untouched. Board run owed |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -66,7 +67,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 809 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, 767 after BUG-31's provider suite on 2026-08-29, 788 after BUG-32's twenty-one, and 804 after TEST-4's sixteen in `test_wifi_behaviour`; 809 adds SIZE-2's five in `test_streaming_serializer` on 2026-08-31 (that suite runs 15: the UTF-8 pin, two chunk sweeps, an empty-multiselect sweep and a serializer-reuse test on top of the original ten) |
+| ✅ | The 13 native projects run — 809 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, 767 after BUG-31's provider suite on 2026-08-29, 788 after BUG-32's twenty-one, and 804 after TEST-4's sixteen in `test_wifi_behaviour`; 809 adds SIZE-2's five in `test_streaming_serializer` on 2026-08-31 (that suite runs 15: the UTF-8 pin, two chunk sweeps, an empty-multiselect sweep and a serializer-reuse test on top of the original ten); **819** adds SIZE-1's ten on the same day — `test_schema_chunking` (5) and `test_update_builder` (5), both new directories in the WebUI project's own `test_filter`, driving the chunk-assembly loop and the update builder that no test could compile before the extraction |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -1569,6 +1570,48 @@ one worth a one-line change, and six rows that are not defects.
 - **Design**: `_bmad-output/specs/spec-test-6-webui-provider-inputs/` (SPEC.md,
   companion providers.md).
 
+### BUG-34 — WebUI: `/api/ui/schema` truncates when the serializer cannot make progress [MEDIUM] — **DONE (2026-08-31)**
+
+- **Filed and fixed**: 2026-08-31, SIZE-1's lot — found by the extraction that
+  deduplicated the schema chunk-assembly loop, which existed once per route
+  lambda and had drifted.
+- **File**: `WebUI.h`, the `/api/ui/schema` chunked-response callback.
+- **Problem**: v1.5.0 (`b961e43a`, "Fix chunked schema truncation: return
+  RESPONSE_TRY_AGAIN instead of 0 when serializer can't write") fixed the
+  poll route's `?schema=1` lambda — and `/api/ui/schema`'s copy of the same
+  loop never received the fix. A zero return from a chunked callback ends the
+  response: truncated, unparseable JSON.
+- **Wider than filed, measured natively**: the spec assumed the stall needed
+  a buffer smaller than an atomic `\u00XX` escape (six bytes). The new
+  `test_schema_chunking` suite found the easy shape: the serializer's
+  check-state guard tests the POST-transition state, so any call that starts
+  at a check state and exits the check chain returns 0 with a **fully free
+  buffer** — at ordinary chunk sizes, on ordinary content, wherever a chunk
+  boundary lands right after a completed literal. The sweep asserts these
+  transient zeros occur (`zeroReturns > 0` across sizes 6–64); the
+  escape-atomicity shape is pinned separately at `maxLen` 1, permanent until
+  the buffer grows.
+- **Severity MEDIUM, argued**: the shipped frontend has fetched only
+  `/api/ui/updates?schema=1` since v1.5.0, so no shipped UI breaks. But the
+  route is documented public API (`docs/components/webui/README.md:96`,
+  `technical-reference.md:596`), and DOC-1 records it being fetched by hand
+  on both an ESP8266 and an ESP32 during the campaign — it works when no
+  chunk boundary lands badly, which is what made the drift invisible.
+- **Fix**: the retry policy is hoisted into one private helper,
+  `writeSchemaChunkHttp()`, and **both** routes call it — the fix does not
+  clone the line into the second lambda, which would re-create the
+  drifted-duplicate shape that caused this. `SchemaChunkState::writeChunk()`
+  itself stays policy-free: retry-vs-end belongs to HTTP, not serialization.
+- **The removal check is structurally silent, stated rather than hidden**:
+  no native test compiles `WebUI.h` (ESPAsyncWebServer is `lib_ignore`d) and
+  no on-device suite fetches the route over HTTP — verified against both
+  `test_schema_memory` and `test_heap_esp8266`, which each *simulate* the
+  chunking. The pin is at the core (both stall shapes reproduced and
+  recovery asserted in `test_schema_chunking`); the wrapper's mapping to
+  `RESPONSE_TRY_AGAIN` rests on inspection and on the poll route's identical,
+  field-proven line. An HTTP-level fetch of `/api/ui/schema` joins TEST-8's
+  family of envelope-level gaps.
+
 ### BUG-33 — WebUI: the streaming escaper's control-char test depends on char signedness [LOW] — **DONE (2026-08-31)**
 
 - **Filed and fixed**: 2026-08-31, SIZE-2's lot — surfaced by that spec's
@@ -1995,10 +2038,57 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 
 ## Priority 6: File Size Violations (Constitution VII — 800 lines max)
 
-### SIZE-1 — WebUI.h (950 lines) [HIGH]
+### SIZE-1 — WebUI.h (950 lines) [HIGH] — **DONE (2026-08-31)**
 
 - **Refs**: WEB-F2, R-F1
-- **Fix**: Extract route setup + SSE broadcasting into `WebUIRoutes.h` / `BroadcastManager.h`.
+- **Fix (as filed)**: Extract route setup + SSE broadcasting into
+  `WebUIRoutes.h` / `BroadcastManager.h`.
+- **Measured**: 1008 raw lines before (950 when filed; SEC-10 and BUG-32 grew
+  it) → **769**, plus `WebUI/SchemaMemProbe.h` at **121** and
+  `WebUI/UpdateBuilder.h` at **90**; `ProviderRegistry.h` takes the chunk
+  loop, 345 → **441**. All under Constitution VII's 800. The metric is raw
+  `wc -l`, the campaign's precedent (SIZE-2 measured the same way), stated
+  because the constitution's own wording excludes blanks and comments — this
+  closes against the stricter count.
+- **The filed remedy was reshaped by two facts it predates**: the modular
+  split already existed (`WebServerManager`, `WebSocketHandler`,
+  `ProviderRegistry`, `SystemHeader` hold what those names would hold), and
+  the real fat was a loop that existed **three times** — the schema
+  chunk-assembly loop, once per route lambda and hand-rolled a third time in
+  the tests. It is now `SchemaChunkState::writeChunk()` beside its state;
+  the route lambdas are wrappers owning only the retry-vs-end policy. The
+  dedup surfaced **BUG-34** (the `/api/ui/schema` copy had never received
+  v1.5.0's truncation fix — see its entry), filed and fixed in-lot.
+- **Shaped for the fork, like SIZE-2**: marianorenzi's `esp32-ethernet`
+  touches WebUI.h in two regions (+12/−11) — the `onComponentsReady`
+  subscription block and `serializeContext`'s multiselect block — and both
+  stay byte-identical, as does the include block his hunk contexts use. His
+  `IWebUIProvider` renames are not adopted, the SIZE-2 decision again.
+- **Evidence**: native tests never compile WebUI.h (ESPAsyncWebServer is
+  `lib_ignore`d), so the extraction is what made testing possible: two new
+  suites, `test_schema_chunking` (5 — chunk-size sweep 6–64 byte-identical
+  to one-shot, both stall shapes, provider/empty-id skips, comma coverage)
+  and `test_update_builder` (5 — delta/forceNext/empty skips, header parse,
+  a crowding squeeze over every buffer size asserting dropped-never-corrupted
+  with a >512-byte payload in the fixture). Component native count 92 → 102
+  (+15 serializer, unchanged). Named mutations, `rm -rf .pio` between:
+  needComma dropped → 2 red; `began` never set → 3 red (livelock detector);
+  per-context bound dropped → red only once the fixture carries a >512-byte
+  payload — below that the 512-byte early break masks it, recorded; delta
+  check ignored → red. **One survivor, argued rather than hidden**: dropping
+  the comma backtrack (`contextIndexInProvider--`) reds nothing because the
+  branch is structurally dead — the `needComma` path is reached only straight
+  from the loop's `written < maxLen` condition and nothing writes in between.
+  True in the original lambdas too; kept verbatim, recorded here.
+- Dead members removed with the probe extraction: `heapAfterSend` /
+  `maxAfterSend`, written once and read only by the log line that now
+  samples directly.
+- Cross-compilation: WebUIOnly `esp8266dev` green. Board run owed: the WebUI
+  on-device suites on the nodemcuv2 (`test_heap_esp8266`,
+  `test_schema_memory`) against this refactor.
+- Design: `_bmad-output/implementation-artifacts/spec-size-1-webui-split.md`
+  (v2, amended after adversarial review — which falsified the fork figures,
+  the size arithmetic, and an undefined "verbatim" in the v1 draft).
 
 ### SIZE-2 — StreamingContextSerializer.h (921 lines) [HIGH] — **DONE (2026-08-31)**
 
@@ -2663,26 +2753,26 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 6M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-13/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-33 | Multiple | 0C, **0H**, 6M (**26 done**; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-34 | Multiple | 0C, **0H**, 6M (**26 done**; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
-| 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, 1H, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28) |
+| 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 2H, 0M (**ARCH-3 done**) |
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **129 items** | | **0C, 3H, 38M, 34L** (67 resolved) |
+| **Total** | **130 items** | | **0C, 2H, 38M, 34L** (69 resolved) |
 
-The severity columns sum across the rows: 1 + 2 = 3 HIGH — SIZE-1, ARCH-1,
-ARCH-2, the four of the TEST-4 lot minus **SIZE-2, which its lot closed**.
-**Security, Memory Safety, Code Safety, Test Coverage all sit at zero HIGH**,
-and what remains of the HIGH column is one file split and two architecture
-items. The rows were checked against the section headings rather than only
-re-summed — the sweep below, re-run for the SIZE-2 lot, reports 35 `[HIGH]`
-headings, 32 with evidence, 3 open, and the three are the three named here.
-SIZE-2 gained its DONE marker this lot; BUG-33 is a `[LOW]` heading and BUG-26/
-BUG-28 are `[MEDIUM]`, so none enters the `[HIGH]` sweep. The MEDIUM column
-sums to 38: 6 + 4 + 6 + 4 + 3 + 0 + 5 + 10 + 0.
+The severity columns sum across the rows: 2 HIGH, both Architecture's —
+ARCH-1 and ARCH-2, the two items that do not measure. **Security, Memory
+Safety, Code Safety, Test Coverage and now File Size all sit at zero HIGH**;
+what remains of the HIGH column is architecture, nothing else. The rows were
+checked against the section headings rather than only re-summed — the sweep
+below, re-run for the SIZE-1 lot, reports 35 `[HIGH]` headings, 33 with
+evidence, 2 open, and the two are the two named here. SIZE-1 gained its DONE
+marker this lot; BUG-34 is a `[MEDIUM]` heading, so it never enters the
+`[HIGH]` sweep. The MEDIUM column sums to 38: 6 + 4 + 6 + 4 + 3 + 0 + 5 +
+10 + 0.
 
 One lot earlier (TEST-4's): the total row read **128 items, 0C, 4H, 40M, 34L,
 63 resolved**, the four open HIGH being SIZE-1, SIZE-2, ARCH-1, ARCH-2 — kept
@@ -2762,7 +2852,10 @@ Re-run after TEST-4's closing lot (2026-08-31): **35 headings, 31 with evidence,
 SIZE-2, ARCH-1, ARCH-2), with-evidence 30 → 31. Re-run after SIZE-2's lot
 (2026-08-31, same day): **35 headings, 32 with evidence, 3 open** — SIZE-2
 crosses; BUG-33 (LOW) and the BUG-26/BUG-28 closures (MEDIUM) never enter this
-sweep: open 4 → 3 (SIZE-1, ARCH-1, ARCH-2), with-evidence 31 → 32.
+sweep: open 4 → 3 (SIZE-1, ARCH-1, ARCH-2), with-evidence 31 → 32. Re-run
+after SIZE-1's lot (2026-08-31, same day again): **35 headings, 33 with
+evidence, 2 open** — SIZE-1 crosses; BUG-34 (MEDIUM) never enters this sweep:
+open 3 → 2 (ARCH-1, ARCH-2), with-evidence 32 → 33.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
@@ -2827,7 +2920,7 @@ Memory Safety and Code Safety at zero HIGH**. No code under test changed in
 that lot: the diff is two test seams whose defaults are byte-identical to the
 old stubs, one new native suite, and two tearDown lines.
 
-**This change (2026-08-31, SIZE-2's lot):** **SIZE-2 closes** (HIGH 4 → 3),
+**The lot before this one (2026-08-31, SIZE-2's lot):** **SIZE-2 closes** (HIGH 4 → 3),
 and it takes two Code Safety MEDIUMs with it — **BUG-28** (closed with the
 fork's own streaming multiselect design) and **BUG-26** (found already fixed
 by marianorenzi's `dc8886f1` since July; the row was stale at filing) —
@@ -2840,6 +2933,21 @@ changed knowingly: multiselect values are now streamed by our escaper instead
 of built through ArduinoJson — byte-identical for the content any provider
 ships (pinned by parse-content tests; the 0x08/0x0C short-forms and the
 embedded-NUL asymmetry are recorded as unpinned residue in the SIZE-2 entry).
+
+**This change (2026-08-31, SIZE-1's lot — the third of the day):** **SIZE-1
+closes** (HIGH 3 → 2), leaving the HIGH column entirely to Architecture, and
+**File Size joins the zero-HIGH sections**. **BUG-34 is filed and fixed
+in-lot**, MEDIUM — the `/api/ui/schema` truncation drift the dedup exposed,
+wider than its spec assumed once the tests found the check-state shape — so
+it adds an ID and a resolved item and moves no severity column. Items
+129 → 130; resolved 67 → 69 (SIZE-1, BUG-34). Two HIGH remain: ARCH-1 and
+ARCH-2, the two items that do not measure — the agreed order takes ARCH-2
+next, and the decision to execute or re-argue severity (as BUG-2 was) is
+made at spec time. One behaviour changed knowingly, and it is BUG-34's fix,
+isolated in its own commit: `/api/ui/schema` now retries where it silently
+truncated. The refactor commit changes none — both stall shapes, the skip
+logic and the crowding are pinned by ten new native tests that could not
+exist before the extraction.
 
 **Why TEST-6 waited for lot B.** BUG-31 was the first of its two lots and did not
 close TEST-6: doing so then would have claimed coverage of three providers it never
@@ -2941,6 +3049,16 @@ stated total goes 128 → 129; resolved plus remaining goes 63 + 78 = 141 to
 lot in the run to close items it never set out to close: BUG-26 and BUG-28
 were Code Safety's, and both fell out of reading the file SIZE-2 was
 splitting against the fork that had already rewritten it.
+
+**SIZE-1's lot moves the total by one and resolved by two.** One new ID,
+BUG-34, filed and fixed in-lot (resolved +1, remaining +0); SIZE-1 crosses
+from remaining to resolved (resolved +1, remaining −1). The stated total goes
+129 → 130; resolved plus remaining goes 67 + 75 = 142 to 69 + 74 = 143; the
+ID ranges gain BUG-34. The 13-item gap is still 13 (143 − 130). Remaining
+74 = 2 HIGH + 38 MEDIUM + 34 LOW. Like SIZE-2's, this lot closed a Code
+Safety item it never set out to find: BUG-34 fell out of diffing the two
+route lambdas before deduplicating them, the drift visible only once the two
+copies sat side by side.
 
 ---
 
