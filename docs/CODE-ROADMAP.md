@@ -46,6 +46,7 @@ versions may sit still while fixes land.
 | WebUI | SIZE-2, BUG-26, BUG-28, BUG-33 | 2026-08-31 — 933 → 756 + a 216-line `JsonStreamWriter.h`, extracted as a privately-inherited base so the fork's serializer hunks still land, with marianorenzi's own streaming-multiselect design adopted and credited. **SIZE-2 closed** (4 → 3 open HIGH), **BUG-28 closed** with it, **BUG-26 found already fixed** since July (`dc8886f1`, his), **BUG-33 filed and fixed** (host-only UTF-8 mangling, char signedness — measured against all three toolchains). Board: schema-memory suite 3/3, heap drift zero with a multiselect in the loop |
 | WebUI | SIZE-1, BUG-34 | 2026-08-31 — WebUI.h 1008 → 769 + `SchemaMemProbe.h` (121) + `UpdateBuilder.h` (90); the schema chunk loop, which existed three times, deduplicated into `SchemaChunkState::writeChunk` (ProviderRegistry.h 345 → 441) and finally testable — ten new native tests, component count 92 → 102. **SIZE-1 closed** (3 → 2 open HIGH — only ARCH-1/ARCH-2 remain), **BUG-34 filed and fixed**: `/api/ui/schema` had never received v1.5.0's truncation fix, and the tests found the stall fires at ordinary chunk sizes, not only below the escape floor. Fork's two WebUI.h regions untouched. Board: heap suite 6/6 and schema-memory 3/3 on the nodemcuv2 |
 | LED (docs only) | ARCH-2 | 2026-08-31 — closed **by measurement, no code change**: the prescribed remedy already existed (LEDWebUI.h separate since ≥2025-09-26, so "WebUI in one class" was false at filing; the pure effect engine landed with PR #17). BUG-19 cited as the structure's one recorded defect, closed by tests not by splitting. LED-F1, the cited source, does not exist in the repository. **ARCH-2 closed** (2 → 1 open HIGH — ARCH-1 is the last) |
+| System (docs only) | ARCH-1 | 2026-08-31 — **re-argued HIGH → MEDIUM, open, dual trigger**: SYS-F6 unreadable (the HIGH was inherited, never argued); one XIII indicator exceeded (`begin()` 62, stable since filing) against a file inside every other measurement; the fork rewrites two of three prescribed extraction zones, the third declined as YAGNI. **Open HIGH reaches zero — by reclassification, stated in those words.** marianorenzi notification drafted for the maintainer |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
 (2026-08-26): SEC-2, SEC-7 and BUG-29, plus the on-device suites that now run on
@@ -2169,11 +2170,69 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 
 ## Priority 7: Architecture / God Objects (Constitution I, XIII)
 
-### ARCH-1 — System: God Object with 6+ responsibilities [HIGH]
+### ARCH-1 — System: God Object with 6+ responsibilities [MEDIUM] — re-argued HIGH → MEDIUM 2026-08-31, open, dual trigger
 
-- **Ref**: SYS-F6
-- **Problem**: Orchestrates 10 components, handles registration, persistence, events, state, console commands, boot diagnostics.
-- **Fix**: Extract `SystemComponentRegistrar`, `SystemEventOrchestrator`, `SystemConsoleCommands`.
+- **Ref**: SYS-F6 — **which cannot be read**: no document in the repository
+  carries it (BUG-23's SYS-F4 shows the family existed in the originating
+  sweep; F6's reasoning did not survive). The HIGH was inherited, never
+  argued in this entry — the BUG-2 discovery, though **not BUG-2's
+  authority**: his remedies were measured impossible, these three are
+  feasible, and this demotion rests on the weaker ground of harm-assessment
+  and timing, owned as such.
+- **Problem (as filed)**: Orchestrates 10 components, handles registration,
+  persistence, events, state, console commands, boot diagnostics.
+- **Fix (as filed)**: Extract `SystemComponentRegistrar`,
+  `SystemEventOrchestrator`, `SystemConsoleCommands`.
+- **The dating, precise in both halves**: config persistence and the WebUI
+  provider setup have been delegated (`SystemPersistence.h` 340,
+  `SystemWebUISetup.h` 417) since 2025-11-30, three months before filing —
+  but boot-diagnostics persistence remains in System.h proper, so "handles
+  persistence" was and is partially true. "Orchestrates 10 components" is
+  the meta-orchestrator's definition, not its defect; the assembler
+  maximizes coupling **by design**, which is exactly why TEST-1 was HIGH
+  and why its suites are the operative mitigation.
+- **Measured (same brace-scan as ARCH-2's closure, largest hand-checked)**:
+  System.h 643 lines (623 at filing). One XIII indicator exceeded and
+  stable since filing: `begin()` 62 lines (62 then too) — a linear
+  numbered six-step sequence, but exceeded is exceeded.
+  `getBootDiagnostics()` 50, `setupEventOrchestration()` 45. Roughly 220
+  of the 643 lines (console wiring, boot diagnostics, state/LED mapping)
+  are the real judgment call — MEDIUM-shaped: worth improving at the right
+  moment, harming nothing measured today.
+- **Defects, a checked list rather than a claimed zero**: BUG-23
+  (Early-Init in registration, HIGH, DONE 2026-08-22) — closed by a
+  narrower contract in place (`// BUG-23: register only`) plus TEST-1's
+  suites; a `SystemComponentRegistrar` **as prescribed** would have
+  relocated the same call, bug included — only the contract change
+  prevents the class, and it already happened where the code is.
+  PERSIST-1 (MEDIUM, open) sits in `SystemPersistence.h` — dead-code
+  shaped, found *by* TEST-1's suite: evidence the delegated file gets
+  audited, not structural harm here.
+- **Why not execute now — measured against the fork** (`git diff
+  --numstat`: System.h +13/−21, SystemConfig.h +4, SystemWebUISetup.h
+  +25): `esp32-ethernet` inserts `registerNetworkComponent()` into the
+  register-method list (his patch depends on the pattern the registrar
+  would relocate) and deletes `setupEventOrchestration`'s WiFi→MQTT block
+  outright (`NetworkEvents` replace it). Two of the three prescribed
+  extractions would conflict with the most structural contributor branch
+  this repository has; coordinate rather than surprise him. **The third,
+  `SystemConsoleCommands`, overlaps none of his hunks and is declined on
+  its own merits**: four one-line `registerCommand` lambdas over status
+  getters, no defect ever attributed — a new header to save ~20 lines of
+  wiring is YAGNI by the constitution's own list.
+- **Dual trigger, so the deferral cannot stall**: re-evaluate — execute,
+  restate, or close — when `esp32-ethernet` lands **or** at the next
+  release series' planning, whichever first. The marianorenzi notification
+  draft asks his System.h timing directly.
+- **Suites at re-argument**: the three System suites ran **55/55 green
+  from clean** on 2026-08-31 (`rm -rf .pio` first; `test_system_config` /
+  `test_system_lifecycle` / `test_system_persistence`) — measured, not
+  grepped.
+- Argument:
+  `_bmad-output/implementation-artifacts/spec-arch-1-system-god-object.md`
+  (v2 after adversarial review — which caught the borrowed BUG-2
+  authority, the fork covering only two extractions of three, and two
+  half-false dating claims).
 
 ### ARCH-2 — LED: God Object [HIGH] — **DONE (2026-08-31, by measurement — the prescribed remedy already existed)**
 
@@ -2797,20 +2856,24 @@ not.
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
-| 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, 1H, 0M (**ARCH-3 done**; **ARCH-2 done 2026-08-31 by measurement** — both halves of its prescribed remedy already existed, one false at filing, one delivered by PR #17; no code changed) |
+| 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, **0H**, 1M (**ARCH-3 done**; **ARCH-2 done 2026-08-31 by measurement** — both halves of its prescribed remedy already existed, one false at filing, one delivered by PR #17; no code changed. **ARCH-1 re-argued HIGH → MEDIUM 2026-08-31 and open** — SYS-F6 unreadable so the HIGH was never argued, one XIII indicator exceeded against a 643-line file otherwise inside every measurement, the fork rewrites two of the three extraction zones, the third declined as YAGNI; dual re-evaluation trigger in-entry) |
 | 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
 | 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **130 items** | | **0C, 1H, 38M, 34L** (70 resolved) |
+| **Total** | **130 items** | | **0C, 0H, 39M, 34L** (70 resolved) |
 
-The severity columns sum across the rows: **1 HIGH — ARCH-1, alone.** Every
-other section sits at zero HIGH for the first time in this roadmap's
-existence. The rows were checked against the section headings rather than
-only re-summed — the sweep below, re-run for the ARCH-2 lot, reports 35
-`[HIGH]` headings, 34 with evidence, 1 open, and the one is ARCH-1. ARCH-2
-gained its DONE marker this lot with no code change — its prescribed remedy
-was measured to already exist. The MEDIUM column sums to 38: 6 + 4 + 6 +
-4 + 3 + 0 + 5 + 10 + 0.
+The severity columns sum across the rows: **zero OPEN HIGH — for the first
+time — and the sentence is precise on purpose: the last one, ARCH-1, was
+re-argued MEDIUM and stays open; "all HIGH resolved" would be false and is
+not claimed.** This is also the second consecutive lot in which the last
+remaining HIGH left the column without code — ARCH-2 because its remedy
+already existed, ARCH-1 because no measurement supports HIGH and the
+workable remedy's moment is after the fork lands — a pattern the entries
+name rather than hide. The rows were checked against the section headings
+rather than only re-summed — the sweep below, re-run for the ARCH-1 lot,
+reports **34 `[HIGH]` headings, 34 with evidence, 0 open**: ARCH-1's
+heading left the `[HIGH]` count by re-argument, as SEC-12's did. The
+MEDIUM column sums to 39: 6 + 4 + 6 + 4 + 3 + 1 + 5 + 10 + 0.
 
 One lot earlier (TEST-4's): the total row read **128 items, 0C, 4H, 40M, 34L,
 63 resolved**, the four open HIGH being SIZE-1, SIZE-2, ARCH-1, ARCH-2 — kept
@@ -2898,7 +2961,12 @@ lot (2026-08-31 still): **35 headings, 34 with evidence, 1 open** — ARCH-2
 crosses on its new DONE marker, no heading added (the lot files no ID):
 open 2 → 1 (ARCH-1), with-evidence 33 → 34. Of the 17 headings without a
 marker, 15 clear on the resolved-table or merged-lot criteria as before;
-the survivor is ARCH-1.
+the survivor is ARCH-1. Re-run after ARCH-1's re-argument (2026-08-31,
+the day's fifth and last lot): **34 headings, 34 with evidence, 0 open** —
+ARCH-1's heading leaves the `[HIGH]` count by becoming `[MEDIUM]`, the
+SEC-12 mechanism, so the headings figure DROPS rather than a survivor
+crossing; nothing is resolved by it and the item is still open, which is
+why it appears in no evidence column either.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
@@ -2992,7 +3060,24 @@ truncated. The refactor commit changes none — both stall shapes, the skip
 logic and the crowding are pinned by ten new native tests that could not
 exist before the extraction.
 
-**This change (2026-08-31, ARCH-2's lot — the fourth of the day, and the
+**This change (2026-08-31, ARCH-1's lot — the fifth of the day):**
+**ARCH-1 is re-argued HIGH → MEDIUM and stays open** — nothing is resolved,
+nothing is filed, no code changes. SYS-F6 cannot be read, so the HIGH was
+inherited rather than argued (BUG-2's discovery, explicitly not BUG-2's
+authority — his remedies were measured impossible, these are feasible, and
+the demotion rests on harm-assessment and timing). One XIII indicator is
+exceeded and was at filing too (`begin()` 62 lines); BUG-23 and PERSIST-1
+are cited as the checked defect list; the fork rewrites two of the three
+prescribed extraction zones and the third is declined as YAGNI on its own
+merits; a dual trigger (fork landing, or next release-series planning)
+prevents the deferral from stalling. **The open-HIGH count reaches zero by
+reclassification, and the summary says so in those words.** The
+marianorenzi notification the maintainer owes at this milestone is drafted
+— not sent — in
+`_bmad-output/implementation-artifacts/draft-marianorenzi-notification.md`,
+constrained to state ARCH-1 as re-argued-and-open, never as resolved.
+
+**The lot before this one (2026-08-31, ARCH-2's lot — the fourth of the day, and the
 first to close a HIGH without changing code):** **ARCH-2 closes by
 measurement** (HIGH 2 → 1 — **ARCH-1 is the last HIGH in the roadmap**).
 Its prescribed remedy was found already delivered: the WebUI half was false
@@ -3124,6 +3209,12 @@ remaining to resolved (resolved +1, remaining −1): 69 + 74 = 143 to
 1 HIGH + 38 MEDIUM + 34 LOW. All three families move by zero or by the one
 crossing, which is what a no-code, no-ID lot should look like in the
 arithmetic.
+
+**ARCH-1's re-argument moves nothing at all in this family.** No new ID,
+nothing resolved, nothing crossing: 130 stated, 70 + 73 = 143, gap still
+13. The only movement is *within* remaining — 73 = 0 HIGH + 39 MEDIUM +
+34 LOW, one item having changed severity column without changing state.
+A re-argument that moved any total would be mislabeled as one.
 
 ---
 
