@@ -30,6 +30,7 @@
 #include "DomoticsCore/WebUI/ProviderRegistry.h"
 #include "DomoticsCore/WebUI/WebServerManager.h"
 #include "DomoticsCore/WebUI/WebSocketHandler.h"
+#include "DomoticsCore/WebUI/SystemHeader.h"
 
 namespace DomoticsCore {
 namespace Components {
@@ -444,32 +445,6 @@ private:
         csrfToken_[16] = '\0';
     }
 
-    /**
-     * @brief Print a string with JSON escaping to a response stream
-     */
-    void printJsonEscaped(AsyncResponseStream* response, const String& str) {
-        for (size_t i = 0; i < str.length(); i++) {
-            char c = str[i];
-            switch (c) {
-                case '"': response->print("\\\""); break;
-                case '\\': response->print("\\\\"); break;
-                case '\n': response->print("\\n"); break;
-                case '\r': response->print("\\r"); break;
-                case '\t': response->print("\\t"); break;
-                default:
-                    if (c < 0x20) {
-                        // Control character
-                        char buf[7];
-                        snprintf(buf, sizeof(buf), "\\u00%02x", (unsigned char)c);
-                        response->print(buf);
-                    } else {
-                        response->write(c);
-                    }
-                    break;
-            }
-        }
-    }
-    
     /**
      * @brief Add CORS headers to response if enabled in config
      */
@@ -957,10 +932,13 @@ private:
     int buildUpdateJson(bool forceFull) {
         char* buffer = wsBuffer_;
         const size_t bufSize = sizeof(wsBuffer_);
-        int pos = DSNPRINTF_P(buffer, bufSize,
-            "{\"system\":{\"uptime\":%u,\"heap\":%u,\"clients\":%d,\"device_name\":\"%s\"},\"contexts\":{",
-            (unsigned)HAL::Platform::getMillis(), (unsigned)HAL::Platform::getFreeHeap(), getWebSocketClients(), config.deviceName);
-        
+        // BUG-32: device_name is JSON-escaped in buildSystemHeader — it was
+        // interpolated raw here, so a quote or backslash in the name corrupted
+        // every client update. The header step is extracted to WebUI/SystemHeader.h
+        // so a native test can assert against it (the first slice of SIZE-1).
+        int pos = WebUI::buildSystemHeader(buffer, bufSize,
+            HAL::Platform::getMillis(), HAL::Platform::getFreeHeap(), getWebSocketClients(), config.deviceName);
+
         if (pos < 0 || pos >= (int)bufSize) return 0;
         
         int contextCount = 0;
