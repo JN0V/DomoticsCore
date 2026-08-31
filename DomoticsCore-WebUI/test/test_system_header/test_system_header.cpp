@@ -21,6 +21,7 @@
 
 #include <DomoticsCore/WebUI/JsonEscape.h>
 #include <DomoticsCore/WebUI/SystemHeader.h>
+#include <DomoticsCore/WebUI/WebUIConfig.h>
 
 using namespace DomoticsCore::Components::WebUI;
 
@@ -144,9 +145,25 @@ void test_worst_case_name_crowds_the_1024_buffer(void) {
     TEST_ASSERT_LESS_THAN_INT((int)sizeof(small), worst);
 }
 
+// --- the join with persistence: a name through WebUIConfig round-trips ---------
+// WebUIConfig.setDeviceName keeps a quote (strncpy, no stripping), and
+// buildSystemHeader escapes it to valid JSON. The storage half — that the quote
+// survives the load — is pinned in DomoticsCore-System's test_system_persistence,
+// which cannot reach WebUIConfig because WebUI compiles out of its native env.
+// Together they span the round trip a persisted quote takes to a safe render.
+void test_a_name_via_webuiconfig_round_trips(void) {
+    WebUIConfig cfg;
+    cfg.setDeviceName("My\"Device");
+    TEST_ASSERT_EQUAL_STRING("My\"Device", cfg.deviceName);  // the quote is kept, not stripped
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(parseHeader(doc, cfg.deviceName));
+    TEST_ASSERT_EQUAL_STRING("My\"Device", doc["system"]["device_name"]);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_plain_name_produces_valid_json);
+    RUN_TEST(test_a_name_via_webuiconfig_round_trips);
     RUN_TEST(test_a_quote_is_escaped);
     RUN_TEST(test_a_backslash_is_escaped);
     RUN_TEST(test_an_injection_attempt_stays_one_string);
