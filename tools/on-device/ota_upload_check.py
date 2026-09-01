@@ -93,6 +93,39 @@ def post_upload(base: str, payload: bytes, sha256: str, timeout: int,
         return e.code, e.read().decode(errors="replace"), envelope
 
 
+def disconnect_mid_upload(base: str, payload: bytes, sha256: str, token: str,
+                          cut_at: int) -> None:
+    """BUG-35: send the headers and cut_at bytes of the body, then close
+    abruptly (SO_LINGER 0 -> RST, the shape of the accident that filed the
+    bug; a FIN funnels into the same onDisconnect). The device must abort
+    the open update, not entomb it."""
+    import socket
+    from urllib.parse import urlparse
+    u = urlparse(base)
+    body = build_multipart("firmware", "firmware.bin", payload)
+    head = (
+        f"POST /api/ota/upload HTTP/1.1\r\n"
+        f"Host: {u.hostname}\r\n"
+        f"Content-Type: multipart/form-data; boundary={BOUNDARY}\r\n"
+        f"X-Firmware-SHA256: {sha256}\r\n"
+        f"X-DC-Token: {token}\r\n"
+        f"Content-Length: {len(body)}\r\n\r\n"
+    ).encode()
+    s = socket.create_connection((u.hostname, u.port or 80), timeout=20)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                 __import__("struct").pack("ii", 1, 0))
+    s.sendall(head)
+    sent = 0
+    while sent < cut_at:
+        n = s.send(body[sent:min(sent + 1024, cut_at)])
+        if n == 0:
+            break
+        sent += n
+        time.sleep(0.005)  # let the device start writing before the cut
+    s.close()  # linger(1,0): RST
+    print(f"    sent {sent} of {len(body)} body bytes, then RST")
+
+
 def get_status(base: str, timeout: int = 10):
     with urllib.request.urlopen(f"{base}/api/ota/status", timeout=timeout) as resp:
         return json.loads(resp.read().decode())
@@ -109,6 +142,11 @@ def main() -> int:
     ap.add_argument("--no-token", action="store_true",
                     help="send without the SEC-10 CSRF token: the expected result is a 403 "
                          "before anything OTA-shaped runs, and that IS the check")
+    ap.add_argument("--disconnect-at", type=int, metavar="N",
+                    help="BUG-35: send N body bytes then RST; the device must end in "
+                         "state=error and accept a follow-up upload. total will read the "
+                         "ENVELOPE size on an abort, by design: the SEC-9 narrowing runs "
+                         "at finalize, which an abort never reaches")
     args = ap.parse_args()
 
     base = args.url.rstrip("/")
@@ -140,6 +178,31 @@ def main() -> int:
 
     token = get_csrf_token(base)
     print(f"csrf token : {token}")
+
+    if args.disconnect_at is not None:
+        print(f"\n[D] disconnect after {args.disconnect_at} body bytes — the device "
+              f"must abort, not entomb (BUG-35)")
+        disconnect_mid_upload(base, payload, digest, token, args.disconnect_at)
+        time.sleep(4)
+        st = get_status(base)
+        print(f"    /api/ota/status -> state={st.get('state')} "
+              f"lastResult={st.get('lastResult')!r} total={st.get('total')}")
+        if st.get("state") == "downloading":
+            failures.append("update still open after the disconnect — the BUG-35 lock")
+        print("\n[D2] follow-up upload, wrong digest (safe) — must be ACCEPTED into "
+              "the pipeline, i.e. refused at the hash, not with 'already in progress'")
+        status, body, envelope = post_upload(base, payload, "de" + digest[2:],
+                                             args.timeout, token=token)
+        print(f"    HTTP {status}: {body.strip()}")
+        if "already in progress" in body:
+            failures.append("follow-up upload refused 'already in progress' — lock persists")
+        elif "SHA256 mismatch" not in body:
+            failures.append(f"follow-up refused for an unexpected reason: {body.strip()!r}")
+        if failures:
+            print("\nFAIL"); [print(" -", f) for f in failures]
+        else:
+            print("\nPASS (disconnect aborted the update; pipeline free)")
+        return 1 if failures else 0
 
     # --- the load-bearing case ------------------------------------------------
     # A valid image, a digest that cannot match. Refused after the narrowing and

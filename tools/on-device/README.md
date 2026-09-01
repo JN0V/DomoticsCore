@@ -86,6 +86,21 @@ does not reboot, and `/api/ota/status` remains readable. Measured on a
 never reaches `finalizeUpdateOperation()`, so it never hits the assignment that
 would have overwritten it. Only `total` discriminates, and the script says so.
 
+`--no-token` sends without the SEC-10 CSRF token: the expected result is a
+403 before anything OTA-shaped runs, and that IS the check.
+
+`--disconnect-at N` is BUG-35's check: it sends the headers and N bytes of
+the multipart body over a raw socket, then closes abruptly (SO_LINGER 0 →
+RST, the shape of the accident that filed the bug). The device must end in
+`state=error` with the disconnect reason and accept a follow-up upload —
+before the fix it froze in `downloading` and refused every retry with
+"Upload already in progress" until a power-cycle. Note that `total` reads
+the ENVELOPE size on an abort, by design: the SEC-9 narrowing runs at
+finalize, which an abort never reaches — that is not a SEC-9 regression.
+The follow-up upload deliberately carries a wrong digest so it is refused
+at the hash check without rebooting anything: "SHA256 mismatch" is the
+pass, "already in progress" is the lock.
+
 `--commit` also sends a correctly-hashed copy, which the device installs and
 reboots into. Uploading the image the board is already running makes that safe
 and repeatable.
