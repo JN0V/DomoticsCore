@@ -405,6 +405,25 @@ private:
                     // NOTE: WebUIConfig.username is char[32] and .password is char[48] (not String)
                     if (index == 0) {
                         uploadState = UploadState{};  // Reset ALL state (clears stale rejected)
+                        // BUG-35: a client that vanishes mid-body leaves the update
+                        // open forever — beginUpload() then refuses every retry with
+                        // "already in progress" until a power-cycle, on a device OTA
+                        // exists to spare the trip to. onDisconnect fires after EVERY
+                        // request, successful ones included, so the abort is gated on
+                        // uploadState.active: false until the gates below pass, false
+                        // again once `final` ran. Invariant that keeps the refusal
+                        // paths safe: active is never set before every refusal path
+                        // has returned. (Known limit, pre-existing: uploadState is
+                        // one shared field, so a second concurrent uploader's reset
+                        // can blind this predicate — single upload session at a time
+                        // is the standing assumption of this handler.)
+                        request->onDisconnect([this]() {
+                            if (!uploadState.active) return;
+                            uploadState.active = false;
+                            uploadState.success = false;
+                            uploadState.error = "Client disconnected mid-upload";
+                            ota->abortUpload("Client disconnected mid-upload");
+                        });
                         // SEC-10: refuse before beginUpload() erases flash. The
                         // completion handler returns the 403; here the point is
                         // to reject at index 0 so no flash write is ever opened
