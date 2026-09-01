@@ -86,6 +86,22 @@ for comp_dir in repo_root.iterdir():
                 shutil.rmtree(pio_dir, ignore_errors=True)
                 deleted_count += 1
 
+    # Test-project .pio dirs (fixed depth: comp/test/*/.pio) — CI-13. Some
+    # test directories are PlatformIO projects in their own right
+    # (test_schema_memory, test_streaming_serializer); their .pio was copied
+    # into libdeps with the component source and recursed to 4.3 GB once and
+    # 19 GB the second time. Same fixed-depth discipline as above: no rglob,
+    # and _safe_to_clean keeps the current project's own .pio untouchable.
+    tests_dir = comp_dir / 'test'
+    if tests_dir.is_dir():
+        for test_dir in tests_dir.iterdir():
+            if not test_dir.is_dir():
+                continue
+            pio_dir = test_dir / '.pio'
+            if pio_dir.exists() and _safe_to_clean(pio_dir):
+                shutil.rmtree(pio_dir, ignore_errors=True)
+                deleted_count += 1
+
 # --- Part 2: Clean stale DomoticsCore-* libs from current project's libdeps ---
 # This forces PlatformIO to re-copy them from source on every build.
 try:
