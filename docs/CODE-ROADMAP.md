@@ -1572,6 +1572,38 @@ one worth a one-line change, and six rows that are not defects.
 - **Design**: `_bmad-output/specs/spec-test-6-webui-provider-inputs/` (SPEC.md,
   companion providers.md).
 
+### BUG-35 — OTA: a client disconnect mid-upload locks OTA out until a power-cycle [HIGH]
+
+- **Filed**: 2026-09-01, by the second real-conditions campaign — found by an
+  accident, kept because it reproduces by construction: an upload of the
+  FullStack image to the WROOM-32D died with a broken pipe at 12%, and the
+  device never recovered.
+- **Measured, on silicon**: after the disconnect, `/api/ota/status` reports
+  `state=downloading, progress=12.09` **frozen — still identical 75 seconds
+  later** — and every subsequent upload, token and hash correct, is refused
+  with `"Upload already in progress"`. Only a reboot clears it. (The same
+  boot then accepted a clean commit end-to-end: upload, install, reboot,
+  back `idle` — the path itself is healthy.)
+- **Mechanism, located**: the upload handler in `OTAWebUI.h` calls
+  `ota->abortUpload(...)` on CSRF and auth failures but registers **no
+  `request->onDisconnect`** — when the client vanishes, nothing aborts the
+  open update. SEC-8 taught the *test* suites to release an open update in
+  `tearDown()`; production never got the equivalent.
+- **Severity HIGH, argued**: OTA exists precisely for devices no one can
+  walk to, a WiFi drop during a 1.3 MB upload is an ordinary event, and the
+  consequence is the permanent loss of the one capability that would have
+  avoided the trip. The device otherwise keeps running, which hides it.
+- **Fix shape**: `request->onDisconnect` → `abortUpload("client
+  disconnected")` (the WebUI component already uses `onDisconnect` for its
+  schema probes), or an inactivity timeout on the upload session. Not fixed
+  in the campaign's tooling lot — filed for its own lot with a board test.
+- **Recorded alongside, deliberately NOT filed**: one occurrence of
+  `"Could Not Activate The Firmware"` on a correctly-hashed upload that
+  followed a SHA-mismatch refusal — **1 occurrence in 2 attempts**; the
+  identical refuse-then-commit sequence passed cleanly when re-run. The
+  SEC-9 discipline applies: an unreplicated observation is a note in this
+  entry, not a finding.
+
 ### BUG-34 — WebUI: `/api/ui/schema` truncates when the serializer cannot make progress [MEDIUM] — **DONE (2026-08-31)**
 
 - **Filed and fixed**: 2026-08-31, SIZE-1's lot — found by the extraction that
@@ -2458,7 +2490,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   anyone writing a client against it will follow the advertised path. Either
   serve it or stop declaring it.
 
-### CI-13 — `clean_examples.py` does not know about the `test/` projects [MEDIUM]
+### CI-13 — `clean_examples.py` does not know about the `test/` projects [MEDIUM] — **DONE (2026-09-01)**
 
 - **Filed**: 2026-08-26, after a FullStack cross-compile recursed to 4.3 GB and
   was killed. Cleaning every `.pio` in the tree recovered 6.8 GB.
@@ -2485,6 +2517,40 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   discovery-based job found — "a native project nested a level below the
   components, that nothing had ever run". It was taught to the test runner and
   never to the cleanup.
+- **Fixed 2026-09-01, after being paid for a second time and dearer**: the
+  2026-09-01 campaign's FullStack ESP8266 build recursed to **19 GB and
+  145,135 object files** (against the 4.3 GB that filed this) and sat for
+  1h47 with zero fresh writes before anyone looked — the two `.pio` it
+  aspirated were exactly the ones the previous day's SIZE-1/SIZE-2 baselines
+  had left under `DomoticsCore-WebUI/test/`. The fix is the third
+  fixed-depth pass this entry prescribed (`comp/test/*/.pio`, same
+  `_safe_to_clean` guard, no `rglob`). Measured after: the same build from
+  the same purged tree lands at 30 MB, and a nested-`.pio` watch during it
+  stayed quiet but for the bounded self-inclusion now filed as CI-15.
+
+### CI-15 — no `library.json` declares `export.exclude`, so PlatformIO copies `.pio` with every `file://` component [MEDIUM]
+
+- **Filed**: 2026-09-01, by the campaign that paid CI-13 twice. Verified:
+  **zero of the twelve `library.json` files carry an `export` key.**
+- **This is the root cause of the whole family.** CI-13's recursion, and a
+  second mechanism the campaign watched live: FullStack depends on
+  `DomoticsCore-System`, whose copy includes `examples/FullStack/.pio` —
+  **the live `.pio` of the very build in progress**, the one directory
+  `_safe_to_clean` rightly refuses to touch. Every build re-copies the
+  current `.pio` state into its own `libdeps` (~5 MB observed, bounded only
+  because the cleaner's part 2 razes `libdeps/DomoticsCore-*` first on
+  every run).
+- **Why not fixed in the campaign's tooling lot**: `export.exclude` changes
+  what the PlatformIO Registry packages — people install this library by
+  version, and packaging is a release decision, not a hotfix. The remedy
+  (`"export": {"exclude": [".pio/**", "examples/**/.pio/**",
+  "test/**/.pio/**"]}` across the twelve manifests, or excluding
+  `examples`/`test` from export outright) belongs to a lot that verifies
+  the published tarball, ideally alongside the pending corrective release.
+- Until then `clean_examples.py` remains the guard, now with CI-13's third
+  pass — and its header's "never build examples in parallel" warning is
+  load-bearing: the campaign violated it once and the cleaner of one
+  example deleted the firmware another script was about to upload.
 
 ### CI-11 — HomeAssistant declares an ESP8266 test env with no ESP8266 tests [MEDIUM]
 
@@ -2852,28 +2918,28 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 6M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-13/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-34 | Multiple | 0C, **0H**, 6M (**26 done**; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-35 | Multiple | 0C, **1H**, 6M (**26 done**; **BUG-35 filed and OPEN 2026-09-01**, HIGH — a client disconnect mid-upload locks OTA out until a power-cycle, found and measured by the second real-conditions campaign; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, **0H**, 1M (**ARCH-3 done**; **ARCH-2 done 2026-08-31 by measurement** — both halves of its prescribed remedy already existed, one false at filing, one delivered by PR #17; no code changed. **ARCH-1 re-argued HIGH → MEDIUM 2026-08-31 and open** — SYS-F6 unreadable so the HIGH was never argued, one XIII indicator exceeded against a 643-line file otherwise inside every measurement, the fork rewrites two of the three extraction zones, the third declined as YAGNI; dual re-evaluation trigger in-entry) |
-| 8. CI/Infrastructure | CI-1 to CI-14 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11, CI-13 new, **CI-14 new** — FullStack is green in CI and unusable on an ESP8266) |
+| 8. CI/Infrastructure | CI-1 to CI-15 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 open, **CI-13 done 2026-09-01** — paid a second time at 19 GB before the fix its entry prescribed was finally applied; **CI-14** — FullStack is green in CI and unusable on an ESP8266; **CI-15 new** — no `library.json` declares `export.exclude`, the family's root cause, deferred to a release-aware lot) |
 | 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **130 items** | | **0C, 0H, 39M, 34L** (70 resolved) |
+| **Total** | **132 items** | | **0C, 1H, 39M, 34L** (71 resolved) |
 
-The severity columns sum across the rows: **zero OPEN HIGH — for the first
-time — and the sentence is precise on purpose: the last one, ARCH-1, was
-re-argued MEDIUM and stays open; "all HIGH resolved" would be false and is
-not claimed.** This is also the second consecutive lot in which the last
-remaining HIGH left the column without code — ARCH-2 because its remedy
-already existed, ARCH-1 because no measurement supports HIGH and the
-workable remedy's moment is after the fork lands — a pattern the entries
-name rather than hide. The rows were checked against the section headings
-rather than only re-summed — the sweep below, re-run for the ARCH-1 lot,
-reports **34 `[HIGH]` headings, 34 with evidence, 0 open**: ARCH-1's
-heading left the `[HIGH]` count by re-argument, as SEC-12's did. The
-MEDIUM column sums to 39: 6 + 4 + 6 + 4 + 3 + 1 + 5 + 10 + 0.
+The severity columns sum across the rows: **1 HIGH — BUG-35, filed by the
+2026-09-01 campaign nineteen hours after the column first read zero.** The
+zero was real while it lasted and its sentence was precise on purpose (the
+last prior HIGH, ARCH-1, was re-argued MEDIUM and stays open; "all HIGH
+resolved" was never claimed) — and a campaign that runs the shipped
+firmware against a real network exists precisely to refill this column;
+one that could not have done so would be the worrying result. The rows
+were checked against the section headings rather than only re-summed — the
+sweep below, re-run for the campaign's tooling lot, reports **35 `[HIGH]`
+headings, 34 with evidence, 1 open**, and the one is BUG-35. The MEDIUM
+column sums to 39: 6 + 4 + 6 + 4 + 3 + 1 + 5 + 10 + 0 — CI-13 leaving and
+CI-15 entering cancel inside the CI row.
 
 One lot earlier (TEST-4's): the total row read **128 items, 0C, 4H, 40M, 34L,
 63 resolved**, the four open HIGH being SIZE-1, SIZE-2, ARCH-1, ARCH-2 — kept
@@ -2966,7 +3032,10 @@ the day's fifth and last lot): **34 headings, 34 with evidence, 0 open** —
 ARCH-1's heading leaves the `[HIGH]` count by becoming `[MEDIUM]`, the
 SEC-12 mechanism, so the headings figure DROPS rather than a survivor
 crossing; nothing is resolved by it and the item is still open, which is
-why it appears in no evidence column either.
+why it appears in no evidence column either. Re-run after the 2026-09-01
+campaign's tooling lot: **35 headings, 34 with evidence, 1 open** — BUG-35
+is the thirty-fifth `[HIGH]` heading and it is open; the campaign refilled
+the column the previous day emptied, which is its job.
 
 **They summed before this change too, and both figures were wrong.** The Code
 Safety row said `0H` while BUG-21 sat open — no DONE marker, in no release table,
@@ -3060,7 +3129,19 @@ truncated. The refactor commit changes none — both stall shapes, the skip
 logic and the crowding are pinned by ten new native tests that could not
 exist before the extraction.
 
-**This change (2026-08-31, ARCH-1's lot — the fifth of the day):**
+**This change (2026-09-01, the second real-conditions campaign's tooling
+lot):** the campaign paragraph above carries the runs; the lot itself
+ships the CI-13 fix (`clean_examples.py` learns `test/*/.pio`), the
+harness repairs (`ota_upload_check.py` fetches the SEC-10 token, with
+`--no-token` as SEC-10's own check), and three roadmap movements:
+**CI-13 closes** (fixed and measured — 19 GB → 30 MB on the same build),
+**BUG-35 is filed and left open**, HIGH — the first HIGH filed since the
+column read zero, nineteen hours earlier — and **CI-15 is filed and left
+open**, MEDIUM, the packaging root cause deferred to a release-aware lot.
+No component code changes; the BUG-35 fix gets its own lot with a board
+test.
+
+**The lot before this one (2026-08-31, ARCH-1's lot — the fifth of the day):**
 **ARCH-1 is re-argued HIGH → MEDIUM and stays open** — nothing is resolved,
 nothing is filed, no code changes. SYS-F6 cannot be read, so the HIGH was
 inherited rather than argued (BUG-2's discovery, explicitly not BUG-2's
@@ -3101,6 +3182,41 @@ Both new findings came out of the work rather than out of a review, which is the
 pattern every lot has repeated: SEC-2's re-fix raised SEC-7, SEC-7 raised SEC-8,
 and BUG-21's tests raised BUG-30 by being the first code in the repository to
 subscribe to a topic OTA publishes on.
+
+**The second real-conditions campaign (2026-09-01) ran both boards against
+the real network and found the roadmap's next HIGH.** On the nodemcuv2:
+Storage 7/7, OTA 10/10, FullStack 8/8, WebUI heap 6/6, schema-memory 3/3 —
+every ESP8266 on-device suite green against post-campaign `main`. On the
+WROOM-32D: FullStack booted, joined the real WiFi and broker; a real
+browser loaded the dashboard with zero console errors, zero failed
+requests, and the SEC-10 flow visible on the wire (`/api/ui/token` then
+`?schema=1`); `/api/ui/schema` — never before fetched over HTTP by
+anything in this repository — returned 19 parseable contexts; a tokenless
+OTA upload got 403, a wrong-hash upload was refused with `total` naming
+the firmware and not the envelope (SEC-9 on ESP32), and a clean commit
+installed, rebooted and came back idle, twice. What it found: **BUG-35**
+(the disconnect lock, HIGH, above), **CI-13 paid a second time at 19 GB**
+(fixed in this lot), **CI-15 filed** (the packaging root cause), one
+unreplicated `"Could Not Activate"` recorded inside BUG-35's entry rather
+than filed, and BUG-32's owed measurement partially settled on silicon:
+the WebUIOnly update runs 558 of its 1024 bytes with headroom 466, so the
+worst-case escaped name (186 bytes) cannot crowd *that* deployment — the
+drop scenario needs a context-dense ESP8266 network deployment, which
+CI-14 currently makes unreachable with shipped examples. Not covered:
+the ESP32-CAM (absent from the bus, its OTA suite's last silicon run
+stays 2026-08-27) and the harness's toggle click (found the settings
+checkbox `disabled` — a harness limit recorded, not a device defect; the
+POST-with-token path was proven by hand instead). The harness itself
+needed repair before it could test anything: `ota_upload_check.py` had
+been silently un-runnable since SEC-10 shipped the token it never heard
+of — patched in this lot, with `--no-token` turning the 403 into SEC-10's
+own check. Suite durations measured 10–30× shorter than the previous
+day's runs of the same suites on the same board: yesterday's figures were
+inflated by host contention from parallel native builds, a reminder that
+Unity durations are wall-clock at the host. And one warning was validated
+the expensive way: building two examples in parallel let one example's
+cleaner delete the firmware the other was uploading — the header's
+"sequential builds are required" is load-bearing.
 
 **The 2026-08-27 real-conditions campaign added three more, and closed none.**
 SEC-9, CI-14 and DOC-1 all came from running the shipped examples on a
@@ -3215,6 +3331,13 @@ nothing resolved, nothing crossing: 130 stated, 70 + 73 = 143, gap still
 13. The only movement is *within* remaining — 73 = 0 HIGH + 39 MEDIUM +
 34 LOW, one item having changed severity column without changing state.
 A re-argument that moved any total would be mislabeled as one.
+
+**The campaign's tooling lot moves all three by exactly two.** Two new IDs
+(BUG-35, CI-15), so the stated total goes 130 → 132; CI-13 crosses from
+remaining to resolved: resolved plus remaining goes 70 + 73 = 143 to
+71 + 74 = 145 (BUG-35 and CI-15 enter remaining, CI-13 leaves it). The
+13-item gap is still 13 (145 − 132). Remaining 74 = 1 HIGH + 39 MEDIUM +
+34 LOW.
 
 ---
 
