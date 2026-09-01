@@ -62,16 +62,28 @@ def build_multipart(field: str, filename: str, payload: bytes) -> bytes:
     return head + payload + tail
 
 
-def post_upload(base: str, payload: bytes, sha256: str, timeout: int):
+def get_csrf_token(base: str, timeout: int = 10) -> str:
+    # SEC-10: every state-changing route requires the per-boot token. This
+    # script predates that lot and was silently un-runnable against a fixed
+    # device until it learned to fetch one.
+    with urllib.request.urlopen(f"{base}/api/ui/token", timeout=timeout) as resp:
+        return json.loads(resp.read().decode())["token"]
+
+
+def post_upload(base: str, payload: bytes, sha256: str, timeout: int,
+                token: str | None = None):
     body = build_multipart("firmware", "firmware.bin", payload)
+    headers = {
+        "Content-Type": f"multipart/form-data; boundary={BOUNDARY}",
+        "X-Firmware-SHA256": sha256,
+    }
+    if token is not None:
+        headers["X-DC-Token"] = token
     req = urllib.request.Request(
         f"{base}/api/ota/upload",
         data=body,
         method="POST",
-        headers={
-            "Content-Type": f"multipart/form-data; boundary={BOUNDARY}",
-            "X-Firmware-SHA256": sha256,
-        },
+        headers=headers,
     )
     envelope = len(body)
     try:
@@ -94,6 +106,9 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=120)
     ap.add_argument("--commit", action="store_true",
                     help="also send a correctly-hashed copy; the device installs it and reboots")
+    ap.add_argument("--no-token", action="store_true",
+                    help="send without the SEC-10 CSRF token: the expected result is a 403 "
+                         "before anything OTA-shaped runs, and that IS the check")
     args = ap.parse_args()
 
     base = args.url.rstrip("/")
@@ -107,12 +122,31 @@ def main() -> int:
 
     failures = []
 
+    if args.no_token:
+        # SEC-10's own check: the unauthenticated multipart install this route
+        # allowed is what made it the campaign's CRITICAL. Without the token
+        # the answer must be 403 and the OTA state must not so much as twitch.
+        print("\n[0] no CSRF token — must be 403, OTA untouched")
+        status, body, envelope = post_upload(base, payload, digest, args.timeout,
+                                             token=None)
+        print(f"    HTTP {status}: {body.strip()}")
+        if status != 403:
+            failures.append(f"tokenless upload was not refused with 403: HTTP {status}")
+        if failures:
+            print("\nFAIL"); [print(" -", f) for f in failures]
+        else:
+            print("\nPASS (tokenless refusal)")
+        return 1 if failures else 0
+
+    token = get_csrf_token(base)
+    print(f"csrf token : {token}")
+
     # --- the load-bearing case ------------------------------------------------
     # A valid image, a digest that cannot match. Refused after the narrowing and
     # before the commit, so the board stays up and keeps its figures.
     wrong = "de" + digest[2:]
     print("\n[1] valid image, wrong digest — must be refused, nothing committed")
-    status, body, envelope = post_upload(base, payload, wrong, args.timeout)
+    status, body, envelope = post_upload(base, payload, wrong, args.timeout, token=token)
     print(f"    announced Content-Length : {envelope}")
     print(f"    HTTP {status}: {body.strip()}")
 
@@ -144,7 +178,7 @@ def main() -> int:
     # --- the destructive case, opt-in ----------------------------------------
     if args.commit:
         print("\n[2] valid image, correct digest — installs and reboots")
-        status, body, envelope = post_upload(base, payload, digest, args.timeout)
+        status, body, envelope = post_upload(base, payload, digest, args.timeout, token=token)
         print(f"    HTTP {status}: {body.strip()}")
         if '"success":true' not in body.replace(" ", ""):
             failures.append(f"a correctly-hashed upload was not accepted: {body.strip()!r}")
