@@ -91,3 +91,7 @@ secrets.h
 
 # Logs produced by the on-device harness
 tools/on-device/log-*.txt
+
+# Drafts of outbound communication stay local — they are the maintainer's to send,
+# and a public repository is not the place for them before that decision.
+_bmad-output/implementation-artifacts/draft-*.md

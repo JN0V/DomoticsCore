@@ -3206,9 +3206,12 @@ merits; a dual trigger (fork landing, or next release-series planning)
 prevents the deferral from stalling. **The open-HIGH count reaches zero by
 reclassification, and the summary says so in those words.** The
 marianorenzi notification the maintainer owes at this milestone is drafted
-— not sent — in
-`_bmad-output/implementation-artifacts/draft-marianorenzi-notification.md`,
-constrained to state ARCH-1 as re-argued-and-open, never as resolved.
+— not sent — **as a local, untracked file** (it was briefly committed here
+by mistake and removed on 2026-09-01: a draft of outbound communication is
+the maintainer's to send, and a public repository is not the place for it
+before that decision — `draft-*.md` is now gitignored under
+implementation-artifacts). It is constrained to state ARCH-1 as
+re-argued-and-open, never as resolved.
 
 **The lot before this one (2026-08-31, ARCH-2's lot — the fourth of the day, and the
 first to close a HIGH without changing code):** **ARCH-2 closes by
