@@ -88,6 +88,27 @@ requested, caps `INTERNAL|DEFAULT` — and **reported 91 264 B "free"
 internal heap at that moment**: the free figure counts 32-bit-only IRAM
 that `malloc` cannot use. It fired zero times in 60 s idle, without WiFi.
 
+### ESP32-C3 (`esp32-c3-devkitm-1`, native USB-Serial-JTAG, stock `default.csv`)
+
+Run the same afternoon, the first code ever executed on the CI's third
+target. Same probes as the WROOM-32D:
+
+| event | `esp_reset_reason()` | `RTC_NOINIT_ATTR` record | core dump afterwards |
+|---|---|---|---|
+| USB-Serial-JTAG reset pulse (DTR low, RTS pulse) | **0 UNKNOWN** | **kept** | — |
+| null dereference | 4 PANIC | kept | 2 916 B (probe) / 7 044 B (System) |
+| `malloc` until NULL, then dereference | 4 PANIC | kept | 2 916 B |
+| `abort()` | 4 PANIC | kept | 3 044 B |
+| busy loop in `loop()` | **no reset in > 55 s** | — | — |
+| busy loop, Lot A watchdog at 5 s | 6 TASK_WDT in ~5 s | kept | 9 476 B |
+
+The hang is silent for a different reason than on the ESP32: the C3's
+precompiled sdkconfig has no `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0` at
+all, so with one core nothing is on the task watchdog. Lot A's
+`enableLoopWatchdog()` works unchanged. The failed-alloc hook fired once at
+the terminal failure (73 × 4 KB, then NULL, 10 220 B "free"), zero times
+idle. The port re-enumerates on every reset, so a reader must reopen.
+
 `addr2line` on the ESP32 ELF gave `file:line` for every address. On the
 ESP8266 it gave `setup at ??:?` — the default PlatformIO build carries
 symbols but no line tables. Two operational facts fall out: keep the ELF
