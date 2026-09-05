@@ -166,8 +166,8 @@ nothing records why. This release reads what the platform already kept.
 
 ### Testing
 
-- **Native**: 836 test cases across 13 projects, up from 715 at
-  v2.2.0 — 819 before the observability lot, which added 17 across
+- **Native**: 851 test cases across 13 projects, up from 715 at
+  v2.2.0 — 819 before the observability lot, which added 32 across
   SystemInfo and System, driven through new `Platform_Stub.h` seams for the
   reset detail, the core dump status and the loop watchdog. TEST-4 gave WiFi a 16-case behavioural suite over the fallback
   ladder, AP mode and reconnection, on scriptable `millis`/heap/restart and a
