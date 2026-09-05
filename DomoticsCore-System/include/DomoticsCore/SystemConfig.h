@@ -103,6 +103,15 @@ struct SystemConfig {
     
     // Storage (optional)
     bool enableStorage = false;
+
+    // Loop watchdog (OBS-7). In effect on ESP32 only: the Arduino core does not
+    // put loopTask on the task watchdog, so a stuck loop() hangs forever instead
+    // of rebooting — measured 2026-09-05, >40 s of silence against a 5 s TWDT.
+    // System::loop() feeds it, so any sketch that calls it regularly is safe;
+    // expiry is a panic and leaves a core dump with the hang's backtrace. It
+    // reconfigures the task watchdog timeout globally. 0 disables. On ESP8266
+    // the SDK's soft WDT already resets a stuck loop in about 3 s.
+    uint32_t loopWatchdogSeconds = 30;
     String storageNamespace = "domotics";
     
     // Logging

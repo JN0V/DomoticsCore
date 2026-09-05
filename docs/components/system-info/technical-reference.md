@@ -86,8 +86,11 @@ Volatile data captured once at boot by `SystemInfoComponent::begin()`. The `boot
 |-------|------|---------|-------------|
 | `bootCount` | `uint32_t` | `0` | Incrementing boot counter. Set by `System` via `Storage`, not by `SystemInfo` itself. |
 | `resetReason` | `HAL::Platform::ResetReason` | `Unknown` | Enum representing the reason for the last reset. |
-| `lastBootHeap` | `uint32_t` | `0` | Free heap (bytes) captured at boot. |
-| `lastBootMinHeap` | `uint32_t` | `0` | Minimum free heap (bytes) captured at boot. |
+| `bootHeap` | `uint32_t` | `0` | Free heap (bytes) when **this** run started. It says nothing about the run that died (OBS-6). |
+| `bootMinHeap` | `uint32_t` | `0` | Minimum free heap when this run started, only where `bootMinHeapTracked` is true. |
+| `bootMinHeapTracked` | `bool` | `false` | `HAL::Platform::tracksMinFreeHeap()` — false on ESP8266, whose `getMinFreeHeap()` returns the current heap. |
+| `resetDetail` | `HAL::Platform::ResetDetail` | invalid | ESP8266: `exccause`, `epc1`, `excvaddr`… the SDK kept across an exception or watchdog reset (OBS-2). `epc1` decodes to a source line with `xtensa-lx106-elf-addr2line -e firmware.elf`. **An `abort()`, an `assert` or an out-of-memory `new` arrive as `ResetReason::Software` with nothing here** — measured 2026-09-05. |
+| `coreDump` | `HAL::Platform::CoreDumpStatus` | unsupported | ESP32: whether a `coredump` partition exists and whether a dump from a previous panic is waiting in it, with its size (OBS-1). |
 | `valid` | `bool` | `false` | Set to `true` once boot diagnostics have been successfully captured. |
 
 ### Methods
