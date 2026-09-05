@@ -171,6 +171,15 @@ public:
             DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping boot diagnostics", (unsigned)HAL::getFreeHeap());
         }
         
+        // 6b. Loop watchdog (OBS-7). ESP32 only in effect: the Arduino core
+        // leaves loopTask off the task watchdog, so a stuck loop() hangs forever
+        // instead of rebooting. loop() feeds it; expiry is a panic, hence a core dump.
+        if (config.loopWatchdogSeconds > 0) {
+            if (HAL::Platform::enableLoopWatchdog(config.loopWatchdogSeconds)) {
+                DLOG_I(LOG_SYSTEM, "Loop watchdog armed: %lu s", (unsigned long)config.loopWatchdogSeconds);
+            }
+        }
+
         // 7. System Ready
         setState(SystemState::READY);
         printReadyBanner();
@@ -184,6 +193,7 @@ public:
      */
     void loop() {
         core.loop();
+        HAL::Platform::feedLoopWatchdog();   // OBS-7: a loop that stops reaching here is the hang
     }
     
     // ========== Accessors ==========
@@ -420,21 +430,9 @@ private:
             return;
         }
         
-        // Load and increment boot count
-        uint32_t bootCount = storage->getInt("boot_count", 0) + 1;
-        storage->putInt("boot_count", static_cast<int32_t>(bootCount));
-        
-        // Get boot diagnostics from SystemInfo and update boot count
-        const auto& diag = sysInfo->getBootDiagnostics();
-        sysInfo->setBootCount(bootCount);
-        
-        // Persist last reset info for debugging
-        storage->putInt("last_reset", static_cast<int32_t>(diag.resetReason));
-        storage->putInt("last_heap", static_cast<int32_t>(diag.lastBootHeap));
-        storage->putInt("last_minheap", static_cast<int32_t>(diag.lastBootMinHeap));
-        
-        DLOG_I(LOG_SYSTEM, "Boot #%u persisted (Reset: %s)", 
-               bootCount, diag.getResetReasonString().c_str());
+        uint32_t bootCount = SystemHelpers::persistBootDiagnostics(*storage, *sysInfo);
+        DLOG_I(LOG_SYSTEM, "Boot #%u persisted (Reset: %s)",
+               bootCount, sysInfo->getBootDiagnostics().getResetReasonString().c_str());
 #endif
     }
     
@@ -594,17 +592,23 @@ private:
         const auto& diag = sysInfo->getBootDiagnostics();
         if (!diag.valid) return "Boot Diagnostics: Not captured\n";
         
-        char buf[512];
+        char minHeapStr[40];
+        if (diag.bootMinHeapTracked) {
+            snprintf(minHeapStr, sizeof(minHeapStr), "%lu bytes", (unsigned long)diag.bootMinHeap);
+        } else {
+            snprintf(minHeapStr, sizeof(minHeapStr), "n/a (not tracked on this platform)");
+        }
+        char buf[768];
         int pos = snprintf(buf, sizeof(buf),
                  "Boot Diagnostics:\n"
                  "  Boot Count: %lu\n"
                  "  Reset Reason: %s\n"
-                 "  Boot Heap: %lu bytes\n"
-                 "  Boot Min Heap: %lu bytes\n",
+                 "  Heap at this boot: %lu bytes\n"
+                 "  Min heap at this boot: %s\n",
                  (unsigned long)diag.bootCount,
                  diag.getResetReasonString().c_str(),
-                 (unsigned long)diag.lastBootHeap,
-                 (unsigned long)diag.lastBootMinHeap);
+                 (unsigned long)diag.bootHeap,
+                 minHeapStr);
         if (pos < 0) pos = 0;
         if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
 
@@ -615,6 +619,33 @@ private:
             if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
         }
 
+        // OBS-2: what the SDK kept from the death, when it kept anything
+        if (diag.resetDetail.valid) {
+            pos += snprintf(buf + pos, sizeof(buf) - pos,
+                            "  Reset detail: exccause=%lu epc1=0x%08lx excvaddr=0x%08lx\n"
+                            "    (decode epc1 with xtensa-lx106-elf-addr2line against this build's ELF)\n",
+                            (unsigned long)diag.resetDetail.exccause,
+                            (unsigned long)diag.resetDetail.epc1,
+                            (unsigned long)diag.resetDetail.excvaddr);
+            if (pos < 0) pos = 0;
+            if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
+        }
+        // OBS-1: the ESP32 coredump partition
+        if (diag.coreDump.supported) {
+            pos += snprintf(buf + pos, sizeof(buf) - pos,
+                            "  Core dump: %s\n",
+                            !diag.coreDump.partitionPresent ? "no coredump partition in this table"
+                            : diag.coreDump.dumpPresent    ? "WAITING — a previous panic left a dump"
+                                                           : "partition present, no dump waiting");
+            if (pos < 0) pos = 0;
+            if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
+            if (diag.coreDump.dumpPresent) {
+                pos += snprintf(buf + pos, sizeof(buf) - pos, "    %lu bytes\n", (unsigned long)diag.coreDump.size);
+                if (pos < 0) pos = 0;
+                if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
+            }
+        }
+
         // Also show persisted history from Storage
 #if __has_include(<DomoticsCore/Storage.h>)
         auto* storage = core.getComponent<Components::StorageComponent>("Storage");
@@ -623,12 +654,12 @@ private:
                      "\nPersisted Data:\n"
                      "  boot_count: %d\n"
                      "  last_reset: %d\n"
-                     "  last_heap: %d\n"
-                     "  last_minheap: %d\n",
+                     "  boot_heap: %d\n"
+                     "  boot_minheap: %d\n",
                      storage->getInt("boot_count", 0),
                      storage->getInt("last_reset", -1),
-                     storage->getInt("last_heap", 0),
-                     storage->getInt("last_minheap", 0));
+                     storage->getInt("boot_heap", 0),
+                     storage->getInt("boot_minheap", 0));
         }
 #endif
         return String(buf);

@@ -16,6 +16,7 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    HAL::Platform::resetDiagnosticsForTest();
     if (testCore) {
         testCore->shutdown();
         delete testCore;
@@ -46,7 +47,7 @@ void test_boot_diagnostics_heap_captured(void) {
 
     const auto& bootDiag = sysinfo.getBootDiagnostics();
     // Stub returns 0 for heap - just check it's captured
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(0, bootDiag.lastBootHeap);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(0, bootDiag.bootHeap);
 }
 
 void test_boot_diagnostics_reset_reason_not_unknown(void) {
@@ -176,7 +177,7 @@ void test_boot_heap_matches_hal(void) {
 
     // Boot heap should be close to current heap (within reason)
     // On stub, they should be identical since heap is constant
-    TEST_ASSERT_EQUAL_UINT32(currentHeap, bootDiag.lastBootHeap);
+    TEST_ASSERT_EQUAL_UINT32(currentHeap, bootDiag.bootHeap);
 }
 
 void test_boot_min_heap_captured(void) {
@@ -186,7 +187,7 @@ void test_boot_min_heap_captured(void) {
     const auto& bootDiag = sysinfo.getBootDiagnostics();
 
     // Min heap should be captured (stub returns same as free heap)
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(0, bootDiag.lastBootMinHeap);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(0, bootDiag.bootMinHeap);
 }
 
 void test_boot_heap_nonzero(void) {
@@ -196,7 +197,7 @@ void test_boot_heap_nonzero(void) {
     const auto& bootDiag = sysinfo.getBootDiagnostics();
 
     // Stub returns 0 - just check it's >= 0
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(0, bootDiag.lastBootHeap);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(0, bootDiag.bootHeap);
 }
 
 // ============================================================================
@@ -208,8 +209,8 @@ void test_boot_diagnostics_struct_defaults(void) {
 
     TEST_ASSERT_EQUAL_UINT32(0, diag.bootCount);
     TEST_ASSERT_EQUAL(HAL::Platform::ResetReason::Unknown, diag.resetReason);
-    TEST_ASSERT_EQUAL_UINT32(0, diag.lastBootHeap);
-    TEST_ASSERT_EQUAL_UINT32(0, diag.lastBootMinHeap);
+    TEST_ASSERT_EQUAL_UINT32(0, diag.bootHeap);
+    TEST_ASSERT_EQUAL_UINT32(0, diag.bootMinHeap);
     TEST_ASSERT_FALSE(diag.valid);
 }
 
@@ -236,6 +237,88 @@ void test_boot_diagnostics_unexpected_reset_check(void) {
 // ============================================================================
 // Test Runner
 // ============================================================================
+
+// ============================================================================
+// OBS-1 / OBS-2 / OBS-6: what the boot diagnostics carry from the death
+// ============================================================================
+
+void test_reset_detail_is_absent_by_default(void) {
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    TEST_ASSERT_FALSE(sysinfo.getBootDiagnostics().resetDetail.valid);
+}
+
+// The ESP8266 SDK keeps exccause/epc1/excvaddr across an exception or a
+// watchdog reset; the stub scripts them the way the platform would report
+// them, and the component must carry them through untouched.
+void test_reset_detail_scripted_reaches_boot_diagnostics(void) {
+    HAL::Platform::ResetDetail d;
+    d.exccause = 28; d.epc1 = 0x40201297; d.excvaddr = 0; d.valid = true;
+    HAL::Platform::setResetDetailForTest(d);
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Panic);
+
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    const auto& diag = sysinfo.getBootDiagnostics();
+    TEST_ASSERT_TRUE(diag.resetDetail.valid);
+    TEST_ASSERT_EQUAL_UINT32(28, diag.resetDetail.exccause);
+    TEST_ASSERT_EQUAL_HEX32(0x40201297, diag.resetDetail.epc1);
+    TEST_ASSERT_TRUE(diag.wasUnexpectedReset());
+}
+
+// Measured 2026-09-05 on a nodemcuv2: abort() and an OOM in `new` arrive as
+// Software with no detail. The struct must say exactly that — not Unknown,
+// not unexpected, nothing in the registers — so a reader is not misled.
+void test_a_software_reset_carries_no_detail_and_is_not_unexpected(void) {
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Software);
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    const auto& diag = sysinfo.getBootDiagnostics();
+    TEST_ASSERT_EQUAL(HAL::Platform::ResetReason::Software, diag.resetReason);
+    TEST_ASSERT_FALSE(diag.resetDetail.valid);
+    TEST_ASSERT_FALSE(diag.wasUnexpectedReset());
+}
+
+void test_core_dump_status_is_unsupported_by_default(void) {
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    const auto& cd = sysinfo.getBootDiagnostics().coreDump;
+    TEST_ASSERT_FALSE(cd.supported);
+    TEST_ASSERT_FALSE(cd.dumpPresent);
+    TEST_ASSERT_EQUAL_UINT32(0, cd.size);
+}
+
+// The ESP32 probe left 8964 bytes after a null dereference; the component
+// reports what the HAL found, size included.
+void test_core_dump_status_scripted_reaches_boot_diagnostics(void) {
+    HAL::Platform::CoreDumpStatus st;
+    st.supported = true; st.partitionPresent = true; st.dumpPresent = true; st.size = 8964;
+    HAL::Platform::setCoreDumpStatusForTest(st);
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    const auto& cd = sysinfo.getBootDiagnostics().coreDump;
+    TEST_ASSERT_TRUE(cd.supported);
+    TEST_ASSERT_TRUE(cd.partitionPresent);
+    TEST_ASSERT_TRUE(cd.dumpPresent);
+    TEST_ASSERT_EQUAL_UINT32(8964, cd.size);
+}
+
+// OBS-6: a platform that does not track a minimum must say so rather than
+// report the current heap under the minimum's name.
+void test_boot_min_heap_is_marked_untracked_where_the_platform_has_none(void) {
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    const auto& diag = sysinfo.getBootDiagnostics();
+    TEST_ASSERT_EQUAL(HAL::Platform::tracksMinFreeHeap(), diag.bootMinHeapTracked);
+    if (!diag.bootMinHeapTracked) TEST_ASSERT_EQUAL_UINT32(0, diag.bootMinHeap);
+}
+
+void test_boot_diagnostics_new_fields_default_empty(void) {
+    BootDiagnostics diag;
+    TEST_ASSERT_FALSE(diag.bootMinHeapTracked);
+    TEST_ASSERT_FALSE(diag.resetDetail.valid);
+    TEST_ASSERT_FALSE(diag.coreDump.supported);
+}
 
 int main(int argc, char **argv) {
     UNITY_BEGIN();
@@ -267,6 +350,15 @@ int main(int argc, char **argv) {
     RUN_TEST(test_boot_diagnostics_struct_defaults);
     RUN_TEST(test_boot_diagnostics_reset_reason_string);
     RUN_TEST(test_boot_diagnostics_unexpected_reset_check);
+
+    // OBS-1 / OBS-2 / OBS-6
+    RUN_TEST(test_reset_detail_is_absent_by_default);
+    RUN_TEST(test_reset_detail_scripted_reaches_boot_diagnostics);
+    RUN_TEST(test_a_software_reset_carries_no_detail_and_is_not_unexpected);
+    RUN_TEST(test_core_dump_status_is_unsupported_by_default);
+    RUN_TEST(test_core_dump_status_scripted_reaches_boot_diagnostics);
+    RUN_TEST(test_boot_min_heap_is_marked_untracked_where_the_platform_has_none);
+    RUN_TEST(test_boot_diagnostics_new_fields_default_empty);
 
     return UNITY_END();
 }

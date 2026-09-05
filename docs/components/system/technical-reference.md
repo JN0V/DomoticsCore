@@ -394,8 +394,8 @@ Keys are organized by component group:
 | | `ha_sw_ver` | `s` | Software version |
 | **Boot Diag** (not registered*) | `boot_count` | `i` | Persisted boot counter |
 | | `last_reset` | `i` | Last reset reason code |
-| | `last_heap` | `i` | Heap at last boot |
-| | `last_minheap` | `i` | Minimum heap at last boot |
+| | `boot_heap` | `i` | Free heap when this boot started (was `last_heap`, which is removed on the first boot of a build carrying OBS-6) |
+| | `boot_minheap` | `i` | Minimum free heap when this boot started; written only where the platform tracks one (ESP32) |
 
 \* Boot Diag keys are used directly via `storage->getInt()`/`storage->putInt()` in `initBootDiagnosticsPersistence()` but are **not** registered with `storage->registerKeys()`. They will not appear in Storage key enumeration.
 
@@ -493,7 +493,7 @@ When both Storage and SystemInfo components are enabled, `initBootDiagnosticsPer
 1. Loads `boot_count` from Storage and increments it.
 2. Saves the updated `boot_count` back to Storage.
 3. Updates the SystemInfo component with the new boot count via `setBootCount()`.
-4. Persists `last_reset`, `last_heap`, and `last_minheap` from the boot diagnostics snapshot.
+4. Persists `last_reset`, `boot_heap` and, where tracked, `boot_minheap` from the boot diagnostics snapshot, and removes the `last_heap`/`last_minheap` keys older builds wrote — they described the new boot under the previous run's name (OBS-6).
 
 This data is accessible via the `bootdiag` console command.
 

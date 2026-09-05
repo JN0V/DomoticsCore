@@ -318,6 +318,37 @@ inline void loadHomeAssistantConfig(Core& core, const SystemConfig& config) {
 #endif
 }
 
+#if __has_include(<DomoticsCore/Storage.h>) && __has_include(<DomoticsCore/SystemInfo.h>)
+/**
+ * @brief Increment and persist the boot counter, and persist this boot's diagnostics.
+ *
+ * Returns the new boot count, already pushed into SystemInfo. The heap keys
+ * describe the run that is starting — `boot_heap`, and `boot_minheap` only
+ * where the platform tracks a minimum — and the keys they replace
+ * (`last_heap`, `last_minheap`), which claimed to describe the previous run,
+ * are removed once so they do not sit in NVS/LittleFS forever (OBS-6).
+ */
+inline uint32_t persistBootDiagnostics(Components::StorageComponent& storage,
+                                       Components::SystemInfoComponent& sysInfo) {
+    uint32_t bootCount = storage.getInt("boot_count", 0) + 1;
+    storage.putInt("boot_count", static_cast<int32_t>(bootCount));
+
+    const auto& diag = sysInfo.getBootDiagnostics();
+    sysInfo.setBootCount(bootCount);
+
+    storage.putInt("last_reset", static_cast<int32_t>(diag.resetReason));
+    storage.putInt("boot_heap", static_cast<int32_t>(diag.bootHeap));
+    if (diag.bootMinHeapTracked) {
+        storage.putInt("boot_minheap", static_cast<int32_t>(diag.bootMinHeap));
+    } else if (storage.exists("boot_minheap")) {
+        storage.remove("boot_minheap");
+    }
+    if (storage.exists("last_heap")) storage.remove("last_heap");
+    if (storage.exists("last_minheap")) storage.remove("last_minheap");
+    return bootCount;
+}
+#endif
+
 /**
  * @brief Load all configurations from Storage
  */
