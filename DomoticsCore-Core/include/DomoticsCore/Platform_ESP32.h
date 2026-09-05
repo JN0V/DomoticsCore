@@ -19,6 +19,9 @@
 #include "Platform_Arduino.h"
 #include <mbedtls/sha256.h>
 #include <esp_system.h>
+#include <esp_core_dump.h>
+#include <esp_partition.h>
+#include <esp_task_wdt.h>
 
 namespace DomoticsCore {
 namespace HAL {
@@ -232,6 +235,84 @@ inline bool wasUnexpectedReset(ResetReason reason) {
            reason == ResetReason::TaskWatchdog ||
            reason == ResetReason::Watchdog ||
            reason == ResetReason::Brownout;
+}
+
+// =============================================================================
+// Post-mortem diagnostics (OBS-1, OBS-2, OBS-7)
+// =============================================================================
+
+/**
+ * @brief Exception registers the SDK preserved across the last reset.
+ *
+ * ESP8266 only. `valid` is true when the reset was an exception or a
+ * watchdog (SDK reasons 1-3); `epc1` then locates the fault, or the loop the
+ * watchdog interrupted, through `xtensa-lx106-elf-addr2line -e firmware.elf`.
+ * An abort(), an assert and an out-of-memory `new` reach the next boot as
+ * ResetReason::Software with nothing here — measured 2026-09-05 (OBS-2).
+ */
+struct ResetDetail {
+    uint32_t exccause = 0, epc1 = 0, epc2 = 0, epc3 = 0, excvaddr = 0, depc = 0;
+    bool valid = false;
+};
+
+/** @brief What the ESP32 core dump partition holds; unsupported elsewhere (OBS-1). */
+struct CoreDumpStatus {
+    bool supported = false;        // the platform can hold a core dump at all
+    bool partitionPresent = false; // a `coredump` partition exists in the table
+    bool dumpPresent = false;      // a dump from a previous panic is waiting in it
+    uint32_t size = 0;             // its size in bytes
+};
+
+/** @brief Nothing to read here: the core dump carries the registers (OBS-1). */
+inline ResetDetail getResetDetail() { return ResetDetail{}; }
+
+inline String getResetInfoString() { return getResetReasonString(getResetReason()); }
+
+inline constexpr bool tracksMinFreeHeap() { return true; }
+
+/**
+ * @brief Whether a `coredump` partition exists and whether a dump is waiting in it.
+ *
+ * Every stock partition table but bare_minimum_2MB.csv carries the partition,
+ * and the precompiled core writes an ELF dump there on every panic; nothing
+ * read it before OBS-1. Measured 2026-09-05 on a WROOM-32D: ~9 KB per panic.
+ */
+inline CoreDumpStatus getCoreDumpStatus() {
+    CoreDumpStatus s;
+    s.supported = true;
+    const esp_partition_t* part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, nullptr);
+    s.partitionPresent = (part != nullptr);
+    if (!part) return s;
+    size_t addr = 0, size = 0;
+    if (esp_core_dump_image_get(&addr, &size) == ESP_OK && size > 0) {
+        s.dumpPresent = true;
+        s.size = static_cast<uint32_t>(size);
+    }
+    return s;
+}
+
+inline bool loopWatchdogEnabled_ = false;
+
+/**
+ * @brief Put the Arduino loop task on the task watchdog (OBS-7).
+ *
+ * The core creates loopTask with the watchdog off and the TWDT watches IDLE0
+ * only, so a stuck loop() never reboots — measured 2026-09-05, >40 s of
+ * silence against a 5 s TWDT. With `panic` set, expiry is a panic and so
+ * leaves a core dump with the hang's backtrace. Reconfigures the TWDT
+ * timeout globally. System::loop() feeds it.
+ */
+inline bool enableLoopWatchdog(uint32_t seconds) {
+    if (seconds == 0) return false;
+    if (esp_task_wdt_init(seconds, true) != ESP_OK) return false;
+    enableLoopWDT();
+    loopWatchdogEnabled_ = true;
+    return true;
+}
+
+inline void feedLoopWatchdog() {
+    if (loopWatchdogEnabled_) feedLoopWDT();
 }
 
 // =============================================================================

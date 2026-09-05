@@ -542,8 +542,10 @@ enum class ResetReason : uint8_t {
 /**
  * @brief Get reset reason for stub platform
  */
+inline ResetReason resetReasonForTest = ResetReason::Unknown;   // scripted by setResetReasonForTest()
+
 inline ResetReason getResetReason() {
-    return ResetReason::Unknown;
+    return resetReasonForTest;
 }
 
 /**
@@ -575,6 +577,60 @@ inline bool wasUnexpectedReset(ResetReason reason) {
            reason == ResetReason::Watchdog ||
            reason == ResetReason::Brownout;
 }
+
+// =============================================================================
+// Post-mortem diagnostics (OBS-1, OBS-2, OBS-7)
+// =============================================================================
+
+/**
+ * @brief Exception registers the SDK preserved across the last reset.
+ *
+ * ESP8266 only. `valid` is true when the reset was an exception or a
+ * watchdog (SDK reasons 1-3); `epc1` then locates the fault, or the loop the
+ * watchdog interrupted, through `xtensa-lx106-elf-addr2line -e firmware.elf`.
+ * An abort(), an assert and an out-of-memory `new` reach the next boot as
+ * ResetReason::Software with nothing here — measured 2026-09-05 (OBS-2).
+ */
+struct ResetDetail {
+    uint32_t exccause = 0, epc1 = 0, epc2 = 0, epc3 = 0, excvaddr = 0, depc = 0;
+    bool valid = false;
+};
+
+/** @brief What the ESP32 core dump partition holds; unsupported elsewhere (OBS-1). */
+struct CoreDumpStatus {
+    bool supported = false;        // the platform can hold a core dump at all
+    bool partitionPresent = false; // a `coredump` partition exists in the table
+    bool dumpPresent = false;      // a dump from a previous panic is waiting in it
+    uint32_t size = 0;             // its size in bytes
+};
+
+// Test seams, the TEST-4 pattern: scripted from the suite, byte-identical defaults.
+inline ResetDetail resetDetailForTest{};
+inline CoreDumpStatus coreDumpStatusForTest{};
+inline uint32_t loopWatchdogSecondsForTest = 0;   // last value enableLoopWatchdog() accepted, 0 = never
+inline uint32_t loopWatchdogFeedsForTest = 0;
+
+inline void setResetReasonForTest(ResetReason r) { resetReasonForTest = r; }
+inline void setResetDetailForTest(const ResetDetail& d) { resetDetailForTest = d; }
+inline void setCoreDumpStatusForTest(const CoreDumpStatus& s) { coreDumpStatusForTest = s; }
+inline void resetDiagnosticsForTest() {
+    resetReasonForTest = ResetReason::Unknown;
+    resetDetailForTest = ResetDetail{};
+    coreDumpStatusForTest = CoreDumpStatus{};
+    loopWatchdogSecondsForTest = 0;
+    loopWatchdogFeedsForTest = 0;
+}
+
+inline ResetDetail getResetDetail() { return resetDetailForTest; }
+inline String getResetInfoString() { return getResetReasonString(getResetReason()); }
+inline constexpr bool tracksMinFreeHeap() { return false; }
+inline CoreDumpStatus getCoreDumpStatus() { return coreDumpStatusForTest; }
+inline bool enableLoopWatchdog(uint32_t seconds) {
+    if (seconds == 0) return false;
+    loopWatchdogSecondsForTest = seconds;
+    return true;
+}
+inline void feedLoopWatchdog() { if (loopWatchdogSecondsForTest) loopWatchdogFeedsForTest++; }
 
 // =============================================================================
 // Stub-Specific: LED Polarity

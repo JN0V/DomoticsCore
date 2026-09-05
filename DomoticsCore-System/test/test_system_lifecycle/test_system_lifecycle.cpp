@@ -20,8 +20,8 @@
 
 using namespace DomoticsCore;
 
-void setUp(void) {}
-void tearDown(void) {}
+void setUp(void) { HAL::Platform::resetDiagnosticsForTest(); }
+void tearDown(void) { HAL::Platform::resetDiagnosticsForTest(); }
 
 static bool mentions(const std::string& haystack, const char* needle) {
     return haystack.find(needle) != std::string::npos;
@@ -302,6 +302,12 @@ void test_bootdiag_command_reports_the_first_boot(void) {
     // initBootDiagnosticsPersistence() during begin().
     TEST_ASSERT_TRUE(mentions(out, "Persisted Data:"));
     TEST_ASSERT_TRUE(mentions(out, "boot_count: 1"));
+    // OBS-6: the heap lines say which boot they describe, and the stub
+    // tracks no minimum so the report must say so instead of printing one.
+    TEST_ASSERT_TRUE(mentions(out, "Heap at this boot:"));
+    TEST_ASSERT_TRUE(mentions(out, "n/a (not tracked on this platform)"));
+    TEST_ASSERT_TRUE(mentions(out, "boot_heap:"));
+    TEST_ASSERT_FALSE(mentions(out, "last_heap"));
 }
 
 void test_a_custom_command_reaches_the_console(void) {
@@ -336,6 +342,79 @@ void test_console_runs_on_the_configured_port(void) {
     TEST_ASSERT_EQUAL(LOG_LEVEL_WARN, sys.getConsole()->getLogLevel());
 }
 
+// ============================================================================
+// OBS-7: the loop watchdog (ESP32 in effect; the stub records the call)
+// ============================================================================
+
+void test_begin_arms_the_loop_watchdog_by_default(void) {
+    System sys(SystemConfig::minimal());
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::Platform::loopWatchdogSecondsForTest);
+    sys.begin();
+    TEST_ASSERT_EQUAL_UINT32(30, HAL::Platform::loopWatchdogSecondsForTest);
+}
+
+void test_a_zero_timeout_leaves_the_loop_watchdog_off(void) {
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.loopWatchdogSeconds = 0;
+    System sys(cfg);
+    sys.begin();
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::Platform::loopWatchdogSecondsForTest);
+}
+
+// A sketch that calls System::loop() regularly must never trip it, whatever
+// its own loop() does — so the feed lives in System::loop(), not in the
+// Arduino loop return.
+void test_every_system_loop_feeds_the_watchdog(void) {
+    System sys(SystemConfig::minimal());
+    sys.begin();
+    uint32_t before = HAL::Platform::loopWatchdogFeedsForTest;
+    sys.loop(); sys.loop(); sys.loop();
+    TEST_ASSERT_EQUAL_UINT32(before + 3, HAL::Platform::loopWatchdogFeedsForTest);
+}
+
+void test_the_feed_is_a_no_op_when_the_watchdog_is_off(void) {
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.loopWatchdogSeconds = 0;
+    System sys(cfg);
+    sys.begin();
+    sys.loop();
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::Platform::loopWatchdogFeedsForTest);
+}
+
+// OBS-2 through the console: a scripted exception reaches `bootdiag`.
+void test_bootdiag_command_reports_the_reset_detail(void) {
+    HAL::Platform::ResetDetail d;
+    d.exccause = 28; d.epc1 = 0x40201297; d.valid = true;
+    HAL::Platform::setResetDetailForTest(d);
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Panic);
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.begin();
+    Console con(sys);
+    std::string out = con.run(sys, "bootdiag");
+    TEST_ASSERT_TRUE(mentions(out, "WARNING: Previous boot ended unexpectedly"));
+    TEST_ASSERT_TRUE(mentions(out, "epc1=0x40201297"));
+    TEST_ASSERT_TRUE(mentions(out, "exccause=28"));
+}
+
+// OBS-1 through the console: a waiting dump is named, with its size.
+void test_bootdiag_command_reports_a_waiting_core_dump(void) {
+    HAL::Platform::CoreDumpStatus st;
+    st.supported = true; st.partitionPresent = true; st.dumpPresent = true; st.size = 8964;
+    HAL::Platform::setCoreDumpStatusForTest(st);
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.begin();
+    Console con(sys);
+    std::string out = con.run(sys, "bootdiag");
+    TEST_ASSERT_TRUE(mentions(out, "Core dump: WAITING"));
+    TEST_ASSERT_TRUE(mentions(out, "8964 bytes"));
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
 
@@ -367,6 +446,14 @@ int main(int argc, char** argv) {
     RUN_TEST(test_a_custom_command_reaches_the_console);
     RUN_TEST(test_registering_a_command_without_a_console_is_a_no_op);
     RUN_TEST(test_console_runs_on_the_configured_port);
+
+    // OBS-7 / OBS-2 / OBS-1
+    RUN_TEST(test_begin_arms_the_loop_watchdog_by_default);
+    RUN_TEST(test_a_zero_timeout_leaves_the_loop_watchdog_off);
+    RUN_TEST(test_every_system_loop_feeds_the_watchdog);
+    RUN_TEST(test_the_feed_is_a_no_op_when_the_watchdog_is_off);
+    RUN_TEST(test_bootdiag_command_reports_the_reset_detail);
+    RUN_TEST(test_bootdiag_command_reports_a_waiting_core_dump);
 
     return UNITY_END();
 }

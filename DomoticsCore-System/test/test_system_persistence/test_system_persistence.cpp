@@ -314,6 +314,48 @@ void test_load_all_configs_without_a_storage_component(void) {
     TEST_ASSERT_EQUAL_STRING("DomoticsCore", config.deviceName.c_str());
 }
 
+// ============================================================================
+// OBS-6: persistBootDiagnostics() — this boot's keys, and the old ones gone
+// ============================================================================
+
+void test_boot_diagnostics_persist_under_names_that_say_which_boot(void) {
+    Fixture f(true, true);
+    uint32_t count = SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    TEST_ASSERT_EQUAL_UINT32(1, count);
+    TEST_ASSERT_EQUAL_INT32(1, f.storage->getInt("boot_count", 0));
+    TEST_ASSERT_TRUE(f.storage->exists("boot_heap"));
+    TEST_ASSERT_TRUE(f.storage->exists("last_reset"));
+    TEST_ASSERT_EQUAL_UINT32(1, f.sysInfo->getBootDiagnostics().bootCount);
+}
+
+// The stub tracks no minimum, so the key must not be written — a value
+// there would be the current heap under the minimum's name, the defect.
+void test_boot_minheap_is_not_written_where_the_platform_tracks_none(void) {
+    Fixture f(true, true);
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    TEST_ASSERT_EQUAL(HAL::Platform::tracksMinFreeHeap(), f.storage->exists("boot_minheap"));
+}
+
+// A device upgraded from a build that wrote last_heap/last_minheap carries
+// them in NVS or LittleFS; the first boot of this build removes them.
+void test_the_old_misnamed_keys_are_removed_on_first_persist(void) {
+    Fixture f(true, true);
+    f.storage->putInt("last_heap", 51816);
+    f.storage->putInt("last_minheap", 51816);
+    f.storage->putInt("boot_minheap", 1);   // stale on a platform that stopped tracking it
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    TEST_ASSERT_FALSE(f.storage->exists("last_heap"));
+    TEST_ASSERT_FALSE(f.storage->exists("last_minheap"));
+    if (!HAL::Platform::tracksMinFreeHeap()) TEST_ASSERT_FALSE(f.storage->exists("boot_minheap"));
+}
+
+void test_the_boot_count_increments_across_persists(void) {
+    Fixture f(true, true);
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    uint32_t second = SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    TEST_ASSERT_EQUAL_UINT32(2, second);
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
 
@@ -338,6 +380,12 @@ int main(int argc, char** argv) {
     RUN_TEST(test_registering_keys_is_skipped_when_storage_is_disabled);
     RUN_TEST(test_load_all_configs_restores_name_and_wifi_together);
     RUN_TEST(test_load_all_configs_without_a_storage_component);
+
+    // OBS-6
+    RUN_TEST(test_boot_diagnostics_persist_under_names_that_say_which_boot);
+    RUN_TEST(test_boot_minheap_is_not_written_where_the_platform_tracks_none);
+    RUN_TEST(test_the_old_misnamed_keys_are_removed_on_first_persist);
+    RUN_TEST(test_the_boot_count_increments_across_persists);
 
     return UNITY_END();
 }

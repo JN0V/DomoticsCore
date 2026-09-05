@@ -23,8 +23,12 @@ namespace Components {
 struct BootDiagnostics {
     uint32_t bootCount = 0;              // Incrementing boot counter (set by System via Storage)
     HAL::Platform::ResetReason resetReason = HAL::Platform::ResetReason::Unknown;
-    uint32_t lastBootHeap = 0;           // Free heap at boot (captured at boot)
-    uint32_t lastBootMinHeap = 0;        // Min free heap at boot (captured at boot)
+    // OBS-6: these describe the run that is starting, not the one that died.
+    uint32_t bootHeap = 0;               // Free heap when this run started
+    uint32_t bootMinHeap = 0;            // Minimum free heap when this run started; 0 where not tracked
+    bool bootMinHeapTracked = false;     // HAL::Platform::tracksMinFreeHeap() — false on ESP8266
+    HAL::Platform::ResetDetail resetDetail;   // exception registers the SDK kept, ESP8266 (OBS-2)
+    HAL::Platform::CoreDumpStatus coreDump;   // coredump partition state, ESP32 (OBS-1)
     bool valid = false;                  // Data captured successfully
 
     /**
@@ -222,21 +226,44 @@ private:
      * separately by System component via Storage for persistence.
      */
     void initBootDiagnostics() {
-        // Capture volatile data at boot using HAL abstraction
         bootDiag.resetReason = HAL::Platform::getResetReason();
-        bootDiag.lastBootHeap = HAL::Platform::getFreeHeap();
-        bootDiag.lastBootMinHeap = HAL::Platform::getMinFreeHeap();
+        bootDiag.bootHeap = HAL::Platform::getFreeHeap();
+        bootDiag.bootMinHeapTracked = HAL::Platform::tracksMinFreeHeap();
+        bootDiag.bootMinHeap = bootDiag.bootMinHeapTracked ? HAL::Platform::getMinFreeHeap() : 0;
+        bootDiag.resetDetail = HAL::Platform::getResetDetail();
+        bootDiag.coreDump = HAL::Platform::getCoreDumpStatus();
         bootDiag.valid = true;
-        
-        DLOG_I(LOG_SYSTEM, "Boot diagnostics captured: Reset=%s, Heap=%u/%u",
-               bootDiag.getResetReasonString().c_str(),
-               bootDiag.lastBootHeap,
-               bootDiag.lastBootMinHeap);
-        
-        // Warn if unexpected reset
+
+        // These figures describe the run that is starting, not the one that
+        // died (OBS-6). What the previous run left behind is the reset reason,
+        // the registers below on ESP8266, and the core dump on ESP32.
+        DLOG_I(LOG_SYSTEM, "Boot diagnostics: reset=%s, heap at boot=%u",
+               bootDiag.getResetReasonString().c_str(), bootDiag.bootHeap);
+
         if (bootDiag.wasUnexpectedReset()) {
             DLOG_W(LOG_SYSTEM, "⚠ Previous boot ended unexpectedly: %s",
                    bootDiag.getResetReasonString().c_str());
+        }
+        // OBS-2: epc1 locates the fault, or the loop the watchdog interrupted —
+        // `xtensa-lx106-elf-addr2line -e firmware.elf 0x...` against this build's ELF.
+        if (bootDiag.resetDetail.valid) {
+            DLOG_W(LOG_SYSTEM, "Reset detail: %s", HAL::Platform::getResetInfoString().c_str());
+        }
+#if DOMOTICS_PLATFORM_ESP8266
+        // Measured 2026-09-05: abort(), assert and an out-of-memory `new` all
+        // reach the next boot under this reason, indistinguishable from ESP.restart().
+        if (bootDiag.resetReason == HAL::Platform::ResetReason::Software) {
+            DLOG_I(LOG_SYSTEM, "Software/System restart is also what abort(), assert and an out-of-memory new report on this platform");
+        }
+#endif
+        // OBS-1: the ESP32 core writes a dump on every panic; say whether one is waiting.
+        if (bootDiag.coreDump.supported) {
+            if (!bootDiag.coreDump.partitionPresent) {
+                DLOG_W(LOG_SYSTEM, "No coredump partition in this partition table: panics leave no dump");
+            } else if (bootDiag.coreDump.dumpPresent) {
+                DLOG_W(LOG_SYSTEM, "⚠ A core dump from a previous panic is waiting: %u bytes in the coredump partition",
+                       bootDiag.coreDump.size);
+            }
         }
     }
     

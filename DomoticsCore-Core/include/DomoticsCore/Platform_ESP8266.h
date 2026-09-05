@@ -261,6 +261,55 @@ inline bool wasUnexpectedReset(ResetReason reason) {
 }
 
 // =============================================================================
+// Post-mortem diagnostics (OBS-1, OBS-2, OBS-7)
+// =============================================================================
+
+/**
+ * @brief Exception registers the SDK preserved across the last reset.
+ *
+ * ESP8266 only. `valid` is true when the reset was an exception or a
+ * watchdog (SDK reasons 1-3); `epc1` then locates the fault, or the loop the
+ * watchdog interrupted, through `xtensa-lx106-elf-addr2line -e firmware.elf`.
+ * An abort(), an assert and an out-of-memory `new` reach the next boot as
+ * ResetReason::Software with nothing here — measured 2026-09-05 (OBS-2).
+ */
+struct ResetDetail {
+    uint32_t exccause = 0, epc1 = 0, epc2 = 0, epc3 = 0, excvaddr = 0, depc = 0;
+    bool valid = false;
+};
+
+/** @brief What the ESP32 core dump partition holds; unsupported elsewhere (OBS-1). */
+struct CoreDumpStatus {
+    bool supported = false;        // the platform can hold a core dump at all
+    bool partitionPresent = false; // a `coredump` partition exists in the table
+    bool dumpPresent = false;      // a dump from a previous panic is waiting in it
+    uint32_t size = 0;             // its size in bytes
+};
+
+inline ResetDetail getResetDetail() {
+    ResetDetail d;
+    struct rst_info* ri = ESP.getResetInfoPtr();
+    if (ri && ri->reason >= REASON_WDT_RST && ri->reason <= REASON_SOFT_WDT_RST) {
+        d.exccause = ri->exccause; d.epc1 = ri->epc1; d.epc2 = ri->epc2; d.epc3 = ri->epc3;
+        d.excvaddr = ri->excvaddr; d.depc = ri->depc;
+        d.valid = true;
+    }
+    return d;
+}
+
+/** @brief The core's own formatting of rst_info: reason, and the registers when it has them. */
+inline String getResetInfoString() { return ESP.getResetInfo(); }
+
+/** @brief getMinFreeHeap() returns the current heap here (see above), so no. */
+inline constexpr bool tracksMinFreeHeap() { return false; }
+
+inline CoreDumpStatus getCoreDumpStatus() { return CoreDumpStatus{}; }
+
+/** @brief No-op: the SDK's soft WDT already resets a stuck loop in about 3 s (OBS-7). */
+inline bool enableLoopWatchdog(uint32_t /*seconds*/) { return false; }
+inline void feedLoopWatchdog() {}
+
+// =============================================================================
 // ESP8266-Specific: LED Polarity
 // =============================================================================
 
