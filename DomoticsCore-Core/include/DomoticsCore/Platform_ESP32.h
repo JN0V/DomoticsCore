@@ -22,6 +22,7 @@
 #include <esp_core_dump.h>
 #include <esp_partition.h>
 #include <esp_task_wdt.h>
+#include <esp_idf_version.h>
 
 namespace DomoticsCore {
 namespace HAL {
@@ -266,8 +267,6 @@ struct CoreDumpStatus {
 /** @brief Nothing to read here: the core dump carries the registers (OBS-1). */
 inline ResetDetail getResetDetail() { return ResetDetail{}; }
 
-inline String getResetInfoString() { return getResetReasonString(getResetReason()); }
-
 /** @brief Nothing hidden here: abort() and a failed `new` panic and say so. */
 inline String getResetReasonCaveat(ResetReason /*reason*/) { return String(); }
 
@@ -295,27 +294,45 @@ inline CoreDumpStatus getCoreDumpStatus() {
     return s;
 }
 
-inline bool loopWatchdogEnabled_ = false;
+/** @brief This platform can put the task that drives System::loop() on a watchdog. */
+inline constexpr bool supportsLoopWatchdog() { return true; }
+
+// Function-local static rather than a C++17 inline variable: this header is
+// compiled as gnu++11/14 by the Arduino core and the examples.
+inline bool& loopWatchdogArmed_() { static bool armed = false; return armed; }
 
 /**
- * @brief Put the Arduino loop task on the task watchdog (OBS-7).
+ * @brief Put the calling task — the one that will call System::loop() — on the task watchdog (OBS-7).
  *
- * The core creates loopTask with the watchdog off and the TWDT watches IDLE0
- * only, so a stuck loop() never reboots — measured 2026-09-05, >40 s of
- * silence against a 5 s TWDT. With `panic` set, expiry is a panic and so
- * leaves a core dump with the hang's backtrace. Reconfigures the TWDT
- * timeout globally. System::loop() feeds it.
+ * The Arduino core creates loopTask with the watchdog off and the TWDT watches
+ * IDLE0 only (nothing at all on the C3), so a stuck loop() never reboots —
+ * measured 2026-09-05 on a WROOM-32D and a C3. Subscribes the *calling* task,
+ * not loopTask, so a sketch that drives System from its own task is watched
+ * and fed consistently (feedLoopWatchdog() resets the calling task's entry).
+ * With `panic` set, expiry is a panic and leaves a core dump with the hang's
+ * backtrace. **Reconfigures the TWDT timeout globally**: on ESP32 the idle
+ * task's 5 s becomes the same value. Returns true only once the subscription
+ * is verified.
  */
 inline bool enableLoopWatchdog(uint32_t seconds) {
     if (seconds == 0) return false;
+#if ESP_IDF_VERSION_MAJOR >= 5
+    // IDF 5 replaced esp_task_wdt_init(timeout, panic) with a config struct and
+    // esp_task_wdt_reconfigure(). Not ported yet (OBS-7 residual): say so at
+    // compile time, arm nothing, and let System log that it did not arm.
+    #warning "OBS-7: enableLoopWatchdog() targets the IDF 4.x task-watchdog API and does not arm on IDF 5 / Arduino 3.x"
+    return false;
+#else
     if (esp_task_wdt_init(seconds, true) != ESP_OK) return false;
-    enableLoopWDT();
-    loopWatchdogEnabled_ = true;
+    if (esp_task_wdt_status(NULL) != ESP_OK && esp_task_wdt_add(NULL) != ESP_OK) return false;
+    if (esp_task_wdt_status(NULL) != ESP_OK) return false;
+    loopWatchdogArmed_() = true;
     return true;
+#endif
 }
 
 inline void feedLoopWatchdog() {
-    if (loopWatchdogEnabled_) feedLoopWDT();
+    if (loopWatchdogArmed_()) esp_task_wdt_reset();
 }
 
 // =============================================================================

@@ -297,9 +297,6 @@ inline ResetDetail getResetDetail() {
     return d;
 }
 
-/** @brief The core's own formatting of rst_info: reason, and the registers when it has them. */
-inline String getResetInfoString() { return ESP.getResetInfo(); }
-
 /**
  * @brief What a reset reason hides on this platform, or an empty String.
  *
@@ -321,7 +318,8 @@ inline constexpr bool tracksMinFreeHeap() { return false; }
 
 inline CoreDumpStatus getCoreDumpStatus() { return CoreDumpStatus{}; }
 
-/** @brief No-op: the SDK's soft WDT already resets a stuck loop in about 3 s (OBS-7). */
+/** @brief No loop watchdog to arm: the SDK's soft WDT already resets a stuck loop in about 3 s (OBS-7). */
+inline constexpr bool supportsLoopWatchdog() { return false; }
 inline bool enableLoopWatchdog(uint32_t /*seconds*/) { return false; }
 inline void feedLoopWatchdog() {}
 

@@ -48,7 +48,7 @@ versions may sit still while fixes land.
 | LED (docs only) | ARCH-2 | 2026-08-31 — closed **by measurement, no code change**: the prescribed remedy already existed (LEDWebUI.h separate since ≥2025-09-26, so "WebUI in one class" was false at filing; the pure effect engine landed with PR #17). BUG-19 cited as the structure's one recorded defect, closed by tests not by splitting. LED-F1, the cited source, does not exist in the repository. **ARCH-2 closed** (2 → 1 open HIGH — ARCH-1 is the last) |
 | System (docs only) | ARCH-1 | 2026-08-31 — **re-argued HIGH → MEDIUM, open, dual trigger**: SYS-F6 unreadable (the HIGH was inherited, never argued); one XIII indicator exceeded (`begin()` 62, stable since filing) against a file inside every other measurement; the fork rewrites two of three prescribed extraction zones, the third declined as YAGNI. **Open HIGH reaches zero — by reclassification, stated in those words.** marianorenzi notification drafted for the maintainer |
 | Tooling, harness | CI-13, CI-15, BUG-35 (filed) | 2026-09-01 — the second real-conditions campaign's lot: `clean_examples.py` learns `test/*/.pio` after a 19 GB recursion (**CI-13 closed**), the harness learns the SEC-10 token, **CI-15 filed** (no `export.exclude` anywhere — root cause, release-aware), **BUG-35 filed** from the disconnect accident (open HIGH 0 → 1 — the campaign doing its job) |
-| Core, SystemInfo, System | OBS-2, OBS-6, OBS-7, OBS-1 (boot check) | PR #59 — 2026-09-05, **Lot A**, stacked on #57: the reset registers the ESP8266 kept, the ESP32 core dump nobody read, the heap keys that lied about which boot they described, and a loop watchdog on ESP32 (default 30 s, a behaviour change for the next release to announce). Measured on both boards from the branch; two mutations caught natively; FullStack green on all three targets |
+| Core, SystemInfo, System | OBS-2, OBS-6, OBS-7, OBS-1 (boot check) | PR #59 — 2026-09-05, **Lot A**, stacked on #57: the reset registers the ESP8266 kept, the ESP32 core dump nobody read, the heap keys that lied about which boot they described, and a loop watchdog on ESP32 (default 30 s, a behaviour change for the next release to announce). Measured on three boards from the branch (the C3's first run ever); two mutations caught natively; FullStack green on all three targets. **Adversarial review run after opening** (13 findings): the watchdog armed one task and fed another — fixed and re-measured on both ESP32s; the maintainer's own review had already caught the one Constitution IX `#if` outside the HAL. Native 819 → 851 |
 | Observability, Core (docs only) | OBS-1 to OBS-7, BUG-36 filed | PR #57 — 2026-09-05, the post-mortem observability design, adversarially reviewed (22 findings) and measured on the nodemcuv2, the WROOM-32D and the ESP32-CAM the same day; eight items filed, none closed. The review's first finding — an OOM in `new` reaches the next ESP8266 boot as "Software/System restart" — was confirmed on the board within the hour and reshaped the design |
 | OTA | BUG-35 | 2026-09-01 — **filed in the morning, fixed in the afternoon**: `onDisconnect` → `abortUpload`, gated on the upload-active discriminator because onDisconnect fires after every request. Red-then-green with the same `--disconnect-at` script on the WROOM-32D and the nodemcuv2 (the ESP8266's buffer-release path included), `--commit` cycle re-proven, OTA suite 10/10. **BUG-35 closed** (1 → 0 open HIGH, by a fix this time). Two limits written at the site: the shared-state two-client blind spot (pre-existing), the TCP half-open residual |
 
@@ -3042,8 +3042,10 @@ not.
   restart is an abort or an OOM, not a clean restart.
 - **Verification**: the probe's null-dereference and soft-WDT rows are the
   expected values; the native stub reports zeros and says so.
-- **Fixed (Lot A)**: `HAL::Platform::ResetDetail` / `getResetDetail()` /
-  `getResetInfoString()` on all three platforms; `BootDiagnostics::resetDetail`;
+- **Fixed (Lot A)**: `HAL::Platform::ResetDetail` / `getResetDetail()` on all
+  three platforms — the boot line is formatted from the struct, one source of
+  truth (the review found the first shape re-reading the SDK for the string,
+  so log and `bootdiag` could disagree); `BootDiagnostics::resetDetail`;
   a WARN at boot and a `Reset detail:` block in `bootdiag` with the addr2line
   hint; on ESP8266 an INFO line saying that "Software/System restart" is also
   what abort(), assert and an OOM `new` report. **Measured on the nodemcuv2
@@ -3133,9 +3135,22 @@ not.
   removal check: with the WDT off, the probe's >40 s silence.
 - **Fixed (Lot A)**: `SystemConfig::loopWatchdogSeconds` (default **30**, `0`
   off) → `HAL::Platform::enableLoopWatchdog()` at the end of `System::begin()`
-  — `esp_task_wdt_init(seconds, panic=true)` + `enableLoopWDT()` — and
-  `System::loop()` feeds it, so any sketch that calls it regularly is safe
-  whatever its own `loop()` does. No-op on ESP8266 (the soft WDT already
+  — `esp_task_wdt_init(seconds, panic=true)`, then **the calling task**
+  subscribed with `esp_task_wdt_add(NULL)` and verified with
+  `esp_task_wdt_status(NULL)` — and `System::loop()` resets that same task's
+  entry, so a sketch that drives System from its own FreeRTOS task is watched
+  and fed consistently. The adversarial review (run after the PR opened,
+  `review-obs-lot-a-adversarial.md`, 13 findings) caught the first shape,
+  which armed `loopTask` through the Arduino wrapper and fed whatever task
+  called `loop()`: a sketch on its own task would have panicked 30 s after
+  boot, by default. Also from that review: `supportsLoopWatchdog()` so
+  System WARNs "requested but did not arm" on ESP32 and stays quiet on
+  ESP8266; the armed flag is a function-local static, not a C++17 inline
+  variable, because the core compiles this header as gnu++11/14; on IDF 5
+  the function compiles with a `#warning`, arms nothing and says so
+  (residual: port to `esp_task_wdt_reconfigure`). Re-measured after the
+  change on the WROOM-32D and the C3: `task_wdt: loopTask` in ~5 s at 5 s,
+  silent at 0. No-op on ESP8266 (the soft WDT already
   resets a hang in ~3 s, re-measured) and on the stub, which records the
   call for four new System tests (one fails when the feed is deleted:
   `Expected 3 Was 0`). **Measured on the WROOM-32D at 5 s**: the hang is
@@ -3143,7 +3158,15 @@ not.
   `Task watchdog` and finds a 15 748-byte core dump; with the timeout at `0`
   the same hang was silent for the remaining ~40 s of the capture. The
   default is a behaviour change for ESP32 users and the CHANGELOG entry of
-  the release that ships it must say so at the top.
+  the release that ships it must say so at the top — and it does, in #58,
+  with the two facts the review added: the task that is armed, and that the
+  TWDT timeout moves globally (ESP32's idle task goes 5 → 30 s with it).
+- **Residuals the review left open, none blocking**: the 30 s default was
+  argued, not measured against the longest `System::loop()` iteration (OTA
+  `Update.end()`, a synchronous scan) — measure with a max-iteration counter
+  on FullStack through an OTA cycle on both ESP32s and write the figure
+  here; the IDF 5 port; the hardware-WDT `epc1` on ESP8266 rests on one
+  sample and the log line says so.
 - **ESP32-C3, measured the same day — the first thing ever run on that
   target.** The hypothesis was that a single core would starve `IDLE0` and
   trip the TWDT without help. Wrong: the C3's precompiled sdkconfig has **no
@@ -3193,7 +3216,9 @@ not.
   `boot_minheap`; `last_heap` / `last_minheap` are removed on the first
   persist. The persistence moved into `SystemHelpers::persistBootDiagnostics()`
   so a test can drive it: four new System tests, one of which fails when the
-  removal is deleted (run, `Expected FALSE Was TRUE`). **Both boards**: seeded
+  removal is deleted (run, `Expected FALSE Was TRUE`); the tracked-minimum
+  branch (the ESP32 shape) is driven natively through a stub seam since the
+  review, not only on the board. **Both boards**: seeded
   `last_heap`/`last_minheap` on one boot, gone on the next; the ESP8266
   writes no `boot_minheap`, the ESP32 does.
 
