@@ -112,6 +112,14 @@ struct SystemConfig {
     // expiry is a panic and leaves a core dump with the hang's backtrace. It
     // reconfigures the task watchdog timeout globally. 0 disables. On ESP8266
     // the SDK's soft WDT already resets a stuck loop in about 3 s.
+    //
+    // Why 30 s — measured 2026-09-05 on a WROOM-32D running the FullStack
+    // configuration: the longest System::loop() iteration was 0.37 s idle and
+    // 0.80 s during an HTTP firmware upload. The image verification and commit
+    // (Update.end) run on the async web server task, in OTAWebUI's final
+    // chunk, never in loop(). A synchronous WiFi scan called from loop() cost
+    // 8.1 s. Thirty seconds is 37x the longest loop-side figure and 3.7x the
+    // blocking call a sketch is most likely to make.
     uint32_t loopWatchdogSeconds = 30;
     
     // Logging
