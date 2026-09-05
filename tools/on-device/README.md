@@ -166,3 +166,37 @@ esptool --port /dev/ttyUSB0 chip-id
 The port is `root:dialout` and a process only picks up group membership at
 start, so a shell opened before that change cannot open it —
 `sudo chmod 666 /dev/ttyUSB0` unblocks it until the next replug.
+
+## `read_noreset.py` and `read_acm.py`
+
+Two readers the OBS session (2026-09-05) needed and `readserial.py` cannot be:
+
+```
+python3 tools/on-device/read_noreset.py /dev/ttyUSB0 15   # do NOT reset: soak checks
+python3 tools/on-device/read_acm.py     /dev/ttyACM0 60   # USB-Serial-JTAG (ESP32-C3)
+```
+
+`read_noreset.py` asserts DTR and RTS together before opening, which keeps EN
+high on the NodeMCU-style auto-reset circuit — that is how the one-hour soak
+read three boards without restarting them. `read_acm.py` is for a chip that
+*is* the USB device (the C3's native USB-Serial-JTAG): the port disappears and
+comes back on every reset, so it reopens in a loop instead of dying on the
+first drop. A reset pulse on that port (`DTR=False; RTS=True; sleep; RTS=False`)
+works through the JTAG unit's emulation, reads as reason `Unknown`, and keeps
+`RTC_NOINIT_ATTR` — unlike the WROOM's EN reset.
+
+## `probes/` — the OBS session's board probes
+
+Not tests, not examples: throwaway sketches that produced the figures in the
+roadmap's Priority 11 entries and in `spec-obs-crash-observability.md`. Kept so
+the measurements can be repeated. Each has its own `platformio.ini` with
+`file://` paths relative to the repository root; `rm -rf .pio` before a run.
+
+| probe | what it measures |
+|---|---|
+| `obs-probe/` (`main-esp8266.cpp`, `main-esp32.cpp`, `main-esp32cam.cpp`, each with its `platformio-<target>.ini`; copy the pair to `platformio.ini` + `src/main.cpp` to run one) | the platform alone: what each death leaves for the next boot — abort, OOM in `new`, null dereference, soft/hardware WDT, restart, external reset; RTC survival; core dump presence; the failed-alloc hook. Steps advance through RTC; `START_STEP`/`PROBE_MAGIC` build flags pick where to start |
+| `obs-lota-probe/` | a real `System` (Storage + SystemInfo) from the working tree: what the boot diagnostics carry, the old keys removed, the loop watchdog at 5 s abating a hang and silent at 0 |
+| `obs-loopmax/` | FullStack with a stopwatch around `System::loop()`: the longest iteration idle and during an HTTP upload (OBS-7 residual 6); `LOOPMAX_WDT=0` disables the watchdog for a discriminating run; the upload it drives is what filed BUG-37 |
+
+Credentials for `obs-loopmax` come from the repository's untracked `secrets.h`,
+like the examples. Never paste its output with the network name in it.
