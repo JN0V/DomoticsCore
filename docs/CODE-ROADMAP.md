@@ -3013,8 +3013,11 @@ not.
   at boot and a `Core dump:` line in `bootdiag`. **Measured on the WROOM-32D
   from the branch**: `partition=1 dump=0` on a clean boot, then
   `⚠ A core dump from a previous panic is waiting: 15268 bytes` after a null
-  dereference and `15748 bytes` after OBS-7's watchdog panic. **Open**: the
-  download and erase endpoints, with SEC-13, in Lot D.
+  dereference and `15748 bytes` after OBS-7's watchdog panic. **ESP32-C3**:
+  partition present on `esp32-c3-devkitm-1`'s default table, `7044 bytes`
+  after a null dereference, `9476` after the watchdog panic — smaller dumps,
+  one core's worth of tasks. **Open**: the download and erase endpoints, with
+  SEC-13, in Lot D.
 
 ### OBS-2 — ESP8266: the exception cause and address survive the reset and `getResetReason()` throws them away [MEDIUM] — **DONE (2026-09-05, Lot A, the day it was filed)**
 
@@ -3074,7 +3077,10 @@ not.
 - **Measured foundations**: RTC user memory survived all seven deaths on
   the nodemcuv2 (exception, soft and hardware WDT, abort, OOM, restart,
   external reset); `RTC_NOINIT_ATTR` on the WROOM-32D survived three panics
-  and **was lost on an EN-pin reset, which reports POWERON**. Brownout
+  and **was lost on an EN-pin reset, which reports POWERON**; on the
+  **ESP32-C3** the USB-Serial-JTAG reset pulse reads reason `Unknown` (0) and
+  **keeps** `RTC_NOINIT_ATTR` — the two ESP32 families differ on the one
+  reset a bench uses most. Brownout
   survival could not be measured: on the ESP32-CAM from FTDI 3.3 V the sag
   took the USB adapter off the bus at 112 s and it did not come back, so the
   design assumes the worst case (reason only, no record) for brownouts.
@@ -3138,6 +3144,14 @@ not.
   the same hang was silent for the remaining ~40 s of the capture. The
   default is a behaviour change for ESP32 users and the CHANGELOG entry of
   the release that ships it must say so at the top.
+- **ESP32-C3, measured the same day — the first thing ever run on that
+  target.** The hypothesis was that a single core would starve `IDLE0` and
+  trip the TWDT without help. Wrong: the C3's precompiled sdkconfig has **no
+  `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0` at all**, so nothing is on the
+  task watchdog and a busy `loop()` was silent there too (generic probe,
+  >55 s). With Lot A at 5 s: `task_wdt: loopTask (CPU 0)` aborted the hang
+  in ~5 s and the next boot found a 9 476-byte dump; with the timeout at 0,
+  silent again. Same fix, same result, different reason.
 
 ### OBS-5 — nothing leaves the device: no crash record on MQTT, no heap telemetry anywhere [MEDIUM] — **NEW (2026-09-05)**
 
