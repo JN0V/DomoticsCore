@@ -268,6 +268,9 @@ inline ResetDetail getResetDetail() { return ResetDetail{}; }
 
 inline String getResetInfoString() { return getResetReasonString(getResetReason()); }
 
+/** @brief Nothing hidden here: abort() and a failed `new` panic and say so. */
+inline String getResetReasonCaveat(ResetReason /*reason*/) { return String(); }
+
 inline constexpr bool tracksMinFreeHeap() { return true; }
 
 /**

@@ -249,13 +249,12 @@ private:
         if (bootDiag.resetDetail.valid) {
             DLOG_W(LOG_SYSTEM, "Reset detail: %s", HAL::Platform::getResetInfoString().c_str());
         }
-#if DOMOTICS_PLATFORM_ESP8266
-        // Measured 2026-09-05: abort(), assert and an out-of-memory `new` all
-        // reach the next boot under this reason, indistinguishable from ESP.restart().
-        if (bootDiag.resetReason == HAL::Platform::ResetReason::Software) {
-            DLOG_I(LOG_SYSTEM, "Software/System restart is also what abort(), assert and an out-of-memory new report on this platform");
+        // What this reason hides is the platform's knowledge, not this
+        // component's (Constitution IX): the HAL says it, or says nothing.
+        String caveat = HAL::Platform::getResetReasonCaveat(bootDiag.resetReason);
+        if (caveat.length() > 0) {
+            DLOG_I(LOG_SYSTEM, "%s", caveat.c_str());
         }
-#endif
         // OBS-1: the ESP32 core writes a dump on every panic; say whether one is waiting.
         if (bootDiag.coreDump.supported) {
             if (!bootDiag.coreDump.partitionPresent) {
