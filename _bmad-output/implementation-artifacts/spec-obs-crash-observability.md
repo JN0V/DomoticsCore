@@ -306,6 +306,13 @@ that device (review 18).
 
 ## 8. Residuals — to verify in the lots
 
+Lot A shipped on 2026-09-05 with two reviews behind it: the maintainer's
+(one Constitution IX `#if` in a component, removed) and an adversarial one
+run after the PR opened (`review-obs-lot-a-adversarial.md`, 13 findings —
+the watchdog armed `loopTask` and fed the calling task, fixed and
+re-measured on both ESP32s). Its open items are folded below as 6–9.
+
+
 1. `RTC_NOINIT_ATTR` across a brownout reset. **Attempted 2026-09-05 on the
    ESP32-CAM from FTDI 3.3 V**: AP+STA at 19.5 dBm with back-to-back scans ran
    112 s, then the FTDI adapter dropped off the USB bus and did not return —
@@ -319,3 +326,11 @@ that device (review 18).
 4. The ESP8266 `-g` cost in flash, and `DEBUG_ESP_OOM`'s in speed.
 5. Whether `heap_caps_get_largest_free_block` inside the failed-alloc hook
    is safe from every calling context (it takes the heap lock).
+6. The loop watchdog's 30 s default against the longest `System::loop()`
+   iteration (OTA `Update.end()`, a synchronous scan), on both ESP32s.
+7. `enableLoopWatchdog()` on IDF 5 / Arduino 3.x (`esp_task_wdt_reconfigure`);
+   today it compiles with a `#warning` and does not arm.
+8. The ESP8266 `cont` stack high-water mark during `bootdiag` (`buf[640]`).
+9. `persistBootDiagnostics` costs three LittleFS file rewrites per boot on
+   ESP8266 (four before Lot A); OBS-3's once-per-boot rule and dedup are
+   where that number should fall.

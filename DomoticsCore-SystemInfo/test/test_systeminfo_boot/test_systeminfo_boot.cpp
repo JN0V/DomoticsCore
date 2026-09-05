@@ -4,6 +4,8 @@
 #include <unity.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/SystemInfo.h>
+#include <string>
+#include <vector>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -11,12 +13,30 @@ using namespace DomoticsCore::Components;
 // Test state
 static Core* testCore = nullptr;
 
+// Captured log lines (level, message), registered per test and removed in tearDown.
+static std::vector<std::pair<LogLevel, std::string>> capturedLogs;
+static LoggerCallbacks::CallbackId logCb = 0;
+static bool logCbInstalled = false;
+static void captureLogs() {
+    capturedLogs.clear();
+    logCb = LoggerCallbacks::addCallback([](LogLevel lvl, const char*, const char* msg) {
+        capturedLogs.emplace_back(lvl, std::string(msg));
+    });
+    logCbInstalled = true;
+}
+static size_t countLogsContaining(const char* needle) {
+    size_t n = 0;
+    for (auto& e : capturedLogs) if (e.second.find(needle) != std::string::npos) n++;
+    return n;
+}
+
 void setUp(void) {
     testCore = new Core();
 }
 
 void tearDown(void) {
     HAL::Platform::resetDiagnosticsForTest();
+    if (logCbInstalled) { LoggerCallbacks::removeCallback(logCb); logCbInstalled = false; }
     if (testCore) {
         testCore->shutdown();
         delete testCore;
@@ -313,6 +333,66 @@ void test_boot_min_heap_is_marked_untracked_where_the_platform_has_none(void) {
     if (!diag.bootMinHeapTracked) TEST_ASSERT_EQUAL_UINT32(0, diag.bootMinHeap);
 }
 
+// The caveat is the platform's sentence, logged once when it is not empty
+// and not at all when it is (the ESP32 shape). Neither the platform nor the
+// sentence is known to SystemInfo — Constitution IX, after the review that
+// removed the #if from this file.
+void test_a_platform_caveat_is_logged_exactly_once(void) {
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Software);
+    HAL::Platform::resetReasonCaveatForTest = "CAVEAT-FROM-THE-HAL";
+    captureLogs();
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    TEST_ASSERT_EQUAL_UINT32(1, countLogsContaining("CAVEAT-FROM-THE-HAL"));
+}
+
+void test_no_caveat_means_no_line(void) {
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Software);
+    captureLogs();
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    TEST_ASSERT_EQUAL_UINT32(0, countLogsContaining("CAVEAT"));
+    // and nothing logged an empty message
+    for (auto& e : capturedLogs) TEST_ASSERT_TRUE(e.second.length() > 0);
+}
+
+// The "Reset detail" line is formatted from the struct — one source of truth —
+// so what the log says and what bootdiag prints cannot disagree.
+void test_reset_detail_line_is_formatted_from_the_struct(void) {
+    HAL::Platform::ResetDetail d;
+    d.exccause = 28; d.epc1 = 0x40201297; d.valid = true;
+    HAL::Platform::setResetDetailForTest(d);
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Panic);
+    captureLogs();
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    TEST_ASSERT_EQUAL_UINT32(1, countLogsContaining("epc1=0x40201297"));
+    TEST_ASSERT_EQUAL_UINT32(1, countLogsContaining("exccause=28"));
+    TEST_ASSERT_EQUAL_UINT32(0, countLogsContaining("one sample so far"));   // not a hardware WDT
+}
+
+void test_hardware_wdt_detail_is_marked_as_sdk_reported(void) {
+    HAL::Platform::ResetDetail d;
+    d.exccause = 4; d.epc1 = 0x402012a2; d.valid = true;
+    HAL::Platform::setResetDetailForTest(d);
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Watchdog);
+    captureLogs();
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    TEST_ASSERT_EQUAL_UINT32(1, countLogsContaining("one sample so far"));
+}
+
+// OBS-6, the tracked shape: where the platform tracks a minimum the value is
+// captured and flagged as tracked (the stub returns 0 for it).
+void test_boot_min_heap_is_captured_where_the_platform_tracks_one(void) {
+    HAL::Platform::minFreeHeapTrackedForTest = true;
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    const auto& diag = sysinfo.getBootDiagnostics();
+    TEST_ASSERT_TRUE(diag.bootMinHeapTracked);
+    TEST_ASSERT_EQUAL_UINT32(HAL::Platform::getMinFreeHeap(), diag.bootMinHeap);
+}
+
 void test_boot_diagnostics_new_fields_default_empty(void) {
     BootDiagnostics diag;
     TEST_ASSERT_FALSE(diag.bootMinHeapTracked);
@@ -359,6 +439,11 @@ int main(int argc, char **argv) {
     RUN_TEST(test_core_dump_status_scripted_reaches_boot_diagnostics);
     RUN_TEST(test_boot_min_heap_is_marked_untracked_where_the_platform_has_none);
     RUN_TEST(test_boot_diagnostics_new_fields_default_empty);
+    RUN_TEST(test_a_platform_caveat_is_logged_exactly_once);
+    RUN_TEST(test_no_caveat_means_no_line);
+    RUN_TEST(test_reset_detail_line_is_formatted_from_the_struct);
+    RUN_TEST(test_hardware_wdt_detail_is_marked_as_sdk_reported);
+    RUN_TEST(test_boot_min_heap_is_captured_where_the_platform_tracks_one);
 
     return UNITY_END();
 }

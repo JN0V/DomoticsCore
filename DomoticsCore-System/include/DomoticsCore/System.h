@@ -177,6 +177,8 @@ public:
         if (config.loopWatchdogSeconds > 0) {
             if (HAL::Platform::enableLoopWatchdog(config.loopWatchdogSeconds)) {
                 DLOG_I(LOG_SYSTEM, "Loop watchdog armed: %lu s", (unsigned long)config.loopWatchdogSeconds);
+            } else if (HAL::Platform::supportsLoopWatchdog()) {
+                DLOG_W(LOG_SYSTEM, "Loop watchdog requested (%lu s) but did not arm", (unsigned long)config.loopWatchdogSeconds);
             }
         }
 
@@ -598,7 +600,7 @@ private:
         } else {
             snprintf(minHeapStr, sizeof(minHeapStr), "n/a (not tracked on this platform)");
         }
-        char buf[768];
+        char buf[640];
         int pos = snprintf(buf, sizeof(buf),
                  "Boot Diagnostics:\n"
                  "  Boot Count: %lu\n"

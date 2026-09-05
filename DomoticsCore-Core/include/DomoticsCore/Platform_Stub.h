@@ -610,6 +610,8 @@ inline CoreDumpStatus coreDumpStatusForTest{};
 inline uint32_t loopWatchdogSecondsForTest = 0;   // last value enableLoopWatchdog() accepted, 0 = never
 inline uint32_t loopWatchdogFeedsForTest = 0;
 inline String resetReasonCaveatForTest;           // scripted; empty = no caveat, the ESP32 shape
+inline bool minFreeHeapTrackedForTest = false;    // scripted; false = the ESP8266 shape
+inline bool loopWatchdogArmFailsForTest = false;  // scripted; true = the platform refuses to arm
 
 inline void setResetReasonForTest(ResetReason r) { resetReasonForTest = r; }
 inline void setResetDetailForTest(const ResetDetail& d) { resetDetailForTest = d; }
@@ -621,15 +623,17 @@ inline void resetDiagnosticsForTest() {
     loopWatchdogSecondsForTest = 0;
     loopWatchdogFeedsForTest = 0;
     resetReasonCaveatForTest = String();
+    minFreeHeapTrackedForTest = false;
+    loopWatchdogArmFailsForTest = false;
 }
 
 inline ResetDetail getResetDetail() { return resetDetailForTest; }
-inline String getResetInfoString() { return getResetReasonString(getResetReason()); }
 inline String getResetReasonCaveat(ResetReason /*reason*/) { return resetReasonCaveatForTest; }
-inline constexpr bool tracksMinFreeHeap() { return false; }
+inline bool tracksMinFreeHeap() { return minFreeHeapTrackedForTest; }
 inline CoreDumpStatus getCoreDumpStatus() { return coreDumpStatusForTest; }
+inline constexpr bool supportsLoopWatchdog() { return true; }   // mirrors ESP32 so the not-armed path is testable
 inline bool enableLoopWatchdog(uint32_t seconds) {
-    if (seconds == 0) return false;
+    if (seconds == 0 || loopWatchdogArmFailsForTest) return false;
     loopWatchdogSecondsForTest = seconds;
     return true;
 }

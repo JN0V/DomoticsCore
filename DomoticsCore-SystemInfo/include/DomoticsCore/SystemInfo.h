@@ -247,7 +247,11 @@ private:
         // OBS-2: epc1 locates the fault, or the loop the watchdog interrupted —
         // `xtensa-lx106-elf-addr2line -e firmware.elf 0x...` against this build's ELF.
         if (bootDiag.resetDetail.valid) {
-            DLOG_W(LOG_SYSTEM, "Reset detail: %s", HAL::Platform::getResetInfoString().c_str());
+            const auto& d = bootDiag.resetDetail;
+            DLOG_W(LOG_SYSTEM, "Reset detail: exccause=%u epc1=0x%08x epc2=0x%08x excvaddr=0x%08x depc=0x%08x%s",
+                   (unsigned)d.exccause, (unsigned)d.epc1, (unsigned)d.epc2, (unsigned)d.excvaddr, (unsigned)d.depc,
+                   bootDiag.resetReason == HAL::Platform::ResetReason::Watchdog
+                       ? " (hardware WDT: registers as the SDK reported them, one sample so far)" : "");
         }
         // What this reason hides is the platform's knowledge, not this
         // component's (Constitution IX): the HAL says it, or says nothing.
