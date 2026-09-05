@@ -65,10 +65,12 @@ landed.
 SEC-10 and SEC-11, BUG-21, BUG-30 to BUG-35, MEM-2, TEST-4, TEST-6, TEST-8's
 four holes, SIZE-1 and SIZE-2, CI-13. CI-15 was to ride it and does not: its
 prescribed `export.exclude` was measured inert on both paths while the branch
-was being prepared (see the entry). Eight components move; LED, MQTT,
-NTP and System do not, having changed only in examples and tests. Two public
-contracts change (the CSRF token on state-changing routes, the EventBus
-payload guard) and the CHANGELOG says so at the top of the entry, as 2.1.0 and
+was being prepared (see the entry). **OBS Lot A was folded in the same day**
+(PR #59), so the fleet pays one OTA window rather than two. Nine components
+move; LED, MQTT and NTP do not, having changed only in examples and tests.
+Three public contracts change (the CSRF token on state-changing routes, the
+EventBus payload guard, the loop watchdog armed by default on ESP32 with the
+`BootDiagnostics` rename) and the CHANGELOG says so at the top of the entry, as 2.1.0 and
 2.2.0 did.
 
 `main` requires seven checks: `test-install`, `check-versions`,

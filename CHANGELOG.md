@@ -47,6 +47,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > — `publish(topic, ptr, size)` — and read them as bytes. The one shipped
 > payload this touches is Storage's `EVENT_READY`, which now carries the
 > namespace as a C string rather than a `String` object.
+>
+> **On ESP32 and ESP32-C3, `System` now arms a loop watchdog by default** —
+> 30 s, `SystemConfig::loopWatchdogSeconds`, `0` to disable. A sketch that
+> calls `System::loop()` at least every 30 s never notices. One that stops
+> calling it for that long is now a panic and a core dump instead of a silent
+> hang — which is the point: measured on a WROOM-32D and a C3, a stuck
+> `loop()` never rebooted, because the Arduino core keeps `loopTask` off the
+> task watchdog (OBS-7). And `BootDiagnostics` renamed its heap fields —
+> `lastBootHeap`/`lastBootMinHeap` are `bootHeap`/`bootMinHeap`, a loud
+> compile-time break for the rare code that read them — because they
+> described the new boot under the previous run's name. The persisted keys
+> follow (`boot_heap`, `boot_minheap`) and the old ones are removed on the
+> first boot (OBS-6).
 
 ### Security
 
@@ -79,6 +92,29 @@ The numbers the OTA subsystem reports now say what they measured. The fix
 this finding first recommended — passing `0` for the size — was measured to
 be a regression on both cores and was not applied; the roadmap entry opens
 with a warning against its own former advice.
+
+### Observability
+
+The first lot of a new series: devices in the field reboot on their own and
+nothing records why. This release reads what the platform already kept.
+
+- **ESP8266 (OBS-2)**: the exception cause and program counter the SDK
+  preserves across an exception or a watchdog reset now reach the boot log
+  (`Reset detail: Fatal exception:28 … epc1:0x40217580`), `BootDiagnostics`
+  and the `bootdiag` console command, with the `addr2line` hint. Measured:
+  a hung loop reports `Software Watchdog` with `epc1` inside the loop. What
+  it cannot see is said at boot on that platform: an `abort()`, an `assert`
+  and an out-of-memory `new` all arrive as "Software/System restart", with
+  nothing in the registers — indistinguishable from `ESP.restart()` by
+  reason alone.
+- **ESP32 / ESP32-C3 (OBS-1)**: the core writes an ELF core dump to the
+  `coredump` partition on every panic, and nothing read it. The boot log now
+  says whether the partition exists and whether a dump is waiting, with its
+  size (`⚠ A core dump from a previous panic is waiting: 15268 bytes`);
+  `bootdiag` names it. Reading it off the device comes in a later lot.
+- **All platforms (OBS-7, OBS-6)**: the loop watchdog and the renamed boot
+  heap fields, described at the top. On ESP8266 the watchdog call is a no-op
+  — the SDK's soft WDT already resets a hang in about 3 s.
 
 ### Fixed
 
@@ -126,8 +162,10 @@ with a warning against its own former advice.
 
 ### Testing
 
-- **Native**: 819 test cases across 13 projects, up from 715 at
-  v2.2.0. TEST-4 gave WiFi a 16-case behavioural suite over the fallback
+- **Native**: 836 test cases across 13 projects, up from 715 at
+  v2.2.0 — 819 before the observability lot, which added 17 across
+  SystemInfo and System, driven through new `Platform_Stub.h` seams for the
+  reset detail, the core dump status and the loop watchdog. TEST-4 gave WiFi a 16-case behavioural suite over the fallback
   ladder, AP mode and reconnection, on scriptable `millis`/heap/restart and a
   stateful WiFi stub; TEST-6 covered the WebUI-related providers; SIZE-1 and
   SIZE-2 made the chunk loop and the update builder testable for the first
@@ -137,6 +175,10 @@ with a warning against its own former advice.
   (TEST-8). Eight on-device suites compile in CI; seven ESP8266 and one
   ESP32-CAM have been executed on silicon. A second real-conditions campaign
   ran both boards against a real network, broker and browser and found BUG-35.
+  **The ESP32-C3, which CI had compiled for since v2.1.1 and nothing had ever
+  run on, ran the observability lot's probe on 2026-09-05**: same findings as
+  the ESP32, with one difference — its Arduino core watches no idle task at
+  all, so a hang is silent there for a different reason.
 - **Tooling**: `tools/on-device/` — the harness the campaigns ran on, which
   reads the ESP32-CAM that `pio test` cannot; `clean_examples.py` learned the
   `test/` projects after a 19 GB recursion (CI-13).
