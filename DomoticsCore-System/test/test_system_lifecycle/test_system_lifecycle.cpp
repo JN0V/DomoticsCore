@@ -17,6 +17,7 @@
 #include <cstring>
 #include <string>
 #include <DomoticsCore/System.h>
+#include <vector>
 
 using namespace DomoticsCore;
 
@@ -381,6 +382,37 @@ void test_the_feed_is_a_no_op_when_the_watchdog_is_off(void) {
     TEST_ASSERT_EQUAL_UINT32(0, HAL::Platform::loopWatchdogFeedsForTest);
 }
 
+// A platform that supports the watchdog but refuses to arm it must be
+// reported as such, not claimed armed (review finding 2).
+void test_a_failed_arming_is_reported_not_claimed(void) {
+    HAL::Platform::loopWatchdogArmFailsForTest = true;
+    std::vector<std::string> logs;
+    auto id = LoggerCallbacks::addCallback([&](LogLevel, const char*, const char* msg) { logs.emplace_back(msg); });
+    System sys(SystemConfig::minimal());
+    sys.begin();
+    LoggerCallbacks::removeCallback(id);
+    bool warned = false, claimed = false;
+    for (auto& l : logs) { if (mentions(l, "did not arm")) warned = true; if (mentions(l, "Loop watchdog armed")) claimed = true; }
+    TEST_ASSERT_TRUE(warned);
+    TEST_ASSERT_FALSE(claimed);
+    TEST_ASSERT_EQUAL_UINT32(0, HAL::Platform::loopWatchdogSecondsForTest);
+}
+
+// OBS-6, the tracked shape (ESP32): the report prints the minimum and the
+// persisted key exists.
+void test_bootdiag_reports_the_tracked_minimum_where_the_platform_has_one(void) {
+    HAL::Platform::minFreeHeapTrackedForTest = true;
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.begin();
+    Console con(sys);
+    std::string out = con.run(sys, "bootdiag");
+    TEST_ASSERT_TRUE(mentions(out, "Min heap at this boot: 0 bytes"));
+    TEST_ASSERT_FALSE(mentions(out, "n/a (not tracked"));
+}
+
 // OBS-2 through the console: a scripted exception reaches `bootdiag`.
 void test_bootdiag_command_reports_the_reset_detail(void) {
     HAL::Platform::ResetDetail d;
@@ -454,6 +486,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_the_feed_is_a_no_op_when_the_watchdog_is_off);
     RUN_TEST(test_bootdiag_command_reports_the_reset_detail);
     RUN_TEST(test_bootdiag_command_reports_a_waiting_core_dump);
+    RUN_TEST(test_a_failed_arming_is_reported_not_claimed);
+    RUN_TEST(test_bootdiag_reports_the_tracked_minimum_where_the_platform_has_one);
 
     return UNITY_END();
 }
