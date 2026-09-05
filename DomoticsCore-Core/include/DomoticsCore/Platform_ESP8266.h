@@ -300,6 +300,22 @@ inline ResetDetail getResetDetail() {
 /** @brief The core's own formatting of rst_info: reason, and the registers when it has them. */
 inline String getResetInfoString() { return ESP.getResetInfo(); }
 
+/**
+ * @brief What a reset reason hides on this platform, or an empty String.
+ *
+ * Measured 2026-09-05 on a nodemcuv2: abort(), assert and an out-of-memory
+ * `new` all reach the next boot as REASON_SOFT_RESTART, with nothing in
+ * rst_info — indistinguishable from ESP.restart() by reason alone. Consumers
+ * log this when it is not empty; they never test the platform themselves
+ * (Constitution IX).
+ */
+inline String getResetReasonCaveat(ResetReason reason) {
+    if (reason == ResetReason::Software) {
+        return F("Software/System restart is also what abort(), assert and an out-of-memory new report on this platform");
+    }
+    return String();
+}
+
 /** @brief getMinFreeHeap() returns the current heap here (see above), so no. */
 inline constexpr bool tracksMinFreeHeap() { return false; }
 

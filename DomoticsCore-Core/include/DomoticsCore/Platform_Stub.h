@@ -609,6 +609,7 @@ inline ResetDetail resetDetailForTest{};
 inline CoreDumpStatus coreDumpStatusForTest{};
 inline uint32_t loopWatchdogSecondsForTest = 0;   // last value enableLoopWatchdog() accepted, 0 = never
 inline uint32_t loopWatchdogFeedsForTest = 0;
+inline String resetReasonCaveatForTest;           // scripted; empty = no caveat, the ESP32 shape
 
 inline void setResetReasonForTest(ResetReason r) { resetReasonForTest = r; }
 inline void setResetDetailForTest(const ResetDetail& d) { resetDetailForTest = d; }
@@ -619,10 +620,12 @@ inline void resetDiagnosticsForTest() {
     coreDumpStatusForTest = CoreDumpStatus{};
     loopWatchdogSecondsForTest = 0;
     loopWatchdogFeedsForTest = 0;
+    resetReasonCaveatForTest = String();
 }
 
 inline ResetDetail getResetDetail() { return resetDetailForTest; }
 inline String getResetInfoString() { return getResetReasonString(getResetReason()); }
+inline String getResetReasonCaveat(ResetReason /*reason*/) { return resetReasonCaveatForTest; }
 inline constexpr bool tracksMinFreeHeap() { return false; }
 inline CoreDumpStatus getCoreDumpStatus() { return coreDumpStatusForTest; }
 inline bool enableLoopWatchdog(uint32_t seconds) {
