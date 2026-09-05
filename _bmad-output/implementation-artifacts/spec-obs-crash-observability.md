@@ -326,8 +326,10 @@ re-measured on both ESP32s). Its open items are folded below as 6–9.
 4. The ESP8266 `-g` cost in flash, and `DEBUG_ESP_OOM`'s in speed.
 5. Whether `heap_caps_get_largest_free_block` inside the failed-alloc hook
    is safe from every calling context (it takes the heap lock).
-6. The loop watchdog's 30 s default against the longest `System::loop()`
-   iteration (OTA `Update.end()`, a synchronous scan), on both ESP32s.
+6. ~~The loop watchdog's 30 s default against the longest `System::loop()`
+   iteration~~ — answered on the WROOM-32D: 0.37 s idle, 0.80 s during an
+   upload, scan 8.1 s; the commit runs on the async task. C3 unmeasured
+   (unplugged). The upload's own failure is BUG-37.
 7. `enableLoopWatchdog()` on IDF 5 / Arduino 3.x (`esp_task_wdt_reconfigure`);
    today it compiles with a `#warning` and does not arm.
 8. The ESP8266 `cont` stack high-water mark during `bootdiag` (`buf[640]`).
