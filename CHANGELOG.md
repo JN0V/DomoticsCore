@@ -54,7 +54,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > calling it for that long is now a panic and a core dump instead of a silent
 > hang — which is the point: measured on a WROOM-32D and a C3, a stuck
 > `loop()` never rebooted, because the Arduino core keeps `loopTask` off the
-> task watchdog (OBS-7). And `BootDiagnostics` renamed its heap fields —
+> task watchdog (OBS-7). It arms the task that calls `System::loop()` and
+> **reconfigures the task watchdog timeout globally**: on ESP32 the idle
+> task's 5 s becomes the same 30 s. It is written against the IDF 4.x API
+> the 2.0.x core ships; on an IDF 5 core it compiles with a warning and
+> arms nothing, and the boot log says so. And `BootDiagnostics` renamed its heap fields —
 > `lastBootHeap`/`lastBootMinHeap` are `bootHeap`/`bootMinHeap`, a loud
 > compile-time break for the rare code that read them — because they
 > described the new boot under the previous run's name. The persisted keys
