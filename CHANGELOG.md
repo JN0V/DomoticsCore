@@ -26,6 +26,121 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.3.0] - 2026-09-05
+
+> **This release changes two public contracts and ships as a minor release.**
+> The same departure 2.1.0 and 2.2.0 took, recorded here for the same reason.
+>
+> **`/api/ui/action` is `POST`, and every state-changing HTTP route now
+> requires a per-boot CSRF token** (`X-DC-Token` header or `token` query,
+> fetched from `GET /api/ui/token`). The device's own page does this for you.
+> Anything else that drove the API — a script, a dashboard, `curl` — gets a
+> `404` on the old `GET` shape and a `403` without the token. That is SEC-10,
+> below, and it is the point: those requests were reachable cross-origin from
+> any page you visited.
+>
+> **`EventBus::publish(topic, value)` refuses at compile time any payload
+> type that is not trivially copyable.** `emit<String>(…)` no longer builds.
+> It never worked: the queue byte-copied the `String` and dispatched it after
+> the publisher's local had gone, so a subscriber doing
+> `static_cast<const String*>(payload)` read freed heap. Publish bytes instead
+> — `publish(topic, ptr, size)` — and read them as bytes. The one shipped
+> payload this touches is Storage's `EVENT_READY`, which now carries the
+> namespace as a C string rather than a `String` object.
+
+### Security
+
+**SEC-10 — WebUI: an unauthenticated cross-origin request could install
+firmware.** Every state-changing WebUI route accepted a request that did not
+come from the device's own page: the action dispatcher was registered as
+`GET` and synthesised `"POST"` for the provider guards, and `/api/ota/upload`
+accepted a bare `multipart/form-data` body — CORS-safelisted, no preflight.
+Measured on a `nodemcuv2`: a cross-origin `fetch(…, {mode:'no-cors'})`
+installed arbitrary firmware and rebooted the device. `enableAuth` would not
+have closed it, because browsers attach cached Basic credentials to
+cross-origin requests.
+
+The fix is the per-boot token described above, minted from the hardware RNG
+(`esp_random` / `os_get_random`, never Arduino `random()`), served by a route
+that carries no CORS headers so cross-origin script cannot read it, and
+checked independently of `enableAuth` on `/api/ui/action`, `/api/ota/upload`
+(before flash is erased), `/api/ota/check`, `/api/ota/update`'s action branch
+and `/api/components/enable`. Verified on the board in both directions.
+
+**SEC-11 — OTA: `/api/ota/update` and `/api/ota/check` had no authentication
+at all**, even with `enableAuth` on. Gated by the same token.
+
+**SEC-8 — OTA: `maxDownloadSize` bounded downloads and not uploads.** It now
+bounds both; an upload that announces more than the limit is refused before
+the first byte reaches flash.
+
+**SEC-9 — OTA: the upload path sized itself from the multipart envelope.**
+The numbers the OTA subsystem reports now say what they measured. The fix
+this finding first recommended — passing `0` for the size — was measured to
+be a regression on both cores and was not applied; the roadmap entry opens
+with a warning against its own former advice.
+
+### Fixed
+
+- **OTA (BUG-35): a client disconnect mid-upload locked OTA out until a
+  power cycle.** The upload stayed "in progress" forever and every later
+  attempt was refused. Reproduced with a scripted disconnect on both boards,
+  red then green.
+- **OTA (BUG-21): `ota/start` and `ota/end` were never emitted.** Both fire
+  now, on every path.
+- **OTA: the download path reported the size the server announced**, not
+  the size it received, in both directions.
+- **Core (BUG-30): `String` payloads on the EventBus were a use-after-free.**
+  See the note above. The compile-time guard found ten publishing sites, seven
+  of them in `Wifi.h` publishing a temporary; a grep had found seven.
+- **HomeAssistant (BUG-31): the settings handler read six parameters nothing
+  sends, and wrote flash on every request.** It now reads the field/value
+  convention the dispatcher actually uses, and persists only on change.
+- **WebUI (BUG-32): the device name was interpolated raw into every update.**
+  A name containing a quote broke the JSON for every client, persistently,
+  until renamed. Escaped at the sink; `SystemInfoWebUI` validates the input.
+- **WebUI (BUG-34): `/api/ui/schema` truncated when the serializer could not
+  make progress** — the fix its twin route received in v1.5.0 had never
+  reached it. Both routes share one helper now, and the tests found the stall
+  fires at ordinary chunk sizes.
+- **WebUI (BUG-33): the streaming escaper's control-character test depended
+  on `char` signedness.** Host-only in practice; measured against all three
+  toolchains.
+
+### Changed
+
+- **Core**: `HAL::Platform::getRandomBytes()` — the hardware RNG, exposed for
+  the token above and for anyone else who needs random bytes that are not
+  `random()`.
+- **WebUI**: `WebUI.h` (1008 → 769 lines) and `StreamingContextSerializer.h`
+  (933 → 756) were split under the 800-line ceiling. New headers under
+  `include/DomoticsCore/WebUI/` — `JsonStreamWriter.h`, `SchemaMemProbe.h`,
+  `UpdateBuilder.h`, `SystemHeader.h` — and the schema chunk loop, which
+  existed three times, lives once in `ProviderRegistry.h`. `#include
+  <DomoticsCore/WebUI.h>` is unchanged.
+- **Performance (MEM-2)**: `String` concatenation removed from the hot paths
+  — HomeAssistant parses inbound MQTT without the allocator, WiFi builds its
+  scan summary without growing a `String`, the console's help text is static.
+  The 14-character small-string threshold the finding was reasoned against is
+  10 on the ESP8266; the roadmap says so.
+
+### Testing
+
+- **Native**: 819 test cases across 13 projects, up from 715 at
+  v2.2.0. TEST-4 gave WiFi a 16-case behavioural suite over the fallback
+  ladder, AP mode and reconnection, on scriptable `millis`/heap/restart and a
+  stateful WiFi stub; TEST-6 covered the WebUI-related providers; SIZE-1 and
+  SIZE-2 made the chunk loop and the update builder testable for the first
+  time.
+- **On hardware**: a real `multipart/form-data` POST now runs against both
+  boards, refused and accepted, each with a removal check that discriminates
+  (TEST-8). Eight on-device suites compile in CI; seven ESP8266 and one
+  ESP32-CAM have been executed on silicon. A second real-conditions campaign
+  ran both boards against a real network, broker and browser and found BUG-35.
+- **Tooling**: `tools/on-device/` — the harness the campaigns ran on, which
+  reads the ESP32-CAM that `pio test` cannot; `clean_examples.py` learned the
+  `test/` projects after a 19 GB recursion (CI-13).
+
 ## [2.2.0] - 2026-08-26
 
 > **This release removes one public symbol and changes the behaviour of another,

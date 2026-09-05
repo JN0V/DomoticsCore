@@ -61,6 +61,16 @@ The no-version-bump rule held throughout — component versions and the CHANGELO
 moved once, here, at the end. It is why OTA sat at 1.5.0 while SEC-2 and SEC-7
 landed.
 
+**The third ships as v2.3.0** (2026-09-05): everything from SEC-8 to BUG-35 —
+SEC-10 and SEC-11, BUG-21, BUG-30 to BUG-35, MEM-2, TEST-4, TEST-6, TEST-8's
+four holes, SIZE-1 and SIZE-2, CI-13. CI-15 was to ride it and does not: its
+prescribed `export.exclude` was measured inert on both paths while the branch
+was being prepared (see the entry). Eight components move; LED, MQTT,
+NTP and System do not, having changed only in examples and tests. Two public
+contracts change (the CSRF token on state-changing routes, the EventBus
+payload guard) and the CHANGELOG says so at the top of the entry, as 2.1.0 and
+2.2.0 did.
+
 `main` requires seven checks: `test-install`, `check-versions`,
 `Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
 `Build on-device suites`, plus an up-to-date branch and resolved conversations.
@@ -2619,6 +2629,24 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   "test/**/.pio/**"]}` across the twelve manifests, or excluding
   `examples`/`test` from export outright) belongs to a lot that verifies
   the published tarball, ideally alongside the pending corrective release.
+- **Measured 2026-09-05, while the v2.3.0 branch was being prepared, and the
+  prescribed remedy is inert — on both paths.** With a 1 MB `junk/` directory
+  planted in `DomoticsCore-Core` and `"junk/**"` in its `export.exclude`:
+  `pio pkg pack` left it out of the tarball (and leaves `.pio` out **by
+  default**, exclude or no exclude — 0 `.pio` entries either way), while a
+  native build of `DomoticsCore-NTP`, which pulls Core as
+  `file://../DomoticsCore-Core`, copied `junk/` into `libdeps` regardless. So
+  the registry never had the problem and the local copy does not read the
+  field. The twelve `export.exclude` blocks were added to the release branch
+  and removed again before the PR, the same afternoon.
+- **Remedy, re-pointed**: the copy is the problem, so stop copying.
+  PlatformIO 6.1 accepts `symlink://../DomoticsCore-Core` where the test and
+  example manifests say `file://`; a symlink carries no `.pio` and — the
+  other defect this would close — cannot go stale, which is the
+  `pio-libdeps-stale-copies` trap CLAUDE.md warns about (`rm -rf .pio` before
+  any run you intend to trust). That is a CI/test-project lot with its own
+  validation on the runner, not a packaging one, and it no longer needs to
+  ride a release.
 - Until then `clean_examples.py` remains the guard, now with CI-13's third
   pass — and its header's "never build examples in parallel" warning is
   load-bearing: the campaign violated it once and the cleaner of one

@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-Core",
-  "version": "1.5.4",
+  "version": "1.6.0",
   "description": "DomoticsCore core runtime (Core, ComponentRegistry, IComponent, Logger, EventBus, Testing/HeapTracker)",
   "keywords": ["esp32", "domotics", "core", "eventbus", "testing", "heaptracker"],
   "repository": {

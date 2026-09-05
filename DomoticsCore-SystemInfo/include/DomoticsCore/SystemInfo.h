@@ -166,7 +166,7 @@ public:
     SystemInfoComponent(const SystemInfoConfig& cfg = SystemInfoConfig()) 
         : config(cfg) {
         metadata.name = "System Info";
-        metadata.version = "1.4.1";
+        metadata.version = "1.4.2";
     }
 
     // IComponent interface
