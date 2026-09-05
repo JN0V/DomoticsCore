@@ -48,6 +48,7 @@ versions may sit still while fixes land.
 | LED (docs only) | ARCH-2 | 2026-08-31 — closed **by measurement, no code change**: the prescribed remedy already existed (LEDWebUI.h separate since ≥2025-09-26, so "WebUI in one class" was false at filing; the pure effect engine landed with PR #17). BUG-19 cited as the structure's one recorded defect, closed by tests not by splitting. LED-F1, the cited source, does not exist in the repository. **ARCH-2 closed** (2 → 1 open HIGH — ARCH-1 is the last) |
 | System (docs only) | ARCH-1 | 2026-08-31 — **re-argued HIGH → MEDIUM, open, dual trigger**: SYS-F6 unreadable (the HIGH was inherited, never argued); one XIII indicator exceeded (`begin()` 62, stable since filing) against a file inside every other measurement; the fork rewrites two of three prescribed extraction zones, the third declined as YAGNI. **Open HIGH reaches zero — by reclassification, stated in those words.** marianorenzi notification drafted for the maintainer |
 | Tooling, harness | CI-13, CI-15, BUG-35 (filed) | 2026-09-01 — the second real-conditions campaign's lot: `clean_examples.py` learns `test/*/.pio` after a 19 GB recursion (**CI-13 closed**), the harness learns the SEC-10 token, **CI-15 filed** (no `export.exclude` anywhere — root cause, release-aware), **BUG-35 filed** from the disconnect accident (open HIGH 0 → 1 — the campaign doing its job) |
+| Observability, Core (docs only) | OBS-1 to OBS-7, BUG-36 filed | PR #57 — 2026-09-05, the post-mortem observability design, adversarially reviewed (22 findings) and measured on the nodemcuv2, the WROOM-32D and the ESP32-CAM the same day; eight items filed, none closed. The review's first finding — an OOM in `new` reaches the next ESP8266 boot as "Software/System restart" — was confirmed on the board within the hour and reshaped the design |
 | OTA | BUG-35 | 2026-09-01 — **filed in the morning, fixed in the afternoon**: `onDisconnect` → `abortUpload`, gated on the upload-active discriminator because onDisconnect fires after every request. Red-then-green with the same `--disconnect-at` script on the WROOM-32D and the nodemcuv2 (the ESP8266's buffer-release path included), `--commit` cycle re-proven, OTA suite 10/10. **BUG-35 closed** (1 → 0 open HIGH, by a fix this time). Two limits written at the site: the shared-state two-client blind spot (pre-existing), the TCP half-open residual |
 
 The first series closed with v2.1.0 and v2.1.1. **The second ships as v2.2.0**
@@ -1644,6 +1645,36 @@ one worth a one-line change, and six rows that are not defects.
   ESP8266 HTTP-level proof this entry now carries, and the half-open
   residual).
 
+### BUG-36 — Core: `EventBus::enqueue` never decrements `pendingByTopic` for the event it drops on overflow [MEDIUM] — **NEW (2026-09-05)**
+
+- **Opened by**: the observability prioritisation of 2026-09-05, from a
+  finding STOR-ESP-1's withdrawal had left in
+  `_bmad-output/implementation-artifacts/deferred-work.md` with no roadmap
+  identifier. **Filed, not fixed** — it belongs with OBS-3's lot, whose
+  recorder wants the drop counter this fix has to add.
+- **File**: `DomoticsCore-Core/include/DomoticsCore/EventBus.h`,
+  `enqueue()` (`:251-267`), `poll()` (`:218-222`), `subscribe()` (`:60-67`).
+- **Problem**: the queue is capped at 32. On overflow `enqueue()` pops the
+  oldest event and pushes the new one, then increments `pendingByTopic` for
+  the new one — and never decrements it for the one it dropped. `poll()`
+  decrements only for events it dispatches. So every dropped event leaves
+  its topic's counter one higher, permanently. `subscribe(…, replayLast)`
+  reads that counter and **skips the sticky replay whenever it is above
+  zero**, so any topic that has ever had an event dropped — including a
+  topic that merely happened to be oldest when another topic stormed the
+  queue — never replays again for the life of the process.
+- **Why it matters here**: this is a defect that grows with uptime and shows
+  as "the device behaves differently after a while", the family the
+  observability work exists to make visible. The drop itself is silent
+  (LO-5); the counter drift is its lasting trace.
+- **Fix**: decrement the dropped event's topic before popping it, erase the
+  entry at zero (the second deferred-work item), and count drops — per bus
+  and per topic — where OBS-3's record and LO-5's log line can read them.
+  Native test: fill past the cap on topic A with a B event oldest, drain,
+  subscribe to B with `replayLast` and require the replay; run it against
+  the unfixed code first.
+- **Refs**: deferred-work items 1 and 2 under `spec-stor-esp-1`; LO-5.
+
 ### BUG-34 — WebUI: `/api/ui/schema` truncates when the serializer cannot make progress [MEDIUM] — **DONE (2026-08-31)**
 
 - **Filed and fixed**: 2026-08-31, SIZE-1's lot — found by the extraction that
@@ -2927,6 +2958,191 @@ not.
 
 ---
 
+## Priority 11: Observability — post-mortem and remote telemetry
+
+> Filed 2026-09-05 from a design discussion, not from a review sweep. The
+> maintainer's production devices reboot at a regular interval and nobody has
+> ever seen one die: the RemoteConsole is a Telnet stream fed by the Logger,
+> and a heap exhaustion never goes through the Logger. Design in
+> `_bmad-output/implementation-artifacts/spec-obs-crash-observability.md`
+> (v2), adversarially reviewed the same day (`review-obs-v1-adversarial.md`,
+> 22 findings) and then **measured on both boards before these entries were
+> written in their present form** — the review's first finding reshaped the
+> design within the hour. Seven items, four lots; **Lot A (OBS-2, OBS-6,
+> OBS-1's boot check, OBS-7) is the recommended first lot**: it builds no
+> new mechanism and it is honest about what it can and cannot see.
+>
+> **Severity, argued once for the section.** All seven are MEDIUM except
+> OBS-6 (LOW). HIGH in this roadmap has meant a defect in shipped behaviour;
+> these are missing instruments for a live production problem, which is a
+> priority argument, not a severity one. The priority is carried by the lot
+> order and by the maintainer's decision of 2026-09-05 that this is the next
+> subject. Anyone who wants OBS-3 at HIGH should argue it from a defect it
+> exposes, and one is on the table: the periodic reboots themselves, once
+> Lot A has said what they are.
+
+### OBS-1 — ESP32: every panic already writes a core dump to flash, and nothing reads it [MEDIUM] — **NEW (2026-09-05)**
+
+- **Measured** on the WROOM-32D with the stock `default.csv`: a null
+  dereference, a `malloc`-until-NULL dereference and an `abort()` each left
+  an ELF dump of ~9 KB in the `coredump` partition at `0x3F0000`;
+  `esp_core_dump_image_check()` returned OK, `esp_core_dump_image_get()` the
+  size, `esp_core_dump_image_erase()` cleared it. `grep -r coredump` over
+  the sources finds only partition CSV references.
+- **The fleet caveat, corrected after review**: 23 of the 24 stock
+  partition tables carry the partition (`bare_minimum_2MB.csv` is the
+  exception) and PlatformIO's default for `esp32dev` is `default.csv`. **A
+  project loses it only by choosing a custom CSV** — as FullStack did before
+  CI-9 (PR #11, 2026-08-23), whose entry listed "64 KB coredump" among the
+  reasons to switch and which nothing followed up. The maintainer's fleet
+  runs his own project; unless it set a custom table, the dumps have been
+  accumulating. v1 of this entry had that backwards.
+- **Fix, in two lots**: **Lot A** — at boot, say whether the partition
+  exists and whether a dump is waiting, with its size, at WARN. **Lot D** —
+  `GET /api/system/coredump` streams the partition in chunks,
+  `POST /api/system/coredump/erase` under SEC-10's token, both behind
+  `enableAuth`; decoded on the host with `esp-coredump info_corefile`
+  against the build's ELF.
+- **Verification**: the probe's three panics are the expected values; the
+  download decodes with the ELF; removal check: erase, boot clean, no WARN.
+
+### OBS-2 — ESP8266: the exception cause and address survive the reset and `getResetReason()` throws them away [MEDIUM] — **NEW (2026-09-05)**
+
+- **File**: `Platform_ESP8266.h:215-230`; consumers `SystemInfo.h:224-240`,
+  `System.h:590-625` (`bootdiag`).
+- **Measured** on the nodemcuv2: after a null dereference the next boot's
+  `rst_info` carries `exccause=28, epc1=0x40201297`; after a soft WDT,
+  `exccause=4` and **epc1 pointing into the loop that hung**; after a
+  hardware WDT the SDK still reports an epc1 in the loop (one sample). The
+  core already formats all of it — `ESP.getResetInfo()` (`Esp.cpp:506-512`)
+  — and our HAL keeps only the enum.
+- **What it cannot see, measured**: an `abort()`, an `assert`, a `panic()`
+  and **an out-of-memory `new`** all reach the next boot as reason 4,
+  "Software/System restart", with nothing in `rst_info` — the postmortem's
+  user-exception reason (254) is never written back. Those deaths are
+  indistinguishable from `ESP.restart()` by reset reason; only OBS-3's crash
+  callback separates them. The entry says so, so Lot A is not sold on a
+  reading it cannot deliver.
+- **Fix**: `ESP.getResetInfo()` in the boot log; the six words in the boot
+  diagnostics struct (zero on other platforms) and in `bootdiag`. And a
+  documentation line: "Software/System restart" on an ESP8266 you did not
+  restart is an abort or an OOM, not a clean restart.
+- **Verification**: the probe's null-dereference and soft-WDT rows are the
+  expected values; the native stub reports zeros and says so.
+
+### OBS-3 — a flight recorder in RTC memory: heap trend, phase marker, last loop timestamp, crash-callback record [MEDIUM] — **NEW (2026-09-05)**
+
+- **Problem**: nothing on either platform records what the firmware was
+  doing or how its heap was moving before a reset — and on ESP8266 nothing
+  can tell an OOM death from a clean restart (OBS-2).
+- **Design** (spec v2 §4 L1), the four points the review changed:
+  **owned by Core, not SystemInfo** — SystemInfo is optional and last, the
+  recorder must be mandatory and first; **promotion is the first act of
+  `System::begin()`**, before WiFi, so a device that dies again during
+  bring-up still gets its record out on the boot that connects;
+  **the discriminator is the record's own "crash callback ran" flag**, not
+  `wasUnexpectedReset()`, which the board showed would skip `abort()` and
+  OOM-in-`new`; **whole 32-bit words** — ESP8266 RTC user memory is
+  word-addressable, from word 32 because words 0–31 are `eboot_command`.
+  A fast ring (16 × 10 s) and a slow ring (8 × 10 min) of allocatable free
+  heap and largest block in 16-byte units, each tick carrying the
+  minimum since the previous tick (a one-second cliff must not read as a
+  plateau); a one-store phase marker; a build id; on ESP8266 the callback's
+  reason, exccause, epc1, excvaddr, failed-alloc caller and size, and 16
+  stack words. Persisted to Storage as a ~40-byte summary, deduplicated —
+  the ESP8266 backend hex-encodes blobs into a resident JSON document.
+- **Measured foundations**: RTC user memory survived all seven deaths on
+  the nodemcuv2 (exception, soft and hardware WDT, abort, OOM, restart,
+  external reset); `RTC_NOINIT_ATTR` on the WROOM-32D survived three panics
+  and **was lost on an EN-pin reset, which reports POWERON**. Brownout
+  survival could not be measured: on the ESP32-CAM from FTDI 3.3 V the sag
+  took the USB adapter off the bus at 112 s and it did not come back, so the
+  design assumes the worst case (reason only, no record) for brownouts.
+- **Hooks are opt-in or chainable**: a strong `custom_crash_callback` in a
+  published library is a link error for every EspSaveCrash user; the
+  ESP32 failed-alloc slot is single. Both behind a define System sets and
+  bare-Core users can leave off, both forwarding to a user hook.
+- **Verification**: forced-crash console commands (`crash abort|oom|null|
+  swdt|hwdt|hang`) **compile-gated** — SEC-4 is open and these are a remote
+  reboot — on in the test environments, off in every shipped default. Per
+  platform, per command, the probe's rows are the expected values. Three
+  removal checks recorded once each: no callback → empty exception block
+  after `crash abort`; no sampler → empty rings; no hook → zero `last fail`.
+
+### OBS-4 — the moment memory ran out is never recorded [MEDIUM] — **NEW (2026-09-05)**
+
+- **Measured**: on the nodemcuv2 a failing `new` recorded its caller
+  (`0x40201287`) and size (1024) **on a stock build** — `operator new` sets
+  `umm_last_fail_alloc_addr/size` before aborting (`abi.cpp:38-46`); only
+  the C allocation paths need `-DDEBUG_ESP_OOM` (`heap.cpp:104-127`). On the
+  WROOM-32D `heap_caps_register_failed_alloc_callback()` fired once, at the
+  terminal failure (4 096 B, caps `INTERNAL|DEFAULT`) — **while reporting
+  91 264 B of internal heap "free"**, which is 32-bit-only IRAM that
+  `malloc` cannot use. Zero firings in 60 s idle without WiFi.
+- **Fix**: ESP8266 — the crash callback copies the two words into OBS-3's
+  record; the diagnostic profile (`-DDEBUG_ESP_OOM`, `-g`, optionally
+  `-DDEBUG_ESP_HWDT`) adds C-allocation sites and line tables, its cost
+  measured and written down. ESP32 — the hook writes size, allocatable
+  free (`MALLOC_CAP_8BIT|INTERNAL`), largest block and uptime under a
+  seqlock, with a **counter** because the hook fires per failed attempt;
+  its rate under WiFi + MQTT load is measured in this lot before one call
+  is read as death.
+- **Depends on**: OBS-3.
+
+### OBS-7 — ESP32: a stuck `loop()` never reboots [MEDIUM] — **NEW (2026-09-05)**
+
+- **Measured** on the WROOM-32D: a busy loop in `loop()` produced no reset
+  in more than 40 s against a 5 s task watchdog. **Read**: `loopTask` is
+  created with `loopTaskWDTEnabled = false` (`cores/esp32/main.cpp:34,69`),
+  the TWDT watches `IDLE0` only (`CHECK_IDLE_TASK_CPU0=y`, `CPU1` unset), and
+  the loop runs on core 1. When the TWDT does fire it panics
+  (`TASK_WDT_PANIC=y`) and therefore leaves a core dump with the hang's
+  backtrace.
+- **Why it is filed on its own**: a hung ESP32 stays hung — LWT fires, WebUI
+  dead, no recovery — where an ESP8266 resets in seconds. `enableLoopWDT()`
+  is one line, and turning it on is a behaviour decision that affects every
+  user's blocking loop, so it is decided in the open, in Lot A, default
+  proposed **on** with a configurable timeout.
+- **Verification**: `crash hang` reboots with reason PANIC and a dump;
+  removal check: with the WDT off, the probe's >40 s silence.
+
+### OBS-5 — nothing leaves the device: no crash record on MQTT, no heap telemetry anywhere [MEDIUM] — **NEW (2026-09-05)**
+
+- **Problem**: `SystemInfo` computes heap every 5 s for the WebUI only
+  (`SystemInfo.h:178-200`); MQTT publishes an LWT and its own stats; the
+  HomeAssistant component has `addSensor()` (`HomeAssistant.h:189`) and no
+  diagnostic entity. A slow leak over a week is visible on a curve and on
+  nothing this library produces.
+- **Fix, reshaped by review**: **Home Assistant first** — when the HA
+  component is present, `diagnostic`-category entities for free heap,
+  largest block, uptime, boot sequence, RSSI, and a "last crash" sensor
+  whose attributes carry the decoded record: history graphs and a device
+  page with no extra tooling. Without HA, `{clientId}/crash` retained QoS 1
+  and `{clientId}/telemetry` QoS 0 every 60 s. **The publisher is
+  allocation-free** — fixed `char[]`, `snprintf`, and it skips the tick
+  under a heap floor and says so — or it becomes the observer that kills
+  the patient. On by default only under that rule; interval configurable,
+  `0` disables. BUG-29's queue applies.
+- **Depends on**: OBS-3. Carries OBS-1's transport half.
+
+### OBS-6 — System persists `last_heap` and `last_minheap` that describe the new boot, not the run that died [LOW] — **NEW (2026-09-05)**
+
+- **File**: `System.h:423-437`, `SystemInfo.h:224-228`,
+  `Platform_ESP8266.h:159`.
+- **Problem**: `initBootDiagnostics()` captures `getFreeHeap()` and
+  `getMinFreeHeap()` at the start of the new run, and `System` persists
+  them under names that claim they describe the previous one; `bootdiag`
+  prints them as "Boot Heap" / "Boot Min Heap". On ESP8266
+  `getMinFreeHeap()` is defined as `ESP.getFreeHeap()`, so the two are equal
+  by construction.
+- **Why LOW**: no behaviour depends on the values; the cost is a diagnostic
+  that misleads during exactly the investigation this section exists for.
+- **Fix**: rename to what they are, drop the min on ESP8266, **and remove
+  the old keys on the first boot of the new build** — they would otherwise
+  sit in NVS and LittleFS forever. In Lot A.
+
+---
+
 ## Resolved in v2.0.1 (2026-03-11) — 20 items
 
 | Item | Severity | Fix |
@@ -2958,7 +3174,7 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 6M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-13/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-35 | Multiple | 0C, **0H**, 6M (**27 done**; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-36 | Multiple | 0C, **0H**, 7M (**27 done**; **BUG-36 filed 2026-09-05**, MEDIUM, open — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, to be fixed with OBS-3's lot; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
@@ -2966,7 +3182,8 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-15 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 open, **CI-13 done 2026-09-01** — paid a second time at 19 GB before the fix its entry prescribed was finally applied; **CI-14** — FullStack is green in CI and unusable on an ESP8266; **CI-15 new** — no `library.json` declares `export.exclude`, the family's root cause, deferred to a release-aware lot) |
 | 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| **Total** | **132 items** | | **0C, 0H, 39M, 34L** (72 resolved) |
+| 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 6M, 1L (**all seven new 2026-09-05**, filed from a design discussion, adversarially reviewed and board-measured the same day; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review and confirmed on the WROOM-32D; Lot A = OBS-2, OBS-6, OBS-1 check, OBS-7 recommended first) |
+| **Total** | **140 items** | | **0C, 0H, 46M, 35L** (72 resolved) |
 
 The severity columns sum across the rows: **zero open HIGH again — and
 this time the last one left by a fix.** BUG-35 was filed by the 2026-09-01
@@ -2976,8 +3193,11 @@ board-measured red-then-green on both platforms. The sequence is the
 system working: the campaign refilled the column, the fix emptied it. The
 rows were checked against the section headings rather than only re-summed
 — the sweep below, re-run for the BUG-35 lot, reports **35 `[HIGH]`
-headings, 35 with evidence, 0 open**. The MEDIUM column sums to 39:
-6 + 4 + 6 + 4 + 3 + 1 + 5 + 10 + 0.
+headings, 35 with evidence, 0 open**. The MEDIUM column sums to 46:
+6 + 4 + 7 + 4 + 3 + 1 + 5 + 10 + 0 + 6 — the six at the end are OBS-1 to OBS-5
+and OBS-7, filed 2026-09-05 (Priority 11), and Code Safety's seventh is BUG-36,
+filed the same day; the LOW column moves 34 → 35 with OBS-6 and the total
+132 → 140. Eight filed, none closed, so the resolved column does not move.
 
 One lot earlier (TEST-4's): the total row read **128 items, 0C, 4H, 40M, 34L,
 63 resolved**, the four open HIGH being SIZE-1, SIZE-2, ARCH-1, ARCH-2 — kept
