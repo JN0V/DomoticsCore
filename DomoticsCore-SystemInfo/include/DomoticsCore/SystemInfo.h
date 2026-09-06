@@ -194,6 +194,66 @@ public:
     
     // Boot diagnostics accessors
     const BootDiagnostics& getBootDiagnostics() const { return bootDiag; }
+
+    /**
+     * @brief This boot's diagnostics as text, allocation-free (the `bootdiag` command's SystemInfo part).
+     * Moved here from System.h with OBS-3 (ARCH-1's residue): the struct it prints lives here.
+     */
+    size_t formatBootDiagnostics(char* buf, size_t len) const {
+        if (!buf || len == 0) return 0;
+        const BootDiagnostics& diag = bootDiag;
+        if (!diag.valid) return static_cast<size_t>(snprintf(buf, len, "Boot Diagnostics: Not captured\n"));
+        char minHeapStr[40];
+        if (diag.bootMinHeapTracked) {
+            snprintf(minHeapStr, sizeof(minHeapStr), "%lu bytes", (unsigned long)diag.bootMinHeap);
+        } else {
+            snprintf(minHeapStr, sizeof(minHeapStr), "n/a (not tracked on this platform)");
+        }
+        int pos = snprintf(buf, len,
+                 "Boot Diagnostics:\n"
+                 "  Boot Count: %lu\n"
+                 "  Reset Reason: %s\n"
+                 "  Heap at this boot: %lu bytes\n"
+                 "  Min heap at this boot: %s\n",
+                 (unsigned long)diag.bootCount,
+                 diag.getResetReasonString().c_str(),
+                 (unsigned long)diag.bootHeap,
+                 minHeapStr);
+        if (pos < 0) pos = 0;
+        if ((size_t)pos >= len) pos = len - 1;
+        if (diag.wasUnexpectedReset()) {
+            pos += snprintf(buf + pos, len - pos, "  WARNING: Previous boot ended unexpectedly!\n");
+            if (pos < 0) pos = 0;
+            if ((size_t)pos >= len) pos = len - 1;
+        }
+        // OBS-2: what the SDK kept from the death, when it kept anything
+        if (diag.resetDetail.valid) {
+            pos += snprintf(buf + pos, len - pos,
+                            "  Reset detail: exccause=%lu epc1=0x%08lx excvaddr=0x%08lx\n"
+                            "    (decode epc1 with xtensa-lx106-elf-addr2line against this build's ELF)\n",
+                            (unsigned long)diag.resetDetail.exccause,
+                            (unsigned long)diag.resetDetail.epc1,
+                            (unsigned long)diag.resetDetail.excvaddr);
+            if (pos < 0) pos = 0;
+            if ((size_t)pos >= len) pos = len - 1;
+        }
+        // OBS-1: the ESP32 coredump partition
+        if (diag.coreDump.supported) {
+            pos += snprintf(buf + pos, len - pos,
+                            "  Core dump: %s\n",
+                            !diag.coreDump.partitionPresent ? "no coredump partition in this table"
+                            : diag.coreDump.dumpPresent    ? "WAITING — a previous panic left a dump"
+                                                           : "partition present, no dump waiting");
+            if (pos < 0) pos = 0;
+            if ((size_t)pos >= len) pos = len - 1;
+            if (diag.coreDump.dumpPresent) {
+                pos += snprintf(buf + pos, len - pos, "    %lu bytes\n", (unsigned long)diag.coreDump.size);
+                if (pos < 0) pos = 0;
+                if ((size_t)pos >= len) pos = len - 1;
+            }
+        }
+        return static_cast<size_t>(pos);
+    }
     
     /**
      * @brief Set boot count (called by System after loading from Storage)

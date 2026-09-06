@@ -68,12 +68,15 @@ struct CoreConfig {
 ### begin() Sequence
 
 1. Guard against double initialization.
-2. Store configuration; auto-generate `deviceId` from chip ID if empty.
-3. Initialize serial logging via `HAL::initializeLogging()`.
-4. Detect memory profile via `MemoryManager::instance().detectProfile()`.
-5. Inject `this` into `ComponentRegistry` via `setCore()`.
-6. Call `ComponentRegistry::initializeAll()`.
-7. Set `initialized = true` on success.
+2. `FlightRecorder::instance().begin()` — read what the last death left in RTC memory, before anything else (OBS-3). Idempotent: `System::begin()` has usually called it already, with the hold described below.
+3. Store configuration; auto-generate `deviceId` from chip ID if empty.
+4. Initialize serial logging via `HAL::initializeLogging()`; log the build id when `DOMOTICS_BUILD_ID` is defined, and a promoted death record if there is one. A bare `Core` (no `System`, no Storage) acknowledges the record here — the log line is where it got out.
+5. Detect memory profile via `MemoryManager::instance().detectProfile()`.
+6. Inject `this` into `ComponentRegistry` via `setCore()`.
+7. Call `ComponentRegistry::initializeAll()`.
+8. Set `initialized = true` on success.
+
+`loop()` runs every component's `loop()` with a phase marker stored to RTC before each one (see FlightRecorder), dispatches the EventBus, ticks the recorder, and says at most once a minute how many events the bus has dropped since boot (LO-5).
 
 ---
 
@@ -292,6 +295,34 @@ Validation includes: required-field check, integer range, float format, boolean 
 
 ---
 
+## 4b. FlightRecorder
+
+Defined in `DomoticsCore/FlightRecorder.h` (`DomoticsCore::FlightRecorder`, one process-wide instance via `instance()`); the RTC storage and the platform crash hooks are defined once in `src/FlightRecorder.cpp`. Design and measurements: `docs/CODE-ROADMAP.md` OBS-3.
+
+**What it keeps.** One record of 83 words in memory that survives every reset but power loss (ESP8266 user RTC words 32–114, words 0–31 being the bootloader's; ESP32 `RTC_NOINIT_ATTR`, lost on an EN-pin reset): a magic, layout and flags word, a CRC32 over the body, the build id, the boot sequence and EventBus drop count, a phase marker, the last tick's uptime and heap minimum, a fast ring (16 samples, one every 10 s: free heap and largest block, 16-byte units) and a slow ring (8 samples, one every 10 min), the last failed allocation (Lot C), the exception registers and sixteen stack words the crash callback copied.
+
+**How it decides at boot.** `begin()` reads the record and promotes it when it describes a death: the crash callback ran (any reason, the ESP8266's abort/OOM class included); or the reset reason is unexpected and the callback did not run (hardware watchdog, brownout); or the reason is a software reset the firmware did not mark as its own. A promoted record **stays in RTC until `acknowledge()`** — `System` calls that after persisting it, so a device that dies again during bring-up keeps the first death. A record whose CRC fails is reported as torn, with its phase still readable.
+
+**Sampling cost.** Free heap is read every `Core::loop()` (a running minimum between ticks); the largest free block only at tick time plus at most one extra read per interval when the minimum has fallen by more than `heapCliffThresholdBytes()` — on ESP8266 that read walks the heap with interrupts off.
+
+| Method | Purpose |
+|---|---|
+| `begin(bool holdUntilAcknowledged)` | Read RTC, decide, start the fresh record or hold the promoted one |
+| `hasPromotedRecord()`, `promotion()`, `promoted()`, `promotedIsTorn()` | The decision and the record |
+| `acknowledge()` | The promoted record has been consumed; the fresh record takes RTC |
+| `tick()` | Every loop: heap minimum; every 10 s: a sample and a flush |
+| `setPhase(uint16_t)` | One store to the marker word: 1..N the component's initialization index, `0xFF` event dispatch, 0 idle |
+| `markOurs()` | The firmware is restarting on purpose — installed on every `HAL::Platform::restart()` and, on ESP32, on `esp_restart()` |
+| `recordCrash(const CrashInfo&)` | From the platform crash callback: no allocation, no log, one RTC write; then the user hook |
+| `onCrash(CrashHook)` | Chain a user hook after the record is written |
+| `format(char*, size_t)` | The promoted record as one or two lines, allocation-free (the `bootdiag` command's first block) |
+
+**Defines.** `DOMOTICS_CRASH_HOOKS` (default `1`): defines the ESP8266 `custom_crash_callback` — a strong symbol, so a sketch that defines its own must set `-DDOMOTICS_CRASH_HOOKS=0` or fail at link — and the ESP32 shutdown handler. `DOMOTICS_BUILD_ID='"<string>"'` (quotes included): a `.rodata` string `strings firmware.elf` finds, logged at boot, its CRC32 in the record. `DOMOTICS_ENABLE_CRASH_COMMANDS`: `System` registers the `crash` console command; test environments only.
+
+**Platform seams** (`Platform_*.h`): `rtcRead`/`rtcWrite`/`rtcStoreWord`/`rtcWordsAvailable`, `getAllocatableFreeHeap` (ESP32: `heap_caps` with `MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL`, never `ESP.getFreeHeap()`, which counts IRAM `malloc` cannot use), `getLargestFreeBlock`, `heapCliffThresholdBytes`, `installRestartHook`, `crashForTest`. The stub keeps RTC in a RAM array cleared only by `clearRtcForTest()`, so the native suite drives every rule.
+
+---
+
 ## 5. EventBus
 
 **Header:** `DomoticsCore/EventBus.h`
@@ -341,6 +372,7 @@ struct QueuedEvent {
 | **publishSticky** (topic) | `void publishSticky(const String& topic)` | Sticky publish without payload. |
 | **poll** | `void poll(size_t maxPerPoll = 8)` | Dispatch up to `maxPerPoll` queued events. Called by `ComponentRegistry::loopAll()`. |
 | **reset** | `void reset()` | Clear all subscriptions and the queue. |
+| **getDroppedCount** | `uint32_t getDroppedCount() const` | Events popped on queue overflow since construction or `reset()` (BUG-36, LO-5); the flight recorder stores it, `Core::loop()` logs it. |
 
 ### Threading and Safety
 

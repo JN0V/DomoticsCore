@@ -287,6 +287,19 @@ inline uint32_t getLargestFreeBlock() { return heap_caps_get_largest_free_block(
 inline constexpr uint32_t heapCliffThresholdBytes() { return 16384; }
 inline constexpr uint8_t platformId() { return 2; }
 
+/**
+ * @brief Provoke one death class on purpose, for the flight recorder's board checks (OBS-3).
+ * Compile-gated at the call site (DOMOTICS_ENABLE_CRASH_COMMANDS); returns false for an unknown kind.
+ */
+inline bool crashForTest(const char* kind) {
+    String k(kind);
+    if (k == "abort") { abort(); }
+    if (k == "oom")   { for (;;) { void* p = malloc(4096); if (!p) { volatile int* q = nullptr; *q = 1; } } }  // the probe's shape
+    if (k == "null")  { volatile int* p = nullptr; *p = 1; }
+    if (k == "hang" || k == "swdt" || k == "hwdt") { for (;;) {} }   // reboots only if the loop watchdog is armed (OBS-7)
+    return false;
+}
+
 // RTC_NOINIT storage: defined once, in FlightRecorder.cpp (the core compiles
 // this header as gnu++11/14, so no inline variable here).
 inline constexpr uint32_t rtcWordsAvailable() { return 96; }

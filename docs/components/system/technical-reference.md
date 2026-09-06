@@ -393,11 +393,9 @@ Keys are organized by component group:
 | | `ha_model` | `s` | Model |
 | | `ha_sw_ver` | `s` | Software version |
 | **Boot Diag** (not registered*) | `boot_count` | `i` | Persisted boot counter |
-| | `last_reset` | `i` | Last reset reason code |
-| | `boot_heap` | `i` | Free heap when this boot started (was `last_heap`, which is removed on the first boot of a build carrying OBS-6) |
-| | `boot_minheap` | `i` | Minimum free heap when this boot started; written only where the platform tracks one (ESP32) |
+| | `bootdiag` | blob | `SystemHelpers::BootDiagRecord`, 64 bytes: this boot's reset reason, heap at boot and tracked minimum, plus the last recorded death (promotion, phase, build id, uptime, reason, epc1, failed allocation, heap minimum, dedup key, count of identical deaths). Replaces `last_reset`, `boot_heap` and `boot_minheap` since OBS-3, so a boot costs two Storage writes; those keys, and OBS-6's `last_heap`/`last_minheap`, are removed on the first boot of a build carrying it. |
 
-\* Boot Diag keys are used directly via `storage->getInt()`/`storage->putInt()` in `initBootDiagnosticsPersistence()` but are **not** registered with `storage->registerKeys()`. They will not appear in Storage key enumeration.
+\* Boot Diag keys are used directly via `storage->getInt()`/`storage->putBlob()` in `initBootDiagnosticsPersistence()` but are **not** registered with `storage->registerKeys()`. They will not appear in Storage key enumeration.
 
 ### WiFi Config Loading Note
 
@@ -488,14 +486,13 @@ The WiFi config save lambda is always set on the `WifiComponent` (via `setConfig
 
 ## Boot Diagnostics
 
-When both Storage and SystemInfo components are enabled, `initBootDiagnosticsPersistence()`:
+The first statement of `System::begin()` is `FlightRecorder::instance().begin(true)`: the RTC record of the last death is read and, if it describes one, held until step 6 (OBS-3; see the Core reference). When both Storage and SystemInfo components are enabled, `initBootDiagnosticsPersistence()` then:
 
-1. Loads `boot_count` from Storage and increments it.
-2. Saves the updated `boot_count` back to Storage.
-3. Updates the SystemInfo component with the new boot count via `setBootCount()`.
-4. Persists `last_reset`, `boot_heap` and, where tracked, `boot_minheap` from the boot diagnostics snapshot, and removes the `last_heap`/`last_minheap` keys older builds wrote — they described the new boot under the previous run's name (OBS-6).
+1. Loads `boot_count` from Storage and increments it, and pushes it into SystemInfo via `setBootCount()`.
+2. Writes the `bootdiag` blob (`SystemHelpers::persistBootDiagnostics()`): this boot's figures and the last death on record. An identical death — same build, reason and site — increments the blob's count instead of replacing the first occurrence; a clean boot carries the last death forward.
+3. Removes the keys the blob replaced, once.
 
-This data is accessible via the `bootdiag` console command.
+Whether that ran or not, `begin()` then acknowledges the recorder so the fresh record takes RTC. The `bootdiag` console command prints the recorder's promoted record (Core), this boot's diagnostics (SystemInfo's `formatBootDiagnostics()`) and the persisted blob.
 
 ---
 
@@ -533,6 +530,7 @@ These commands are automatically registered when the RemoteConsole is enabled:
 | `status` | System status summary | Device name, version, uptime, free heap, current state |
 | `wifi` | WiFi detailed status | Delegates to `WifiComponent::getDetailedStatus()` |
 | `storage` | Storage contents dump | Delegates to `StorageComponent::dumpContents()`. Accepts an argument string but currently ignores it. |
-| `bootdiag` | Boot diagnostics | Boot count, reset reason, boot heap, min heap, and persisted history |
+| `bootdiag` | Boot diagnostics | The last death the flight recorder kept, this boot's count, reset reason and heap figures, and the persisted `bootdiag` blob |
+| `crash <kind>` | Die on purpose (OBS-3 board checks) | `abort`, `oom`, `null`, `swdt`, `hwdt`, `hang`. Registered only under `DOMOTICS_ENABLE_CRASH_COMMANDS`, which no shipped environment sets: it is a remote reboot (SEC-4). |
 
 These are in addition to commands provided by the RemoteConsole component itself (e.g., `help`, `level`, `info`, `heap`, `reboot`).

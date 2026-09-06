@@ -163,6 +163,10 @@ See [SystemMetrics](#systemmetrics-internal-struct) for field details.
 
 Returns a const reference to the boot diagnostics struct. Data is valid only after `begin()` has executed with `enableBootDiagnostics = true`.
 
+#### `size_t formatBootDiagnostics(char* buf, size_t len) const`
+
+This boot's diagnostics as text, allocation-free: boot count, reset reason, heap at boot, the tracked minimum where the platform has one, the unexpected-reset warning, the ESP8266 reset detail and the ESP32 core-dump state. The `bootdiag` console command's middle block; it lived in `System.h` until OBS-3 moved it beside the struct it prints.
+
 #### `void setBootCount(uint32_t count)`
 
 Sets the `bootDiag.bootCount` value. This method is intended to be called by the `System` component after loading the persisted boot count from `Storage`. The `SystemInfo` component does not persist this value itself.

@@ -16,7 +16,9 @@ PIO=$(command -v pio || echo "uvx --from platformio pio")
 # can be matched to the ELF that produced it. The quotes must reach the
 # compiler: -DDOMOTICS_BUILD_ID='"<id>"'.
 BUILD_ID=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
-export PLATFORMIO_BUILD_FLAGS="-I$ROOT -DDOMOTICS_BUILD_ID='\"$BUILD_ID\"'"
+# EXTRA_BUILD_FLAGS is for the bench only, e.g. -DDOMOTICS_ENABLE_CRASH_COMMANDS=1
+# for OBS-3's board checks; it never reaches a tracked platformio.ini.
+export PLATFORMIO_BUILD_FLAGS="-I$ROOT -DDOMOTICS_BUILD_ID='\"$BUILD_ID\"' ${EXTRA_BUILD_FLAGS:-}"
 
 cd "$ROOT/$DIR" || exit 1
 BUILD=$(timeout 420 $PIO run -e "$ENV" -t upload --upload-port "$PORT" 2>&1)

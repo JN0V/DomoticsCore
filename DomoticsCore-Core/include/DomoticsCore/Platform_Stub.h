@@ -459,6 +459,16 @@ inline uint32_t getLargestFreeBlock() { ++largestFreeBlockReadsForTest; return s
 inline constexpr uint32_t heapCliffThresholdBytes() { return 4096; }
 inline constexpr uint8_t platformId() { return 0; }
 
+// Crash commands (OBS-3): the stub records the kind and dies of nothing.
+inline char crashKindForTest[16] = {};
+inline bool crashForTest(const char* kind) {
+    static const char* known[] = { "abort", "oom", "null", "swdt", "hwdt", "hang" };
+    for (const char* k : known) {
+        if (strcmp(k, kind) == 0) { snprintf(crashKindForTest, sizeof(crashKindForTest), "%s", kind); return true; }
+    }
+    return false;
+}
+
 // RTC memory: a RAM array that survives resetForTest() the way RTC survives
 // a reset, and is cleared only by clearRtcForTest() — the power-cycle.
 inline uint32_t stubRtcWordsForTest[96] = {};

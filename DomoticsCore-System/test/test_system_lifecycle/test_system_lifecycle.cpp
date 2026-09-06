@@ -17,11 +17,17 @@
 #include <cstring>
 #include <string>
 #include <DomoticsCore/System.h>
+#include <DomoticsCore/FlightRecorder.h>
 #include <vector>
 
 using namespace DomoticsCore;
 
-void setUp(void) { HAL::Platform::resetDiagnosticsForTest(); }
+void setUp(void) {
+    HAL::Platform::resetDiagnosticsForTest();
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::clearRtcForTest();
+    HAL::Platform::crashKindForTest[0] = '\0';
+}
 void tearDown(void) { HAL::Platform::resetDiagnosticsForTest(); }
 
 static bool mentions(const std::string& haystack, const char* needle) {
@@ -447,6 +453,85 @@ void test_bootdiag_command_reports_a_waiting_core_dump(void) {
     TEST_ASSERT_TRUE(mentions(out, "8964 bytes"));
 }
 
+// ---- OBS-3: the flight recorder through System ----------------------------
+
+static void stageDeath() {
+    FlightRecorder::instance().begin();
+    CrashInfo c; c.reason = 254; c.failSize = 1024; c.failCaller = 0x40201287u;
+    FlightRecorder::instance().recordCrash(c);
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Software);
+}
+
+class SeesRecorderComponent : public Components::IComponent {
+public:
+    bool sawPromoted = false;
+    SeesRecorderComponent() { metadata.name = "SeesRecorder"; metadata.version = "1.0.0"; }
+    Components::ComponentStatus begin() override {
+        sawPromoted = FlightRecorder::instance().hasPromotedRecord();
+        return Components::ComponentStatus::Success;
+    }
+    void loop() override {}
+    Components::ComponentStatus shutdown() override { return Components::ComponentStatus::Success; }
+    std::vector<Components::Dependency> getDependencies() const override { return {}; }
+};
+
+void test_the_death_is_promoted_before_any_component_begins_and_persisted_after(void) {
+    stageDeath();
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    auto comp = std::make_unique<SeesRecorderComponent>();
+    SeesRecorderComponent* raw = comp.get();
+    sys.getCore().addComponent(std::move(comp));            // registered first: initialized first
+    TEST_ASSERT_TRUE(sys.begin());
+    TEST_ASSERT_TRUE_MESSAGE(raw->sawPromoted, "promotion must precede the first component's begin()");
+    // persisted in step 6, then acknowledged: RTC holds the fresh record
+    FlightRecord fresh;
+    HAL::Platform::rtcRead(0, fresh.w, FlightRecord::WORDS);
+    TEST_ASSERT_EQUAL_UINT32(0, fresh.flags() & FlightRecord::UNPERSISTED);
+    auto* storage = sys.getCore().getComponent<Components::StorageComponent>("Storage");
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*storage, r));
+    TEST_ASSERT_EQUAL_UINT32(254, r.reason);
+}
+
+void test_a_death_is_acknowledged_even_without_storage(void) {
+    stageDeath();
+    System sys(SystemConfig::minimal());                    // no Storage, no SystemInfo
+    TEST_ASSERT_TRUE(sys.begin());
+    FlightRecord fresh;
+    HAL::Platform::rtcRead(0, fresh.w, FlightRecord::WORDS);
+    TEST_ASSERT_EQUAL_UINT32(0, fresh.flags() & FlightRecord::UNPERSISTED);
+}
+
+void test_bootdiag_command_reports_the_last_death(void) {
+    stageDeath();
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.begin();
+    Console con(sys);
+    std::string out = con.run(sys, "bootdiag");
+    TEST_ASSERT_TRUE(mentions(out, "Last death: crash callback"));
+    TEST_ASSERT_TRUE(mentions(out, "reason 254"));
+    TEST_ASSERT_TRUE(mentions(out, "Boot Diagnostics:"));
+    TEST_ASSERT_TRUE(mentions(out, "last death: crash callback x1"));
+}
+
+void test_crash_command_reaches_the_platform(void) {
+    System sys(SystemConfig::minimal());
+    sys.begin();
+    Console con(sys);
+    std::string out = con.run(sys, "crash oom");
+    TEST_ASSERT_TRUE(mentions(out, "crashing: oom"));
+    TEST_ASSERT_EQUAL_STRING("oom", HAL::Platform::crashKindForTest);
+    out = con.run(sys, "crash coffee");
+    TEST_ASSERT_TRUE(mentions(out, "usage: crash"));
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
 
@@ -488,6 +573,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_bootdiag_command_reports_a_waiting_core_dump);
     RUN_TEST(test_a_failed_arming_is_reported_not_claimed);
     RUN_TEST(test_bootdiag_reports_the_tracked_minimum_where_the_platform_has_one);
+    RUN_TEST(test_the_death_is_promoted_before_any_component_begins_and_persisted_after);
+    RUN_TEST(test_a_death_is_acknowledged_even_without_storage);
+    RUN_TEST(test_bootdiag_command_reports_the_last_death);
+    RUN_TEST(test_crash_command_reaches_the_platform);
 
     return UNITY_END();
 }

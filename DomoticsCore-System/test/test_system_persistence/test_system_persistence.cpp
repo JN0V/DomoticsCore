@@ -11,12 +11,16 @@
  */
 
 #include <unity.h>
+#include <DomoticsCore/FlightRecorder.h>
 #include <DomoticsCore/System.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::SystemHelpers;
 
-void setUp(void) {}
+void setUp(void) {
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::clearRtcForTest();
+}
 void tearDown(void) {
     HAL::Platform::resetDiagnosticsForTest();
     // Every test here builds a WifiComponent("","") whose begin() starts the
@@ -319,43 +323,53 @@ void test_load_all_configs_without_a_storage_component(void) {
 // OBS-6: persistBootDiagnostics() — this boot's keys, and the old ones gone
 // ============================================================================
 
-void test_boot_diagnostics_persist_under_names_that_say_which_boot(void) {
+void test_boot_diagnostics_persist_in_one_blob(void) {
     Fixture f(true, true);
     uint32_t count = SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
     TEST_ASSERT_EQUAL_UINT32(1, count);
     TEST_ASSERT_EQUAL_INT32(1, f.storage->getInt("boot_count", 0));
-    TEST_ASSERT_TRUE(f.storage->exists("boot_heap"));
-    TEST_ASSERT_TRUE(f.storage->exists("last_reset"));
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_INT32((int32_t)HAL::Platform::getResetReason(), r.lastReset);
+    TEST_ASSERT_EQUAL_UINT32(f.sysInfo->getBootDiagnostics().bootHeap, r.bootHeap);
+    TEST_ASSERT_FALSE(f.storage->exists("boot_heap"));
+    TEST_ASSERT_FALSE(f.storage->exists("last_reset"));
     TEST_ASSERT_EQUAL_UINT32(1, f.sysInfo->getBootDiagnostics().bootCount);
 }
 
-// The stub tracks no minimum, so the key must not be written — a value
-// there would be the current heap under the minimum's name, the defect.
-void test_boot_minheap_is_not_written_where_the_platform_tracks_none(void) {
+// The stub tracks no minimum: the blob says so instead of carrying the
+// current heap under the minimum's name, the defect OBS-6 removed.
+void test_boot_minheap_is_marked_untracked_where_the_platform_tracks_none(void) {
     Fixture f(true, true);
     SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
-    TEST_ASSERT_EQUAL(HAL::Platform::tracksMinFreeHeap(), f.storage->exists("boot_minheap"));
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_UINT32(HAL::Platform::tracksMinFreeHeap() ? 1 : 0, r.minHeapTracked);
 }
 
-// A device upgraded from a build that wrote last_heap/last_minheap carries
-// them in NVS or LittleFS; the first boot of this build removes them.
-void test_the_old_misnamed_keys_are_removed_on_first_persist(void) {
+// A device upgraded from an earlier build carries the keys this blob
+// replaces, and OBS-6's misnamed ones; the first boot of this build removes them.
+void test_the_retired_keys_are_removed_on_first_persist(void) {
     Fixture f(true, true);
     f.storage->putInt("last_heap", 51816);
     f.storage->putInt("last_minheap", 51816);
-    f.storage->putInt("boot_minheap", 1);   // stale on a platform that stopped tracking it
+    f.storage->putInt("boot_minheap", 1);
+    f.storage->putInt("boot_heap", 51816);
+    f.storage->putInt("last_reset", 4);
     SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
-    TEST_ASSERT_FALSE(f.storage->exists("last_heap"));
-    TEST_ASSERT_FALSE(f.storage->exists("last_minheap"));
-    if (!HAL::Platform::tracksMinFreeHeap()) TEST_ASSERT_FALSE(f.storage->exists("boot_minheap"));
+    for (const char* k : { "last_heap", "last_minheap", "boot_minheap", "boot_heap", "last_reset" }) {
+        TEST_ASSERT_FALSE_MESSAGE(f.storage->exists(k), k);
+    }
 }
 
-// The ESP32 shape: a tracked minimum is written under its own key.
+// The ESP32 shape: a tracked minimum rides the blob.
 void test_boot_minheap_is_written_where_the_platform_tracks_one(void) {
     HAL::Platform::minFreeHeapTrackedForTest = true;
     Fixture f(true, true);
     SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
-    TEST_ASSERT_TRUE(f.storage->exists("boot_minheap"));
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_UINT32(1, r.minHeapTracked);
     HAL::Platform::minFreeHeapTrackedForTest = false;
 }
 
@@ -364,6 +378,74 @@ void test_the_boot_count_increments_across_persists(void) {
     SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
     uint32_t second = SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
     TEST_ASSERT_EQUAL_UINT32(2, second);
+}
+
+// OBS-3 residual 9: on a backend that rewrites its file per changed key, a
+// boot must cost two writes — boot_count and the blob — and no more.
+void test_a_boot_costs_two_storage_writes(void) {
+    Fixture f(true, true);
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);   // first boot of the build: retired keys none here
+    HAL::RAMOnlyStorage::writesForTest = 0;
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    TEST_ASSERT_EQUAL_UINT(2, HAL::RAMOnlyStorage::writesForTest);
+}
+
+// Stage a death the way the boards produce one: a run records a crash, the
+// next boot finds it promoted.
+static void stageDeath(uint32_t failCaller) {
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::clearRtcForTest();
+    FlightRecorder::instance().begin();
+    CrashInfo c; c.reason = 254; c.failSize = 1024; c.failCaller = failCaller;
+    FlightRecorder::instance().recordCrash(c);
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Software);
+    FlightRecorder::instance().begin(true);
+}
+
+void test_a_promoted_death_lands_in_the_blob(void) {
+    stageDeath(0x40201287u);
+    Fixture f(true, true);
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)FlightRecorder::Promotion::CrashCallback, r.promotion);
+    TEST_ASSERT_EQUAL_UINT32(254, r.reason);
+    TEST_ASSERT_EQUAL_UINT32(1024, r.failSize);
+    TEST_ASSERT_EQUAL_HEX32(0x40201287u, r.failCaller);
+    TEST_ASSERT_EQUAL_UINT32(1, r.sameCount);
+}
+
+void test_the_same_death_again_is_counted_not_rewritten(void) {
+    stageDeath(0x40201287u);
+    Fixture f(true, true);
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    stageDeath(0x40201287u);                                    // the same site dies again
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_UINT32(2, r.sameCount);
+    stageDeath(0x40201300u);                                    // a different site: a new entry
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_UINT32(1, r.sameCount);
+    TEST_ASSERT_EQUAL_HEX32(0x40201300u, r.failCaller);
+}
+
+void test_a_clean_boot_keeps_the_last_death_on_record(void) {
+    stageDeath(0x40201287u);
+    Fixture f(true, true);
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    FlightRecorder::instance().acknowledge();
+    FlightRecorder::instance().resetForTest();                  // a clean reboot
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::PowerOn);
+    FlightRecorder::instance().begin(true);
+    TEST_ASSERT_FALSE(FlightRecorder::instance().hasPromotedRecord());
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_UINT32(254, r.reason);
+    TEST_ASSERT_EQUAL_UINT32(1, r.sameCount);
 }
 
 int main(int argc, char** argv) {
@@ -392,11 +474,15 @@ int main(int argc, char** argv) {
     RUN_TEST(test_load_all_configs_without_a_storage_component);
 
     // OBS-6
-    RUN_TEST(test_boot_diagnostics_persist_under_names_that_say_which_boot);
-    RUN_TEST(test_boot_minheap_is_not_written_where_the_platform_tracks_none);
-    RUN_TEST(test_the_old_misnamed_keys_are_removed_on_first_persist);
+    RUN_TEST(test_boot_diagnostics_persist_in_one_blob);
+    RUN_TEST(test_boot_minheap_is_marked_untracked_where_the_platform_tracks_none);
+    RUN_TEST(test_the_retired_keys_are_removed_on_first_persist);
     RUN_TEST(test_the_boot_count_increments_across_persists);
     RUN_TEST(test_boot_minheap_is_written_where_the_platform_tracks_one);
+    RUN_TEST(test_a_boot_costs_two_storage_writes);
+    RUN_TEST(test_a_promoted_death_lands_in_the_blob);
+    RUN_TEST(test_the_same_death_again_is_counted_not_rewritten);
+    RUN_TEST(test_a_clean_boot_keeps_the_last_death_on_record);
 
     return UNITY_END();
 }

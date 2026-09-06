@@ -13,6 +13,7 @@
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Platform_HAL.h>  // For HAL::getChipId()
+#include <DomoticsCore/FlightRecorder.h>  // OBS-3: the death the bootdiag blob records
 #include "SystemConfig.h"
 
 // Storage component (optional)
@@ -320,13 +321,48 @@ inline void loadHomeAssistantConfig(Core& core, const SystemConfig& config) {
 
 #if __has_include(<DomoticsCore/Storage.h>) && __has_include(<DomoticsCore/SystemInfo.h>)
 /**
+ * @brief The `bootdiag` blob: this boot's figures and the last recorded death, in one Storage write.
+ *
+ * Replaces `last_reset`, `boot_heap` and `boot_minheap` (OBS-6's keys) so a
+ * boot costs two writes — `boot_count` and this — on a backend that rewrites
+ * its whole file per changed key (OBS-3, residual 9). The death fields carry
+ * forward across clean boots; an identical death (same dedup key) bumps
+ * `sameCount` and keeps the first occurrence's fields.
+ */
+struct BootDiagRecord {
+    uint32_t version = 1;
+    int32_t  lastReset = -1;        // HAL::Platform::ResetReason of this boot
+    uint32_t bootHeap = 0;          // free heap when this run started
+    uint32_t bootMinHeap = 0;       // minimum so far, where the platform tracks one
+    uint32_t minHeapTracked = 0;
+    uint32_t promotion = 0;         // FlightRecorder::Promotion of the last death, 0 = none on record
+    uint32_t phase = 0;
+    uint32_t buildId = 0;
+    uint32_t uptimeMs = 0;
+    uint32_t reason = 0;            // the crash callback's reason (ESP8266), or 0
+    uint32_t epc1 = 0;
+    uint32_t failSize = 0;
+    uint32_t failCaller = 0;
+    uint32_t minFree = 0;
+    uint32_t dedupKey = 0;
+    uint32_t sameCount = 0;
+};
+
+inline bool readBootDiagRecord(Components::StorageComponent& storage, BootDiagRecord& out) {
+    BootDiagRecord r;
+    size_t n = storage.getBlob("bootdiag", reinterpret_cast<uint8_t*>(&r), sizeof(r));
+    if (n != sizeof(r) || r.version != 1) return false;
+    out = r;
+    return true;
+}
+
+/**
  * @brief Increment and persist the boot counter, and persist this boot's diagnostics.
  *
- * Returns the new boot count, already pushed into SystemInfo. The heap keys
- * describe the run that is starting — `boot_heap`, and `boot_minheap` only
- * where the platform tracks a minimum — and the keys they replace
- * (`last_heap`, `last_minheap`), which claimed to describe the previous run,
- * are removed once so they do not sit in NVS/LittleFS forever (OBS-6).
+ * Returns the new boot count, already pushed into SystemInfo. Two writes:
+ * `boot_count` and the `bootdiag` blob. The keys the blob replaces are
+ * removed once on the first boot of this build so they do not sit in
+ * NVS/LittleFS forever, as OBS-6 did for `last_heap`/`last_minheap`.
  */
 inline uint32_t persistBootDiagnostics(Components::StorageComponent& storage,
                                        Components::SystemInfoComponent& sysInfo) {
@@ -336,16 +372,76 @@ inline uint32_t persistBootDiagnostics(Components::StorageComponent& storage,
     const auto& diag = sysInfo.getBootDiagnostics();
     sysInfo.setBootCount(bootCount);
 
-    storage.putInt("last_reset", static_cast<int32_t>(diag.resetReason));
-    storage.putInt("boot_heap", static_cast<int32_t>(diag.bootHeap));
-    if (diag.bootMinHeapTracked) {
-        storage.putInt("boot_minheap", static_cast<int32_t>(diag.bootMinHeap));
-    } else if (storage.exists("boot_minheap")) {
-        storage.remove("boot_minheap");
+    BootDiagRecord prev;
+    const bool hadPrev = readBootDiagRecord(storage, prev);
+
+    BootDiagRecord rec;
+    rec.lastReset = static_cast<int32_t>(diag.resetReason);
+    rec.bootHeap = diag.bootHeap;
+    rec.minHeapTracked = diag.bootMinHeapTracked ? 1 : 0;
+    rec.bootMinHeap = diag.bootMinHeapTracked ? diag.bootMinHeap : 0;
+
+    const FlightRecorder& fr = FlightRecorder::instance();
+    if (fr.hasPromotedRecord()) {
+        const FlightRecord& d = fr.promoted();
+        const uint32_t key = d.dedupKey();
+        if (hadPrev && prev.promotion != 0 && prev.dedupKey == key) {
+            // the same death again: keep the first occurrence, count this one
+            rec.promotion = prev.promotion; rec.phase = prev.phase; rec.buildId = prev.buildId;
+            rec.uptimeMs = prev.uptimeMs; rec.reason = prev.reason; rec.epc1 = prev.epc1;
+            rec.failSize = prev.failSize; rec.failCaller = prev.failCaller; rec.minFree = prev.minFree;
+            rec.dedupKey = key; rec.sameCount = prev.sameCount + 1;
+        } else {
+            rec.promotion = static_cast<uint32_t>(fr.promotion());
+            rec.phase = d.phase(); rec.buildId = d.w[FlightRecord::W_BUILD];
+            rec.uptimeMs = d.lastUptimeMs(); rec.reason = d.cbReason(); rec.epc1 = d.epc1();
+            rec.failSize = d.failSize(); rec.failCaller = d.failCaller(); rec.minFree = d.minFreeBytes();
+            rec.dedupKey = key; rec.sameCount = 1;
+        }
+    } else if (hadPrev) {
+        // a clean boot keeps the last death on record
+        rec.promotion = prev.promotion; rec.phase = prev.phase; rec.buildId = prev.buildId;
+        rec.uptimeMs = prev.uptimeMs; rec.reason = prev.reason; rec.epc1 = prev.epc1;
+        rec.failSize = prev.failSize; rec.failCaller = prev.failCaller; rec.minFree = prev.minFree;
+        rec.dedupKey = prev.dedupKey; rec.sameCount = prev.sameCount;
     }
-    if (storage.exists("last_heap")) storage.remove("last_heap");
-    if (storage.exists("last_minheap")) storage.remove("last_minheap");
+    storage.putBlob("bootdiag", reinterpret_cast<const uint8_t*>(&rec), sizeof(rec));
+
+    static const char* const retired[] = { "last_reset", "boot_heap", "boot_minheap", "last_heap", "last_minheap" };
+    for (const char* k : retired) {
+        if (storage.exists(k)) storage.remove(k);
+    }
     return bootCount;
+}
+
+/** @brief The persisted block of `bootdiag`, allocation-free. Returns characters written. */
+inline size_t formatPersistedBootDiagnostics(Components::StorageComponent& storage, char* buf, size_t len) {
+    BootDiagRecord r;
+    const bool have = readBootDiagRecord(storage, r);
+    int n = snprintf(buf, len,
+             "\nPersisted Data:\n"
+             "  boot_count: %d\n"
+             "  last_reset: %ld\n"
+             "  boot_heap: %lu\n"
+             "  boot_minheap: %s\n",
+             storage.getInt("boot_count", 0),
+             have ? static_cast<long>(r.lastReset) : -1L,
+             have ? static_cast<unsigned long>(r.bootHeap) : 0UL,
+             have && r.minHeapTracked ? String(r.bootMinHeap).c_str() : "n/a");
+    if (n < 0) return 0;
+    size_t used = static_cast<size_t>(n) < len ? static_cast<size_t>(n) : len - 1;
+    if (have && r.promotion != 0) {
+        int m = snprintf(buf + used, len - used,
+                 "  last death: %s x%lu | phase %lu | uptime %lu s | reason %lu epc1 0x%08lx | fail %lu B from 0x%08lx | min free %lu B | build %08lx\n",
+                 FlightRecorder::promotionName(static_cast<FlightRecorder::Promotion>(r.promotion)),
+                 static_cast<unsigned long>(r.sameCount), static_cast<unsigned long>(r.phase),
+                 static_cast<unsigned long>(r.uptimeMs / 1000u), static_cast<unsigned long>(r.reason),
+                 static_cast<unsigned long>(r.epc1), static_cast<unsigned long>(r.failSize),
+                 static_cast<unsigned long>(r.failCaller), static_cast<unsigned long>(r.minFree),
+                 static_cast<unsigned long>(r.buildId));
+        if (m > 0) used += static_cast<size_t>(m) < len - used ? static_cast<size_t>(m) : len - used - 1;
+    }
+    return used;
 }
 #endif
 

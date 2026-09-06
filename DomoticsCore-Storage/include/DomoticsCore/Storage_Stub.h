@@ -16,6 +16,10 @@ namespace DomoticsCore {
 namespace HAL {
 
 class RAMOnlyStorage : public IStorage {
+public:
+    // OBS-3: backend writes since the counter was last reset — what a
+    // LittleFS backend would turn into whole-file rewrites.
+    static inline unsigned writesForTest = 0;
 private:
     struct Entry {
         String key;
@@ -58,6 +62,7 @@ public:
     
     bool putString(const char* key, const String& value) override {
         if (!opened) return false;
+        ++writesForTest;
         int idx = findKey(key);
         if (idx >= 0) {
             entries[idx].value = value;
@@ -176,6 +181,7 @@ public:
     }
     
     bool remove(const char* key) override {
+        ++writesForTest;
         if (!opened) return false;
         int idx = findKey(key);
         if (idx < 0) return false;
