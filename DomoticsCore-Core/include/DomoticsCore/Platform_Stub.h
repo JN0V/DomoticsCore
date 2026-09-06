@@ -447,6 +447,37 @@ inline uint32_t getCpuFreqMHz() {
 #endif
 }
 
+// Flight recorder seams (OBS-3). Largest block is scripted separately from
+// free heap so a fragmentation cliff can be staged; the read counter lets a
+// test assert how many heap walks a tick performed.
+inline uint32_t stubbedLargestFreeBlockForTest = 32768;
+inline unsigned int largestFreeBlockReadsForTest = 0;
+inline void setLargestFreeBlockForTest(uint32_t bytes) { stubbedLargestFreeBlockForTest = bytes; }
+inline void resetLargestFreeBlockForTest() { stubbedLargestFreeBlockForTest = 32768; largestFreeBlockReadsForTest = 0; }
+inline uint32_t getAllocatableFreeHeap() { return stubbedFreeHeapForTest; }
+inline uint32_t getLargestFreeBlock() { ++largestFreeBlockReadsForTest; return stubbedLargestFreeBlockForTest; }
+inline constexpr uint32_t heapCliffThresholdBytes() { return 4096; }
+inline constexpr uint8_t platformId() { return 0; }
+
+// RTC memory: a RAM array that survives resetForTest() the way RTC survives
+// a reset, and is cleared only by clearRtcForTest() — the power-cycle.
+inline uint32_t stubRtcWordsForTest[96] = {};
+inline constexpr uint32_t rtcWordsAvailable() { return 96; }
+inline void clearRtcForTest() { for (auto& w : stubRtcWordsForTest) w = 0; }
+inline bool rtcRead(uint32_t wordOffset, uint32_t* dst, size_t words) {
+    if (wordOffset + words > 96) return false;
+    for (size_t i = 0; i < words; ++i) dst[i] = stubRtcWordsForTest[wordOffset + i];
+    return true;
+}
+inline bool rtcWrite(uint32_t wordOffset, const uint32_t* src, size_t words) {
+    if (wordOffset + words > 96) return false;
+    for (size_t i = 0; i < words; ++i) stubRtcWordsForTest[wordOffset + i] = src[i];
+    return true;
+}
+inline void rtcStoreWord(uint32_t wordOffset, uint32_t value) {
+    if (wordOffset < 96) stubRtcWordsForTest[wordOffset] = value;
+}
+
 // Restart observability (TEST-4). The native body is a no-op, which made the
 // WiFi reboot-to-STA path — whose only effect is this call — unassertable. The
 // count is per-call, not latched: a pending reboot whose timer keeps firing

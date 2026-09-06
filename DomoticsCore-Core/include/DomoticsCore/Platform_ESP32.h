@@ -23,6 +23,7 @@
 #include <esp_partition.h>
 #include <esp_task_wdt.h>
 #include <esp_idf_version.h>
+#include <esp_heap_caps.h>
 
 namespace DomoticsCore {
 namespace HAL {
@@ -269,6 +270,23 @@ inline ResetDetail getResetDetail() { return ResetDetail{}; }
 
 /** @brief Nothing hidden here: abort() and a failed `new` panic and say so. */
 inline String getResetReasonCaveat(ResetReason /*reason*/) { return String(); }
+
+// =============================================================================
+// Flight recorder primitives (OBS-3)
+// =============================================================================
+
+/** @brief Heap malloc() can actually hand out. ESP.getFreeHeap() counts 32-bit-only IRAM too (measured: 91 KB "free", 4 KB malloc failed). */
+inline uint32_t getAllocatableFreeHeap() { return heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL); }
+inline uint32_t getLargestFreeBlock() { return heap_caps_get_largest_free_block(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL); }
+inline constexpr uint32_t heapCliffThresholdBytes() { return 16384; }
+inline constexpr uint8_t platformId() { return 2; }
+
+// RTC_NOINIT storage: defined once, in FlightRecorder.cpp (the core compiles
+// this header as gnu++11/14, so no inline variable here).
+inline constexpr uint32_t rtcWordsAvailable() { return 96; }
+bool rtcRead(uint32_t wordOffset, uint32_t* dst, size_t words);
+bool rtcWrite(uint32_t wordOffset, const uint32_t* src, size_t words);
+void rtcStoreWord(uint32_t wordOffset, uint32_t value);
 
 inline constexpr bool tracksMinFreeHeap() { return true; }
 
