@@ -21,6 +21,7 @@
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Events.h>
 #include <DomoticsCore/Platform_HAL.h>     // For HAL::getChipId()
+#include <stdarg.h>                         // appendDiag (OBS-4)
 // Platform_HAL.h provides: getFreeHeap(), getChipModel(), getChipId()
 
 // System submodules
@@ -609,29 +610,46 @@ private:
             const uint16_t ph = rec.promoted().phase();
             const char* who = core.componentNameAtInitIndex(ph & 0xFF);
             if (ph == FlightRecorder::PHASE_EVENT_DISPATCH) who = "event dispatch";
-            pos += snprintf(buf + pos, sizeof(buf) - pos, "  phase %u = %s%s\n", (unsigned)ph,
-                            who ? who : (ph == FlightRecorder::PHASE_IDLE ? "idle" : "?"),
-                            (ph & FlightRecorder::PHASE_INIT) ? " (during begin())" : "");
+            appendDiag(buf, sizeof(buf), pos, "  phase %u = %s%s\n", (unsigned)ph,
+                       who ? who : (ph == FlightRecorder::PHASE_IDLE ? "idle" : "?"),
+                       (ph & FlightRecorder::PHASE_INIT) ? " (during begin())" : "");
+        }
+        // OBS-4: survived failures of this run, readable without a reboot.
+        if (rec.failedAllocCount() > 0) {
+            appendDiag(buf, sizeof(buf), pos, "  this boot: failed allocs %lu, last %lu B\n",
+                       (unsigned long)rec.failedAllocCount(), (unsigned long)rec.lastFailedAllocSize());
         }
 #if __has_include(<DomoticsCore/SystemInfo.h>)
         auto* sysInfo = core.getComponent<Components::SystemInfoComponent>("System Info");
         if (!sysInfo) {
-            pos += snprintf(buf + pos, sizeof(buf) - pos, "Boot Diagnostics: SystemInfo not available\n");
+            appendDiag(buf, sizeof(buf), pos, "Boot Diagnostics: SystemInfo not available\n");
         } else {
             pos += sysInfo->formatBootDiagnostics(buf + pos, sizeof(buf) - pos);
+            if (pos >= sizeof(buf)) pos = sizeof(buf) - 1;
         }
 #else
-        pos += snprintf(buf + pos, sizeof(buf) - pos, "Boot Diagnostics: SystemInfo not compiled in\n");
+        appendDiag(buf, sizeof(buf), pos, "Boot Diagnostics: SystemInfo not compiled in\n");
 #endif
-        if (pos >= sizeof(buf)) pos = sizeof(buf) - 1;
 #if __has_include(<DomoticsCore/Storage.h>) && __has_include(<DomoticsCore/SystemInfo.h>)
         auto* storage = core.getComponent<Components::StorageComponent>("Storage");
         if (storage) {
             pos += SystemHelpers::formatPersistedBootDiagnostics(*storage, buf + pos, sizeof(buf) - pos);
+            if (pos >= sizeof(buf)) pos = sizeof(buf) - 1;
         }
 #endif
         if (pos >= sizeof(buf) - 1) memcpy(buf + sizeof(buf) - 5, "...\n", 5);   // cut, and say so
         return String(buf);
+    }
+
+    // snprintf reports the length it wanted, not what it wrote: clamp the
+    // cursor after every append or `len - pos` wraps (OBS-4 review).
+    static void appendDiag(char* buf, size_t len, size_t& pos, const char* fmt, ...) {
+        if (pos >= len - 1) return;
+        va_list args;
+        va_start(args, fmt);
+        int n = vsnprintf(buf + pos, len - pos, fmt, args);
+        va_end(args);
+        if (n > 0) pos += static_cast<size_t>(n) < len - pos ? static_cast<size_t>(n) : len - pos - 1;
     }
 };
 

@@ -26,6 +26,7 @@ void setUp(void) {
     HAL::Platform::resetDiagnosticsForTest();
     FlightRecorder::instance().resetForTest();
     HAL::Platform::clearRtcForTest();
+    HAL::Platform::resetFailedAllocForTest();
     HAL::Platform::crashKindForTest[0] = '\0';
 }
 void tearDown(void) { HAL::Platform::resetDiagnosticsForTest(); }
@@ -569,6 +570,48 @@ void test_bootdiag_names_the_component_behind_the_phase(void) {
     TEST_ASSERT_TRUE(mentions(out, (std::string("phase 2 = ") + second).c_str()));
 }
 
+// OBS-4: a survived failure of this run is readable without a reboot.
+void test_bootdiag_reports_this_boots_failed_allocs(void) {
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.begin();
+    Console con(sys);
+    TEST_ASSERT_FALSE(mentions(con.run(sys, "bootdiag"), "this boot: failed allocs"));
+    HAL::Platform::fireFailedAllocForTest(4096, 0x1800);
+    HAL::Platform::fireFailedAllocForTest(256, 0x1800);
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "bootdiag"), "this boot: failed allocs 2, last 256 B"));
+}
+
+// OBS-4 review 14: a saturated record through every block of bootdiag stays
+// inside the 1 KB buffer and says where it was cut.
+void test_bootdiag_with_a_saturated_record_is_cut_not_overrun(void) {
+    FlightRecorder::instance().begin();
+    FlightRecord r;
+    HAL::Platform::rtcRead(0, r.w, FlightRecord::WORDS);
+    for (size_t i = FlightRecord::W_SEQ; i < FlightRecord::WORDS; ++i) r.w[i] = 0xFFFFFFFFu;
+    r.w[FlightRecord::W_PHASE] = FlightRecord::encodePhase(FlightRecorder::PHASE_EVENT_DISPATCH);
+    r.w[FlightRecord::W_FAIL] = FlightRecord::encodeCount(0xFFFF);
+    r.w[FlightRecord::W_META] |= FlightRecord::CALLBACK_RAN;
+    r.w[FlightRecord::W_CRC] = r.bodyCrc();
+    HAL::Platform::rtcWrite(0, r.w, FlightRecord::WORDS);
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Software);
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.begin();
+    HAL::Platform::fireFailedAllocForTest(0xFFFFFFFFu, 0x1800);
+    Console con(sys);
+    std::string out = con.run(sys, "bootdiag");
+    TEST_ASSERT_TRUE(mentions(out, "failed allocs: 65535"));
+    TEST_ASSERT_TRUE(mentions(out, "phase 255 = event dispatch"));
+    TEST_ASSERT_TRUE(out.size() < 1024 + 64);              // the buffer plus the console's own framing
+    TEST_ASSERT_TRUE(mentions(out, "...\n"));               // cut, and said so
+}
+
 void test_crash_command_reaches_the_platform(void) {
     System sys(SystemConfig::minimal());
     sys.begin();
@@ -627,6 +670,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_bootdiag_command_reports_the_last_death);
     RUN_TEST(test_bootdiag_names_the_component_behind_the_phase);
     RUN_TEST(test_crash_command_reaches_the_platform);
+    RUN_TEST(test_bootdiag_reports_this_boots_failed_allocs);
+    RUN_TEST(test_bootdiag_with_a_saturated_record_is_cut_not_overrun);
 
     return UNITY_END();
 }

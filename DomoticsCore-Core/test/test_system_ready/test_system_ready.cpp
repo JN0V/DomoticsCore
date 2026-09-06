@@ -57,6 +57,7 @@ void setUp(void) {
     FlightRecorder::instance().resetForTest();
     HAL::Platform::clearRtcForTest();
     HAL::Platform::resetDiagnosticsForTest();
+    HAL::Platform::resetFailedAllocForTest();
     testCore = new Core();
 }
 
@@ -234,8 +235,79 @@ void test_loop_marks_the_phase_and_returns_to_idle() {
                             HAL::Platform::stubRtcWordsForTest[FlightRecord::W_PHASE]);
 }
 
+// ---- OBS-4: the failed-allocation hook through Core ------------------------
+
+static FlightRecord readRtcRecord() {
+    FlightRecord r;
+    HAL::Platform::rtcRead(0, r.w, FlightRecord::WORDS);
+    return r;
+}
+
+void test_begin_registers_the_heap_hook_after_the_record_is_written() {
+    // A failure on another task at the moment of registration: registered
+    // last, the group lands on a record begin() will not rewrite.
+    HAL::Platform::failedAllocFireOnInstallForTest = true;
+    TEST_ASSERT_TRUE(testCore->begin());
+    TEST_ASSERT_TRUE(FlightRecorder::instance().failedAllocHookInstalled());
+    TEST_ASSERT_EQUAL_UINT32(1, readRtcRecord().failAllocCount());     // red when registered before startFresh()/writeAll()
+    TEST_ASSERT_EQUAL_UINT32(4096, readRtcRecord().failAllocSize());
+}
+
+void test_a_platform_failure_reaches_the_record_through_the_hook() {
+    TEST_ASSERT_TRUE(testCore->begin());
+    HAL::Platform::fireFailedAllocForTest(640, 0x1800);
+    TEST_ASSERT_EQUAL_UINT32(1, FlightRecorder::instance().failedAllocCount());
+    TEST_ASSERT_EQUAL_HEX32(0x1800, readRtcRecord().failAllocSite());
+}
+
+void test_a_failed_hook_registration_is_reported_not_claimed() {
+    HAL::Platform::failedAllocHookInstallFailsForTest = true;
+    g_lines.clear();
+    auto id = LoggerCallbacks::addCallback([](LogLevel, const char*, const char* msg) { g_lines.emplace_back(msg ? msg : ""); });
+    TEST_ASSERT_TRUE(testCore->begin());
+    LoggerCallbacks::removeCallback(id);
+    TEST_ASSERT_FALSE(FlightRecorder::instance().failedAllocHookInstalled());
+    bool said = false;
+    for (const auto& l : g_lines) if (l.find("Failed-allocation hook not registered") != std::string::npos) said = true;
+    TEST_ASSERT_TRUE(said);
+}
+
+static unsigned countAllocWarnings() {
+    unsigned n = 0;
+    for (const auto& l : g_lines) if (l.find("Allocation failures since boot") != std::string::npos) ++n;
+    return n;
+}
+
+void test_loop_warns_about_survived_failures_at_most_once_a_minute() {
+    HAL::Platform::setMillisForTest(1000);
+    TEST_ASSERT_TRUE(testCore->begin());
+    g_lines.clear();
+    auto id = LoggerCallbacks::addCallback([](LogLevel, const char*, const char* msg) { g_lines.emplace_back(msg ? msg : ""); });
+    HAL::Platform::advanceMillisForTest(60000);            // clear of any earlier test's minute
+    HAL::Platform::fireFailedAllocForTest(512, 0x1800);
+    testCore->loop();
+    TEST_ASSERT_EQUAL_UINT(1, countAllocWarnings());
+    HAL::Platform::fireFailedAllocForTest(512, 0x1800);
+    HAL::Platform::advanceMillisForTest(1000);
+    testCore->loop();                                       // same minute: silent
+    TEST_ASSERT_EQUAL_UINT(1, countAllocWarnings());
+    HAL::Platform::advanceMillisForTest(60000);
+    testCore->loop();                                       // next minute: the new count
+    TEST_ASSERT_EQUAL_UINT(2, countAllocWarnings());
+    bool sawTwo = false;
+    for (const auto& l : g_lines) if (l.find("since boot: 2, last 512 B") != std::string::npos) sawTwo = true;
+    TEST_ASSERT_TRUE(sawTwo);
+    LoggerCallbacks::removeCallback(id);
+    HAL::Platform::resetMillisForTest();
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
+    
+    RUN_TEST(test_begin_registers_the_heap_hook_after_the_record_is_written);
+    RUN_TEST(test_a_platform_failure_reaches_the_record_through_the_hook);
+    RUN_TEST(test_a_failed_hook_registration_is_reported_not_claimed);
+    RUN_TEST(test_loop_warns_about_survived_failures_at_most_once_a_minute);
     
     RUN_TEST(test_flight_recorder_promotes_before_any_component_begins);
     RUN_TEST(test_loop_marks_the_phase_and_returns_to_idle);
