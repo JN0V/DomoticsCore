@@ -351,6 +351,21 @@ inline void rtcStoreWord(uint32_t wordOffset, uint32_t value) {
     RTC_USER_MEM[RTC_RECORD_BASE_WORD + wordOffset] = value;
 }
 
+/**
+ * @brief Provoke one death class on purpose, for the flight recorder's board checks (OBS-3).
+ * Compile-gated at the call site (DOMOTICS_ENABLE_CRASH_COMMANDS); returns false for an unknown kind.
+ */
+inline bool crashForTest(const char* kind) {
+    String k(kind);
+    if (k == "abort") { abort(); }
+    if (k == "oom")   { for (;;) { volatile uint8_t* p = new uint8_t[1024]; (void)p; } }   // operator new aborts: reason 254
+    if (k == "null")  { volatile int* p = nullptr; *p = 1; }
+    if (k == "swdt")  { for (;;) {} }                                                     // soft WDT, ~3 s
+    if (k == "hwdt")  { ESP.wdtDisable(); for (;;) {} }                                   // hardware WDT: no code runs
+    if (k == "hang")  { for (;;) {} }
+    return false;
+}
+
 /** @brief No loop watchdog to arm: the SDK's soft WDT already resets a stuck loop in about 3 s (OBS-7). */
 inline constexpr bool supportsLoopWatchdog() { return false; }
 inline bool enableLoopWatchdog(uint32_t /*seconds*/) { return false; }

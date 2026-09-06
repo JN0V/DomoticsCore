@@ -117,6 +117,9 @@ public:
      * @return true if initialization successful
      */
     bool begin() {
+        // OBS-3: the first act — what the last death left in RTC, before any
+        // component runs. Held until step 6 has persisted it.
+        FlightRecorder::instance().begin(true);
         if (initialized) {
             DLOG_W(LOG_SYSTEM, "System already initialized");
             return true;
@@ -170,6 +173,9 @@ public:
         } else {
             DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping boot diagnostics", (unsigned)HAL::getFreeHeap());
         }
+        // Persisted or not, the promoted record has had its chance: the fresh
+        // one takes RTC now (OBS-3).
+        FlightRecorder::instance().acknowledge();
         
         // 6b. Loop watchdog (OBS-7). ESP32 only in effect: the Arduino core
         // leaves loopTask off the task watchdog, so a stuck loop() hangs forever
@@ -312,6 +318,14 @@ private:
         console->registerCommand("wifi", [this](const String&) { return getWiFiStatus(); });
         console->registerCommand("storage", [this](const String& args) { return getStorageContents(args); });
         console->registerCommand("bootdiag", [this](const String&) { return getBootDiagnostics(); });
+#if DOMOTICS_ENABLE_CRASH_COMMANDS
+        // OBS-3: die on purpose so the next boot's record can be checked.
+        // Never in a shipped build (SEC-4): the flag lives in test environments only.
+        console->registerCommand("crash", [](const String& args) -> String {
+            if (HAL::Platform::crashForTest(args.c_str())) return String("crashing: ") + args;
+            return String("usage: crash abort|oom|null|swdt|hwdt|hang");
+        });
+#endif
         
         core.addComponent(std::move(consolePtr));
         DLOG_I(LOG_SYSTEM, "✓ RemoteConsole enabled (port %d)", config.consolePort);
@@ -587,87 +601,26 @@ private:
     }
     
     String getBootDiagnostics() {
+        char buf[960];
+        size_t pos = FlightRecorder::instance().format(buf, sizeof(buf));
 #if __has_include(<DomoticsCore/SystemInfo.h>)
         auto* sysInfo = core.getComponent<Components::SystemInfoComponent>("System Info");
-        if (!sysInfo) return "Boot Diagnostics: SystemInfo not available\n";
-        
-        const auto& diag = sysInfo->getBootDiagnostics();
-        if (!diag.valid) return "Boot Diagnostics: Not captured\n";
-        
-        char minHeapStr[40];
-        if (diag.bootMinHeapTracked) {
-            snprintf(minHeapStr, sizeof(minHeapStr), "%lu bytes", (unsigned long)diag.bootMinHeap);
+        if (!sysInfo) {
+            pos += snprintf(buf + pos, sizeof(buf) - pos, "Boot Diagnostics: SystemInfo not available\n");
         } else {
-            snprintf(minHeapStr, sizeof(minHeapStr), "n/a (not tracked on this platform)");
+            pos += sysInfo->formatBootDiagnostics(buf + pos, sizeof(buf) - pos);
         }
-        char buf[640];
-        int pos = snprintf(buf, sizeof(buf),
-                 "Boot Diagnostics:\n"
-                 "  Boot Count: %lu\n"
-                 "  Reset Reason: %s\n"
-                 "  Heap at this boot: %lu bytes\n"
-                 "  Min heap at this boot: %s\n",
-                 (unsigned long)diag.bootCount,
-                 diag.getResetReasonString().c_str(),
-                 (unsigned long)diag.bootHeap,
-                 minHeapStr);
-        if (pos < 0) pos = 0;
-        if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
-
-        if (diag.wasUnexpectedReset()) {
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "  WARNING: Previous boot ended unexpectedly!\n");
-            if (pos < 0) pos = 0;
-            if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
-        }
-
-        // OBS-2: what the SDK kept from the death, when it kept anything
-        if (diag.resetDetail.valid) {
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "  Reset detail: exccause=%lu epc1=0x%08lx excvaddr=0x%08lx\n"
-                            "    (decode epc1 with xtensa-lx106-elf-addr2line against this build's ELF)\n",
-                            (unsigned long)diag.resetDetail.exccause,
-                            (unsigned long)diag.resetDetail.epc1,
-                            (unsigned long)diag.resetDetail.excvaddr);
-            if (pos < 0) pos = 0;
-            if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
-        }
-        // OBS-1: the ESP32 coredump partition
-        if (diag.coreDump.supported) {
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "  Core dump: %s\n",
-                            !diag.coreDump.partitionPresent ? "no coredump partition in this table"
-                            : diag.coreDump.dumpPresent    ? "WAITING — a previous panic left a dump"
-                                                           : "partition present, no dump waiting");
-            if (pos < 0) pos = 0;
-            if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
-            if (diag.coreDump.dumpPresent) {
-                pos += snprintf(buf + pos, sizeof(buf) - pos, "    %lu bytes\n", (unsigned long)diag.coreDump.size);
-                if (pos < 0) pos = 0;
-                if ((size_t)pos >= sizeof(buf)) pos = sizeof(buf) - 1;
-            }
-        }
-
-        // Also show persisted history from Storage
-#if __has_include(<DomoticsCore/Storage.h>)
+#else
+        pos += snprintf(buf + pos, sizeof(buf) - pos, "Boot Diagnostics: SystemInfo not compiled in\n");
+#endif
+        if (pos >= sizeof(buf)) pos = sizeof(buf) - 1;
+#if __has_include(<DomoticsCore/Storage.h>) && __has_include(<DomoticsCore/SystemInfo.h>)
         auto* storage = core.getComponent<Components::StorageComponent>("Storage");
         if (storage) {
-            snprintf(buf + pos, sizeof(buf) - pos,
-                     "\nPersisted Data:\n"
-                     "  boot_count: %d\n"
-                     "  last_reset: %d\n"
-                     "  boot_heap: %d\n"
-                     "  boot_minheap: %d\n",
-                     storage->getInt("boot_count", 0),
-                     storage->getInt("last_reset", -1),
-                     storage->getInt("boot_heap", 0),
-                     storage->getInt("boot_minheap", 0));
+            SystemHelpers::formatPersistedBootDiagnostics(*storage, buf + pos, sizeof(buf) - pos);
         }
 #endif
         return String(buf);
-#else
-        return "Boot Diagnostics: SystemInfo not compiled in\n";
-#endif
     }
 };
 
