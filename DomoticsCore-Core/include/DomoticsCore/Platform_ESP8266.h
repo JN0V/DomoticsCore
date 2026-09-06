@@ -318,6 +318,33 @@ inline constexpr bool tracksMinFreeHeap() { return false; }
 
 inline CoreDumpStatus getCoreDumpStatus() { return CoreDumpStatus{}; }
 
+// =============================================================================
+// Flight recorder primitives (OBS-3)
+// =============================================================================
+
+/** @brief Heap malloc() can actually hand out: on this platform the one heap. */
+inline uint32_t getAllocatableFreeHeap() { return ESP.getFreeHeap(); }
+/** @brief Largest contiguous block. Walks the heap with interrupts off (umm_info); not per-loop. */
+inline uint32_t getLargestFreeBlock() { return ESP.getMaxFreeBlockSize(); }
+/** @brief Free-heap drop between two ticks that earns one extra largest-block walk (OBS-3 D3). */
+inline constexpr uint32_t heapCliffThresholdBytes() { return 4096; }
+inline constexpr uint8_t platformId() { return 1; }
+
+// RTC user memory: 128 words at RTC_USER_MEM (0x60001200); words 0-31 are
+// eboot's. The recorder's words are 32.. — offsets here are relative to 32.
+inline constexpr uint32_t RTC_RECORD_BASE_WORD = 32;
+inline constexpr uint32_t rtcWordsAvailable() { return 128 - RTC_RECORD_BASE_WORD; }
+inline bool rtcRead(uint32_t wordOffset, uint32_t* dst, size_t words) {
+    return ESP.rtcUserMemoryRead(RTC_RECORD_BASE_WORD + wordOffset, dst, words * 4);
+}
+inline bool rtcWrite(uint32_t wordOffset, const uint32_t* src, size_t words) {
+    return ESP.rtcUserMemoryWrite(RTC_RECORD_BASE_WORD + wordOffset, const_cast<uint32_t*>(src), words * 4);
+}
+/** @brief One volatile store, no SDK call: the phase marker runs per component per loop. */
+inline void rtcStoreWord(uint32_t wordOffset, uint32_t value) {
+    RTC_USER_MEM[RTC_RECORD_BASE_WORD + wordOffset] = value;
+}
+
 /** @brief No loop watchdog to arm: the SDK's soft WDT already resets a stuck loop in about 3 s (OBS-7). */
 inline constexpr bool supportsLoopWatchdog() { return false; }
 inline bool enableLoopWatchdog(uint32_t /*seconds*/) { return false; }
