@@ -19,6 +19,7 @@ void setUp(void) {
     P::resetFreeHeapForTest();
     P::resetLargestFreeBlockForTest();
     P::restartHookInstallFailsForTest = false;
+    P::resetFailedAllocForTest();
 }
 void tearDown(void) {
     P::resetMillisForTest();
@@ -235,7 +236,7 @@ void test_the_first_begin_decides_the_hold() {
 
 void test_a_record_with_another_layout_reads_as_power_on() {
     rec().begin();
-    P::stubRtcWordsForTest[FlightRecord::W_META] = (2u << 24);   // layout 2
+    P::stubRtcWordsForTest[FlightRecord::W_META] = (3u << 24);   // layout 3: not this build's, not the migrated one
     reboot(P::ResetReason::Panic);
     rec().begin();
     TEST_ASSERT_FALSE(rec().hasPromotedRecord());
@@ -487,6 +488,179 @@ void test_crc32_matches_zlib_on_a_known_vector() {
     TEST_ASSERT_EQUAL_HEX32(0x77D55834u, FlightRecord::crc32(v, 3));
 }
 
+// ---- the failed-allocation group (OBS-4) -----------------------------------
+
+void test_count_word_encodes_with_its_complement_and_saturates() {
+    TEST_ASSERT_EQUAL_HEX32(0x0003FFFCu, FlightRecord::encodeCount(3));
+    TEST_ASSERT_EQUAL_HEX32(0xFFFF0000u, FlightRecord::encodeCount(0x12345));
+    FlightRecord r{};
+    r.w[FlightRecord::W_FAIL] = 0x00030000u;              // halves are not complements: no group
+    TEST_ASSERT_FALSE(r.failGroupValid());
+    TEST_ASSERT_EQUAL_UINT32(0, r.failAllocCount());
+    r.w[FlightRecord::W_FAIL] = FlightRecord::encodeCount(3);
+    TEST_ASSERT_EQUAL_UINT32(3, r.failAllocCount());
+}
+
+void test_a_failure_with_no_tick_then_a_boot_finds_the_group_in_rtc() {
+    rec().begin();
+    P::setFreeHeapForTest(5000); P::setLargestFreeBlockForTest(2000);
+    P::setMillisForTest(401200);
+    rec().noteFailedAlloc(4096, 0x1800);              // the terminal failure, a panic microseconds later
+    reboot(P::ResetReason::Panic);
+    rec().begin();
+    TEST_ASSERT_TRUE(rec().hasPromotedRecord());
+    const FlightRecord& p = rec().promoted();
+    TEST_ASSERT_EQUAL_UINT32(1, p.failAllocCount());
+    TEST_ASSERT_EQUAL_UINT32(4096, p.failAllocSize());
+    TEST_ASSERT_EQUAL_HEX32(0x1800, p.failAllocSite());
+    TEST_ASSERT_EQUAL_UINT32(401200, p.failAllocUptimeMs());
+    TEST_ASSERT_EQUAL_UINT32(5000 - 5000 % 16, p.failAllocFreeBytes());
+    TEST_ASSERT_EQUAL_UINT32(2000 - 2000 % 16, p.failAllocLargestBytes());
+}
+
+void test_the_flush_never_writes_the_group() {
+    // A heap-hook store that RAM does not have yet (on ESP32 the hook lands
+    // between the tick's read of the group and its write): the flush must
+    // leave RTC's group alone rather than copy its own over it.
+    rec().begin();
+    P::rtcStoreWord(FlightRecord::W_FAIL + 1, 512);
+    P::rtcStoreWord(FlightRecord::W_FAIL, FlightRecord::encodeCount(1));
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
+    rec().tick();
+    FlightRecord r = readRtc();
+    TEST_ASSERT_EQUAL_UINT32(1, r.failAllocCount());  // red on a flush that copies w56-60 from RAM
+    TEST_ASSERT_EQUAL_UINT32(512, r.failAllocSize());
+    TEST_ASSERT_EQUAL_UINT32(0, rec().failedAllocCount());
+    TEST_ASSERT_EQUAL_HEX32(r.bodyCrc(), r.w[FlightRecord::W_CRC]);
+}
+
+void test_a_failure_after_a_flush_does_not_tear_the_record() {
+    rec().begin();
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
+    rec().tick();                                     // crc written
+    rec().noteFailedAlloc(64, 1);                     // the group changes in RTC after the crc
+    FlightRecord r = readRtc();
+    TEST_ASSERT_EQUAL_UINT32(1, r.failAllocCount());
+    TEST_ASSERT_EQUAL_HEX32(r.bodyCrc(), r.w[FlightRecord::W_CRC]);   // red with w56-60 inside the crc
+    reboot(P::ResetReason::Watchdog);
+    rec().begin();
+    TEST_ASSERT_FALSE(rec().promotedIsTorn());
+}
+
+void test_failures_count_and_keep_the_last() {
+    rec().begin();
+    for (uint32_t i = 1; i <= 5; ++i) rec().noteFailedAlloc(100 * i, i);
+    TEST_ASSERT_EQUAL_UINT32(5, rec().failedAllocCount());
+    TEST_ASSERT_EQUAL_UINT32(500, rec().lastFailedAllocSize());
+    TEST_ASSERT_EQUAL_UINT32(5, readRtc().failAllocCount());
+    TEST_ASSERT_EQUAL_HEX32(5, readRtc().failAllocSite());
+}
+
+void test_burst_and_cliff_in_one_interval_walk_once() {
+    rec().begin();
+    P::setFreeHeapForTest(60000);
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
+    rec().tick();
+    unsigned after_tick = P::largestFreeBlockReadsForTest;
+    P::setFreeHeapForTest(60000 - P::heapCliffThresholdBytes() - 16);
+    P::advanceMillisForTest(1); rec().tick();         // the cliff: one walk
+    for (int i = 0; i < 5; ++i) rec().noteFailedAlloc(256, 1);   // a burst in the same interval: none
+    TEST_ASSERT_EQUAL_UINT(after_tick + 1, P::largestFreeBlockReadsForTest);
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
+    rec().tick();                                     // next interval: the tick's own walk
+    after_tick = P::largestFreeBlockReadsForTest;
+    for (int i = 0; i < 5; ++i) rec().noteFailedAlloc(256, 1);   // failures first: one walk
+    P::setFreeHeapForTest(100);
+    P::advanceMillisForTest(1); rec().tick();         // then the cliff: shares it
+    TEST_ASSERT_EQUAL_UINT(after_tick + 1, P::largestFreeBlockReadsForTest);
+}
+
+void test_group_stays_in_ram_while_a_death_is_held_and_lands_at_acknowledge() {
+    rec().begin();
+    rec().recordCrash(abortInfo());
+    reboot(P::ResetReason::Software);
+    rec().begin(true);                                // System's hold
+    rec().noteFailedAlloc(100, 7);                    // a failure during bring-up
+    TEST_ASSERT_EQUAL_UINT32(0, readRtc().failAllocCount());   // the held death keeps its own (empty) group
+    TEST_ASSERT_EQUAL_UINT32(0, rec().promoted().failAllocCount());
+    TEST_ASSERT_EQUAL_UINT32(1, rec().failedAllocCount());
+    rec().acknowledge();
+    TEST_ASSERT_EQUAL_UINT32(1, readRtc().failAllocCount());
+    TEST_ASSERT_EQUAL_UINT32(1, readRtc().bootSequence());
+}
+
+void test_a_layout_one_record_is_promoted_and_rewritten_as_layout_two() {
+    rec().begin();
+    rec().setPhase(4);
+    rec().recordCrash(abortInfo());
+    FlightRecord r = readRtc();                       // what a Lot B build would have left
+    r.w[FlightRecord::W_META] = (r.w[FlightRecord::W_META] & 0x00FFFFFFu) | (FlightRecord::LAYOUT_V1 << 24);
+    r.w[FlightRecord::W_CRC] = r.bodyCrcForLayout(FlightRecord::LAYOUT_V1);
+    P::rtcWrite(0, r.w, FlightRecord::WORDS);
+    reboot(P::ResetReason::Software);
+    rec().begin();
+    TEST_ASSERT_TRUE(rec().hasPromotedRecord());
+    TEST_ASSERT_FALSE(rec().promotedIsTorn());
+    TEST_ASSERT_EQUAL_UINT32(4, rec().promoted().phase());
+    TEST_ASSERT_EQUAL_HEX32(0x40201287u, rec().promoted().failCaller());
+    rec().acknowledge();
+    TEST_ASSERT_EQUAL_UINT32(FlightRecord::LAYOUT, readRtc().layout());
+    TEST_ASSERT_EQUAL_UINT32(1, readRtc().bootSequence());
+}
+
+void test_format_prints_the_failed_alloc_line_before_the_ring() {
+    rec().begin();
+    P::setFreeHeapForTest(5312); P::setLargestFreeBlockForTest(2048);
+    P::setMillisForTest(401200);
+    rec().noteFailedAlloc(4096, 0x1800);
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
+    rec().tick();
+    reboot(P::ResetReason::Watchdog);
+    rec().begin();
+    char buf[1024];
+    rec().format(buf, sizeof(buf));
+    const char* line = strstr(buf, "  failed allocs: 1 | last 4096 B site 0x00001800 at 401.200 s | free 5312 B, largest 2048 B\n");
+    TEST_ASSERT_NOT_NULL(line);
+    TEST_ASSERT_TRUE(line < strstr(buf, "ring:"));
+}
+
+void test_format_saturated_stays_under_128_per_line_and_1024_in_all() {
+    rec().begin();
+    FlightRecord r = readRtc();
+    for (size_t i = FlightRecord::W_SEQ; i < FlightRecord::WORDS; ++i) r.w[i] = 0xFFFFFFFFu;
+    r.w[FlightRecord::W_PHASE] = FlightRecord::encodePhase(0xFFFF);
+    r.w[FlightRecord::W_FAIL] = FlightRecord::encodeCount(0xFFFF);
+    r.w[FlightRecord::W_META] |= FlightRecord::CALLBACK_RAN;
+    r.w[FlightRecord::W_CRC] = r.bodyCrc();
+    P::rtcWrite(0, r.w, FlightRecord::WORDS);
+    reboot(P::ResetReason::Software);
+    rec().begin();
+    char buf[2048];
+    size_t n = rec().format(buf, sizeof(buf));
+    TEST_ASSERT_TRUE(n < 1024);                       // Core::begin()'s buffer
+    size_t lineLen = 0;
+    for (size_t i = 0; i < n; ++i) {
+        if (buf[i] == '\n') { TEST_ASSERT_TRUE(lineLen < 128); lineLen = 0; } else ++lineLen;
+    }
+    TEST_ASSERT_NOT_NULL(strstr(buf, "failed allocs: 65535"));
+}
+
+static uint32_t g_hookSize = 0, g_hookCountSeen = 0;
+static void userFailedAllocHook(uint32_t size, uint32_t) { g_hookSize = size; g_hookCountSeen = rec().failedAllocCount(); }
+
+void test_user_failed_alloc_hook_runs_after_the_record() {
+    rec().begin();
+    rec().onFailedAlloc(&userFailedAllocHook);
+    rec().noteFailedAlloc(2048, 3);
+    TEST_ASSERT_EQUAL_UINT32(2048, g_hookSize);
+    TEST_ASSERT_EQUAL_UINT32(1, g_hookCountSeen);
+}
+
+void test_failed_alloc_before_begin_does_nothing() {
+    rec().noteFailedAlloc(1, 1);
+    TEST_ASSERT_EQUAL_HEX32(0, P::stubRtcWordsForTest[FlightRecord::W_FAIL]);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_first_boot_starts_a_fresh_record_in_rtc);
@@ -529,5 +703,17 @@ int main(int, char**) {
     RUN_TEST(test_format_says_the_ring_is_empty_when_nothing_ticked);
     RUN_TEST(test_format_without_a_death_says_so_and_fits_a_small_buffer);
     RUN_TEST(test_crc32_matches_zlib_on_a_known_vector);
+    RUN_TEST(test_count_word_encodes_with_its_complement_and_saturates);
+    RUN_TEST(test_a_failure_with_no_tick_then_a_boot_finds_the_group_in_rtc);
+    RUN_TEST(test_the_flush_never_writes_the_group);
+    RUN_TEST(test_a_failure_after_a_flush_does_not_tear_the_record);
+    RUN_TEST(test_failures_count_and_keep_the_last);
+    RUN_TEST(test_burst_and_cliff_in_one_interval_walk_once);
+    RUN_TEST(test_group_stays_in_ram_while_a_death_is_held_and_lands_at_acknowledge);
+    RUN_TEST(test_a_layout_one_record_is_promoted_and_rewritten_as_layout_two);
+    RUN_TEST(test_format_prints_the_failed_alloc_line_before_the_ring);
+    RUN_TEST(test_format_saturated_stays_under_128_per_line_and_1024_in_all);
+    RUN_TEST(test_user_failed_alloc_hook_runs_after_the_record);
+    RUN_TEST(test_failed_alloc_before_begin_does_nothing);
     return UNITY_END();
 }

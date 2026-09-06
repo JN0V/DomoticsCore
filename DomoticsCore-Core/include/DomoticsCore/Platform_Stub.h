@@ -491,6 +491,37 @@ inline void rtcStoreWord(uint32_t wordOffset, uint32_t value) {
     if (wordOffset < 96) stubRtcWordsForTest[wordOffset] = value;
 }
 
+// OBS-4 seams: the heap hook the recorder installs, fired by a test; the
+// ESP8266 globals scripted, cleared by the take as the platform does.
+typedef void (*FailedAllocHook)(uint32_t size, uint32_t site);
+inline FailedAllocHook failedAllocHookForTest = nullptr;
+inline bool failedAllocHookInstallFailsForTest = false;
+inline constexpr bool supportsFailedAllocHook() { return true; }
+inline bool installFailedAllocHook(FailedAllocHook hook) {
+    if (failedAllocHookInstallFailsForTest) { failedAllocHookForTest = nullptr; return false; }
+    failedAllocHookForTest = hook;
+    return true;
+}
+inline void fireFailedAllocForTest(uint32_t size, uint32_t caps) { if (failedAllocHookForTest) failedAllocHookForTest(size, caps); }
+inline uint32_t stubbedLastFailAllocAddrForTest = 0;
+inline uint32_t stubbedLastFailAllocSizeForTest = 0;
+inline void setLastFailedAllocForTest(uint32_t addr, uint32_t size) { stubbedLastFailAllocAddrForTest = addr; stubbedLastFailAllocSizeForTest = size; }
+inline bool takeLastFailedAlloc(uint32_t& addr, uint32_t& size) {
+    if (!stubbedLastFailAllocAddrForTest) return false;
+    addr = stubbedLastFailAllocAddrForTest;
+    size = stubbedLastFailAllocSizeForTest;
+    stubbedLastFailAllocAddrForTest = stubbedLastFailAllocSizeForTest = 0;
+    return true;
+}
+inline void failGroupEnter() {}
+inline void failGroupLeave() {}
+inline uint32_t getMillisAnyContext() { return static_cast<uint32_t>(getMillis()); }
+inline void resetFailedAllocForTest() {
+    failedAllocHookForTest = nullptr;
+    failedAllocHookInstallFailsForTest = false;
+    stubbedLastFailAllocAddrForTest = stubbedLastFailAllocSizeForTest = 0;
+}
+
 // Restart observability (TEST-4). The native body is a no-op, which made the
 // WiFi reboot-to-STA path — whose only effect is this call — unassertable. The
 // count is per-call, not latched: a pending reboot whose timer keeps firing

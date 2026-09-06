@@ -22,6 +22,10 @@
 extern "C" {
 #include <user_interface.h>
 #include <osapi.h>  // os_get_random() — hardware RNG for the WebUI CSRF token
+extern "C" {
+extern void* umm_last_fail_alloc_addr;   // heap.cpp: the last allocation that returned NULL (OBS-4)
+extern int umm_last_fail_alloc_size;
+}
 }
 
 // ESP8266 logging macros (ESP32 has these built-in)
@@ -372,6 +376,31 @@ inline bool crashForTest(const char* kind) {
     if (k == "restart") { ESP.restart(); }   // not through the HAL: nothing marks it ours here (no handler on this platform)
     return false;
 }
+
+// OBS-4: no heap hook on this platform; the core's two globals are the source.
+inline void failGroupEnter() {}
+inline void failGroupLeave() {}
+typedef void (*FailedAllocHook)(uint32_t size, uint32_t site);
+inline constexpr bool supportsFailedAllocHook() { return false; }
+inline bool installFailedAllocHook(FailedAllocHook) { return false; }
+/**
+ * @brief Latch and clear the core's last failed allocation (OBS-4).
+ * operator new and newlib's _malloc_r set the pair on every build; the C
+ * wrappers only under DEBUG_ESP_OOM. Interrupts off between the two loads so
+ * one failure's address is not paired with another's size.
+ */
+inline bool takeLastFailedAlloc(uint32_t& addr, uint32_t& size) {
+    uint32_t ps = xt_rsil(15);
+    void* a = umm_last_fail_alloc_addr;
+    int sz = umm_last_fail_alloc_size;
+    if (a) { umm_last_fail_alloc_addr = nullptr; umm_last_fail_alloc_size = 0; }
+    xt_wsr_ps(ps);
+    if (!a) return false;
+    addr = reinterpret_cast<uint32_t>(a);
+    size = static_cast<uint32_t>(sz);
+    return true;
+}
+inline uint32_t getMillisAnyContext() { return millis(); }
 
 /** @brief No loop watchdog to arm: the SDK's soft WDT already resets a stuck loop in about 3 s (OBS-7). */
 inline constexpr bool supportsLoopWatchdog() { return false; }

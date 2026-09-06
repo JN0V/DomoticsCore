@@ -10,6 +10,7 @@
 
 #if DOMOTICS_PLATFORM_ESP32
 #include <esp_attr.h>
+#include <freertos/FreeRTOS.h>
 namespace DomoticsCore { namespace HAL { namespace Platform {
 static RTC_NOINIT_ATTR uint32_t s_rtcWords[96];
 bool rtcRead(uint32_t wordOffset, uint32_t* dst, size_t words) {
@@ -25,6 +26,27 @@ bool rtcWrite(uint32_t wordOffset, const uint32_t* src, size_t words) {
 void rtcStoreWord(uint32_t wordOffset, uint32_t value) {
     if (wordOffset < 96) s_rtcWords[wordOffset] = value;
 }
+
+// OBS-4: the failed-allocation group's section and the single heap_caps slot.
+static portMUX_TYPE s_failGroupMux = portMUX_INITIALIZER_UNLOCKED;
+void failGroupEnter() { portENTER_CRITICAL_SAFE(&s_failGroupMux); }
+void failGroupLeave() { portEXIT_CRITICAL_SAFE(&s_failGroupMux); }
+static FailedAllocHook s_failedAllocHook = nullptr;
+#if DOMOTICS_CRASH_HOOKS
+// IDF's signature. Runs on the failing task after the heap lock is released
+// (heap_caps_malloc, .iram1). Not IRAM itself: a failed allocation never
+// runs with the flash cache off — IDF's own reason for heap_caps_get_free_size
+// living in .text.
+static void failedAllocTrampoline(size_t size, uint32_t caps, const char*) {
+    if (s_failedAllocHook) s_failedAllocHook(static_cast<uint32_t>(size), caps);
+}
+bool installFailedAllocHook(FailedAllocHook hook) {
+    s_failedAllocHook = hook;
+    return heap_caps_register_failed_alloc_callback(&failedAllocTrampoline) == ESP_OK;
+}
+#else
+bool installFailedAllocHook(FailedAllocHook) { return false; }
+#endif
 }}} // namespace
 #endif
 
@@ -91,6 +113,7 @@ void FlightRecorder::resetForTest() {
     extraWalkDone_ = false;
     restartHookInstalled_ = false;
     userCrashHook_ = nullptr;
+    userFailedAllocHook_ = nullptr;
 }
 
 void FlightRecorder::startFresh(uint32_t seq) {
@@ -105,7 +128,13 @@ void FlightRecorder::startFresh(uint32_t seq) {
 void FlightRecorder::writeAll(const FlightRecord& r) {
     FlightRecord copy = r;
     copy.w[FlightRecord::W_CRC] = copy.bodyCrc();
+    // The failed-alloc group is refreshed and written inside its section: a
+    // heap hook on the other core between the copy and the write would
+    // otherwise be overwritten by the stale copy (OBS-4).
+    HAL::Platform::failGroupEnter();
+    memcpy(&copy.w[FlightRecord::W_FAIL], &r.w[FlightRecord::W_FAIL], FlightRecord::FAIL_WORDS * 4);
     HAL::Platform::rtcWrite(0, copy.w, FlightRecord::WORDS);
+    HAL::Platform::failGroupLeave();
 }
 
 void FlightRecorder::flush() {
@@ -113,7 +142,10 @@ void FlightRecorder::flush() {
     current_.w[FlightRecord::W_CRC] = current_.bodyCrc();
     // Body first, crc last: a death between the two leaves a record the next
     // boot reports as torn (phase still readable) rather than as absent.
-    HAL::Platform::rtcWrite(FlightRecord::W_BUILD, &current_.w[FlightRecord::W_BUILD], FlightRecord::WORDS - FlightRecord::W_BUILD);
+    // The failed-alloc group (w56-60) is never written from here: the heap
+    // hook stores it straight to RTC and a copy would clobber it (OBS-4).
+    HAL::Platform::rtcWrite(FlightRecord::W_BUILD, &current_.w[FlightRecord::W_BUILD], FlightRecord::W_FAIL - FlightRecord::W_BUILD);
+    HAL::Platform::rtcWrite(FlightRecord::W_EXC, &current_.w[FlightRecord::W_EXC], FlightRecord::WORDS - FlightRecord::W_EXC);
     HAL::Platform::rtcStoreWord(FlightRecord::W_CRC, current_.w[FlightRecord::W_CRC]);
 }
 
@@ -128,15 +160,18 @@ void FlightRecorder::begin(bool holdUntilAcknowledged) {
     lastTickFree_ = runMin_ = HAL::Platform::getAllocatableFreeHeap();
 
     HAL::Platform::rtcRead(0, previous_.w, FlightRecord::WORDS);
+    // Layout 1 (before OBS-4) is read with its own crc rule and rewritten as
+    // layout 2: the first boot after that upgrade keeps its death.
+    const uint32_t layout = previous_.layout();
     const bool magicOk = previous_.w[FlightRecord::W_MAGIC] == FlightRecord::MAGIC
-                      && previous_.layout() == FlightRecord::LAYOUT;
+                      && (layout == FlightRecord::LAYOUT || layout == FlightRecord::LAYOUT_V1);
     if (!magicOk) {
         startFresh(0);
         writeAll(current_);
         return;
     }
     const uint32_t flags = previous_.flags();
-    torn_ = previous_.w[FlightRecord::W_CRC] != previous_.bodyCrc();
+    torn_ = previous_.w[FlightRecord::W_CRC] != previous_.bodyCrcForLayout(layout);
 
     if (flags & FlightRecord::UNPERSISTED) {
         // Died again before the last promotion was acknowledged: the record
@@ -242,6 +277,35 @@ void FlightRecorder::tick() {
     flush();
 }
 
+void FlightRecorder::noteFailedAlloc(uint32_t size, uint32_t site) {
+    if (!begun_) return;
+    const uint32_t freeNow = HAL::Platform::getAllocatableFreeHeap();
+    if (freeNow < runMin_) runMin_ = freeNow;
+    // One largest-block walk per tick interval, shared with the cliff walk
+    // (the walk runs with interrupts off on ESP8266). Checked outside the
+    // section: two writers may walk twice, never more.
+    if (!extraWalkDone_) {
+        largestAtMin_ = HAL::Platform::getLargestFreeBlock();
+        extraWalkDone_ = true;
+    }
+    const uint32_t largest = largestAtMin_;
+    const uint32_t now = HAL::Platform::getMillisAnyContext();
+    HAL::Platform::failGroupEnter();
+    uint32_t* g = &current_.w[FlightRecord::W_FAIL];
+    const uint32_t count = current_.failAllocCount() + 1;
+    g[1] = size;
+    g[2] = FlightRecord::packHeap(freeNow, largest);
+    g[3] = site;
+    g[4] = now;
+    g[0] = FlightRecord::encodeCount(count);
+    if (!rtcHeld()) {   // a held death keeps its own group; acknowledge() writes this one
+        for (size_t i = 1; i < FlightRecord::FAIL_WORDS; ++i) HAL::Platform::rtcStoreWord(FlightRecord::W_FAIL + i, g[i]);
+        HAL::Platform::rtcStoreWord(FlightRecord::W_FAIL, g[0]);   // count last: the word that validates the group
+    }
+    HAL::Platform::failGroupLeave();
+    if (userFailedAllocHook_) userFailedAllocHook_(size, site);
+}
+
 void FlightRecorder::recordCrash(const CrashInfo& info) {
     if (!begun_) return;
     FlightRecord& r = current_;
@@ -333,6 +397,19 @@ size_t FlightRecorder::format(char* buf, size_t len) const {
             static_cast<unsigned long>(p.failSize()), static_cast<unsigned long>(p.failCaller()),
             static_cast<unsigned long>(p.w[FlightRecord::W_STACK]), static_cast<unsigned long>(p.w[FlightRecord::W_STACK + 1]),
             static_cast<unsigned long>(p.w[FlightRecord::W_STACK + 2]), static_cast<unsigned long>(p.w[FlightRecord::W_STACK + 3]));
+        if (m > 0) used += static_cast<size_t>(m) < len - used ? static_cast<size_t>(m) : len - used - 1;
+    }
+    // Before the ring, so truncation eats samples rather than the failure.
+    if (p.failAllocCount() > 0) {
+        const uint8_t plat = p.platform();   // 1 ESP8266: a caller; 2 ESP32: the caps word
+        const uint32_t up = p.failAllocUptimeMs();
+        m = snprintf(buf + used, len - used,
+            "  failed allocs: %lu | last %lu B %s 0x%0*lx at %lu.%03lu s | free %lu B, largest %lu B\n",
+            static_cast<unsigned long>(p.failAllocCount()), static_cast<unsigned long>(p.failAllocSize()),
+            plat == 1 ? "from" : plat == 2 ? "caps" : "site", plat == 2 ? 4 : 8,
+            static_cast<unsigned long>(p.failAllocSite()),
+            static_cast<unsigned long>(up / 1000u), static_cast<unsigned long>(up % 1000u),
+            static_cast<unsigned long>(p.failAllocFreeBytes()), static_cast<unsigned long>(p.failAllocLargestBytes()));
         if (m > 0) used += static_cast<size_t>(m) < len - used ? static_cast<size_t>(m) : len - used - 1;
     }
     // The fast ring, oldest first — the record keeps no index, so the oldest
