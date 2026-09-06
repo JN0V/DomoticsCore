@@ -2399,7 +2399,7 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 
 ## Priority 7: Architecture / God Objects (Constitution I, XIII)
 
-### ARCH-1 — System: God Object with 6+ responsibilities [MEDIUM] — re-argued HIGH → MEDIUM 2026-08-31, open, dual trigger
+### ARCH-1 — System: God Object with 6+ responsibilities [MEDIUM] — re-argued HIGH → MEDIUM 2026-08-31; **restated 2026-09-06, open: the residue rides OBS Lot B**
 
 - **Ref**: SYS-F6 — **which cannot be read**: no document in the repository
   carries it (BUG-23's SYS-F4 shows the family existed in the originating
@@ -2449,10 +2449,25 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   its own merits**: four one-line `registerCommand` lambdas over status
   getters, no defect ever attributed — a new header to save ~20 lines of
   wiring is YAGNI by the constitution's own list.
-- **Dual trigger, so the deferral cannot stall**: re-evaluate — execute,
-  restate, or close — when `esp32-ethernet` lands **or** at the next
-  release series' planning, whichever first. The marianorenzi notification
-  draft asks his System.h timing directly.
+- **The trigger fired 2026-09-01 and the decision was taken 2026-09-06:
+  restated.** marianorenzi's reply to the notification lifted the restraint
+  himself ("do not restrain yourself because of my fork… I will merge and
+  adapt", resuming mid/late October), so the fork argument fell. The merit
+  argument stands and now carries the declines on its own: a registrar
+  would have relocated BUG-23 with it (the contract prevented it, not a
+  class); the orchestrator would extract the block his `NetworkEvents`
+  delete and re-found; the console header is YAGNI. **What remains
+  measurable is the boot-diagnostics residue** — `initBootDiagnosticsPersistence()`
+  and `getBootDiagnostics()`, ~95 lines still in `System.h` — and OBS Lot B
+  rewrites exactly that path: promotion of the RTC record is the first act
+  of `System::begin()` and ownership of boot diagnostics moves to Core
+  (`spec-obs-crash-observability.md` §L1). One change on the boot path
+  before his October rebase rather than two. Measured 2026-09-06:
+  `System.h` 676 lines (643 at re-argument; Lot A's watchdog block),
+  `begin()` ~70 lines (62), the indicator still exceeded.
+- **New trigger**: at Lot B's closure, re-measure `begin()` and `System.h`
+  — close if the indicator passes, otherwise restate to what remains.
+  No column moves today: MEDIUM, open.
 - **Suites at re-argument**: the three System suites ran **55/55 green
   from clean** on 2026-08-31 (`rm -rf .pio` first; `test_system_config` /
   `test_system_lifecycle` / `test_system_persistence`) — measured, not
@@ -3410,7 +3425,7 @@ not.
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
-| 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, **0H**, 1M (**ARCH-3 done**; **ARCH-2 done 2026-08-31 by measurement** — both halves of its prescribed remedy already existed, one false at filing, one delivered by PR #17; no code changed. **ARCH-1 re-argued HIGH → MEDIUM 2026-08-31 and open** — SYS-F6 unreadable so the HIGH was never argued, one XIII indicator exceeded against a 643-line file otherwise inside every measurement, the fork rewrites two of the three extraction zones, the third declined as YAGNI; dual re-evaluation trigger in-entry) |
+| 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, **0H**, 1M (**ARCH-3 done**; **ARCH-2 done 2026-08-31 by measurement** — both halves of its prescribed remedy already existed, one false at filing, one delivered by PR #17; no code changed. **ARCH-1 re-argued HIGH → MEDIUM 2026-08-31, restated 2026-09-06 and open** — SYS-F6 unreadable so the HIGH was never argued, one XIII indicator exceeded against a file otherwise inside every measurement; the fork trigger fired with marianorenzi's reply of 2026-09-01 and the three extractions are declined on merit; the boot-diagnostics residue (~95 lines) rides OBS Lot B, which rewrites that path, and `begin()` is re-measured at Lot B's closure) |
 | 8. CI/Infrastructure | CI-1 to CI-15 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 open, **CI-13 done 2026-09-01** — paid a second time at 19 GB before the fix its entry prescribed was finally applied; **CI-14** — FullStack is green in CI and unusable on an ESP8266; **CI-15 new** — no `library.json` declares `export.exclude`, the family's root cause, deferred to a release-aware lot) |
 | 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |

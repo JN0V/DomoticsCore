@@ -156,3 +156,30 @@ his plans, converting the trigger into a coordination fact.
   SEC-12-style in the chain.
 - `draft-marianorenzi-notification.md` written under the constraints
   above.
+
+## Decision 2026-09-06 — restated, the residue rides OBS Lot B
+
+The dual trigger fired on 2026-09-01: marianorenzi answered the notification
+by lifting the restraint himself ("do not restrain yourself because of my
+fork, please continue as you planned… I will merge and adapt", resuming
+mid/late October). That removes the fork argument of §"The fork rewrites two
+of the three extraction zones" and leaves the merit argument, which carries
+the three declines on its own — registrar (BUG-23 shows the contract, not a
+class, prevents the defect), orchestrator (the block his `NetworkEvents`
+delete and re-found), console (YAGNI).
+
+What §"What measurably remains" still points at is the boot-diagnostics
+residue in `System.h` — `initBootDiagnosticsPersistence()` and
+`getBootDiagnostics()`, about 95 lines — and OBS Lot B rewrites that path:
+promotion of the RTC record becomes the first act of `System::begin()` and
+boot-diagnostics ownership moves to Core (`spec-obs-crash-observability.md`
+§L1). Executing ARCH-1 now would put two structural changes on the boot path
+before his October rebase, for no harm ever measured.
+
+Decision, taken by the maintainer on 2026-09-06 from the three options
+(execute, restate, close): **restate**. ARCH-1 stays MEDIUM and open, its
+residue lands inside Lot B, and at Lot B's closure `begin()` and `System.h`
+are re-measured — close if the XIII indicator passes, restate to what
+remains otherwise. Measured today: `System.h` 676 lines (643 on
+2026-08-31, Lot A's watchdog block), `begin()` ~70 lines (62). No column
+moves.
