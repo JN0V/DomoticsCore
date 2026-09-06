@@ -488,7 +488,13 @@ inline void resetRestartCountForTest() { restartCountForTest = 0; }
 /**
  * @brief Software reset (stub)
  */
+// OBS-3: one hook the recorder installs so a restart the firmware asks for is
+// marked as its own; defined in FlightRecorder.cpp.
+typedef void (*RestartHook)();
+bool installRestartHook(RestartHook hook);
+RestartHook restartHook();
 inline void restart() {
+    if (restartHook()) restartHook()();
     ++restartCountForTest;
 #if defined(__AVR__)
     asm volatile ("jmp 0");
