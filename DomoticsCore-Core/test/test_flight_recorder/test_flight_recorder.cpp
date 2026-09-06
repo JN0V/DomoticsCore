@@ -280,6 +280,27 @@ void test_crash_folds_the_running_minimum_into_the_record() {
     TEST_ASSERT_EQUAL_UINT32(2000 - 2000 % 16, rec().promoted().minFreeBytes());
 }
 
+void test_platform_restart_marks_the_record_as_ours() {
+    rec().begin();
+    TEST_ASSERT_TRUE(rec().restartHookInstalled());
+    P::restart();                                  // what OTA, WiFi and the console call
+    reboot(P::ResetReason::Software);
+    rec().begin();
+    TEST_ASSERT_FALSE(rec().hasPromotedRecord());
+}
+
+static const CrashInfo* g_forwarded = nullptr;
+static void userHook(const CrashInfo& c) { g_forwarded = &c; }
+
+void test_user_crash_hook_runs_after_the_record() {
+    rec().begin();
+    rec().onCrash(&userHook);
+    CrashInfo c = abortInfo();
+    rec().recordCrash(c);
+    TEST_ASSERT_EQUAL_PTR(&c, g_forwarded);
+    TEST_ASSERT_TRUE(readRtc().flags() & FlightRecord::CALLBACK_RAN);   // written before the hook ran
+}
+
 void test_dedup_key_uses_the_fail_caller_when_there_is_no_epc1() {
     FlightRecord a{}; FlightRecord b{}; FlightRecord c{};
     a.w[FlightRecord::W_EXC] = b.w[FlightRecord::W_EXC] = c.w[FlightRecord::W_EXC] = 254;
@@ -342,6 +363,8 @@ int main(int, char**) {
     RUN_TEST(test_phase_marker_is_one_store_with_its_complement);
     RUN_TEST(test_event_drops_ride_the_sequence_word);
     RUN_TEST(test_crash_folds_the_running_minimum_into_the_record);
+    RUN_TEST(test_platform_restart_marks_the_record_as_ours);
+    RUN_TEST(test_user_crash_hook_runs_after_the_record);
     RUN_TEST(test_dedup_key_uses_the_fail_caller_when_there_is_no_epc1);
     RUN_TEST(test_format_names_the_death);
     RUN_TEST(test_format_without_a_death_says_so_and_fits_a_small_buffer);

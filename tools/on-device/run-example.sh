@@ -12,7 +12,11 @@ PIO=$(command -v pio || echo "uvx --from platformio pio")
 # untracked secrets.h through __has_include. PLATFORMIO_BUILD_FLAGS appends to
 # each project's own build_flags rather than replacing them, so no tracked
 # platformio.ini needs to change.
-export PLATFORMIO_BUILD_FLAGS="-I$ROOT"
+# OBS-3: the build id the flight recorder stamps into its record, so a record
+# can be matched to the ELF that produced it. The quotes must reach the
+# compiler: -DDOMOTICS_BUILD_ID='"<id>"'.
+BUILD_ID=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
+export PLATFORMIO_BUILD_FLAGS="-I$ROOT -DDOMOTICS_BUILD_ID='\"$BUILD_ID\"'"
 
 cd "$ROOT/$DIR" || exit 1
 BUILD=$(timeout 420 $PIO run -e "$ENV" -t upload --upload-port "$PORT" 2>&1)

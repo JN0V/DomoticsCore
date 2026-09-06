@@ -34,6 +34,12 @@ bool Core::begin(const CoreConfig& cfg) {
         HAL::initializeLogging(115200);
     }
 
+#ifdef DOMOTICS_BUILD_ID
+    DLOG_I(LOG_CORE, "Build id: %s", DOMOTICS_BUILD_ID);
+#endif
+    if (!recorder.restartHookInstalled()) {
+        DLOG_W(LOG_CORE, "Restart hook not registered: a software reset will read as unexplained");
+    }
     if (recorder.hasPromotedRecord()) {
         char line[240];
         recorder.format(line, sizeof(line));

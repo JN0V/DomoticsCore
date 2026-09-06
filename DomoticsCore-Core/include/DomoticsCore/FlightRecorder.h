@@ -27,6 +27,13 @@
 #include <stddef.h>
 #include "DomoticsCore/Platform_HAL.h"
 
+// The platform crash hooks (ESP8266 custom_crash_callback, ESP32 shutdown
+// handler) are on by default. -DDOMOTICS_CRASH_HOOKS=0 removes their
+// definitions for a sketch or library that defines its own.
+#ifndef DOMOTICS_CRASH_HOOKS
+#define DOMOTICS_CRASH_HOOKS 1
+#endif
+
 namespace DomoticsCore {
 
 struct FlightRecord {
@@ -135,8 +142,13 @@ public:
     void noteEventDrops(uint32_t totalDrops);
     /** The firmware is restarting on purpose (ESP.restart, OTA reboot). */
     void markOurs();
-    /** From the platform's crash callback: no allocation, no log, one RTC write. */
+    /** From the platform's crash callback: no allocation, no log, one RTC write; then the user hook. */
     void recordCrash(const CrashInfo& info);
+    /** A user hook to run after the record is written, from the crash context. */
+    typedef void (*CrashHook)(const CrashInfo&);
+    void onCrash(CrashHook hook) { userCrashHook_ = hook; }
+    /** False when the platform could not register the restart hook (ESP32 shutdown slots full). */
+    bool restartHookInstalled() const { return restartHookInstalled_; }
 
     /** The promoted record as text, allocation-free. Returns characters written. */
     size_t format(char* buf, size_t len) const;
@@ -158,6 +170,8 @@ private:
     uint32_t runMin_, lastTickFree_, largestAtMin_, lastTickMs_, lastSlowMs_;
     uint32_t fastIdx_, slowIdx_;
     bool extraWalkDone_;
+    bool restartHookInstalled_;
+    CrashHook userCrashHook_;
 };
 
 } // namespace DomoticsCore

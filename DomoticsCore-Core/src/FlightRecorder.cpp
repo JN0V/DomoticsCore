@@ -28,9 +28,29 @@ void rtcStoreWord(uint32_t wordOffset, uint32_t value) {
 }}} // namespace
 #endif
 
+// ---- the restart hook: one definition for every platform ------------------
+namespace DomoticsCore { namespace HAL { namespace Platform {
+static RestartHook s_restartHook = nullptr;
+RestartHook restartHook() { return s_restartHook; }
+#if DOMOTICS_PLATFORM_ESP32 && DOMOTICS_CRASH_HOOKS
+static void shutdownTrampoline() { if (s_restartHook) s_restartHook(); }
+bool installRestartHook(RestartHook hook) {
+    s_restartHook = hook;
+    // Covers esp_restart() callers outside this HAL too (the Arduino core's
+    // ESP.restart()). IDF keeps a handful of handler slots; a full table is
+    // reported, not fatal: HAL restarts are still marked through restart().
+    return esp_register_shutdown_handler(&shutdownTrampoline) == ESP_OK;
+}
+#else
+bool installRestartHook(RestartHook hook) { s_restartHook = hook; return true; }
+#endif
+}}} // namespace
+
 namespace DomoticsCore {
 
 namespace {
+void markOursTrampoline() { FlightRecorder::instance().markOurs(); }
+
 uint32_t buildIdCrc() {
 #ifdef DOMOTICS_BUILD_ID
     static const char id[] = DOMOTICS_BUILD_ID;
@@ -60,6 +80,8 @@ void FlightRecorder::resetForTest() {
     lastTickMs_ = lastSlowMs_ = 0;
     fastIdx_ = slowIdx_ = 0;
     extraWalkDone_ = false;
+    restartHookInstalled_ = false;
+    userCrashHook_ = nullptr;
 }
 
 void FlightRecorder::startFresh(uint32_t seq) {
@@ -91,6 +113,7 @@ void FlightRecorder::begin(bool holdUntilAcknowledged) {
     begun_ = true;
     hold_ = holdUntilAcknowledged;
     lastTickMs_ = lastSlowMs_ = HAL::Platform::getMillis();
+    restartHookInstalled_ = HAL::Platform::installRestartHook(&markOursTrampoline);
 
     HAL::Platform::rtcRead(0, previous_.w, FlightRecord::WORDS);
     const bool magicOk = previous_.w[FlightRecord::W_MAGIC] == FlightRecord::MAGIC
@@ -214,9 +237,34 @@ void FlightRecorder::recordCrash(const CrashInfo& info) {
     r.w[FlightRecord::W_LAST_UPTIME] = HAL::Platform::getMillis();
     r.w[FlightRecord::W_LAST_HEAP] = FlightRecord::packHeap(minFree, extraWalkDone_ ? largestAtMin_ : (r.w[FlightRecord::W_LAST_HEAP] & 0xFFFFu) * 16u);
     r.w[FlightRecord::W_META] |= FlightRecord::CALLBACK_RAN;
-    if (rtcHeld()) return;   // the first death stays until acknowledged
-    writeAll(r);
+    if (!rtcHeld()) writeAll(r);   // else the first death stays until acknowledged
+    if (userCrashHook_) userCrashHook_(info);
 }
+
+// ---- the ESP8266 crash callback -------------------------------------------
+// The core declares custom_crash_callback weak; this strong definition takes
+// over for exceptions, the soft WDT and the abort/OOM class (reasons 253/254),
+// with the stack the core hands over. It runs before the restart, on the
+// crashed stack: no allocation, no String, no log.
+#if DOMOTICS_PLATFORM_ESP8266 && DOMOTICS_CRASH_HOOKS
+extern "C" {
+#include <user_interface.h>
+extern void* umm_last_fail_alloc_addr;   // operator new records these on every build (abi.cpp)
+extern int umm_last_fail_alloc_size;
+void custom_crash_callback(struct rst_info* rst, uint32_t stack, uint32_t stack_end) {
+    CrashInfo c;
+    if (rst) {
+        c.reason = rst->reason; c.exccause = rst->exccause;
+        c.epc1 = rst->epc1; c.excvaddr = rst->excvaddr;
+    }
+    c.failCaller = reinterpret_cast<uint32_t>(umm_last_fail_alloc_addr);
+    c.failSize = static_cast<uint32_t>(umm_last_fail_alloc_size);
+    c.stack = reinterpret_cast<const uint32_t*>(stack);
+    c.stackWords = stack_end > stack ? (stack_end - stack) / 4 : 0;
+    FlightRecorder::instance().recordCrash(c);
+}
+}
+#endif
 
 const char* FlightRecorder::promotionName(Promotion p) {
     switch (p) {

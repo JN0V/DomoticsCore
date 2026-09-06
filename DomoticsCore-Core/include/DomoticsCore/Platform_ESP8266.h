@@ -128,7 +128,13 @@ inline uint32_t getCpuFreqMHz() {
 /**
  * @brief Software reset for ESP8266
  */
+// OBS-3: one hook the recorder installs so a restart the firmware asks for is
+// marked as its own; defined in FlightRecorder.cpp.
+typedef void (*RestartHook)();
+bool installRestartHook(RestartHook hook);
+RestartHook restartHook();
 inline void restart() {
+    if (restartHook()) restartHook()();
     ESP.restart();
 }
 
