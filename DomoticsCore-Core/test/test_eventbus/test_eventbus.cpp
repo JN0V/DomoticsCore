@@ -186,6 +186,32 @@ void test_backpressure(void) {
     }
 }
 
+// BUG-36: on overflow enqueue() popped the oldest event without decrementing
+// its topic's pending counter, so a topic that had ever been oldest when
+// another topic stormed the queue never replayed its sticky value again.
+void test_bug36_topic_dropped_on_overflow_still_replays_sticky(void) {
+    int b = 7;
+    testBus->publishSticky(String("topic/B"), b);          // B is the oldest queued event
+    for (int i = 0; i < 40; i++) {                          // A storms past the cap of 32: B is dropped
+        testBus->publish(String("topic/A"), i);
+    }
+    for (int i = 0; i < 10; i++) testBus->poll();           // drain everything that survived
+
+    int replayed = 0;
+    testBus->subscribe(String("topic/B"), [&](const void* payload) {
+        if (payload) replayed = *static_cast<const int*>(payload);
+    }, nullptr, true);                                      // replayLast: must see B's sticky value
+    TEST_ASSERT_EQUAL_INT_MESSAGE(7, replayed, "sticky replay of a topic dropped on overflow");
+}
+
+void test_bug36_drop_counter_counts_every_overflow(void) {
+    TEST_ASSERT_EQUAL_UINT32(0, testBus->getDroppedCount());
+    for (int i = 0; i < 40; i++) testBus->publish(String("topic/A"), i);
+    TEST_ASSERT_EQUAL_UINT32(8, testBus->getDroppedCount());
+    testBus->reset();
+    TEST_ASSERT_EQUAL_UINT32(0, testBus->getDroppedCount());
+}
+
 void test_publish_during_dispatch_safe(void) {
     // Verify that publishing during dispatch (allowed) works correctly
     // with const auto& iteration (no vector copy).
@@ -508,6 +534,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_message_order);
     RUN_TEST(test_unsubscribe_owner);
     RUN_TEST(test_backpressure);
+    RUN_TEST(test_bug36_topic_dropped_on_overflow_still_replays_sticky);
+    RUN_TEST(test_bug36_drop_counter_counts_every_overflow);
     RUN_TEST(test_publish_during_dispatch_safe);
     RUN_TEST(test_reset_clears_wildcard_subscriptions);
     RUN_TEST(test_reset_clears_sticky_events);
