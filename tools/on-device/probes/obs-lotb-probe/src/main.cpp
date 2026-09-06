@@ -35,6 +35,23 @@ void setup() {
     cfg.wifiAutoConfig = false;
     sys = new System(cfg);
     sys->begin();
+#ifdef DEBUG_ESP_OOM
+    Serial.setDebugOutput(true);   // the core's ":oom(size)@file:line" line needs os_print on
+#endif
+    // OBS-4 S5 coverage check: grow a String until its realloc fails. A stock
+    // build records nothing for that path; under DEBUG_ESP_OOM the latch
+    // counts it. The String dies before the reply is built.
+    sys->registerCommand("bigstring", [](const String&) -> String {
+        size_t grew = 0;
+        {
+            String s;
+            for (int i = 0; i < 8192; ++i) {
+                if (!s.concat(F("0123456789abcdef0123456789abcdef"))) break;
+                grew = s.length();
+            }
+        }
+        return String("grew to ") + grew + " B, then the realloc failed\n";
+    });
     lastReport = millis();
 }
 

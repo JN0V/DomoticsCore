@@ -465,7 +465,7 @@ inline bool restartHookInstallFailsForTest = false;
 // Crash commands (OBS-3): the stub records the kind and dies of nothing.
 inline char crashKindForTest[16] = {};
 inline bool crashForTest(const char* kind) {
-    static const char* known[] = { "abort", "oom", "null", "swdt", "hwdt", "hang", "restart" };
+    static const char* known[] = { "abort", "oom", "null", "swdt", "hwdt", "hang", "restart", "nothrow", "squeeze", "release" };
     for (const char* k : known) {
         if (strcmp(k, kind) == 0) { snprintf(crashKindForTest, sizeof(crashKindForTest), "%s", kind); return true; }
     }
@@ -487,8 +487,10 @@ inline bool rtcWrite(uint32_t wordOffset, const uint32_t* src, size_t words) {
     for (size_t i = 0; i < words; ++i) stubRtcWordsForTest[wordOffset + i] = src[i];
     return true;
 }
+inline uint32_t lastRtcStoreOffsetForTest = 0xFFFFFFFFu;   // OBS-4: which word a store sequence ended on
 inline void rtcStoreWord(uint32_t wordOffset, uint32_t value) {
     if (wordOffset < 96) stubRtcWordsForTest[wordOffset] = value;
+    lastRtcStoreOffsetForTest = wordOffset;
 }
 
 // OBS-4 seams: the heap hook the recorder installs, fired by a test; the
@@ -525,6 +527,7 @@ inline void resetFailedAllocForTest() {
     failedAllocHookInstallFailsForTest = false;
     failedAllocFireOnInstallForTest = false;
     stubbedLastFailAllocAddrForTest = stubbedLastFailAllocSizeForTest = 0;
+    lastRtcStoreOffsetForTest = 0xFFFFFFFFu;
 }
 
 // Restart observability (TEST-4). The native body is a no-op, which made the

@@ -661,6 +661,112 @@ void test_failed_alloc_before_begin_does_nothing() {
     TEST_ASSERT_EQUAL_HEX32(0, P::stubRtcWordsForTest[FlightRecord::W_FAIL]);
 }
 
+// ---- the ESP8266 latch-and-clear (OBS-4, S3) --------------------------------
+
+void test_one_survived_failure_counts_once_across_many_samples() {
+    rec().begin();
+    P::setLastFailedAllocForTest(0x4020b41cu, 1048576);
+    for (int i = 0; i < 20; ++i) { P::advanceMillisForTest(1); rec().tick(); }
+    TEST_ASSERT_EQUAL_UINT32(1, rec().failedAllocCount());     // 20 without the clear
+    TEST_ASSERT_EQUAL_HEX32(0x4020b41cu, readRtc().failAllocSite());
+    TEST_ASSERT_EQUAL_UINT32(1048576, readRtc().failAllocSize());
+}
+
+void test_two_failures_with_a_sample_between_count_two() {
+    rec().begin();
+    P::setLastFailedAllocForTest(0x4020b41cu, 512);
+    P::advanceMillisForTest(1); rec().tick();
+    P::setLastFailedAllocForTest(0x4020b41cu, 512);            // the same failure again: a leak's shape
+    P::advanceMillisForTest(1); rec().tick();
+    TEST_ASSERT_EQUAL_UINT32(2, rec().failedAllocCount());
+}
+
+void test_a_latched_failure_is_cleared_for_the_crash_callback() {
+    rec().begin();
+    P::setLastFailedAllocForTest(0x4020b41cu, 512);
+    P::advanceMillisForTest(1); rec().tick();                  // latched and cleared
+    uint32_t a = 1, s = 1;
+    TEST_ASSERT_FALSE(P::takeLastFailedAlloc(a, s));            // what the callback would now read: nothing
+    rec().recordCrash(abortInfo(0, 0));                         // an unrelated death later
+    reboot(P::ResetReason::Software);
+    rec().begin();
+    TEST_ASSERT_EQUAL_UINT32(0, rec().promoted().failCaller());       // not the stale survived failure
+    TEST_ASSERT_EQUAL_UINT32(1, rec().promoted().failAllocCount());   // which is in the group instead
+    TEST_ASSERT_EQUAL_HEX32(0x4020b41cu, rec().promoted().failAllocSite());
+}
+
+void test_a_latch_with_no_tick_then_a_boot_finds_the_group() {
+    rec().begin();
+    P::setLastFailedAllocForTest(0x4020b41cu, 256);
+    P::advanceMillisForTest(1); rec().tick();                  // a sample, no 10 s flush
+    reboot(P::ResetReason::Watchdog);                          // hardware watchdog: no code ran
+    rec().begin();
+    TEST_ASSERT_EQUAL_UINT32(1, rec().promoted().failAllocCount());
+    TEST_ASSERT_EQUAL_UINT32(256, rec().promoted().failAllocSize());
+}
+
+void test_a_fatal_new_reaches_the_callback_fields_not_the_group() {
+    rec().begin();
+    rec().recordCrash(abortInfo(0x40201287u, 1024));           // globals set, no sample in between
+    reboot(P::ResetReason::Software);
+    rec().begin();
+    TEST_ASSERT_EQUAL_HEX32(0x40201287u, rec().promoted().failCaller());
+    TEST_ASSERT_EQUAL_UINT32(0, rec().promoted().failAllocCount());
+}
+
+// ---- the code review's four gaps (OBS-4) -----------------------------------
+
+void test_the_count_saturates_and_the_group_stays_valid() {
+    rec().begin();
+    for (uint32_t i = 0; i < 0x10001u; ++i) rec().noteFailedAlloc(16, 1);
+    TEST_ASSERT_EQUAL_UINT32(0xFFFF, rec().failedAllocCount());
+    TEST_ASSERT_TRUE(readRtc().failGroupValid());
+    TEST_ASSERT_EQUAL_HEX32(0xFFFF0000u, readRtc().w[FlightRecord::W_FAIL]);
+}
+
+void test_the_count_word_is_stored_last() {
+    rec().begin();
+    rec().noteFailedAlloc(64, 1);
+    TEST_ASSERT_EQUAL_UINT32(FlightRecord::W_FAIL, P::lastRtcStoreOffsetForTest);   // a death mid-group leaves the old count, never a validated count over new fields
+}
+
+static void formatWithPlatform(uint8_t platform, uint32_t site, char* buf, size_t len) {
+    rec().begin();
+    P::setMillisForTest(12000);
+    rec().noteFailedAlloc(4096, site);
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
+    rec().tick();
+    FlightRecord r = readRtc();
+    r.w[FlightRecord::W_META] = (r.w[FlightRecord::W_META] & ~0x00FF0000u) | (static_cast<uint32_t>(platform) << 16);   // outside the crc
+    P::rtcWrite(0, r.w, FlightRecord::WORDS);
+    reboot(P::ResetReason::Watchdog);
+    rec().begin();
+    rec().format(buf, len);
+}
+
+void test_format_labels_the_site_as_a_caller_on_esp8266_and_as_caps_on_esp32() {
+    char buf[1024];
+    formatWithPlatform(1, 0x4020b41cu, buf, sizeof(buf));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "last 4096 B from 0x4020b41c at 12.000 s"));
+    rec().resetForTest(); P::clearRtcForTest(); P::setResetReasonForTest(P::ResetReason::PowerOn); P::setMillisForTest(1000);
+    formatWithPlatform(2, 0x1800u, buf, sizeof(buf));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "last 4096 B caps 0x1800 at 12.000 s"));
+}
+
+void test_a_survived_failure_that_reaches_the_callback_with_an_exception_goes_to_the_group() {
+    rec().begin();
+    CrashInfo c; c.reason = 2; c.exccause = 29; c.epc1 = 0x40201000u;
+    c.failCaller = 0x4020b864u; c.failSize = 1048576;                 // survived, not yet latched when the exception hit
+    rec().recordCrash(c);
+    reboot(P::ResetReason::Software);
+    rec().begin();
+    TEST_ASSERT_EQUAL_UINT32(0, rec().promoted().failCaller());       // not the death's cause
+    TEST_ASSERT_EQUAL_UINT32(0, rec().promoted().failSize());
+    TEST_ASSERT_EQUAL_UINT32(1, rec().promoted().failAllocCount());
+    TEST_ASSERT_EQUAL_HEX32(0x4020b864u, rec().promoted().failAllocSite());
+    TEST_ASSERT_EQUAL_HEX32(0x40201000u, rec().promoted().epc1());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_first_boot_starts_a_fresh_record_in_rtc);
@@ -715,5 +821,14 @@ int main(int, char**) {
     RUN_TEST(test_format_saturated_stays_under_128_per_line_and_1024_in_all);
     RUN_TEST(test_user_failed_alloc_hook_runs_after_the_record);
     RUN_TEST(test_failed_alloc_before_begin_does_nothing);
+    RUN_TEST(test_one_survived_failure_counts_once_across_many_samples);
+    RUN_TEST(test_two_failures_with_a_sample_between_count_two);
+    RUN_TEST(test_a_latched_failure_is_cleared_for_the_crash_callback);
+    RUN_TEST(test_a_latch_with_no_tick_then_a_boot_finds_the_group);
+    RUN_TEST(test_a_fatal_new_reaches_the_callback_fields_not_the_group);
+    RUN_TEST(test_the_count_saturates_and_the_group_stays_valid);
+    RUN_TEST(test_the_count_word_is_stored_last);
+    RUN_TEST(test_format_labels_the_site_as_a_caller_on_esp8266_and_as_caps_on_esp32);
+    RUN_TEST(test_a_survived_failure_that_reaches_the_callback_with_an_exception_goes_to_the_group);
     return UNITY_END();
 }

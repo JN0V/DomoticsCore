@@ -137,6 +137,14 @@
     #include "Platform_Stub.h"
 #endif
 
+#include <string.h>
+namespace DomoticsCore { namespace HAL { namespace Platform {
+/** @brief The crash kinds crashForTest() returns from (OBS-4): the console says "done:" for these. */
+inline bool crashKindSurvives(const char* kind) {
+    return strcmp(kind, "nothrow") == 0 || strcmp(kind, "squeeze") == 0 || strcmp(kind, "release") == 0;
+}
+}}}
+
 // Default log buffer size if not defined by platform
 #ifndef DOMOTICS_LOG_BUFFER_SIZE
     #define DOMOTICS_LOG_BUFFER_SIZE 100

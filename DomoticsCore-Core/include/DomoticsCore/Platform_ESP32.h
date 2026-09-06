@@ -289,11 +289,43 @@ inline constexpr uint32_t heapCliffThresholdBytes() { return 16384; }
 inline constexpr uint8_t platformId() { return 2; }
 
 /**
+ * @brief Hold heap in chunks until about 12 KB stays allocatable (OBS-4 D6: a leaking device an hour
+ * before it dies), or give it back. The table is static so the chunks stay reachable.
+ */
+inline bool squeezeForTest(bool hold, size_t chunk) {
+    static void* s_chunks[256];
+    static size_t s_held = 0;
+    if (!hold) {
+        while (s_held > 0) { free(s_chunks[--s_held]); s_chunks[s_held] = nullptr; }
+        return true;
+    }
+    // Internal heap only (a PSRAM board would serve the chunks from outside it),
+    // and never the failing malloc itself: the hook must not count the squeeze.
+    while (s_held < 256 && getAllocatableFreeHeap() > 12 * 1024 && getLargestFreeBlock() >= chunk) {
+        void* p = heap_caps_malloc(chunk, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (!p) break;
+        s_chunks[s_held++] = p;
+    }
+    return true;
+}
+
+/**
  * @brief Provoke one death class on purpose, for the flight recorder's board checks (OBS-3).
  * Compile-gated at the call site (DOMOTICS_ENABLE_CRASH_COMMANDS); returns false for an unknown kind.
  */
 inline bool crashForTest(const char* kind) {
     String k(kind);
+    if (k == "nothrow") {
+        // OBS-4: a survived failure; the hook fires inside the allocation. Kept in
+        // a volatile sink or the compiler drops the call; internal heap only, so
+        // a PSRAM board cannot satisfy it — false if it did.
+        static void* volatile s_nothrowKeep = nullptr;
+        s_nothrowKeep = heap_caps_malloc(1u << 20, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        const bool failed = s_nothrowKeep == nullptr;
+        if (s_nothrowKeep) { free(s_nothrowKeep); s_nothrowKeep = nullptr; }
+        return failed;
+    }
+    if (k == "squeeze" || k == "release") { return squeezeForTest(k == "squeeze", 4096); }
     if (k == "abort") { abort(); }
     if (k == "oom")   { for (;;) { void* p = malloc(4096); if (!p) { volatile int* q = nullptr; *q = 1; } } }  // the probe's shape
     if (k == "null")  { volatile int* p = nullptr; *p = 1; }
@@ -315,7 +347,10 @@ void rtcStoreWord(uint32_t wordOffset, uint32_t value);
 void failGroupEnter();
 void failGroupLeave();
 typedef void (*FailedAllocHook)(uint32_t size, uint32_t caps);
-inline constexpr bool supportsFailedAllocHook() { return true; }
+#ifndef DOMOTICS_CRASH_HOOKS
+#define DOMOTICS_CRASH_HOOKS 1   // FlightRecorder.h's default, needed here first
+#endif
+inline constexpr bool supportsFailedAllocHook() { return DOMOTICS_CRASH_HOOKS != 0; }   // an opt-out is not a failure
 /** @brief Take the heap_caps failed-alloc slot (OBS-4). False when DOMOTICS_CRASH_HOOKS=0 or IDF refuses. */
 bool installFailedAllocHook(FailedAllocHook hook);
 inline bool takeLastFailedAlloc(uint32_t&, uint32_t&) { return false; }   // no umm globals here: the hook is the source
