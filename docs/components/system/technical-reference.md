@@ -492,7 +492,7 @@ The first statement of `System::begin()` is `FlightRecorder::instance().begin(tr
 2. Writes the `bootdiag` blob (`SystemHelpers::persistBootDiagnostics()`): this boot's figures and the last death on record. An identical death — same build, reason and site — increments the blob's count instead of replacing the first occurrence; a clean boot carries the last death forward.
 3. Removes the keys the blob replaced, once.
 
-Whether that ran or not, `begin()` then acknowledges the recorder so the fresh record takes RTC. The `bootdiag` console command prints the recorder's promoted record (Core), this boot's diagnostics (SystemInfo's `formatBootDiagnostics()`) and the persisted blob.
+Whether that ran or not, `begin()` then acknowledges the recorder so the fresh record takes RTC. The `bootdiag` console command prints the recorder's promoted record (Core), the component behind its phase marker (this build's initialization order, decoded by `Core::componentNameAtInitIndex()`), this boot's diagnostics (SystemInfo's `formatBootDiagnostics()`) and the persisted blob; the output is cut at 1 KB with a `...` marker.
 
 ---
 
@@ -531,6 +531,6 @@ These commands are automatically registered when the RemoteConsole is enabled:
 | `wifi` | WiFi detailed status | Delegates to `WifiComponent::getDetailedStatus()` |
 | `storage` | Storage contents dump | Delegates to `StorageComponent::dumpContents()`. Accepts an argument string but currently ignores it. |
 | `bootdiag` | Boot diagnostics | The last death the flight recorder kept, this boot's count, reset reason and heap figures, and the persisted `bootdiag` blob |
-| `crash <kind>` | Die on purpose (OBS-3 board checks) | `abort`, `oom`, `null`, `swdt`, `hwdt`, `hang`. Registered only under `DOMOTICS_ENABLE_CRASH_COMMANDS`, which no shipped environment sets: it is a remote reboot (SEC-4). |
+| `crash <kind>` | Die on purpose (OBS-3 board checks) | `abort`, `oom`, `null`, `swdt`, `hwdt`, `hang`, `restart` (a raw `esp_restart()`/`ESP.restart()`, not through the HAL: what the ESP32 shutdown handler alone must mark as the firmware's own). Registered only under `DOMOTICS_ENABLE_CRASH_COMMANDS`, which no shipped environment sets: it is a remote reboot (SEC-4). |
 
 These are in addition to commands provided by the RemoteConsole component itself (e.g., `help`, `level`, `info`, `heap`, `reboot`).

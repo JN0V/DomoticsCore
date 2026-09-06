@@ -297,6 +297,7 @@ inline bool crashForTest(const char* kind) {
     if (k == "oom")   { for (;;) { void* p = malloc(4096); if (!p) { volatile int* q = nullptr; *q = 1; } } }  // the probe's shape
     if (k == "null")  { volatile int* p = nullptr; *p = 1; }
     if (k == "hang" || k == "swdt" || k == "hwdt") { for (;;) {} }   // reboots only if the loop watchdog is armed (OBS-7)
+    if (k == "restart") { esp_restart(); }   // NOT through the HAL: the shutdown handler alone must mark it ours
     return false;
 }
 

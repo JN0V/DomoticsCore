@@ -497,6 +497,35 @@ void test_the_death_is_promoted_before_any_component_begins_and_persisted_after(
     TEST_ASSERT_EQUAL_UINT32(254, r.reason);
 }
 
+// A component that dies in begin() while the first death is still held: the
+// first death is what step 6 persists, not the second.
+class DiesInBeginComponent : public Components::IComponent {
+public:
+    DiesInBeginComponent() { metadata.name = "DiesInBegin"; metadata.version = "1.0.0"; }
+    Components::ComponentStatus begin() override {
+        CrashInfo c; c.reason = 254; c.failSize = 64; c.failCaller = 0xBBBBu;
+        FlightRecorder::instance().recordCrash(c);
+        return Components::ComponentStatus::Success;
+    }
+    void loop() override {}
+    Components::ComponentStatus shutdown() override { return Components::ComponentStatus::Success; }
+    std::vector<Components::Dependency> getDependencies() const override { return {}; }
+};
+
+void test_the_first_death_survives_a_second_one_during_bring_up(void) {
+    stageDeath();                                            // death A: failCaller 0x40201287
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.getCore().addComponent(std::make_unique<DiesInBeginComponent>());
+    TEST_ASSERT_TRUE(sys.begin());
+    auto* storage = sys.getCore().getComponent<Components::StorageComponent>("Storage");
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*storage, r));
+    TEST_ASSERT_EQUAL_HEX32(0x40201287u, r.failCaller);
+}
+
 void test_a_death_is_acknowledged_even_without_storage(void) {
     stageDeath();
     System sys(SystemConfig::minimal());                    // no Storage, no SystemInfo
@@ -519,6 +548,25 @@ void test_bootdiag_command_reports_the_last_death(void) {
     TEST_ASSERT_TRUE(mentions(out, "reason 254"));
     TEST_ASSERT_TRUE(mentions(out, "Boot Diagnostics:"));
     TEST_ASSERT_TRUE(mentions(out, "last death: crash callback x1"));
+}
+
+void test_bootdiag_names_the_component_behind_the_phase(void) {
+    FlightRecorder::instance().begin();
+    FlightRecorder::instance().setPhase(2);      // the 2nd component in this build's order
+    CrashInfo c; c.reason = 2; c.epc1 = 0x40201000u;
+    FlightRecorder::instance().recordCrash(c);
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Panic);
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.begin();
+    Console con(sys);
+    std::string out = con.run(sys, "bootdiag");
+    const char* second = sys.getCore().componentNameAtInitIndex(2);
+    TEST_ASSERT_NOT_NULL(second);
+    TEST_ASSERT_TRUE(mentions(out, (std::string("phase 2 = ") + second).c_str()));
 }
 
 void test_crash_command_reaches_the_platform(void) {
@@ -574,8 +622,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_a_failed_arming_is_reported_not_claimed);
     RUN_TEST(test_bootdiag_reports_the_tracked_minimum_where_the_platform_has_one);
     RUN_TEST(test_the_death_is_promoted_before_any_component_begins_and_persisted_after);
+    RUN_TEST(test_the_first_death_survives_a_second_one_during_bring_up);
     RUN_TEST(test_a_death_is_acknowledged_even_without_storage);
     RUN_TEST(test_bootdiag_command_reports_the_last_death);
+    RUN_TEST(test_bootdiag_names_the_component_behind_the_phase);
     RUN_TEST(test_crash_command_reaches_the_platform);
 
     return UNITY_END();

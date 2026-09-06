@@ -41,6 +41,11 @@ bool installRestartHook(RestartHook hook) {
     // reported, not fatal: HAL restarts are still marked through restart().
     return esp_register_shutdown_handler(&shutdownTrampoline) == ESP_OK;
 }
+#elif !DOMOTICS_PLATFORM_ESP32 && !DOMOTICS_PLATFORM_ESP8266
+bool installRestartHook(RestartHook hook) {
+    if (restartHookInstallFailsForTest) { s_restartHook = nullptr; return false; }
+    s_restartHook = hook; return true;
+}
 #else
 bool installRestartHook(RestartHook hook) { s_restartHook = hook; return true; }
 #endif
@@ -52,16 +57,19 @@ namespace {
 void markOursTrampoline() { FlightRecorder::instance().markOurs(); }
 
 uint32_t buildIdCrc() {
+    // Without DOMOTICS_BUILD_ID the compile time stands in: not reproducible,
+    // but two firmwares get two ids, so a death at a reused address after an
+    // OTA is not counted as the old build's repeat.
 #ifdef DOMOTICS_BUILD_ID
     static const char id[] = DOMOTICS_BUILD_ID;
+#else
+    static const char id[] = __DATE__ " " __TIME__;
+#endif
     uint32_t words[16] = {};
     size_t n = strlen(id);
     if (n > sizeof(words)) n = sizeof(words);
     memcpy(words, id, n);
     return FlightRecord::crc32(words, (n + 3) / 4);
-#else
-    return 0;
-#endif
 }
 } // namespace
 
@@ -74,10 +82,11 @@ void FlightRecorder::resetForTest() {
     memset(&current_, 0, sizeof(current_));
     memset(&previous_, 0, sizeof(previous_));
     promotion_ = Promotion::None;
+    resetReason_ = HAL::Platform::ResetReason::Unknown;
     begun_ = hold_ = acknowledged_ = torn_ = false;
     runMin_ = 0xFFFFFFFFu;
     lastTickFree_ = largestAtMin_ = 0;
-    lastTickMs_ = lastSlowMs_ = 0;
+    lastTickMs_ = lastSlowMs_ = lastSampleMs_ = 0;
     fastIdx_ = slowIdx_ = 0;
     extraWalkDone_ = false;
     restartHookInstalled_ = false;
@@ -114,6 +123,9 @@ void FlightRecorder::begin(bool holdUntilAcknowledged) {
     hold_ = holdUntilAcknowledged;
     lastTickMs_ = lastSlowMs_ = HAL::Platform::getMillis();
     restartHookInstalled_ = HAL::Platform::installRestartHook(&markOursTrampoline);
+    resetReason_ = HAL::Platform::getResetReason();
+    // A cliff or a crash inside the first interval measures against this.
+    lastTickFree_ = runMin_ = HAL::Platform::getAllocatableFreeHeap();
 
     HAL::Platform::rtcRead(0, previous_.w, FlightRecord::WORDS);
     const bool magicOk = previous_.w[FlightRecord::W_MAGIC] == FlightRecord::MAGIC
@@ -132,7 +144,7 @@ void FlightRecorder::begin(bool holdUntilAcknowledged) {
         promotion_ = static_cast<Promotion>((flags & FlightRecord::PROMO_MASK) >> FlightRecord::PROMO_SHIFT);
         if (promotion_ == Promotion::None) promotion_ = Promotion::CrashCallback;
     } else {
-        const HAL::Platform::ResetReason reason = HAL::Platform::getResetReason();
+        const HAL::Platform::ResetReason reason = resetReason_;
         if (flags & FlightRecord::CALLBACK_RAN) {
             promotion_ = Promotion::CrashCallback;
         } else if (HAL::Platform::wasUnexpectedReset(reason)) {
@@ -162,7 +174,7 @@ void FlightRecorder::acknowledge() {
 }
 
 void FlightRecorder::setPhase(uint16_t v) {
-    if (!begun_) return;
+    if (!DOMOTICS_FLIGHT_RECORDER_TICK || !DOMOTICS_FLIGHT_RECORDER_PHASE || !begun_) return;
     current_.w[FlightRecord::W_PHASE] = FlightRecord::encodePhase(v);
     if (!rtcHeld()) HAL::Platform::rtcStoreWord(FlightRecord::W_PHASE, current_.w[FlightRecord::W_PHASE]);
 }
@@ -173,13 +185,27 @@ void FlightRecorder::noteEventDrops(uint32_t totalDrops) {
 }
 
 void FlightRecorder::markOurs() {
-    if (!begun_) return;
+    if (!begun_) {
+        // A restart before Core::begin(): mark whatever record RTC holds, so
+        // the next boot does not promote a deliberate restart.
+        uint32_t meta = 0;
+        if (HAL::Platform::rtcRead(FlightRecord::W_META, &meta, 1)) {
+            HAL::Platform::rtcStoreWord(FlightRecord::W_META, meta | FlightRecord::OURS);
+        }
+        return;
+    }
     current_.w[FlightRecord::W_META] |= FlightRecord::OURS;
     if (!rtcHeld()) HAL::Platform::rtcStoreWord(FlightRecord::W_META, current_.w[FlightRecord::W_META]);
 }
 
 void FlightRecorder::tick() {
-    if (!begun_) return;
+    if (!DOMOTICS_FLIGHT_RECORDER_TICK || !begun_) return;
+    const uint32_t now = HAL::Platform::getMillis();
+    // The free-heap read is at most once per millisecond: a loop runs every
+    // 40-90 us and the read cost 7-19 us of it when taken every time
+    // (measured, both boards); a cliff shorter than 1 ms is not a trend.
+    if (now == lastSampleMs_ && now != lastTickMs_) return;
+    lastSampleMs_ = now;
     const uint32_t freeNow = HAL::Platform::getAllocatableFreeHeap();
     if (freeNow < runMin_) runMin_ = freeNow;
     // One extra largest-block walk per interval, only on a cliff (D3): the
@@ -189,7 +215,6 @@ void FlightRecorder::tick() {
         largestAtMin_ = HAL::Platform::getLargestFreeBlock();
         extraWalkDone_ = true;
     }
-    const uint32_t now = HAL::Platform::getMillis();
     if (now - lastTickMs_ < FAST_INTERVAL_MS) return;
 
     const uint32_t largest = HAL::Platform::getLargestFreeBlock();
@@ -278,25 +303,71 @@ const char* FlightRecorder::promotionName(Promotion p) {
 size_t FlightRecorder::format(char* buf, size_t len) const {
     if (!buf || len == 0) return 0;
     if (!hasPromotedRecord()) {
-        return static_cast<size_t>(snprintf(buf, len, "Last death: none recorded\n"));
+        int n = snprintf(buf, len, "Last death: none recorded\n");
+        return n < 0 ? 0 : (static_cast<size_t>(n) < len ? static_cast<size_t>(n) : len - 1);
     }
+    // Every line stays under 128 characters: the ESP8266's log buffer.
     const FlightRecord& p = previous_;
     int n = snprintf(buf, len,
-        "Last death: %s%s | boot #%lu | phase %u%s | uptime %lu.%03lu s | min free %lu B, largest %lu B | drops %lu | build %08lx\n",
+        "Last death: %s%s | reset %s | boot #%lu | phase %u%s | uptime %lu.%03lu s\n",
         promotionName(promotion_), torn_ ? " (torn record)" : "",
+        HAL::Platform::getResetReasonString(resetReason_).c_str(),
         static_cast<unsigned long>(p.bootSequence()),
         static_cast<unsigned>(p.phase()), p.phaseValid() ? "" : "?",
-        static_cast<unsigned long>(p.lastUptimeMs() / 1000u), static_cast<unsigned long>(p.lastUptimeMs() % 1000u),
-        static_cast<unsigned long>(p.minFreeBytes()), static_cast<unsigned long>(p.largestBytes()),
-        static_cast<unsigned long>(p.eventDrops()), static_cast<unsigned long>(p.w[FlightRecord::W_BUILD]));
+        static_cast<unsigned long>(p.lastUptimeMs() / 1000u), static_cast<unsigned long>(p.lastUptimeMs() % 1000u));
     if (n < 0) return 0;
     size_t used = static_cast<size_t>(n) < len ? static_cast<size_t>(n) : len - 1;
+    int m = snprintf(buf + used, len - used,
+        "  min free %lu B, largest %lu B | drops %lu | build %08lx\n",
+        static_cast<unsigned long>(p.minFreeBytes()), static_cast<unsigned long>(p.largestBytes()),
+        static_cast<unsigned long>(p.eventDrops()), static_cast<unsigned long>(p.w[FlightRecord::W_BUILD]));
+    if (m > 0) used += static_cast<size_t>(m) < len - used ? static_cast<size_t>(m) : len - used - 1;
     if (p.flags() & FlightRecord::CALLBACK_RAN) {
-        int m = snprintf(buf + used, len - used,
-            "  callback: reason %lu exccause %lu epc1 0x%08lx excvaddr 0x%08lx | last failed alloc %lu B from 0x%08lx\n",
+        m = snprintf(buf + used, len - used,
+            "  callback: reason %lu exccause %lu epc1 0x%08lx excvaddr 0x%08lx\n",
             static_cast<unsigned long>(p.cbReason()), static_cast<unsigned long>(p.exccause()),
-            static_cast<unsigned long>(p.epc1()), static_cast<unsigned long>(p.excvaddr()),
-            static_cast<unsigned long>(p.failSize()), static_cast<unsigned long>(p.failCaller()));
+            static_cast<unsigned long>(p.epc1()), static_cast<unsigned long>(p.excvaddr()));
+        if (m > 0) used += static_cast<size_t>(m) < len - used ? static_cast<size_t>(m) : len - used - 1;
+        m = snprintf(buf + used, len - used,
+            "  last failed alloc %lu B from 0x%08lx | stack %08lx %08lx %08lx %08lx\n",
+            static_cast<unsigned long>(p.failSize()), static_cast<unsigned long>(p.failCaller()),
+            static_cast<unsigned long>(p.w[FlightRecord::W_STACK]), static_cast<unsigned long>(p.w[FlightRecord::W_STACK + 1]),
+            static_cast<unsigned long>(p.w[FlightRecord::W_STACK + 2]), static_cast<unsigned long>(p.w[FlightRecord::W_STACK + 3]));
+        if (m > 0) used += static_cast<size_t>(m) < len - used ? static_cast<size_t>(m) : len - used - 1;
+    }
+    // The fast ring, oldest first — the record keeps no index, so the oldest
+    // sample is the one with the smallest uptime — "uptime_s:free_kB/largest_kB",
+    // four per line so a line stays under the ESP8266's 128-byte log buffer.
+    if (used < len - 1) {
+        size_t start = 0;
+        uint32_t oldest = 0xFFFFFFFFu;
+        for (size_t i = 0; i < FlightRecord::FAST_SAMPLES; ++i) {
+            const uint32_t t = p.w[FlightRecord::W_FAST + 2 * i];
+            const uint32_t h = p.w[FlightRecord::W_FAST + 2 * i + 1];
+            if ((t != 0 || h != 0) && t < oldest) { oldest = t; start = i; }
+        }
+        int m = snprintf(buf + used, len - used, "  ring:");
+        if (m > 0) used += static_cast<size_t>(m) < len - used ? static_cast<size_t>(m) : len - used - 1;
+        bool any = false;
+        size_t printed = 0;
+        for (size_t k = 0; k < FlightRecord::FAST_SAMPLES && used < len - 1; ++k) {
+            const size_t i = (start + k) % FlightRecord::FAST_SAMPLES;
+            const uint32_t t = p.w[FlightRecord::W_FAST + 2 * i];
+            const uint32_t h = p.w[FlightRecord::W_FAST + 2 * i + 1];
+            if (t == 0 && h == 0) continue;
+            if (any && printed % 4 == 0) {
+                m = snprintf(buf + used, len - used, "\n  ring:");
+                if (m > 0) used += static_cast<size_t>(m) < len - used ? static_cast<size_t>(m) : len - used - 1;
+            }
+            any = true;
+            ++printed;
+            m = snprintf(buf + used, len - used, " %lus:%lu.%luk/%lu.%luk",
+                         static_cast<unsigned long>(t),
+                         static_cast<unsigned long>((h >> 16) * 16u / 1024u), static_cast<unsigned long>(((h >> 16) * 16u % 1024u) * 10u / 1024u),
+                         static_cast<unsigned long>((h & 0xFFFFu) * 16u / 1024u), static_cast<unsigned long>(((h & 0xFFFFu) * 16u % 1024u) * 10u / 1024u));
+            if (m > 0) used += static_cast<size_t>(m) < len - used ? static_cast<size_t>(m) : len - used - 1;
+        }
+        m = snprintf(buf + used, len - used, any ? "\n" : " (empty)\n");
         if (m > 0) used += static_cast<size_t>(m) < len - used ? static_cast<size_t>(m) : len - used - 1;
     }
     return used;

@@ -332,7 +332,11 @@ re-measured on both ESP32s). Its open items are folded below as 6–9.
    (unplugged). The upload's own failure is BUG-37.
 7. `enableLoopWatchdog()` on IDF 5 / Arduino 3.x (`esp_task_wdt_reconfigure`);
    today it compiles with a `#warning` and does not arm.
-8. The ESP8266 `cont` stack high-water mark during `bootdiag` (`buf[640]`).
-9. `persistBootDiagnostics` costs three LittleFS file rewrites per boot on
+8. The ESP8266 `cont` stack high-water mark during `bootdiag` — `buf[640]` until Lot B, **`buf[1024]` plus the `String` copy since** (2026-09-06); still unmeasured.
+9. ~~`persistBootDiagnostics` costs three LittleFS file rewrites per boot on
    ESP8266 (four before Lot A); OBS-3's once-per-boot rule and dedup are
-   where that number should fall.
+   where that number should fall.~~ — Lot B (2026-09-06): **two**,
+   `boot_count` and one `bootdiag` blob, measured by counting backend
+   writes on the stub; dedup keeps history, it does not save a write
+   (the blob is rewritten either way). Not one: the counter and the blob
+   are two keys.

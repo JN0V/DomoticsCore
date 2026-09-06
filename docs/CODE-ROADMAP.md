@@ -49,6 +49,7 @@ versions may sit still while fixes land.
 | System (docs only) | ARCH-1 | 2026-08-31 — **re-argued HIGH → MEDIUM, open, dual trigger**: SYS-F6 unreadable (the HIGH was inherited, never argued); one XIII indicator exceeded (`begin()` 62, stable since filing) against a file inside every other measurement; the fork rewrites two of three prescribed extraction zones, the third declined as YAGNI. **Open HIGH reaches zero — by reclassification, stated in those words.** marianorenzi notification drafted for the maintainer |
 | Tooling, harness | CI-13, CI-15, BUG-35 (filed) | 2026-09-01 — the second real-conditions campaign's lot: `clean_examples.py` learns `test/*/.pio` after a 19 GB recursion (**CI-13 closed**), the harness learns the SEC-10 token, **CI-15 filed** (no `export.exclude` anywhere — root cause, release-aware), **BUG-35 filed** from the disconnect accident (open HIGH 0 → 1 — the campaign doing its job) |
 | Core, SystemInfo, System | OBS-2, OBS-6, OBS-7, OBS-1 (boot check) | PR #60 — 2026-09-05, **Lot A** (opened as #59, stacked on #57, auto-closed when #57's branch was deleted at merge, reopened as #60): the reset registers the ESP8266 kept, the ESP32 core dump nobody read, the heap keys that lied about which boot they described, and a loop watchdog on ESP32 (default 30 s, a behaviour change for the next release to announce). Measured on three boards from the branch (the C3's first run ever); two mutations caught natively; FullStack green on all three targets. **Adversarial review run after opening** (13 findings): the watchdog armed one task and fed another — fixed and re-measured on both ESP32s; the maintainer's own review had already caught the one Constitution IX `#if` outside the HAL. Native 819 → 851 |
+| Core, System, SystemInfo, Storage (stub) | OBS-3, BUG-36, ARCH-1's residue | **Lot B** — 2026-09-06, branch `feat/obs-lot-b-flight-recorder`, PR pending: the flight recorder in RTC memory (Core-owned, promotion first, the record held until persisted), the `bootdiag` blob, the crash commands, ARCH-1's boot-diagnostics formatter out of `System.h`. Planned in `spec-obs-lot-b-flight-recorder.md` v2 (22 review findings folded before S1), five slices, three-layer review of the diff before the PR (the hold blocked a fresh record during bring-up; the ring printed in slot order after a wrap; the loop wiring unobserved — all fixed with tests). Both boards' death sequences read back; four defects the boards found that 115 native tests had not. Native 851 → 913 |
 | Observability, Core (docs only) | OBS-1 to OBS-7, BUG-36 filed | PR #57 — 2026-09-05, the post-mortem observability design, adversarially reviewed (22 findings) and measured on the nodemcuv2, the WROOM-32D and the ESP32-CAM the same day; eight items filed, none closed. The review's first finding — an OOM in `new` reaches the next ESP8266 boot as "Software/System restart" — was confirmed on the board within the hour and reshaped the design |
 | OTA | BUG-35 | 2026-09-01 — **filed in the morning, fixed in the afternoon**: `onDisconnect` → `abortUpload`, gated on the upload-active discriminator because onDisconnect fires after every request. Red-then-green with the same `--disconnect-at` script on the WROOM-32D and the nodemcuv2 (the ESP8266's buffer-release path included), `--commit` cycle re-proven, OTA suite 10/10. **BUG-35 closed** (1 → 0 open HIGH, by a fix this time). Two limits written at the site: the shared-state two-client blind spot (pre-existing), the TCP half-open residual |
 
@@ -85,7 +86,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 809 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, 767 after BUG-31's provider suite on 2026-08-29, 788 after BUG-32's twenty-one, and 804 after TEST-4's sixteen in `test_wifi_behaviour`; 809 adds SIZE-2's five in `test_streaming_serializer` on 2026-08-31 (that suite runs 15: the UTF-8 pin, two chunk sweeps, an empty-multiselect sweep and a serializer-reuse test on top of the original ten); **819** adds SIZE-1's ten on the same day — `test_schema_chunking` (5) and `test_update_builder` (5), both new directories in the WebUI project's own `test_filter`, driving the chunk-assembly loop and the update builder that no test could compile before the extraction |
+| ✅ | The 13 native projects run — 913 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, 767 after BUG-31's provider suite on 2026-08-29, 788 after BUG-32's twenty-one, and 804 after TEST-4's sixteen in `test_wifi_behaviour`; 809 adds SIZE-2's five in `test_streaming_serializer` on 2026-08-31 (that suite runs 15: the UTF-8 pin, two chunk sweeps, an empty-multiselect sweep and a serializer-reuse test on top of the original ten); **819** adds SIZE-1's ten on the same day — `test_schema_chunking` (5) and `test_update_builder` (5), both new directories in the WebUI project's own `test_filter`, driving the chunk-assembly loop and the update builder that no test could compile before the extraction; **851** after Lot A's thirty-two; **913** after Lot B's sixty-two (`test_flight_recorder` 40, `test_system_ready` +6, `test_eventbus` +2, `test_system_lifecycle` +6, `test_system_persistence` +8), counted as RUN_TEST lines against `main` |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -1771,7 +1772,7 @@ one worth a one-line change, and six rows that are not defects.
   of client silence where it tolerated 3 s — a default behaviour change.
 - **Refs**: BUG-35, SEC-9, TEST-8; `tools/on-device/README.md`.
 
-### BUG-36 — Core: `EventBus::enqueue` never decrements `pendingByTopic` for the event it drops on overflow [MEDIUM] — **NEW (2026-09-05)**
+### BUG-36 — Core: `EventBus::enqueue` never decrements `pendingByTopic` for the event it drops on overflow [MEDIUM] — **DONE (2026-09-06, Lot B)**
 
 - **Opened by**: the observability prioritisation of 2026-09-05, from a
   finding STOR-ESP-1's withdrawal had left in
@@ -1799,6 +1800,16 @@ one worth a one-line change, and six rows that are not defects.
   Native test: fill past the cap on topic A with a B event oldest, drain,
   subscribe to B with `replayLast` and require the replay; run it against
   the unfixed code first.
+- **Fixed 2026-09-06 in Lot B (S2)**: `enqueue()` releases the dropped
+  event's topic before popping it, entries are erased at zero (in `poll()`
+  too), and a **per-bus** drop counter — not per topic, as this entry
+  asked: a `String`-keyed map for a diagnostic is declined on the ESP8266
+  — that `reset()` clears, the flight recorder stores in its record
+  (high half of the boot-sequence word) and `Core::loop()` logs at most
+  once a minute (LO-5's silent drop, no longer silent). The replay test
+  the entry prescribed read **"Expected 7 Was 0"** against the unfixed
+  code; `test_eventbus` 25 → 27. Drops stayed at 0 through the board
+  campaign.
 - **Refs**: deferred-work items 1 and 2 under `spec-stor-esp-1`; LO-5.
 
 ### BUG-34 — WebUI: `/api/ui/schema` truncates when the serializer cannot make progress [MEDIUM] — **DONE (2026-08-31)**
@@ -2465,9 +2476,15 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   before his October rebase rather than two. Measured 2026-09-06:
   `System.h` 676 lines (643 at re-argument; Lot A's watchdog block),
   `begin()` ~70 lines (62), the indicator still exceeded.
-- **New trigger**: at Lot B's closure, re-measure `begin()` and `System.h`
-  — close if the indicator passes, otherwise restate to what remains.
-  No column moves today: MEDIUM, open.
+- **Re-measured at Lot B's closure, 2026-09-06**: `System.h` 676 → **629
+  lines** (the boot-diagnostics formatter moved to SystemInfo, the
+  persistence helper to one call), `begin()` ~70 → **79 lines** (the
+  recorder's first act and its acknowledgement). The indicator is on
+  `begin()`, so ARCH-1 **restates** rather than closes, as the plan
+  predicted: what remains is `begin()`'s six heap-guarded steps, and the
+  candidate is one helper that runs them — a change on the boot path that
+  waits for marianorenzi's October rebase, since his diff against today's
+  `main` is +47/−104 on this file. MEDIUM, open.
 - **Suites at re-argument**: the three System suites ran **55/55 green
   from clean** on 2026-08-31 (`rm -rf .pio` first; `test_system_config` /
   `test_system_lifecycle` / `test_system_persistence`) — measured, not
@@ -3213,7 +3230,7 @@ not.
   seams (`setResetDetailForTest`, `setResetReasonForTest`) drive seven new
   SystemInfo tests and the `bootdiag` path in the System suite.
 
-### OBS-3 — a flight recorder in RTC memory: heap trend, phase marker, last loop timestamp, crash-callback record [MEDIUM] — **NEW (2026-09-05)**
+### OBS-3 — a flight recorder in RTC memory: heap trend, phase marker, last loop timestamp, crash-callback record [MEDIUM] — **DONE (2026-09-06, Lot B)**
 
 - **Problem**: nothing on either platform records what the firmware was
   doing or how its heap was moving before a reset — and on ESP8266 nothing
@@ -3254,6 +3271,93 @@ not.
   platform, per command, the probe's rows are the expected values. Three
   removal checks recorded once each: no callback → empty exception block
   after `crash abort`; no sampler → empty rings; no hook → zero `last fail`.
+- **Shipped 2026-09-06 as Lot B**, plan `spec-obs-lot-b-flight-recorder.md`
+  v2 (adversarially reviewed before S1: 22 findings, four of which changed
+  the design — the record stays in RTC until persisted, a software reset
+  without the `ours` flag is promoted, the phase marker is a direct RTC
+  store, the LittleFS write count restated from the source). Five slices:
+  `FlightRecorder.h/.cpp` in Core with the platform primitives; Core
+  wiring and BUG-36; the hooks and the build id; System, the `bootdiag`
+  blob, the crash commands; the board campaign. **What the boards found
+  that the 115 native tests had not**: every promoted record read *torn*
+  on the WROOM-32D, because the phase marker sat inside the CRC while
+  being stored to RTC between flushes — it is outside the CRC now, self-
+  validated by its complement, and a native test pins the shape;
+  `crash oom` on ESP8266 ran into the soft WDT twice before it ran out of
+  memory, the compiler having elided an unobservable chain of `new`s (a
+  `volatile` global fixed it); the rings were printed nowhere, so no
+  removal check could see them (`bootdiag` prints the fast ring, eight
+  samples per line, because the ESP8266 log buffer is 128 bytes and the
+  first version's boot line was cut at "build 7251aa").
+- **Measured, nodemcuv2 (`obs-lotb-probe`), the next boot's `bootdiag`
+  after each command**: `abort` → `crash callback`, reason 254; `oom` →
+  reason 254, **last failed alloc 1024 B from 0x4020b41c, min free
+  1488 B** where the ring's plateau was 32 KB; `null` → reason 2, exccause
+  29, epc1; `swdt` → reason 3, exccause 4, epc1 on the loop; `hwdt` →
+  `unexpected reset` (no code ran) with the phase still there and the
+  SDK's epc1 in the reset detail — F7's second sample; `reboot` → `none
+  recorded`. Every epc1 resolves to `crashForTest` with `addr2line` on the
+  kept ELF (no line numbers without `-g`, as the spec said; the ESP32 ELF
+  gives file:line). **WROOM-32D (FullStack)**: `abort`, `null`, `oom` →
+  `unexpected reset`, phase 5 (the console), Panic; `hang` → the 30 s loop
+  watchdog aborts `loopTask`, next boot reads Task watchdog with the
+  record intact, uptime 401 s; `reboot` → `none recorded` through the
+  restart hook, and a raw `esp_restart()` (`crash restart`, not through the
+  HAL) → `none recorded` through the shutdown handler alone. **Removal
+  checks, each once**: `-DDOMOTICS_CRASH_HOOKS=0`
+  → `abort` reads `software reset not requested by the firmware` with no
+  callback line; `-DDOMOTICS_FLIGHT_RECORDER_TICK=0` → `ring: (empty)`
+  after a 30 s run; the restart hook mutated to install nothing → the boot
+  log says `Restart hook not registered` and `reboot` is promoted. The
+  record survived every death class on both boards; the WROOM's EN reset
+  still loses it (design §7).
+- **Cost, measured with the probe's stopwatch around `System::loop()`**:
+  nodemcuv2 idle loop **39 µs** without the recorder's tick, **46 µs**
+  with — the phase marker's four RTC stores ≈ 4 µs, the free-heap read
+  ≈ 3 µs; maximum unchanged (0.3–1.5 ms). WROOM-32D: 74, 90–93 and
+  113 µs across the three builds (tick off, tick on, marker off) in no
+  consistent order, maximum ~249 ms in all three — that loop is dominated
+  by something other than the recorder, unmeasured here. The free-heap
+  read is gated to once per millisecond either way. Flash: +2.5 KB on
+  ESP8266, +2.2 KB on ESP32 (S2, before the hooks).
+- **Storage**: one `bootdiag` blob (64 B) beside `boot_count` — two writes
+  per boot on a backend that rewrites its file per changed key, measured
+  on the stub (residual 9 restated, not the "three to one" the spec
+  hoped). Dedup on (build, callback reason, epc1 or fail caller, reset
+  reason): on ESP32, where no callback fills the record, a panic and a
+  task watchdog differ only by that last field, and two panics from the
+  same phase count as one — the core dump is what tells them apart until
+  Lot C.
+- **The three-layer review of the diff, before the PR** (Blind Hunter,
+  Edge Case Hunter, Verification Gap with mutations): the hold guarded RTC
+  instead of the promoted record, so a death in a component's `begin()`
+  — the boot loop this exists for — left nothing (fixed; pinned through
+  `System::begin()` with a component that records a second death and the
+  blob keeping the first); the ring printed in slot order once wrapped
+  (ordered by uptime now); the first log line and the ring lines exceeded
+  the ESP8266's 128-byte log buffer (every line under 128 now); the loop's
+  wiring to the recorder — tick, phase, drops — was observed by no test
+  (four added, asserting from inside components and through the logger);
+  the running-minimum test was satisfied by its own crash-time value
+  (burst, recover, crash now); the dedup key conflated every bare death
+  (reset reason and, without a site, the phase are in it); `--expect-drop`
+  passed on silence (it reconnects to tell "down" from "ignored me");
+  `initializeAll()` carried no marker (0x100 | index now, decoded by name
+  in `bootdiag`). Residuals it recorded: deaths during an unacknowledged
+  crash loop are not counted (the held record keeps the first, the
+  sequence number stands still); `umm_last_fail_alloc` is "since boot", a
+  handled `nothrow` failure earlier in the run is what a later unrelated
+  death reports (Lot C latches and clears it); residual 8 of the design
+  (the `cont` stack during `bootdiag`) now stands against a 1 KB buffer,
+  unmeasured.
+- **What it does not do, still**: read the ESP32 core dump or publish
+  anything (Lot D); the ESP32 failed-allocation hook (Lot C: `last fail`
+  stays zero there); the WebUI/OTA/MQTT sub-phase markers; brownout or
+  EN-reset survival on ESP32. The release that ships this must announce:
+  `DOMOTICS_CRASH_HOOKS` and the strong `custom_crash_callback` (a sketch
+  defining its own fails at link unless it sets the define to 0),
+  `DOMOTICS_ENABLE_CRASH_COMMANDS`, the `bootdiag` blob replacing three
+  Storage keys, the `bootdiag` text change, the new per-loop cost.
 
 ### OBS-4 — the moment memory ran out is never recorded [MEDIUM] — **NEW (2026-09-05)**
 
@@ -3421,7 +3525,7 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 6M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-13/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-37 | Multiple | 0C, **0H**, 7M (**28 done**; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM, open — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, to be fixed with OBS-3's lot; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-37 | Multiple | 0C, **0H**, 6M (**29 done**; **BUG-36 fixed 2026-09-06 in OBS Lot B** — released before the pop, per-bus drop counter in the flight record, "Expected 7 Was 0" on unfixed code; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, fixed with OBS-3's lot the next day; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
@@ -3429,8 +3533,8 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-15 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 open, **CI-13 done 2026-09-01** — paid a second time at 19 GB before the fix its entry prescribed was finally applied; **CI-14** — FullStack is green in CI and unusable on an ESP8266; **CI-15 new** — no `library.json` declares `export.exclude`, the family's root cause, deferred to a release-aware lot) |
 | 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 4M, 0L (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check — its transport half stays open with OBS-3, OBS-4, OBS-5; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
-| **Total** | **141 items** | | **0C, 0H, 44M, 34L** (76 resolved) |
+| 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 3M, 0L (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-3 closed by Lot B on 2026-09-06** — the recorder in Core, promotion first, the record held until persisted, both boards' death sequences read back, three removal checks; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check — its transport half stays open with OBS-4 and OBS-5; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
+| **Total** | **141 items** | | **0C, 0H, 42M, 34L** (78 resolved) |
 
 The severity columns sum across the rows: **zero open HIGH again — and
 this time the last one left by a fix.** BUG-35 was filed by the 2026-09-01
@@ -3440,11 +3544,12 @@ board-measured red-then-green on both platforms. The sequence is the
 system working: the campaign refilled the column, the fix emptied it. The
 rows were checked against the section headings rather than only re-summed
 — the sweep below, re-run for the BUG-35 lot, reports **35 `[HIGH]`
-headings, 35 with evidence, 0 open**. The MEDIUM column sums to 44:
-6 + 4 + 7 + 4 + 3 + 1 + 5 + 10 + 0 + 4 — the four at the end are OBS-1
-(transport half), OBS-3, OBS-4 and OBS-5; Code Safety's seventh is BUG-36.
-BUG-37 was the eighth for one day: filed by OBS-7's residual-6 measurement
-(total 140 → 141, 45M) and fixed the same evening (44M, resolved 75 → 76).
+headings, 35 with evidence, 0 open**. The MEDIUM column sums to 42:
+6 + 4 + 6 + 4 + 3 + 1 + 5 + 10 + 0 + 3 — the three at the end are OBS-1
+(transport half), OBS-4 and OBS-5; Lot B closed OBS-3 and BUG-36 on
+2026-09-06 (44 → 42, resolved 76 → 78). BUG-37 was Code Safety's eighth
+for one day: filed by OBS-7's residual-6 measurement (total 140 → 141,
+45M) and fixed the same evening (44M, resolved 75 → 76).
 The seven OBS items and BUG-36 were filed 2026-09-05 and moved the total
 132 → 140; Lot A closed OBS-2 and OBS-7 (MEDIUM) and OBS-6 (LOW) the same
 day, which is how the resolved column went 72 → 75.

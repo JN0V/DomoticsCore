@@ -33,6 +33,17 @@
 #ifndef DOMOTICS_CRASH_HOOKS
 #define DOMOTICS_CRASH_HOOKS 1
 #endif
+// -DDOMOTICS_FLIGHT_RECORDER_TICK=0 compiles the sampler and the phase marker
+// out (promotion and the crash record stay): the removal check for the rings,
+// and the other side of the loop-cost measurement.
+#ifndef DOMOTICS_FLIGHT_RECORDER_TICK
+#define DOMOTICS_FLIGHT_RECORDER_TICK 1
+#endif
+// -DDOMOTICS_FLIGHT_RECORDER_PHASE=0 compiles the phase marker out alone:
+// its cost is the RTC stores, one per component per loop.
+#ifndef DOMOTICS_FLIGHT_RECORDER_PHASE
+#define DOMOTICS_FLIGHT_RECORDER_PHASE 1
+#endif
 
 namespace DomoticsCore {
 
@@ -77,8 +88,7 @@ struct FlightRecord {
         return (f << 16) | l;
     }
     static uint32_t encodePhase(uint16_t v) { return (static_cast<uint32_t>(v) << 16) | (~static_cast<uint32_t>(v) & 0xFFFFu); }
-    static uint32_t crc32(const uint32_t* words, size_t count) {
-        uint32_t crc = 0xFFFFFFFFu;
+    static uint32_t crc32Feed(uint32_t crc, const uint32_t* words, size_t count) {
         for (size_t i = 0; i < count; ++i) {
             uint32_t v = words[i];
             for (int b = 0; b < 4; ++b) {
@@ -86,14 +96,32 @@ struct FlightRecord {
                 for (int k = 0; k < 8; ++k) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
             }
         }
+        return crc;
+    }
+    static uint32_t crc32(const uint32_t* words, size_t count) { return ~crc32Feed(0xFFFFFFFFu, words, count); }
+    /**
+     * The crc covers w3..w82 except the phase marker (w5): the marker is stored
+     * straight to RTC between flushes and validates itself by its complement.
+     * Covering it would tear every record whose phase moved after the last
+     * flush — which is every record, measured on the WROOM-32D.
+     */
+    uint32_t bodyCrc() const {
+        uint32_t crc = crc32Feed(0xFFFFFFFFu, &w[W_BUILD], W_PHASE - W_BUILD);
+        crc = crc32Feed(crc, &w[W_PHASE + 1], WORDS - (W_PHASE + 1));
         return ~crc;
     }
-    uint32_t bodyCrc() const { return crc32(&w[W_BUILD], WORDS - W_BUILD); }
-    /** Same death or not: build, reason, then epc1 — or the failed caller when there is no epc1 (abort/OOM). */
-    uint32_t dedupKey() const {
+    /**
+     * Same death or not: build, the callback's reason, epc1 — or the failed
+     * caller when there is no epc1 (abort/OOM) — and the reset reason the next
+     * boot read, which is what tells a panic from a task watchdog on ESP32,
+     * where no callback fills the rest.
+     */
+    uint32_t dedupKey(uint32_t resetReason = 0) const {
         uint32_t site = epc1() ? epc1() : failCaller();
-        uint32_t k[3] = { w[W_BUILD], cbReason(), site };
-        return crc32(k, 3);
+        // Without a site (abort, hardware WDT, every ESP32 death) the phase is
+        // the only position left; with one, the phase would split a site.
+        uint32_t k[5] = { w[W_BUILD], cbReason(), site, resetReason, site ? 0u : phase() };
+        return crc32(k, 5);
     }
 };
 
@@ -111,7 +139,7 @@ public:
     // Phase marker values: 0 idle, 1..N the component's 1-based initialization
     // index (ComponentRegistry::loopAll), 0xFF event dispatch. Handlers that do
     // real work outside loop() may set their own in the high byte later.
-    enum : uint16_t { PHASE_IDLE = 0, PHASE_EVENT_DISPATCH = 0xFF };
+    enum : uint16_t { PHASE_IDLE = 0, PHASE_EVENT_DISPATCH = 0xFF, PHASE_INIT = 0x100 };   // 0x100 | index: that component's begin()
 
     static FlightRecorder& instance();
 
@@ -128,6 +156,8 @@ public:
     bool hasPromotedRecord() const { return promotion_ != Promotion::None; }
     Promotion promotion() const { return promotion_; }
     bool promotedIsTorn() const { return torn_; }
+    /** The reset reason this boot read, as the promotion rule saw it. */
+    HAL::Platform::ResetReason resetReason() const { return resetReason_; }
     const FlightRecord& promoted() const { return previous_; }
     const FlightRecord& current() const { return current_; }
 
@@ -161,13 +191,17 @@ private:
     void startFresh(uint32_t seq);
     void writeAll(const FlightRecord& r);
     void flush();
-    bool rtcHeld() const { return hold_ || (hasPromotedRecord() && !acknowledged_); }
+    // RTC is held only while a PROMOTED record waits for acknowledgement: a
+    // fresh record must be writable during bring-up, or a death in begin()
+    // — the boot loop this exists for — leaves nothing (found in review).
+    bool rtcHeld() const { return hasPromotedRecord() && !acknowledged_; }
 
     FlightRecord current_;
     FlightRecord previous_;
     Promotion promotion_;
+    HAL::Platform::ResetReason resetReason_;
     bool begun_, hold_, acknowledged_, torn_;
-    uint32_t runMin_, lastTickFree_, largestAtMin_, lastTickMs_, lastSlowMs_;
+    uint32_t runMin_, lastTickFree_, largestAtMin_, lastTickMs_, lastSlowMs_, lastSampleMs_;
     uint32_t fastIdx_, slowIdx_;
     bool extraWalkDone_;
     bool restartHookInstalled_;

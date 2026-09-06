@@ -181,7 +181,7 @@ public:
     }
     
     bool remove(const char* key) override {
-        ++writesForTest;
+        if (opened && findKey(key) >= 0) ++writesForTest;   // a removal that changes nothing is no write
         if (!opened) return false;
         int idx = findKey(key);
         if (idx < 0) return false;

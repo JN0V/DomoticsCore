@@ -148,6 +148,15 @@ jobs:
         working-directory: DomoticsCore-System/examples/FullStack
         run: pio run -e ${{ matrix.target }}
 
+      # OBS-3: the flight recorder's opt-out defines each remove a definition.
+      # They were compiled once by hand for the removal checks; this keeps them
+      # compiling, which is how three on-device suites did not stay compiled.
+      - name: Build FullStack with the flight recorder opted out
+        working-directory: DomoticsCore-System/examples/FullStack
+        env:
+          PLATFORMIO_BUILD_FLAGS: -DDOMOTICS_CRASH_HOOKS=0 -DDOMOTICS_FLIGHT_RECORDER_TICK=0 -DDOMOTICS_FLIGHT_RECORDER_PHASE=0
+        run: pio run -e ${{ matrix.target }}
+
   # ---------------------------------------------------------------------------
   # The on-device suites, compiled but not run. No runner has an ESP8266 wired
   # to it, so this cannot execute them — it exists because until 2026-08-23
