@@ -1658,31 +1658,118 @@ one worth a one-line change, and six rows that are not defects.
   ESP8266 HTTP-level proof this entry now carries, and the half-open
   residual).
 
-### BUG-37 — OTA: an HTTP firmware upload to FullStack on an ESP32 dies with a client-side broken pipe at 12–30 % [MEDIUM] — **NEW (2026-09-05)**
+### BUG-37 — OTA: an HTTP firmware upload dies with a client-side broken pipe whenever the link is quiet for 3 s [MEDIUM] — **DONE (2026-09-05)**
 
 - **Opened by**: OBS-7's residual-6 measurement, which needed a full OTA
-  cycle on the WROOM-32D and never got one. **Filed, not fixed.**
-- **Measured**: three uploads of a 1.33 MB image through
+  cycle on the WROOM-32D and never got one. Filed in the morning, fixed the
+  same day.
+- **Measured at filing**: three uploads of a 1.33 MB image through
   `tools/on-device/ota_upload_check.py` against a FullStack build on the
-  WROOM-32D, 2026-09-05: all three ended in `BrokenPipeError: [Errno 32]`
-  on the client while the device logged `Client disconnected mid-upload` —
-  at about 30 % (400 450 of 1 331 900 bytes), roughly 20 KB/s, some 25–30 s
-  in. Two runs with the loop watchdog at 30 s, one at **0**: identical, so
-  this is not OBS-7. The second real-conditions campaign saw the same shape
-  on 2026-09-01 — "an upload to the WROOM-32D died with a broken pipe at
-  12%" — and filed the *consequence* (BUG-35, the updater staying locked);
-  the cause of the disconnect was never established.
-- **Where to look first**: ESPAsyncWebServer 3.5.0 sets
-  `setRxTimeout(3)` on every accepted client (`WebServer.cpp:50`) and
-  clears it only when a response starts (`WebRequest.cpp:1053,1063`); the
-  upload's flash writes run on that same async task. The device sends the
-  close — the client sees EPIPE, not a timeout of its own. Discriminate by
-  comparing with `OTAWithWebUI` (fewer components, same server) on the same
-  board, then by raising the RX timeout during a body upload.
-- **Why MEDIUM**: OTA over HTTP to the flagship configuration does not
-  complete on the bench, three times out of three; BUG-35 makes that
-  recoverable, not successful. The URL path (`installFromUrl`) is separate.
-- **Refs**: BUG-35, SEC-9, TEST-8.
+  WROOM-32D: all three ended in `BrokenPipeError: [Errno 32]` on the client
+  while the device logged `Client disconnected mid-upload` — at about 30 %,
+  roughly 20 KB/s, some 25–30 s in. Two runs with the loop watchdog at 30 s,
+  one at **0**: identical, so this is not OBS-7. The second real-conditions
+  campaign saw the same shape on 2026-09-01 — "an upload to the WROOM-32D
+  died with a broken pipe at 12%" — and filed the *consequence* (BUG-35, the
+  updater staying locked); the cause of the disconnect was never established.
+- **Cause, measured**: **ESPAsyncWebServer 3.12.0 arms a 3 s receive-idle
+  timeout on every accepted client** (`WebServer.cpp:50`, `setRxTimeout(3)`)
+  and clears it only when a response starts (`WebRequest.cpp:1053,1063`), so
+  it runs for the whole body of an upload; AsyncTCP 3.5.0's 500 ms poll
+  closes the connection the first time `now - _rx_last_packet` reaches it.
+  (The entry as filed said "ESPAsyncWebServer 3.5.0" — 3.5.0 is AsyncTCP's
+  version.) **And this link is quiet for that long on its own.** A streaming
+  probe that sampled the client socket twice a second (`ss -tin`) during an
+  unfixed upload shows the last seconds before the close: a lost segment, the
+  retransmission timer backing off 611 → 1 222 → 2 444 ms, `lost:5`, and the
+  last ACK 2.9 s old at the sample before the socket went `CLOSE-WAIT` — the
+  device's FIN. The device logged the disconnect 39.3 s after `Upload
+  started`; the client's last data had gone out ~3.5 s earlier. A second
+  natural run died the same way at 68 % during the *fourth* backoff (RTO
+  5 888 ms), with 148 retransmissions on the session by then. Five natural
+  uploads in six died like this across the day; the sixth got through by not
+  losing a segment at the wrong moment.
+- **Made deterministic, and the first attempt was vacuous**: a probe that
+  stops sending for 4 s at body offset 200 000 was expected to kill the
+  upload and did not — the kernel kept draining its 36 KB socket buffer
+  through the "pause" and the device never saw silence. With a 4 KB
+  `SO_SNDBUF` (8 KB once Linux doubles it) and a wait for `ss` to report
+  nothing unsent or unacked before the pause, **4 s of real silence closed
+  the upload every time (2 of 2 on unfixed code), 2 s did not.** That
+  drained pause is now `ota_upload_check.py --silence SECONDS`; the drain is
+  the check, and the script watches the socket during the silence so a
+  close is timed from outside rather than read off a serial log.
+- **"Discriminate against `OTAWithWebUI` first" — done, and it was not the
+  discriminator.** The minimal example on the same board shows the same link:
+  idle ping 8.8 / 126.6 / 609.8 ms (min/avg/max) against FullStack's
+  8.0 / 114.2 / 307.4, 52 retransmissions in one upload, backoff episodes of
+  one step. That upload happened to complete, at 40 KB/s; nothing in it
+  went quiet for 3 s. The components are not the cause; the server's idle
+  limit meeting the link's retransmission gaps is.
+- **Fix**: `OTAConfig::uploadIdleTimeoutSec` (default **30**) and one call
+  in `OTAWebUI.h`'s upload handler at `index == 0`, after the CSRF and auth
+  gates so an unauthenticated client gets no longer a hold than before:
+  `request->client()->setRxTimeout(uploadIdleTimeoutSec)`. The response
+  path resets it to 0 as it always did. **Not 0 by default**: a client that
+  vanishes without a RST would otherwise leave the update open, which is
+  BUG-35's lock through another door — `--silence 35 --expect-abort` pins
+  that the ceiling still exists.
+- **Red then green on the WROOM-32D, same script both times**: `--silence 4`
+  FAIL on unfixed code ("the device dropped the upload after 4s of
+  silence"), PASS on fixed (upload completes, refused at the hash as
+  intended); `--silence 35 --expect-abort` PASS — the device closed **29.9
+  to 30.1 s into the silence as timed from the host** over three runs (the
+  serial log says 30.5 s after the last logged chunk) and `lastResult`
+  reads `Client disconnected mid-upload`. **The field is wired, not a
+  constant**: an `OTAWithWebUI` build with `uploadIdleTimeoutSec = 5` on
+  the nodemcuv2 closed **4.9 s** in (`--silence 9 --expect-abort
+  --idle-timeout 5`), the default build 29.9–30.0 s — a tenth under is the
+  device stamping its clock at the last packet it processed, before the
+  host has seen its queue empty. Then three natural uploads of the 1.35 MB FullStack image,
+  **3 of 3 complete** (73 s, 64 s, 25 s — each with backoff episodes that
+  used to be fatal), and one `--commit`: installed, rebooted (Boot #28,
+  `Software reset`), answered again. **The first full HTTP OTA cycle this
+  board has completed since the campaign began.** **ESP8266, same script on
+  the nodemcuv2** (`OTAWithWebUI` esp8266dev, a 476 KB image): `--silence 4`
+  FAIL on the unfixed build, PASS on the fixed one, `--silence 35
+  --expect-abort` PASS — ESPAsyncTCP 2.0.0 has the same `setRxTimeout`
+  semantics (`_poll`, 500 ms) and the same 3 s from the same server code, and the
+  board confirmed it rather than the reading. The adversarial review of the
+  diff asked for that run; the entry had said "compiles, not run" with the
+  board plugged in. Native: 54/54, with the default and the `setConfig()`
+  round trip of the new field now pinned in `test_ota_config_defaults` /
+  `test_ota_config_get_set` (no native test can reach the handler itself —
+  `OTAWebUI.h` is not compiled natively, TEST-8's family). **The second
+  review, the code-review skill's three layers, found what the script
+  itself could get wrong**: a close arriving *before* the silence began
+  would have been reported as the idle limit's doing — and one such close
+  happened on the WROOM during the re-measurement, on fixed code, cause
+  unrecorded (no serial was being read); the script now names the phase
+  and calls that run "never ran" rather than a verdict. It also found that
+  `--expect-abort` passed on unfixed code (any close plus the abort reason
+  satisfied it): the script now times the close from the host and bounds
+  it, so the unfixed 3 s fails it and the wired value is what is measured.
+- **Why MEDIUM, as filed and unchanged by the fix**: OTA over HTTP to the
+  flagship configuration did not complete on the bench, three times out of
+  three; BUG-35 made that recoverable, not successful. Not HIGH: the URL
+  path (`installFromUrl`) was unaffected, a retry cost nothing but time, and
+  no image was ever half-committed — the abort ran before `end(true)` every
+  time.
+- **Not fixed, recorded — the link itself.** Throughput is 20–54 KB/s
+  because the device's receive window is lwIP's default 5 760 bytes and
+  the round trip averages 114–127 ms idle (max 307–610 ms), so
+  window / RTT is the ceiling; and the link loses segments by the dozen per
+  megabyte. The RTT profile is what WiFi modem sleep looks like, and the
+  Arduino core's default is `WIFI_PS_MIN_MODEM`; nothing in `Wifi_ESP32.h`
+  sets it either way. **Unmeasured**: one build with `WiFi.setSleep(false)`
+  would say whether that is the RTT, the loss, both, or neither. Recorded
+  in `_bmad-output/implementation-artifacts/deferred-work.md` with these
+  figures rather than filed, so a sweep of that file finds it; it becomes
+  an item when the measurement exists.
+- **The release that ships this must say**: `OTAConfig::uploadIdleTimeoutSec`
+  is new public API, and every upload through `OTAWebUI` now tolerates 30 s
+  of client silence where it tolerated 3 s — a default behaviour change.
+- **Refs**: BUG-35, SEC-9, TEST-8; `tools/on-device/README.md`.
 
 ### BUG-36 — Core: `EventBus::enqueue` never decrements `pendingByTopic` for the event it drops on overflow [MEDIUM] — **NEW (2026-09-05)**
 
@@ -3226,7 +3313,8 @@ not.
   run in OTAWebUI's `final` chunk on the async server task
   (`OTAWebUI.h:498-500`), never on the loop task. 30 s is 37× the longest
   loop-side figure. The C3 was not measured: it was unplugged mid-session.
-  The upload itself never completed — that is BUG-37, filed from this run,
+  The upload itself never completed — that is BUG-37, filed from this run
+  and fixed the same evening (the server's 3 s receive-idle limit, not Lot A),
   and not Lot A's: it fails identically with the watchdog at 0.
 - **Residuals still open, none blocking**: the IDF 5 port; the hardware-WDT
   `epc1` on ESP8266 rests on one sample and the log line says so.
@@ -3318,7 +3406,7 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 6M (**SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-13/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-37 | Multiple | 0C, **0H**, 8M (**27 done**; **BUG-37 filed 2026-09-05**, MEDIUM, open — an HTTP upload to FullStack on the WROOM-32D dies with a broken pipe at 12–30 %, three of three, watchdog on or off; **BUG-36 filed 2026-09-05**, MEDIUM, open — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, to be fixed with OBS-3's lot; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-37 | Multiple | 0C, **0H**, 7M (**28 done**; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM, open — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, to be fixed with OBS-3's lot; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
@@ -3327,7 +3415,7 @@ not.
 | 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
 | 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 4M, 0L (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check — its transport half stays open with OBS-3, OBS-4, OBS-5; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
-| **Total** | **141 items** | | **0C, 0H, 45M, 34L** (75 resolved) |
+| **Total** | **141 items** | | **0C, 0H, 44M, 34L** (76 resolved) |
 
 The severity columns sum across the rows: **zero open HIGH again — and
 this time the last one left by a fix.** BUG-35 was filed by the 2026-09-01
@@ -3337,14 +3425,14 @@ board-measured red-then-green on both platforms. The sequence is the
 system working: the campaign refilled the column, the fix emptied it. The
 rows were checked against the section headings rather than only re-summed
 — the sweep below, re-run for the BUG-35 lot, reports **35 `[HIGH]`
-headings, 35 with evidence, 0 open**. The MEDIUM column sums to 45:
-6 + 4 + 8 + 4 + 3 + 1 + 5 + 10 + 0 + 4 — the four at the end are OBS-1
-(transport half), OBS-3, OBS-4 and OBS-5; Code Safety's seventh and eighth
-are BUG-36 and BUG-37 (the latter filed by OBS-7's residual-6 measurement,
-which moves the total 140 → 141).
-All eight were filed 2026-09-05 and the total moved 132 → 140; Lot A closed
-OBS-2 and OBS-7 (MEDIUM) and OBS-6 (LOW) the same day, so the columns read
-44M/34L and the resolved column moves 72 → 75.
+headings, 35 with evidence, 0 open**. The MEDIUM column sums to 44:
+6 + 4 + 7 + 4 + 3 + 1 + 5 + 10 + 0 + 4 — the four at the end are OBS-1
+(transport half), OBS-3, OBS-4 and OBS-5; Code Safety's seventh is BUG-36.
+BUG-37 was the eighth for one day: filed by OBS-7's residual-6 measurement
+(total 140 → 141, 45M) and fixed the same evening (44M, resolved 75 → 76).
+The seven OBS items and BUG-36 were filed 2026-09-05 and moved the total
+132 → 140; Lot A closed OBS-2 and OBS-7 (MEDIUM) and OBS-6 (LOW) the same
+day, which is how the resolved column went 72 → 75.
 
 One lot earlier (TEST-4's): the total row read **128 items, 0C, 4H, 40M, 34L,
 63 resolved**, the four open HIGH being SIZE-1, SIZE-2, ARCH-1, ARCH-2 — kept

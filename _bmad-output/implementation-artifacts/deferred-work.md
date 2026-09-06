@@ -65,3 +65,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-close-scan-and-rows.md`
   summary: RemoteConsole's help text is 427 bytes of ESP8266 DRAM. The MEM-2 lot turned ten run-time appends into one stored literal, but a non-`PROGMEM` literal links into `.rodata`, which the ESP8266 places in DRAM — which is what `F()`/`FPSTR` exist to avoid. Moving it off DRAM was neither done nor argued; the portability of `FPSTR` across the ESP32 core is the question that decides it.
   evidence: `RemoteConsole.h`, the help handler's constant part; the lot reports "RAM unchanged at 50,808" without touching this.
+
+- source_spec: `docs/CODE-ROADMAP.md` BUG-37 (no spec; fixed from the bench 2026-09-05)
+  summary: The ESP32 upload link is slow and lossy on its own, independently of the idle-timeout defect BUG-37 fixed. Throughput 20–54 KB/s because the device's receive window is lwIP's default 5 760 bytes and the round trip averages 114–127 ms idle (max 307–610 ms), so window / RTT is the ceiling; dozens of retransmissions per megabyte (52 in one OTAWithWebUI upload, 148 in one FullStack session). The RTT profile is what WiFi modem sleep looks like, the Arduino core's default is `WIFI_PS_MIN_MODEM`, and nothing in `Wifi_ESP32.h` sets it either way. Hypothesis, not a finding: one build with `WiFi.setSleep(false)` would say whether that is the RTT, the loss, both, or neither. Same shape on FullStack and on the minimal OTAWithWebUI, so not a component's doing.
+  evidence: `ss -tin` samples in the BUG-37 probes (`rwnd_limited` 58 % of the time, `snd_wnd:5760`, `rto` backoff to 5 888 ms); `ping -c 30` idle 8.0/114.2/307.4 ms on FullStack, 8.8/126.6/609.8 on OTAWithWebUI, both on the WROOM-32D, 2026-09-05.
+
+## Deferred from: code review (2026-09-05, BUG-37 diff)
+
+- TEST-8's Problem paragraph still says "52 native, 8 per board"; the OTA native suite has 54 cases (BUG-37 added assertions to two of them, not cases) and its `Files` line points at `OTAWebUI.h:353-443`, a handler that now runs past line 500. Pre-existing staleness in an entry BUG-37 cites; not re-derived in that lot.
+- `OTAComponent::setConfig()` logs three of the nine `OTAConfig` fields (`updateUrl`, `autoReboot`, `enableWebUIUpload`) and omits `maxDownloadSize`, `requireUploadHash` and now `uploadIdleTimeoutSec`; a runtime change to a security-relevant field leaves no trace. Pre-existing; the ESP8266 log buffer (128 bytes) is the constraint any fuller line has to fit.

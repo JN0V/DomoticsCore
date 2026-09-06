@@ -126,6 +126,157 @@ def disconnect_mid_upload(base: str, payload: bytes, sha256: str, token: str,
     print(f"    sent {sent} of {len(body)} body bytes, then RST")
 
 
+class UploadClosed(OSError):
+    """The device ended the connection. `phase` says when relative to the
+    silence — 'connect', 'before', 'during', 'after' — and `elapsed` is the
+    time from the start of the silence to the moment the close was seen
+    (None when it happened before the silence began)."""
+    def __init__(self, phase: str, elapsed, cause: BaseException):
+        super().__init__(f"{type(cause).__name__}: {cause}")
+        self.phase = phase
+        self.elapsed = elapsed
+
+
+def _sndq_state(local_port: int):
+    """Linux `ss` view of the client socket: 'drained' when it holds nothing
+    unsent or unacked, 'pending' when it does, 'gone' when `ss` no longer
+    lists it — a vanished socket must not read as a drained one, or the pause
+    runs against nothing. Without the drain a "pause" only empties the socket
+    buffer and the device sees no silence at all — which is how the first
+    attempt at this check passed against unfixed code."""
+    import shutil
+    import subprocess
+    if not shutil.which("ss"):
+        raise SystemExit("--silence needs `ss` (iproute2) to see the send queue; "
+                         "without it the pause proves nothing")
+    proc = subprocess.run(["ss", "-tin", f"sport = :{local_port}"],
+                          capture_output=True, text=True)
+    if proc.returncode != 0 or f":{local_port} " not in proc.stdout:
+        return "gone"
+    if "notsent:" in proc.stdout or "unacked:" in proc.stdout:
+        return "pending"
+    return "drained"
+
+
+def upload_with_silence(base: str, payload: bytes, sha256: str, token: str,
+                        silence_at: int, silence: float, timeout: int):
+    """BUG-37: stream the body, go completely quiet for `silence` seconds at
+    body offset `silence_at`, then finish. Returns (status, body_text) if the
+    device answered; raises UploadClosed when it closed instead, saying in
+    which phase and — when the close arrived during the silence — how many
+    seconds in, which is the device's idle ceiling measured from outside.
+
+    ESPAsyncWebServer arms a 3 s receive-idle timeout on every client and only
+    clears it when a response starts, so it runs for the whole upload body. A
+    client in TCP retransmission backoff is quiet for longer than that on an
+    ordinary WiFi link; this reproduces the quiet on purpose, without needing
+    the link to lose anything."""
+    import select
+    import socket
+    from urllib.parse import urlparse
+    u = urlparse(base)
+    body = build_multipart("firmware", "firmware.bin", payload)
+    overhead = len(build_multipart("firmware", "firmware.bin", b""))
+    if silence_at >= len(body):
+        raise SystemExit(f"--silence-at {silence_at} is past the end of a {len(body)}-byte "
+                         f"body: the pause would never happen and the check would pass "
+                         f"for nothing")
+    if silence_at < overhead + 4096:
+        raise SystemExit(f"--silence-at must be at least {overhead + 4096}: the device's "
+                         f"index-0 upload handler, which is what widens the limit, has "
+                         f"not run before the first body chunk has landed")
+    head = (
+        f"POST /api/ota/upload HTTP/1.1\r\n"
+        f"Host: {u.hostname}\r\n"
+        f"Content-Type: multipart/form-data; boundary={BOUNDARY}\r\n"
+        f"X-Firmware-SHA256: {sha256}\r\n"
+        f"X-DC-Token: {token}\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        f"Connection: close\r\n\r\n"
+    ).encode()
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # A small send buffer, so that when this stops sending the wire goes quiet
+    # within a window or two instead of tens of kilobytes later. Asked for
+    # 4 KB; Linux doubles it to 8 KB. The drain wait below is what actually
+    # guarantees the silence — this only shortens the wait.
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+    s.settimeout(timeout)
+    try:
+        s.connect((u.hostname, u.port or 80))
+    except OSError as e:
+        raise UploadClosed("connect", None, e)
+    local_port = s.getsockname()[1]
+    t0 = time.time()
+    phase = "before"
+    t_pause = None
+    try:
+        s.sendall(head)
+        sent = 0
+        while sent < len(body):
+            if phase == "before" and sent >= silence_at:
+                for _ in range(200):
+                    state = _sndq_state(local_port)
+                    if state != "pending":
+                        break
+                    time.sleep(0.05)
+                if state == "gone":
+                    raise SystemExit("the client socket is no longer listed by `ss`; "
+                                     "nothing to be silent on")
+                if state != "drained":
+                    raise SystemExit("the send queue did not drain in 10 s; the device is "
+                                     "not taking data, so a pause here is not a silence")
+                print(f"    {time.time() - t0:6.2f}s  quiet for {silence:.1f}s at "
+                      f"{sent} body bytes (send queue drained)")
+                phase = "during"
+                t_pause = time.time()
+                # Watch the socket while quiet: a FIN or RST from the device
+                # makes it readable, and the moment it arrives is the
+                # device's idle ceiling, measured.
+                while True:
+                    left = silence - (time.time() - t_pause)
+                    if left <= 0:
+                        break
+                    readable, _, _ = select.select([s], [], [], left)
+                    if readable:
+                        try:
+                            peek = s.recv(1, socket.MSG_PEEK)
+                        except OSError as e:
+                            raise UploadClosed("during", time.time() - t_pause, e)
+                        if not peek:
+                            raise UploadClosed("during", time.time() - t_pause,
+                                               ConnectionError("EOF from the device"))
+                        break  # the device is talking: let the reader below see it
+                print(f"    {time.time() - t0:6.2f}s  resuming")
+                phase = "after"
+            n = s.send(body[sent:sent + 1460])
+            if n == 0:
+                raise ConnectionError("send returned 0")
+            sent += n
+        print(f"    {time.time() - t0:6.2f}s  body complete, waiting for the answer")
+        raw = b""
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            raw += chunk
+    except TimeoutError:
+        raise
+    except UploadClosed:
+        raise
+    except OSError as e:
+        raise UploadClosed(phase, None if t_pause is None else time.time() - t_pause, e)
+    finally:
+        s.close()
+    if not raw:
+        raise UploadClosed(phase, None if t_pause is None else time.time() - t_pause,
+                           ConnectionError("EOF with no response"))
+    text = raw.decode(errors="replace")
+    status_line = text.split("\r\n", 1)[0]
+    parts = status_line.split()
+    status = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    return status, text.rsplit("\r\n\r\n", 1)[-1]
+
+
 def get_status(base: str, timeout: int = 10):
     with urllib.request.urlopen(f"{base}/api/ota/status", timeout=timeout) as resp:
         return json.loads(resp.read().decode())
@@ -147,7 +298,34 @@ def main() -> int:
                          "state=error and accept a follow-up upload. total will read the "
                          "ENVELOPE size on an abort, by design: the SEC-9 narrowing runs "
                          "at finalize, which an abort never reaches")
+    ap.add_argument("--silence", type=float, metavar="SECONDS",
+                    help="BUG-37: stream the body and go quiet for SECONDS once, at "
+                         "--silence-at. The upload must survive: ESPAsyncWebServer's own "
+                         "3 s idle limit used to close it. With --expect-abort the device "
+                         "must instead close it and abort the update (the ceiling still "
+                         "exists, BUG-35's lock stays shut)")
+    ap.add_argument("--silence-at", type=int, default=200000, metavar="N",
+                    help="body offset for --silence (default 200000)")
+    ap.add_argument("--expect-abort", action="store_true",
+                    help="with --silence: the device is expected to drop the client at "
+                         "--idle-timeout seconds into the silence, measured from here")
+    ap.add_argument("--idle-timeout", type=float, default=30.0, metavar="SECONDS",
+                    help="the device's OTAConfig::uploadIdleTimeoutSec (default 30); "
+                         "--expect-abort requires the close to land between half a second "
+                         "under that and 2 s over it (the device's clock starts a little "
+                         "before this one; AsyncTCP polls every 500 ms)")
     args = ap.parse_args()
+    modes = [f for f in ("no_token", "disconnect_at", "silence", "commit")
+             if getattr(args, f) is not None and getattr(args, f) is not False]
+    if len(modes) > 1:
+        ap.error(f"one mode at a time: {', '.join('--' + m.replace('_', '-') for m in modes)}")
+    if args.silence is not None and args.silence <= 0:
+        ap.error("--silence must be a positive number of seconds")
+    if args.expect_abort and args.silence is None:
+        ap.error("--expect-abort needs --silence")
+    if args.expect_abort and args.silence < args.idle_timeout + 3:
+        ap.error(f"--expect-abort needs --silence of at least {args.idle_timeout + 3:.0f}s "
+                 f"to see a close at --idle-timeout {args.idle_timeout:.0f}s")
 
     base = args.url.rstrip("/")
     payload = open(args.firmware, "rb").read()
@@ -202,6 +380,83 @@ def main() -> int:
             print("\nFAIL"); [print(" -", f) for f in failures]
         else:
             print("\nPASS (disconnect aborted the update; pipeline free)")
+        return 1 if failures else 0
+
+    if args.silence is not None:
+        wrong = "de" + digest[2:]
+        want = "abort" if args.expect_abort else "survive"
+        print(f"\n[S] {args.silence:.1f}s of silence at body byte {args.silence_at}, "
+              f"wrong digest — the upload must {want} (BUG-37)")
+        closed = None
+        stalled = False
+        status, body = 0, ""
+        try:
+            status, body = upload_with_silence(base, payload, wrong, token,
+                                               args.silence_at, args.silence,
+                                               args.timeout)
+            print(f"    HTTP {status}: {body.strip()}")
+        except TimeoutError:
+            stalled = True
+            failures.append(f"the device stalled without closing ({args.timeout}s): "
+                            f"neither an answer nor a close — that is a hang, not a verdict")
+        except UploadClosed as e:
+            closed = e
+            if e.phase == "connect":
+                when = "at connect"
+            elif e.phase == "before":
+                when = "before the silence began"
+            elif e.phase == "during":
+                when = f"{e.elapsed:.1f}s into the silence"
+            else:
+                when = f"after the silence, on resume ({e.elapsed:.1f}s after it began)"
+            print(f"    the device closed the connection {when}: {e}")
+        time.sleep(4)
+        try:
+            st = get_status(base)
+        except (OSError, urllib.error.URLError, ValueError) as e:
+            st = {}
+            failures.append(f"/api/ota/status unreadable after the run: {e}")
+        print(f"    /api/ota/status -> state={st.get('state')} "
+              f"lastResult={st.get('lastResult')!r} downloaded={st.get('downloaded')}")
+        if closed is not None and closed.phase in ("connect", "before"):
+            failures.append(f"the connection died {('at connect' if closed.phase == 'connect' else 'before the silence began')}: "
+                            f"the check never ran, so this says nothing about the idle limit")
+        elif args.expect_abort:
+            if stalled:
+                pass  # already a failure
+            elif closed is None:
+                failures.append(f"the upload survived {args.silence:.0f}s of silence: "
+                                f"no idle ceiling, a vanished client would hold the update open")
+            elif closed.phase != "during":
+                failures.append("the device closed only once sending resumed, so the close "
+                                "time could not be measured from here — cannot bound the ceiling")
+            elif not (args.idle_timeout - 0.5 <= closed.elapsed <= args.idle_timeout + 2.0):
+                # The device stamps its clock when it processed the last packet;
+                # this side starts its own a little later, once `ss` has shown the
+                # queue empty — so the close reads a tenth or two EARLY from here
+                # (29.9 s for 30, 4.9 s for 5, measured on both boards).
+                failures.append(f"the device closed {closed.elapsed:.1f}s into the silence; "
+                                f"expected {args.idle_timeout - 0.5:.1f}–{args.idle_timeout + 2:.0f}s "
+                                f"(uploadIdleTimeoutSec, seen from here, plus the 500 ms poll)")
+            if closed is not None and st.get("lastResult") != "Client disconnected mid-upload":
+                failures.append(f"the device closed but did not abort the update: "
+                                f"lastResult={st.get('lastResult')!r} (BUG-35)")
+        else:
+            if closed is not None:
+                at = f"{closed.elapsed:.1f}s" if closed.elapsed is not None else "?"
+                failures.append(f"the device dropped the upload {at} into {args.silence:.0f}s "
+                                f"of silence (BUG-37: a receive-idle limit below that is still "
+                                f"in force)")
+            elif not stalled and "SHA256 mismatch" not in body:
+                failures.append(f"upload finished but was not refused at the hash: {body.strip()!r}")
+        if failures:
+            print("\nFAIL"); [print(" -", f) for f in failures]
+        else:
+            if args.expect_abort:
+                print(f"\nPASS (the device closed {closed.elapsed:.1f}s into the silence and "
+                      f"aborted the update)")
+            else:
+                print("\nPASS (the upload survived the silence)")
         return 1 if failures else 0
 
     # --- the load-bearing case ------------------------------------------------

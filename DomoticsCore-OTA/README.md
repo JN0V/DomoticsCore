@@ -59,6 +59,7 @@ cfg.autoReboot = true; // Reboot after successful update
 cfg.allowDowngrades = false; // Prevent version downgrades
 cfg.enableWebUIUpload = true; // Allow manual uploads via web interface
 cfg.requireUploadHash = false; // Refuse uploads that carry no expected SHA-256
+cfg.uploadIdleTimeoutSec = 30; // Drop an upload whose client has been silent this long (0 = never)
 ```
 
 > **Transport security is yours to provide.** This component does not open
