@@ -77,6 +77,7 @@ namespace DomoticsCore {
 
 namespace {
 void markOursTrampoline() { FlightRecorder::instance().markOurs(); }
+void noteFailedAllocTrampoline(uint32_t size, uint32_t site) { FlightRecorder::instance().noteFailedAlloc(size, site); }
 
 uint32_t buildIdCrc() {
     // Without DOMOTICS_BUILD_ID the compile time stands in: not reproducible,
@@ -111,7 +112,7 @@ void FlightRecorder::resetForTest() {
     lastTickMs_ = lastSlowMs_ = lastSampleMs_ = 0;
     fastIdx_ = slowIdx_ = 0;
     extraWalkDone_ = false;
-    restartHookInstalled_ = false;
+    restartHookInstalled_ = failedAllocHookInstalled_ = false;
     userCrashHook_ = nullptr;
     userFailedAllocHook_ = nullptr;
 }
@@ -168,37 +169,41 @@ void FlightRecorder::begin(bool holdUntilAcknowledged) {
     if (!magicOk) {
         startFresh(0);
         writeAll(current_);
-        return;
-    }
-    const uint32_t flags = previous_.flags();
-    torn_ = previous_.w[FlightRecord::W_CRC] != previous_.bodyCrcForLayout(layout);
-
-    if (flags & FlightRecord::UNPERSISTED) {
-        // Died again before the last promotion was acknowledged: the record
-        // in RTC is still the first death, promoted for the reason stored then.
-        promotion_ = static_cast<Promotion>((flags & FlightRecord::PROMO_MASK) >> FlightRecord::PROMO_SHIFT);
-        if (promotion_ == Promotion::None) promotion_ = Promotion::CrashCallback;
     } else {
-        const HAL::Platform::ResetReason reason = resetReason_;
-        if (flags & FlightRecord::CALLBACK_RAN) {
-            promotion_ = Promotion::CrashCallback;
-        } else if (HAL::Platform::wasUnexpectedReset(reason)) {
-            promotion_ = Promotion::UnexpectedReset;
-        } else if (reason == HAL::Platform::ResetReason::Software && !(flags & FlightRecord::OURS)) {
-            promotion_ = Promotion::UnownedSoftwareReset;
+        const uint32_t flags = previous_.flags();
+        torn_ = previous_.w[FlightRecord::W_CRC] != previous_.bodyCrcForLayout(layout);
+
+        if (flags & FlightRecord::UNPERSISTED) {
+            // Died again before the last promotion was acknowledged: the record
+            // in RTC is still the first death, promoted for the reason stored then.
+            promotion_ = static_cast<Promotion>((flags & FlightRecord::PROMO_MASK) >> FlightRecord::PROMO_SHIFT);
+            if (promotion_ == Promotion::None) promotion_ = Promotion::CrashCallback;
+        } else {
+            const HAL::Platform::ResetReason reason = resetReason_;
+            if (flags & FlightRecord::CALLBACK_RAN) {
+                promotion_ = Promotion::CrashCallback;
+            } else if (HAL::Platform::wasUnexpectedReset(reason)) {
+                promotion_ = Promotion::UnexpectedReset;
+            } else if (reason == HAL::Platform::ResetReason::Software && !(flags & FlightRecord::OURS)) {
+                promotion_ = Promotion::UnownedSoftwareReset;
+            }
+        }
+
+        startFresh(previous_.bootSequence() + 1);
+        if (hasPromotedRecord()) {
+            uint32_t meta = previous_.w[FlightRecord::W_META] | FlightRecord::UNPERSISTED
+                          | (static_cast<uint32_t>(promotion_) << FlightRecord::PROMO_SHIFT)
+                          | (torn_ ? FlightRecord::TORN : 0u);
+            previous_.w[FlightRecord::W_META] = meta;
+            HAL::Platform::rtcStoreWord(FlightRecord::W_META, meta);   // outside the crc: the body stays verifiable
+            // RTC keeps the death until acknowledge()
+        } else {
+            writeAll(current_);
         }
     }
-
-    startFresh(previous_.bootSequence() + 1);
-    if (hasPromotedRecord()) {
-        uint32_t meta = previous_.w[FlightRecord::W_META] | FlightRecord::UNPERSISTED
-                      | (static_cast<uint32_t>(promotion_) << FlightRecord::PROMO_SHIFT)
-                      | (torn_ ? FlightRecord::TORN : 0u);
-        previous_.w[FlightRecord::W_META] = meta;
-        HAL::Platform::rtcStoreWord(FlightRecord::W_META, meta);   // outside the crc: the body stays verifiable
-        return;   // RTC keeps the death until acknowledge()
-    }
-    writeAll(current_);
+    // Registered last: a failure on another task during the lines above would
+    // write a group that startFresh()/writeAll() then erase (OBS-4).
+    failedAllocHookInstalled_ = HAL::Platform::installFailedAllocHook(&noteFailedAllocTrampoline);
 }
 
 void FlightRecorder::acknowledge() {

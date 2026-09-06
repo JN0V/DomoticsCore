@@ -41,8 +41,11 @@ bool Core::begin(const CoreConfig& cfg) {
     if (!recorder.restartHookInstalled()) {
         DLOG_W(LOG_CORE, "Restart hook not registered: an esp_restart() outside the HAL will read as unexplained");
     }
+    if (HAL::Platform::supportsFailedAllocHook() && !recorder.failedAllocHookInstalled()) {
+        DLOG_W(LOG_CORE, "Failed-allocation hook not registered: survived allocation failures will not be recorded");
+    }
     if (recorder.hasPromotedRecord()) {
-        char text[768];   // header 2 lines, callback 2, ring up to 4: ~600 characters at most
+        char text[1024];   // format() writes at most 942 characters with every field saturated (OBS-4 test)
         recorder.format(text, sizeof(text));
         // One log line per formatted line: the ESP8266's log buffer is 128 bytes.
         char* line = text;
@@ -108,6 +111,18 @@ void Core::loop() {
         DLOG_W(LOG_CORE, "EventBus dropped %lu events since boot (queue cap 32)", (unsigned long)drops);
         lastDropsLogged = drops;
         lastDropLog = HAL::getMillis();
+    }
+
+    // OBS-4: an allocation failed and the firmware survived it; say so, at
+    // most once a minute. The recorder itself stays log-free (crash path).
+    static uint32_t lastFailsLogged = 0;
+    static unsigned long lastFailLog = 0;
+    const uint32_t fails = recorder.failedAllocCount();
+    if (fails != lastFailsLogged && (lastFailLog == 0 || HAL::getMillis() - lastFailLog >= 60000)) {
+        DLOG_W(LOG_CORE, "Allocation failures since boot: %lu, last %lu B",
+               (unsigned long)fails, (unsigned long)recorder.lastFailedAllocSize());
+        lastFailsLogged = fails;
+        lastFailLog = HAL::getMillis();
     }
     
     // Core minimal heartbeat

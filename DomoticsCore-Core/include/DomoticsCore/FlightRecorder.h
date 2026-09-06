@@ -211,6 +211,8 @@ public:
     void onCrash(CrashHook hook) { userCrashHook_ = hook; }
     /** False when the platform could not register the restart hook (ESP32 shutdown slots full). */
     bool restartHookInstalled() const { return restartHookInstalled_; }
+    /** False where the platform has no heap hook (ESP8266), opted out, or refused (OBS-4). */
+    bool failedAllocHookInstalled() const { return failedAllocHookInstalled_; }
 
     /** The promoted record as text, allocation-free. Returns characters written. */
     size_t format(char* buf, size_t len) const;
@@ -236,7 +238,7 @@ private:
     uint32_t runMin_, lastTickFree_, largestAtMin_, lastTickMs_, lastSlowMs_, lastSampleMs_;
     uint32_t fastIdx_, slowIdx_;
     bool extraWalkDone_;
-    bool restartHookInstalled_;
+    bool restartHookInstalled_, failedAllocHookInstalled_;
     CrashHook userCrashHook_;
     FailedAllocHook userFailedAllocHook_;
 };

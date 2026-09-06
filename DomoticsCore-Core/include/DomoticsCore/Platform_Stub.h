@@ -497,9 +497,13 @@ typedef void (*FailedAllocHook)(uint32_t size, uint32_t site);
 inline FailedAllocHook failedAllocHookForTest = nullptr;
 inline bool failedAllocHookInstallFailsForTest = false;
 inline constexpr bool supportsFailedAllocHook() { return true; }
+// fireOnInstall: a failure on another task at the moment of registration —
+// the recorder must have finished writing RTC by then, or the group is erased.
+inline bool failedAllocFireOnInstallForTest = false;
 inline bool installFailedAllocHook(FailedAllocHook hook) {
     if (failedAllocHookInstallFailsForTest) { failedAllocHookForTest = nullptr; return false; }
     failedAllocHookForTest = hook;
+    if (failedAllocFireOnInstallForTest && hook) hook(4096, 0x1800);
     return true;
 }
 inline void fireFailedAllocForTest(uint32_t size, uint32_t caps) { if (failedAllocHookForTest) failedAllocHookForTest(size, caps); }
@@ -519,6 +523,7 @@ inline uint32_t getMillisAnyContext() { return static_cast<uint32_t>(getMillis()
 inline void resetFailedAllocForTest() {
     failedAllocHookForTest = nullptr;
     failedAllocHookInstallFailsForTest = false;
+    failedAllocFireOnInstallForTest = false;
     stubbedLastFailAllocAddrForTest = stubbedLastFailAllocSizeForTest = 0;
 }
 
