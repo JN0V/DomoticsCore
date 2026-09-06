@@ -101,6 +101,10 @@ void test_ota_config_defaults() {
     TEST_ASSERT_TRUE(config.autoReboot);
     TEST_ASSERT_EQUAL(0, config.maxDownloadSize);
     TEST_ASSERT_TRUE(config.enableWebUIUpload);
+    TEST_ASSERT_FALSE(config.requireUploadHash);
+    // BUG-37: the default the release notes announce; a bare OTAConfig is what
+    // System::registerOTAComponent() ships, so this line is FullStack's value.
+    TEST_ASSERT_EQUAL_UINT16(30, config.uploadIdleTimeoutSec);
 }
 
 void test_ota_config_get_set() {
@@ -112,6 +116,7 @@ void test_ota_config_get_set() {
     newConfig.autoReboot = false;
     newConfig.allowDowngrades = true;
     newConfig.enableWebUIUpload = false;
+    newConfig.uploadIdleTimeoutSec = 5;
 
     ota.setConfig(newConfig);
 
@@ -121,6 +126,7 @@ void test_ota_config_get_set() {
     TEST_ASSERT_FALSE(cfg.autoReboot);
     TEST_ASSERT_TRUE(cfg.allowDowngrades);
     TEST_ASSERT_FALSE(cfg.enableWebUIUpload);
+    TEST_ASSERT_EQUAL_UINT16(5, cfg.uploadIdleTimeoutSec);
 }
 
 void test_ota_config_max_download_size() {

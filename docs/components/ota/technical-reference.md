@@ -40,6 +40,7 @@ Defined in `DomoticsCore/OTA.h` within `DomoticsCore::Components`.
 | `maxDownloadSize` | `size_t` | `0` | Ceiling on an incoming firmware image, in bytes. `0` means unlimited. Applies to **downloads and uploads alike** since SEC-8, and is checked twice on each: once against the size the sender announces, and again against the bytes that actually arrive — the announced figure is one the sender chose, and on an upload it is optional. On the upload path the announced-size refusal lands before flash is erased. |
 | `enableWebUIUpload` | `bool` | `true` | When `true`, expose manual firmware upload routes and WebUI file-upload controls. |
 | `requireUploadHash` | `bool` | `false` | When `true`, refuse any upload that arrives without an expected SHA-256 (SEC-7). The refusal happens before a flash sector is erased. Note this also rejects the built-in `/ota/upload` browser form, which cannot send one — see below. |
+| `uploadIdleTimeoutSec` | `uint16_t` | `30` | Seconds of client silence after which an in-progress upload is dropped and aborted (BUG-37). ESPAsyncWebServer's own limit is 3 s for the whole body, which a client in TCP retransmission backoff exceeds on an ordinary WiFi link; this replaces it once the first body chunk has reached the handler and the upload's CSRF and auth gates have passed — the request line, headers and first chunk are still under the server's 3 s. Read at that first chunk, so a `setConfig()` during an upload applies to the next one. `0` disables the limit, and a client that vanishes without a reset then leaves the update open until the next reboot — the lock BUG-35 removed. |
 
 ### Runtime Configuration Update
 
@@ -492,7 +493,7 @@ All endpoints are registered by `OTAWebUI::registerRoutes()` after `init()` is c
 | `POST` | `/api/ota/check` | Triggers an immediate manifest check. Returns `{"success": true}`. |
 | `POST` | `/api/ota/update` | Starts a firmware download. Accepts `url` and `force` parameters. Without parameters, returns current field values. |
 | `GET` | `/ota/upload` | Serves a minimal HTML firmware upload page (only when `enableWebUIUpload` is `true`). |
-| `POST` | `/api/ota/upload` | Accepts `multipart/form-data` firmware upload (only when `enableWebUIUpload` is `true`). Returns `{"success": true/false}`. Optionally carries the expected digest as an `X-Firmware-SHA256` header, or a `?sha256=` query parameter for clients that cannot set headers. |
+| `POST` | `/api/ota/upload` | Accepts `multipart/form-data` firmware upload (only when `enableWebUIUpload` is `true`). Returns `{"success": true/false}`. Optionally carries the expected digest as an `X-Firmware-SHA256` header, or a `?sha256=` query parameter for clients that cannot set headers. The connection is dropped, and the update aborted, after `uploadIdleTimeoutSec` seconds without a byte from the client (30 by default; the server's own 3 s applies until the first body chunk). |
 
 #### Supplying the upload digest (SEC-7)
 

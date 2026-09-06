@@ -101,6 +101,41 @@ The follow-up upload deliberately carries a wrong digest so it is refused
 at the hash check without rebooting anything: "SHA256 mismatch" is the
 pass, "already in progress" is the lock.
 
+`--silence SECONDS` is BUG-37's check: it streams the body over a raw socket
+with a small send buffer (4 KB asked for, 8 KB after Linux doubles it), waits
+until `ss` reports nothing unsent or unacked, goes completely quiet for
+SECONDS at `--silence-at` (default 200 000), then finishes. The upload must survive — ESPAsyncWebServer arms a 3 s receive-idle
+timeout on every client and clears it only when a response starts, so before
+the fix it ran for the whole body, and a client in TCP retransmission backoff
+is quiet for longer than that on an ordinary WiFi link. Measured on the
+WROOM-32D and the nodemcuv2: four seconds of silence killed the upload every
+time on unfixed code, and on the WROOM five uploads in six had died the same
+way with no help at all. It needs `ss` (iproute2) and refuses to run without
+it, or with `--silence-at` past the end of the body — both would be a pause
+that proves nothing.
+
+**The drain step is the check.** A first version paused without it and
+passed against unfixed code: the kernel kept sending its 36 KB buffer and the
+device never saw the silence. `--silence 35 --expect-abort` is the other
+half — the device must still close and abort the update once the configured
+`uploadIdleTimeoutSec` (30 s) has passed, or a client that vanishes without a
+reset would hold the update open, which is BUG-35's lock through another
+door. The script watches the socket during the silence and **measures when
+the close arrives**; `--expect-abort` passes only if that lands within half
+a second under `--idle-timeout` (default 30) to two seconds over it, so
+unfixed code, which closes at about 3.5 s, fails it too. Measured: 29.9 to
+30.1 s on both boards at the default, 4.9 s on a build with the field set to
+5 — the device stamps its clock at the last packet it processed, a tenth
+before this side has seen its queue empty. A close that arrives before the silence
+began is reported as "the check never ran", not as a verdict. Both modes use
+a wrong digest, so a completed upload is refused at the hash and nothing
+reboots.
+
+**Nothing else exercises this.** `OTAWebUI.h` is compiled by no test and CI
+runs nothing on a board, so `--silence 4` and `--silence 35 --expect-abort`,
+on one board of each family, are the two runs a PR that touches the upload
+handler has to show.
+
 `--commit` also sends a correctly-hashed copy, which the device installs and
 reboots into. Uploading the image the board is already running makes that safe
 and repeatable.

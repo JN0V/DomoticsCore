@@ -448,6 +448,26 @@ private:
                             }
                         }
                         uploadState.active = true;
+                        // BUG-37: ESPAsyncWebServer arms a 3 s receive-idle timeout on
+                        // every accepted client (WebServer.cpp, setRxTimeout(3)) and
+                        // clears it only when a response starts, so it runs for the
+                        // whole body of an upload — and a client in TCP retransmission
+                        // backoff is quiet for longer than that on an ordinary WiFi
+                        // link. The measurements are in BUG-37's roadmap entry.
+                        // Widened for this request only, after the gates above: a
+                        // request without this boot's CSRF token, or failing auth
+                        // where auth is on, keeps the server's 3 s. The bound this
+                        // buys an attacker is small — one upload at a time, the
+                        // Update held for at most uploadIdleTimeoutSec per silent
+                        // client, BUG-35's abort as the release. A client that
+                        // beginUpload() refuses below keeps the wider limit while its
+                        // body drains, accepted. The response path resets it to 0 as
+                        // it always did. Not 0 by default: a client that vanishes
+                        // without a RST would leave the update open, BUG-35's lock
+                        // through another door.
+                        if (AsyncClient* client = request->client()) {
+                            client->setRxTimeout(ota->getConfig().uploadIdleTimeoutSec);
+                        }
                         uploadState.filename = filename;
                         uploadState.total = 0;
                         // SEC-9: this measures the whole multipart body — boundary,

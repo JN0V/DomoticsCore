@@ -27,6 +27,7 @@ struct OTAConfig {
     size_t maxDownloadSize = 0;         //!< Reject binaries larger than this (0 = unlimited)
     bool enableWebUIUpload = true;      //!< Allow manual firmware upload via WebUI helpers
     bool requireUploadHash = false;     //!< Reject uploads that carry no expected SHA-256 (SEC-7)
+    uint16_t uploadIdleTimeoutSec = 30; //!< Drop an upload whose client has been silent this long, in seconds (BUG-37); 0 = never
 };
 
 /**
