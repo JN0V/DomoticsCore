@@ -15,10 +15,12 @@
  *   w6 last uptime ms                      w7 min free16 | largest16
  *   w8-39  fast ring 16 × {uptime s, free16|largest16}   every 10 s
  *   w40-55 slow ring  8 × {uptime s, free16|largest16}   every 10 min
- *   w56-60 last failed alloc: seq, size, free, largest, uptime ms (Lot C)
+ *   w56-60 last failed alloc (OBS-4): count<<16 | ~count, size, free16|largest16,
+ *          site (ESP8266 caller / ESP32 caps), uptime ms — outside the crc, like w5
  *   w61-66 exception: cb reason, exccause, epc1, excvaddr, fail caller, fail size
  *   w67-82 16 stack words from the crash callback
- * Heap fields are 16-bit in 16-byte units.
+ * Heap fields are 16-bit in 16-byte units. Layout 2 = layout 1 with w56-60
+ * outside the crc; a layout-1 record is still read (OBS-4 migration).
  */
 #ifndef DOMOTICS_CORE_FLIGHT_RECORDER_H
 #define DOMOTICS_CORE_FLIGHT_RECORDER_H
@@ -48,12 +50,12 @@
 namespace DomoticsCore {
 
 struct FlightRecord {
-    enum : uint32_t { MAGIC = 0x444F4D46u, LAYOUT = 1u };
+    enum : uint32_t { MAGIC = 0x444F4D46u, LAYOUT = 2u, LAYOUT_V1 = 1u };
     enum : size_t {
         WORDS = 83, FAST_SAMPLES = 16, SLOW_SAMPLES = 8, STACK_WORDS = 16,
         W_MAGIC = 0, W_META = 1, W_CRC = 2, W_BUILD = 3, W_SEQ = 4, W_PHASE = 5,
         W_LAST_UPTIME = 6, W_LAST_HEAP = 7, W_FAST = 8, W_SLOW = 40, W_FAIL = 56,
-        W_EXC = 61, W_STACK = 67
+        W_EXC = 61, W_STACK = 67, FAIL_WORDS = 5
     };
     enum Flag : uint32_t {
         CALLBACK_RAN = 1u << 0,   // the crash callback filled w61-82
@@ -80,6 +82,20 @@ struct FlightRecord {
     uint32_t excvaddr() const { return w[W_EXC + 3]; }
     uint32_t failCaller() const { return w[W_EXC + 4]; }
     uint32_t failSize() const { return w[W_EXC + 5]; }
+    // The failed-allocation group (OBS-4). Its count word validates itself
+    // like the phase marker: count 3 is 0x0003FFFC, saturated is 0xFFFF0000.
+    static uint32_t encodeCount(uint32_t count) {
+        if (count > 0xFFFFu) count = 0xFFFFu;
+        return (count << 16) | (~count & 0xFFFFu);
+    }
+    bool failGroupValid() const { return (w[W_FAIL] >> 16) == (~w[W_FAIL] & 0xFFFFu); }
+    uint32_t failAllocCount() const { return failGroupValid() ? (w[W_FAIL] >> 16) : 0u; }
+    uint32_t failAllocSize() const { return w[W_FAIL + 1]; }
+    uint32_t failAllocFreeBytes() const { return (w[W_FAIL + 2] >> 16) * 16u; }
+    uint32_t failAllocLargestBytes() const { return (w[W_FAIL + 2] & 0xFFFFu) * 16u; }
+    uint32_t failAllocSite() const { return w[W_FAIL + 3]; }
+    uint32_t failAllocUptimeMs() const { return w[W_FAIL + 4]; }
+    uint8_t platform() const { return static_cast<uint8_t>(w[W_META] >> 16); }
 
     static uint32_t packHeap(uint32_t freeBytes, uint32_t largestBytes) {
         uint32_t f = freeBytes / 16u, l = largestBytes / 16u;
@@ -100,16 +116,22 @@ struct FlightRecord {
     }
     static uint32_t crc32(const uint32_t* words, size_t count) { return ~crc32Feed(0xFFFFFFFFu, words, count); }
     /**
-     * The crc covers w3..w82 except the phase marker (w5): the marker is stored
-     * straight to RTC between flushes and validates itself by its complement.
-     * Covering it would tear every record whose phase moved after the last
-     * flush — which is every record, measured on the WROOM-32D.
+     * The crc covers w3..w82 except the words stored straight to RTC between
+     * flushes, which validate themselves by a complement: the phase marker
+     * (w5, every layout — covering it tore every record on the WROOM-32D) and,
+     * from layout 2, the failed-allocation group (w56-60, OBS-4).
      */
-    uint32_t bodyCrc() const {
+    uint32_t bodyCrcForLayout(uint32_t layout) const {
         uint32_t crc = crc32Feed(0xFFFFFFFFu, &w[W_BUILD], W_PHASE - W_BUILD);
-        crc = crc32Feed(crc, &w[W_PHASE + 1], WORDS - (W_PHASE + 1));
+        if (layout == LAYOUT_V1) {
+            crc = crc32Feed(crc, &w[W_PHASE + 1], WORDS - (W_PHASE + 1));
+        } else {
+            crc = crc32Feed(crc, &w[W_PHASE + 1], W_FAIL - (W_PHASE + 1));
+            crc = crc32Feed(crc, &w[W_EXC], WORDS - W_EXC);
+        }
         return ~crc;
     }
+    uint32_t bodyCrc() const { return bodyCrcForLayout(LAYOUT); }
     /**
      * Same death or not: build, the callback's reason, epc1 — or the failed
      * caller when there is no epc1 (abort/OOM) — and the reset reason the next
@@ -174,6 +196,16 @@ public:
     void markOurs();
     /** From the platform's crash callback: no allocation, no log, one RTC write; then the user hook. */
     void recordCrash(const CrashInfo& info);
+    /**
+     * An allocation failed and the firmware survived it (OBS-4): from the ESP32
+     * heap hook on whichever task failed, or from the ESP8266 latch in tick().
+     * No allocation, no log; the group goes to RTC at once, count word last.
+     */
+    void noteFailedAlloc(uint32_t size, uint32_t site);
+    typedef void (*FailedAllocHook)(uint32_t size, uint32_t site);
+    void onFailedAlloc(FailedAllocHook hook) { userFailedAllocHook_ = hook; }
+    uint32_t failedAllocCount() const { return current_.failAllocCount(); }
+    uint32_t lastFailedAllocSize() const { return current_.failAllocSize(); }
     /** A user hook to run after the record is written, from the crash context. */
     typedef void (*CrashHook)(const CrashInfo&);
     void onCrash(CrashHook hook) { userCrashHook_ = hook; }
@@ -206,6 +238,7 @@ private:
     bool extraWalkDone_;
     bool restartHookInstalled_;
     CrashHook userCrashHook_;
+    FailedAllocHook userFailedAllocHook_;
 };
 
 } // namespace DomoticsCore

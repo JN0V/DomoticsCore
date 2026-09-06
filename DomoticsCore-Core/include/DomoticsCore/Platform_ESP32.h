@@ -24,6 +24,7 @@
 #include <esp_task_wdt.h>
 #include <esp_idf_version.h>
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 
 namespace DomoticsCore {
 namespace HAL {
@@ -307,6 +308,19 @@ inline constexpr uint32_t rtcWordsAvailable() { return 96; }
 bool rtcRead(uint32_t wordOffset, uint32_t* dst, size_t words);
 bool rtcWrite(uint32_t wordOffset, const uint32_t* src, size_t words);
 void rtcStoreWord(uint32_t wordOffset, uint32_t value);
+
+// OBS-4: the failed-allocation group is written from whichever task failed,
+// on either core. These bracket its stores and reads (a portMUX, defined in
+// FlightRecorder.cpp with the single heap_caps hook slot).
+void failGroupEnter();
+void failGroupLeave();
+typedef void (*FailedAllocHook)(uint32_t size, uint32_t caps);
+inline constexpr bool supportsFailedAllocHook() { return true; }
+/** @brief Take the heap_caps failed-alloc slot (OBS-4). False when DOMOTICS_CRASH_HOOKS=0 or IDF refuses. */
+bool installFailedAllocHook(FailedAllocHook hook);
+inline bool takeLastFailedAlloc(uint32_t&, uint32_t&) { return false; }   // no umm globals here: the hook is the source
+/** @brief Uptime readable from the heap hook: esp_timer_get_time is IRAM, millis() is not (OBS-4). */
+inline uint32_t getMillisAnyContext() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 
 inline constexpr bool tracksMinFreeHeap() { return true; }
 
