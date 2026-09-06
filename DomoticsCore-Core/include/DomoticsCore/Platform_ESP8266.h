@@ -358,11 +358,18 @@ inline void rtcStoreWord(uint32_t wordOffset, uint32_t value) {
 inline bool crashForTest(const char* kind) {
     String k(kind);
     if (k == "abort") { abort(); }
-    if (k == "oom")   { for (;;) { volatile uint8_t* p = new uint8_t[1024]; (void)p; } }   // operator new aborts: reason 254
+    if (k == "oom")   {
+        // Through a volatile global, or the compiler elides the whole chain of
+        // unused allocations (it did, twice: the loop ran into the soft WDT).
+        // operator new aborts on failure: reason 254 with caller and size.
+        static volatile uint8_t* volatile s_oomKeep = nullptr;
+        for (;;) { volatile uint8_t* p = new uint8_t[1024]; p[0] = 1; s_oomKeep = p; }
+    }
     if (k == "null")  { volatile int* p = nullptr; *p = 1; }
     if (k == "swdt")  { for (;;) {} }                                                     // soft WDT, ~3 s
     if (k == "hwdt")  { ESP.wdtDisable(); for (;;) {} }                                   // hardware WDT: no code runs
     if (k == "hang")  { for (;;) {} }
+    if (k == "restart") { ESP.restart(); }   // not through the HAL: nothing marks it ours here (no handler on this platform)
     return false;
 }
 

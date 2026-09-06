@@ -165,7 +165,7 @@ Returns a const reference to the boot diagnostics struct. Data is valid only aft
 
 #### `size_t formatBootDiagnostics(char* buf, size_t len) const`
 
-This boot's diagnostics as text, allocation-free: boot count, reset reason, heap at boot, the tracked minimum where the platform has one, the unexpected-reset warning, the ESP8266 reset detail and the ESP32 core-dump state. The `bootdiag` console command's middle block; it lived in `System.h` until OBS-3 moved it beside the struct it prints.
+This boot's diagnostics as text, into the caller's buffer (the reset reason's name is the one `String` it makes): boot count, reset reason, heap at boot, the tracked minimum where the platform has one, the unexpected-reset warning, the ESP8266 reset detail and the ESP32 core-dump state. The `bootdiag` console command's middle block; it lived in `System.h` until OBS-3 moved it beside the struct it prints.
 
 #### `void setBootCount(uint32_t count)`
 

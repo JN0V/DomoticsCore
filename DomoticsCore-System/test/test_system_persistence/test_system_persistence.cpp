@@ -392,14 +392,28 @@ void test_a_boot_costs_two_storage_writes(void) {
 
 // Stage a death the way the boards produce one: a run records a crash, the
 // next boot finds it promoted.
-static void stageDeath(uint32_t failCaller) {
+static void stageDeath(uint32_t failCaller, uint16_t phase = 4,
+                       HAL::Platform::ResetReason reason = HAL::Platform::ResetReason::Software) {
     FlightRecorder::instance().resetForTest();
     HAL::Platform::clearRtcForTest();
     FlightRecorder::instance().begin();
+    FlightRecorder::instance().setPhase(phase);
     CrashInfo c; c.reason = 254; c.failSize = 1024; c.failCaller = failCaller;
     FlightRecorder::instance().recordCrash(c);
     FlightRecorder::instance().resetForTest();
-    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Software);
+    HAL::Platform::setResetReasonForTest(reason);
+    FlightRecorder::instance().begin(true);
+}
+
+// ESP32's shape: no callback fields at all, so only the reset reason and the
+// phase can tell a panic from a task watchdog.
+static void stageBareDeath(uint16_t phase, HAL::Platform::ResetReason reason) {
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::clearRtcForTest();
+    FlightRecorder::instance().begin();
+    FlightRecorder::instance().setPhase(phase);
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::setResetReasonForTest(reason);
     FlightRecorder::instance().begin(true);
 }
 
@@ -430,6 +444,62 @@ void test_the_same_death_again_is_counted_not_rewritten(void) {
     TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
     TEST_ASSERT_EQUAL_UINT32(1, r.sameCount);
     TEST_ASSERT_EQUAL_HEX32(0x40201300u, r.failCaller);
+}
+
+void test_a_torn_record_is_marked_in_the_blob(void) {
+    FlightRecorder::instance().begin();
+    FlightRecorder::instance().setPhase(3);
+    HAL::Platform::stubRtcWordsForTest[FlightRecord::W_FAST + 1] ^= 1;   // tear the body
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Watchdog);
+    FlightRecorder::instance().begin(true);
+    TEST_ASSERT_TRUE(FlightRecorder::instance().promotedIsTorn());
+    Fixture f(true, true);
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_UINT32(1, r.flags & 1u);
+    char buf[400];
+    SystemHelpers::formatPersistedBootDiagnostics(*f.storage, buf, sizeof(buf));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "(torn)"));
+}
+
+void test_the_retired_keys_are_left_alone_once_the_blob_exists(void) {
+    Fixture f(true, true);
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);   // blob now exists
+    f.storage->putInt("boot_heap", 1);                              // a stray write later
+    HAL::RAMOnlyStorage::writesForTest = 0;
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    TEST_ASSERT_TRUE(f.storage->exists("boot_heap"));               // not probed, not removed
+    TEST_ASSERT_EQUAL_UINT(2, HAL::RAMOnlyStorage::writesForTest);
+}
+
+void test_the_same_death_keeps_the_first_occurrence_fields(void) {
+    stageDeath(0x40201287u, 4);
+    Fixture f(true, true);
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    stageDeath(0x40201287u, 9);                                  // same site, another phase
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_UINT32(2, r.sameCount);
+    TEST_ASSERT_EQUAL_UINT32(4, r.phase);                        // the first occurrence's
+}
+
+void test_bare_deaths_are_told_apart_by_reset_reason_and_phase(void) {
+    stageBareDeath(5, HAL::Platform::ResetReason::Panic);
+    Fixture f(true, true);
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    stageBareDeath(5, HAL::Platform::ResetReason::TaskWatchdog); // same phase, other reason
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    SystemHelpers::BootDiagRecord r;
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_UINT32(1, r.sameCount);
+    stageBareDeath(7, HAL::Platform::ResetReason::TaskWatchdog); // same reason, other phase
+    SystemHelpers::persistBootDiagnostics(*f.storage, *f.sysInfo);
+    TEST_ASSERT_TRUE(SystemHelpers::readBootDiagRecord(*f.storage, r));
+    TEST_ASSERT_EQUAL_UINT32(1, r.sameCount);
+    TEST_ASSERT_EQUAL_UINT32(7, r.phase);
 }
 
 void test_a_clean_boot_keeps_the_last_death_on_record(void) {
@@ -482,6 +552,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_a_boot_costs_two_storage_writes);
     RUN_TEST(test_a_promoted_death_lands_in_the_blob);
     RUN_TEST(test_the_same_death_again_is_counted_not_rewritten);
+    RUN_TEST(test_a_torn_record_is_marked_in_the_blob);
+    RUN_TEST(test_the_retired_keys_are_left_alone_once_the_blob_exists);
+    RUN_TEST(test_the_same_death_keeps_the_first_occurrence_fields);
+    RUN_TEST(test_bare_deaths_are_told_apart_by_reset_reason_and_phase);
     RUN_TEST(test_a_clean_boot_keeps_the_last_death_on_record);
 
     return UNITY_END();

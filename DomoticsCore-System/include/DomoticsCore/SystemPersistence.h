@@ -346,6 +346,7 @@ struct BootDiagRecord {
     uint32_t minFree = 0;
     uint32_t dedupKey = 0;
     uint32_t sameCount = 0;
+    uint32_t flags = 0;             // bit 0: the record was torn (crc failed; phase and flags only)
 };
 
 inline bool readBootDiagRecord(Components::StorageComponent& storage, BootDiagRecord& out) {
@@ -384,32 +385,35 @@ inline uint32_t persistBootDiagnostics(Components::StorageComponent& storage,
     const FlightRecorder& fr = FlightRecorder::instance();
     if (fr.hasPromotedRecord()) {
         const FlightRecord& d = fr.promoted();
-        const uint32_t key = d.dedupKey();
+        const uint32_t key = d.dedupKey(static_cast<uint32_t>(fr.resetReason()));   // the reason the promotion saw
         if (hadPrev && prev.promotion != 0 && prev.dedupKey == key) {
             // the same death again: keep the first occurrence, count this one
             rec.promotion = prev.promotion; rec.phase = prev.phase; rec.buildId = prev.buildId;
             rec.uptimeMs = prev.uptimeMs; rec.reason = prev.reason; rec.epc1 = prev.epc1;
             rec.failSize = prev.failSize; rec.failCaller = prev.failCaller; rec.minFree = prev.minFree;
-            rec.dedupKey = key; rec.sameCount = prev.sameCount + 1;
+            rec.dedupKey = key; rec.sameCount = prev.sameCount + 1; rec.flags = prev.flags;
         } else {
             rec.promotion = static_cast<uint32_t>(fr.promotion());
             rec.phase = d.phase(); rec.buildId = d.w[FlightRecord::W_BUILD];
             rec.uptimeMs = d.lastUptimeMs(); rec.reason = d.cbReason(); rec.epc1 = d.epc1();
             rec.failSize = d.failSize(); rec.failCaller = d.failCaller(); rec.minFree = d.minFreeBytes();
             rec.dedupKey = key; rec.sameCount = 1;
+            rec.flags = fr.promotedIsTorn() ? 1u : 0u;
         }
     } else if (hadPrev) {
         // a clean boot keeps the last death on record
         rec.promotion = prev.promotion; rec.phase = prev.phase; rec.buildId = prev.buildId;
         rec.uptimeMs = prev.uptimeMs; rec.reason = prev.reason; rec.epc1 = prev.epc1;
         rec.failSize = prev.failSize; rec.failCaller = prev.failCaller; rec.minFree = prev.minFree;
-        rec.dedupKey = prev.dedupKey; rec.sameCount = prev.sameCount;
+        rec.dedupKey = prev.dedupKey; rec.sameCount = prev.sameCount; rec.flags = prev.flags;
     }
     storage.putBlob("bootdiag", reinterpret_cast<const uint8_t*>(&rec), sizeof(rec));
 
-    static const char* const retired[] = { "last_reset", "boot_heap", "boot_minheap", "last_heap", "last_minheap" };
-    for (const char* k : retired) {
-        if (storage.exists(k)) storage.remove(k);
+    if (!hadPrev) {   // the blob's absence marks the first boot of this build
+        static const char* const retired[] = { "last_reset", "boot_heap", "boot_minheap", "last_heap", "last_minheap" };
+        for (const char* k : retired) {
+            if (storage.exists(k)) storage.remove(k);
+        }
     }
     return bootCount;
 }
@@ -432,8 +436,9 @@ inline size_t formatPersistedBootDiagnostics(Components::StorageComponent& stora
     size_t used = static_cast<size_t>(n) < len ? static_cast<size_t>(n) : len - 1;
     if (have && r.promotion != 0) {
         int m = snprintf(buf + used, len - used,
-                 "  last death: %s x%lu | phase %lu | uptime %lu s | reason %lu epc1 0x%08lx | fail %lu B from 0x%08lx | min free %lu B | build %08lx\n",
+                 "  last death: %s%s x%lu | phase %lu | uptime %lu s | reason %lu epc1 0x%08lx | fail %lu B from 0x%08lx | min free %lu B | build %08lx\n",
                  FlightRecorder::promotionName(static_cast<FlightRecorder::Promotion>(r.promotion)),
+                 (r.flags & 1u) ? " (torn)" : "",
                  static_cast<unsigned long>(r.sameCount), static_cast<unsigned long>(r.phase),
                  static_cast<unsigned long>(r.uptimeMs / 1000u), static_cast<unsigned long>(r.reason),
                  static_cast<unsigned long>(r.epc1), static_cast<unsigned long>(r.failSize),

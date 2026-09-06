@@ -4,6 +4,7 @@
 #include "DomoticsCore/Platform_HAL.h"      // For HAL::getChipId(), HAL::getFreeHeap()
 #include "DomoticsCore/MemoryManager.h"     // For memory profile detection
 #include "DomoticsCore/FlightRecorder.h"    // OBS-3
+#include <string.h>
 
 namespace DomoticsCore {
 
@@ -38,12 +39,19 @@ bool Core::begin(const CoreConfig& cfg) {
     DLOG_I(LOG_CORE, "Build id: %s", DOMOTICS_BUILD_ID);
 #endif
     if (!recorder.restartHookInstalled()) {
-        DLOG_W(LOG_CORE, "Restart hook not registered: a software reset will read as unexplained");
+        DLOG_W(LOG_CORE, "Restart hook not registered: an esp_restart() outside the HAL will read as unexplained");
     }
     if (recorder.hasPromotedRecord()) {
-        char line[240];
-        recorder.format(line, sizeof(line));
-        DLOG_W(LOG_CORE, "%s", line);
+        char text[768];   // header 2 lines, callback 2, ring up to 4: ~600 characters at most
+        recorder.format(text, sizeof(text));
+        // One log line per formatted line: the ESP8266's log buffer is 128 bytes.
+        char* line = text;
+        while (line && *line) {
+            char* nl = strchr(line, '\n');
+            if (nl) *nl = '\0';
+            DLOG_W(LOG_CORE, "%s", line);
+            line = nl ? nl + 1 : nullptr;
+        }
         // A bare Core has no Storage: the log line above is where the record
         // got out, so the fresh record can take RTC now. System persists
         // first and acknowledges itself.
@@ -96,7 +104,7 @@ void Core::loop() {
     // LO-5 / BUG-36: the queue drops silently; say so, at most once a minute.
     static uint32_t lastDropsLogged = 0;
     static unsigned long lastDropLog = 0;
-    if (drops != lastDropsLogged && HAL::getMillis() - lastDropLog >= 60000) {
+    if (drops != lastDropsLogged && (lastDropLog == 0 || HAL::getMillis() - lastDropLog >= 60000)) {
         DLOG_W(LOG_CORE, "EventBus dropped %lu events since boot (queue cap 32)", (unsigned long)drops);
         lastDropsLogged = drops;
         lastDropLog = HAL::getMillis();

@@ -1,4 +1,7 @@
 #include <unity.h>
+#include <string>
+#include <vector>
+#include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/FlightRecorder.h>
@@ -152,6 +155,76 @@ void test_flight_recorder_promotes_before_any_component_begins() {
     TEST_ASSERT_EQUAL_UINT32(0, fresh.flags() & FlightRecord::UNPERSISTED);
 }
 
+// The component sees its own phase from inside loop(): the index the registry stored.
+class SeesPhaseComponent : public IComponent {
+public:
+    uint16_t phaseSeen = 0xFFFF;
+    SeesPhaseComponent() { metadata.name = "SeesPhase"; metadata.version = "1.0.0"; }
+    ComponentStatus begin() override { return ComponentStatus::Success; }
+    void loop() override { phaseSeen = FlightRecorder::instance().current().phase(); }
+    ComponentStatus shutdown() override { return ComponentStatus::Success; }
+    std::vector<Dependency> getDependencies() const override { return {}; }
+};
+
+void test_loop_hands_each_component_its_own_phase() {
+    testCore->addComponent(std::unique_ptr<SimpleComponent>(new SimpleComponent("First")));
+    auto comp = std::unique_ptr<SeesPhaseComponent>(new SeesPhaseComponent());
+    SeesPhaseComponent* raw = comp.get();
+    testCore->addComponent(std::move(comp));
+    TEST_ASSERT_TRUE(testCore->begin());
+    testCore->loop();
+    // The registry decides the order; the phase must name this component whatever it is.
+    TEST_ASSERT_NOT_EQUAL(0xFFFF, raw->phaseSeen);
+    TEST_ASSERT_EQUAL_STRING("SeesPhase", testCore->componentNameAtInitIndex(raw->phaseSeen));
+}
+
+void test_loop_ticks_the_recorder_into_rtc() {
+    testCore->addComponent(std::unique_ptr<SimpleComponent>(new SimpleComponent("A")));
+    TEST_ASSERT_TRUE(testCore->begin());
+    HAL::Platform::setMillisForTest(1000);
+    testCore->loop();
+    HAL::Platform::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
+    testCore->loop();
+    FlightRecord r;
+    HAL::Platform::rtcRead(0, r.w, FlightRecord::WORDS);
+    TEST_ASSERT_EQUAL_UINT32(1000 + FlightRecorder::FAST_INTERVAL_MS, r.lastUptimeMs());
+    HAL::Platform::resetMillisForTest();
+}
+
+void test_loop_carries_the_bus_drops_into_the_record() {
+    testCore->addComponent(std::unique_ptr<SimpleComponent>(new SimpleComponent("A")));
+    TEST_ASSERT_TRUE(testCore->begin());
+    for (int i = 0; i < 40; ++i) testCore->emit(String("storm"), i);   // past the cap of 32, on top of the lifecycle events already queued
+    testCore->loop();
+    TEST_ASSERT_TRUE(FlightRecorder::instance().current().eventDrops() >= 8);
+    TEST_ASSERT_EQUAL_UINT32(testCore->getEventBus().getDroppedCount(), FlightRecorder::instance().current().eventDrops());
+}
+
+static std::vector<std::string> g_lines;
+
+void test_begin_logs_the_promoted_record_line_by_line() {
+    FlightRecorder::instance().begin();
+    HAL::Platform::setMillisForTest(1000);
+    HAL::Platform::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
+    FlightRecorder::instance().tick();                                  // one ring sample
+    CrashInfo death; death.reason = 254; death.failSize = 512;
+    FlightRecorder::instance().recordCrash(death);
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Software);
+    g_lines.clear();
+    auto id = LoggerCallbacks::addCallback([](LogLevel, const char*, const char* msg) { g_lines.emplace_back(msg ? msg : ""); });
+    TEST_ASSERT_TRUE(testCore->begin());
+    LoggerCallbacks::removeCallback(id);
+    bool sawDeath = false, sawRing = false;
+    for (const auto& l : g_lines) {
+        if (l.find("Last death:") != std::string::npos) sawDeath = true;
+        if (l.find("ring: 11s:") != std::string::npos) sawRing = true;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(sawDeath, "the death line must reach the log");
+    TEST_ASSERT_TRUE_MESSAGE(sawRing, "the ring must reach the log as its own line");
+    HAL::Platform::resetMillisForTest();
+}
+
 void test_loop_marks_the_phase_and_returns_to_idle() {
     testCore->addComponent(std::unique_ptr<SimpleComponent>(new SimpleComponent("A")));
     TEST_ASSERT_TRUE(testCore->begin());
@@ -166,6 +239,10 @@ int main(int argc, char** argv) {
     
     RUN_TEST(test_flight_recorder_promotes_before_any_component_begins);
     RUN_TEST(test_loop_marks_the_phase_and_returns_to_idle);
+    RUN_TEST(test_loop_hands_each_component_its_own_phase);
+    RUN_TEST(test_loop_ticks_the_recorder_into_rtc);
+    RUN_TEST(test_loop_carries_the_bus_drops_into_the_record);
+    RUN_TEST(test_begin_logs_the_promoted_record_line_by_line);
     RUN_TEST(test_component_count_after_init);
     RUN_TEST(test_get_component_after_init);
     RUN_TEST(test_remove_component);

@@ -202,6 +202,42 @@ The port is `root:dialout` and a process only picks up group membership at
 start, so a shell opened before that change cannot open it —
 `sudo chmod 666 /dev/ttyUSB0` unblocks it until the next replug.
 
+## `console_cmd.py`
+
+Send one RemoteConsole command over Telnet and print the reply.
+
+```
+python3 tools/on-device/console_cmd.py 192.168.1.224 bootdiag
+python3 tools/on-device/console_cmd.py 192.168.1.224 "crash abort" --expect-drop
+```
+
+OBS-3's board checks: `crash <kind>` kills the device on purpose — the
+connection drops, which `--expect-drop` treats as the pass — and `bootdiag`
+on the next boot prints what the flight recorder kept: the death, its
+phase, the heap minimum since the last tick, the callback's registers on
+ESP8266, and the fast ring. The `crash` command exists only in builds made
+with `-DDOMOTICS_ENABLE_CRASH_COMMANDS=1` (`EXTRA_BUILD_FLAGS` for
+`run-example.sh`, or `PLATFORMIO_BUILD_FLAGS`); no shipped environment has
+it. A device that reboots faster than its WiFi rejoins answers
+"connect failed" for a few seconds — wait, do not conclude.
+
+## `crash_check.sh`
+
+One death, checked end to end:
+
+```
+tools/on-device/crash_check.sh /dev/ttyUSB1 192.168.1.218 oom
+```
+
+Holds the serial port across the death, sends `crash <kind>` (or `reboot`),
+waits for the console to come back, reads `bootdiag` and greps it for the
+line that death must produce — the defaults are the campaign's measured
+values per kind, and a fourth argument overrides them (on ESP32 every panic
+is "unexpected reset": pass that). Exit 0 is the pass; the serial capture and
+the `bootdiag` text land under `$CRASH_CHECK_OUT` (default `/tmp/crash-check`).
+Loop it over `abort oom null swdt hwdt reboot` on an ESP8266, `abort null
+hang restart reboot` on an ESP32.
+
 ## `read_noreset.py` and `read_acm.py`
 
 Two readers the OBS session (2026-09-05) needed and `readserial.py` cannot be:
@@ -220,6 +256,20 @@ first drop. A reset pulse on that port (`DTR=False; RTS=True; sleep; RTS=False`)
 works through the JTAG unit's emulation, reads as reason `Unknown`, and keeps
 `RTC_NOINIT_ATTR` — unlike the WROOM's EN reset.
 
+## `probes/obs-lotb-probe` — Lot B's vehicle
+
+A `System` with console, Storage and SystemInfo joined to the LAN from
+`secrets.h`, the crash commands compiled in, and a stopwatch around
+`System::loop()` printing `LOOPCOST` lines every 5 s (mean and maximum
+iteration, and whether the recorder's tick is compiled in). Built with and
+without `-DDOMOTICS_FLIGHT_RECORDER_TICK=0` it gives the sampler's cost;
+with `-DDOMOTICS_CRASH_HOOKS=0` the callback's removal check. The nodemcuv2
+needs it because FullStack never joins a network on an ESP8266 (CI-14);
+the WROOM-32D ran FullStack for the death sequence and this probe for the
+loop cost. Its `extra_scripts` runs `clean_examples.py` first: the copy of
+`DomoticsCore-System` into its libdeps would otherwise drag
+`examples/FullStack/.pio` along, recursively (3.8 GB in ten minutes, once).
+
 ## `probes/` — the OBS session's board probes
 
 Not tests, not examples: throwaway sketches that produced the figures in the
@@ -230,7 +280,7 @@ the measurements can be repeated. Each has its own `platformio.ini` with
 | probe | what it measures |
 |---|---|
 | `obs-probe/` (`main-esp8266.cpp`, `main-esp32.cpp`, `main-esp32cam.cpp`, each with its `platformio-<target>.ini`; copy the pair to `platformio.ini` + `src/main.cpp` to run one) | the platform alone: what each death leaves for the next boot — abort, OOM in `new`, null dereference, soft/hardware WDT, restart, external reset; RTC survival; core dump presence; the failed-alloc hook. Steps advance through RTC; `START_STEP`/`PROBE_MAGIC` build flags pick where to start |
-| `obs-lota-probe/` | a real `System` (Storage + SystemInfo) from the working tree: what the boot diagnostics carry, the old keys removed, the loop watchdog at 5 s abating a hang and silent at 0 |
+| `obs-lota-probe/` | a real `System` (Storage + SystemInfo) from the working tree: what the boot diagnostics carry, the old keys removed, the loop watchdog at 5 s abating a hang and silent at 0. Its `boot_heap`/`boot_minheap` key check is inert since Lot B folded those keys into the `bootdiag` blob; the watchdog half still stands |
 | `obs-loopmax/` | FullStack with a stopwatch around `System::loop()`: the longest iteration idle and during an HTTP upload (OBS-7 residual 6); `LOOPMAX_WDT=0` disables the watchdog for a discriminating run; the upload it drives is what filed BUG-37 |
 
 Credentials for `obs-loopmax` come from the repository's untracked `secrets.h`,

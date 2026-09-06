@@ -18,6 +18,7 @@ void setUp(void) {
     P::setMillisForTest(1000);
     P::resetFreeHeapForTest();
     P::resetLargestFreeBlockForTest();
+    P::restartHookInstallFailsForTest = false;
 }
 void tearDown(void) {
     P::resetMillisForTest();
@@ -72,6 +73,32 @@ void test_garbage_in_rtc_reads_as_power_on() {
     rec().begin();
     TEST_ASSERT_FALSE(rec().hasPromotedRecord());
     TEST_ASSERT_EQUAL_UINT32(0, readRtc().bootSequence());
+}
+
+void test_a_restart_before_begin_still_marks_the_record_as_ours() {
+    rec().begin();                                  // a previous run wrote a record
+    rec().resetForTest();                           // this run restarts before Core::begin()
+    P::restart();                                   // the hook is not installed yet: markOurs() on a raw record
+    reboot(P::ResetReason::Software);
+    rec().begin();
+    TEST_ASSERT_FALSE(rec().hasPromotedRecord());
+}
+
+void test_dedup_key_uses_the_phase_when_there_is_no_site() {
+    FlightRecord a{}; FlightRecord b{};
+    a.w[FlightRecord::W_PHASE] = FlightRecord::encodePhase(3);
+    b.w[FlightRecord::W_PHASE] = FlightRecord::encodePhase(5);
+    TEST_ASSERT_NOT_EQUAL(a.dedupKey(4), b.dedupKey(4));   // two ESP32 panics from different phases
+    a.w[FlightRecord::W_EXC + 2] = b.w[FlightRecord::W_EXC + 2] = 0x40201000u;
+    TEST_ASSERT_EQUAL_HEX32(a.dedupKey(4), b.dedupKey(4));  // the same site in two phases is one death
+}
+
+void test_format_with_a_tiny_buffer_never_reports_more_than_it_wrote() {
+    rec().begin();
+    char buf[8];
+    size_t n = rec().format(buf, sizeof(buf));
+    TEST_ASSERT_TRUE(n < sizeof(buf));
+    TEST_ASSERT_EQUAL_CHAR('\0', buf[n]);
 }
 
 void test_tick_and_phase_before_begin_do_nothing() {
@@ -134,6 +161,21 @@ void test_torn_record_still_reports_its_phase() {
     TEST_ASSERT_EQUAL_UINT16(7, rec().promoted().phase());
 }
 
+// The marker moves between flushes, straight to RTC; it must not tear the
+// record — on the WROOM-32D every promoted record read "torn" before this.
+void test_phase_moving_after_a_flush_does_not_tear_the_record() {
+    rec().begin();
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
+    rec().tick();                                  // flush: crc written
+    rec().setPhase(3);                             // the loop goes on
+    rec().setPhase(7);
+    reboot(P::ResetReason::Panic);
+    rec().begin();
+    TEST_ASSERT_TRUE(rec().hasPromotedRecord());
+    TEST_ASSERT_FALSE(rec().promotedIsTorn());
+    TEST_ASSERT_EQUAL_UINT16(7, rec().promoted().phase());
+}
+
 // ---- the record stays until acknowledged -----------------------------------
 
 void test_promoted_record_stays_in_rtc_until_acknowledged() {
@@ -171,6 +213,69 @@ void test_dying_again_before_acknowledgement_keeps_the_first_death() {
     TEST_ASSERT_EQUAL_UINT32(512, rec().promoted().failSize());
 }
 
+// The boot loop this exists for: a death inside begin(), before anything
+// has acknowledged, on a boot that promoted nothing. The fresh record must
+// take the callback's data — the hold guards a promoted record, not RTC.
+void test_a_crash_during_bring_up_with_nothing_promoted_is_recorded() {
+    rec().begin(true);                            // System's shape: hold until acknowledged
+    rec().setPhase(FlightRecorder::PHASE_INIT | 3);
+    rec().recordCrash(abortInfo(0xCAFE, 256));
+    reboot(P::ResetReason::Software);
+    rec().begin(true);
+    TEST_ASSERT_EQUAL(FlightRecorder::Promotion::CrashCallback, rec().promotion());
+    TEST_ASSERT_EQUAL_HEX32(0xCAFE, rec().promoted().failCaller());
+    TEST_ASSERT_EQUAL_UINT16(FlightRecorder::PHASE_INIT | 3, rec().promoted().phase());
+}
+
+void test_the_first_begin_decides_the_hold() {
+    rec().begin(true);
+    rec().begin(false);                           // Core::begin() after System::begin()
+    TEST_ASSERT_TRUE(rec().acknowledgementDeferred());
+}
+
+void test_a_record_with_another_layout_reads_as_power_on() {
+    rec().begin();
+    P::stubRtcWordsForTest[FlightRecord::W_META] = (2u << 24);   // layout 2
+    reboot(P::ResetReason::Panic);
+    rec().begin();
+    TEST_ASSERT_FALSE(rec().hasPromotedRecord());
+    TEST_ASSERT_EQUAL_UINT32(0, readRtc().bootSequence());
+}
+
+void test_a_failed_hook_registration_is_reported_not_claimed() {
+    P::restartHookInstallFailsForTest = true;
+    rec().begin();
+    TEST_ASSERT_FALSE(rec().restartHookInstalled());
+    P::restart();                                 // nobody marks ours
+    reboot(P::ResetReason::Software);
+    P::restartHookInstallFailsForTest = false;
+    rec().begin();
+    TEST_ASSERT_EQUAL(FlightRecorder::Promotion::UnownedSoftwareReset, rec().promotion());
+}
+
+void test_event_drops_saturate_at_sixteen_bits() {
+    rec().begin();
+    rec().noteEventDrops(0x12345678u);
+    TEST_ASSERT_EQUAL_UINT32(0xFFFFu, rec().current().eventDrops());
+    TEST_ASSERT_EQUAL_UINT32(0, rec().current().bootSequence());
+}
+
+void test_format_prints_a_wrapped_ring_oldest_first() {
+    rec().begin();
+    P::setFreeHeapForTest(40960); P::setLargestFreeBlockForTest(20480);
+    for (int i = 0; i < 17; ++i) {                // 17 samples: slot 0 holds the newest
+        P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS); rec().tick();
+    }
+    reboot(P::ResetReason::Watchdog);
+    rec().begin();
+    char buf[600];
+    rec().format(buf, sizeof(buf));
+    const char* ring = strstr(buf, "ring: ");
+    TEST_ASSERT_NOT_NULL(ring);
+    TEST_ASSERT_EQUAL_STRING_LEN("ring: 21s:", ring, 10);     // the 2nd sample is the oldest kept
+    TEST_ASSERT_NOT_NULL(strstr(buf, " 171s:"));              // the newest is there too
+}
+
 void test_acknowledge_without_promotion_is_harmless() {
     rec().begin();
     uint32_t before = readRtc().w[FlightRecord::W_CRC];
@@ -184,7 +289,9 @@ void test_acknowledge_without_promotion_is_harmless() {
 void test_running_minimum_survives_between_ticks() {
     rec().begin();
     P::setFreeHeapForTest(60000); rec().tick();
+    P::advanceMillisForTest(1);
     P::setFreeHeapForTest(20000); rec().tick();       // a cliff, seen by no tick
+    P::advanceMillisForTest(1);
     P::setFreeHeapForTest(60000); rec().tick();
     P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
     rec().tick();
@@ -198,11 +305,23 @@ void test_cliff_earns_exactly_one_extra_walk_per_interval() {
     rec().tick();                                     // first tick: one walk, sets lastTickFree
     unsigned after_first = P::largestFreeBlockReadsForTest;
     P::setFreeHeapForTest(60000 - P::heapCliffThresholdBytes() - 16);
-    rec().tick(); rec().tick(); rec().tick();         // the cliff, three loops
+    for (int i = 0; i < 3; ++i) { P::advanceMillisForTest(1); rec().tick(); }   // the cliff, three loops
     TEST_ASSERT_EQUAL_UINT(after_first + 1, P::largestFreeBlockReadsForTest);
     P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
     rec().tick();                                     // tick: one more walk
     TEST_ASSERT_EQUAL_UINT(after_first + 2, P::largestFreeBlockReadsForTest);
+}
+
+void test_free_heap_is_read_at_most_once_per_millisecond() {
+    rec().begin();
+    P::setFreeHeapForTest(60000);
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS); rec().tick();   // first tick reads
+    P::advanceMillisForTest(1);
+    P::setFreeHeapForTest(50000); rec().tick();       // read: new millisecond
+    P::setFreeHeapForTest(100);   rec().tick();       // same millisecond: not read
+    P::setFreeHeapForTest(50000);
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS); rec().tick();
+    TEST_ASSERT_EQUAL_UINT32(50000 - 50000 % 16, readRtc().minFreeBytes());
 }
 
 void test_no_walk_between_ticks_without_a_cliff() {
@@ -212,7 +331,7 @@ void test_no_walk_between_ticks_without_a_cliff() {
     rec().tick();
     unsigned after_first = P::largestFreeBlockReadsForTest;
     P::setFreeHeapForTest(60000 - 512);
-    for (int i = 0; i < 100; ++i) rec().tick();
+    for (int i = 0; i < 100; ++i) { P::advanceMillisForTest(1); rec().tick(); }
     TEST_ASSERT_EQUAL_UINT(after_first, P::largestFreeBlockReadsForTest);
 }
 
@@ -272,12 +391,14 @@ void test_crash_folds_the_running_minimum_into_the_record() {
     P::setFreeHeapForTest(60000);
     P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS);
     rec().tick();                                     // plateau at 60000
+    P::advanceMillisForTest(1);
     P::setFreeHeapForTest(3000); rec().tick();        // burst inside the interval
-    P::setFreeHeapForTest(2000);
+    P::advanceMillisForTest(1);
+    P::setFreeHeapForTest(58000); rec().tick();       // recovered: the crash-time figure is high
     rec().recordCrash(abortInfo());
     reboot(P::ResetReason::Software);
     rec().begin();
-    TEST_ASSERT_EQUAL_UINT32(2000 - 2000 % 16, rec().promoted().minFreeBytes());
+    TEST_ASSERT_EQUAL_UINT32(3000 - 3000 % 16, rec().promoted().minFreeBytes());   // the burst, not the crash-time heap
 }
 
 void test_platform_restart_marks_the_record_as_ours() {
@@ -309,6 +430,8 @@ void test_dedup_key_uses_the_fail_caller_when_there_is_no_epc1() {
     TEST_ASSERT_EQUAL_HEX32(a.dedupKey(), c.dedupKey());
     c.w[FlightRecord::W_EXC + 2] = 0x40202020;         // an epc1 wins over the caller
     TEST_ASSERT_NOT_EQUAL(a.dedupKey(), c.dedupKey());
+    // ESP32: no callback, so a panic and a task watchdog differ only by the reset reason
+    TEST_ASSERT_NOT_EQUAL(a.dedupKey(4), a.dedupKey(6));
 }
 
 void test_format_names_the_death() {
@@ -321,9 +444,33 @@ void test_format_names_the_death() {
     size_t n = rec().format(buf, sizeof(buf));
     TEST_ASSERT_TRUE(n > 0 && n < sizeof(buf));
     TEST_ASSERT_NOT_NULL(strstr(buf, "crash callback"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "reset Software reset"));
     TEST_ASSERT_NOT_NULL(strstr(buf, "phase 2"));
     TEST_ASSERT_NOT_NULL(strstr(buf, "reason 254"));
     TEST_ASSERT_NOT_NULL(strstr(buf, "1024 B from 0x40201287"));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "stack 00000011 00000022"));
+}
+
+void test_format_prints_the_ring_oldest_first() {
+    rec().begin();
+    P::setFreeHeapForTest(40960); P::setLargestFreeBlockForTest(20480);
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS); rec().tick();   // 11 s
+    P::setFreeHeapForTest(8192);
+    P::advanceMillisForTest(FlightRecorder::FAST_INTERVAL_MS); rec().tick();   // 21 s
+    reboot(P::ResetReason::Watchdog);
+    rec().begin();
+    char buf[400];
+    rec().format(buf, sizeof(buf));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "ring: 11s:40.0k/20.0k 21s:8.0k/20.0k"));
+}
+
+void test_format_says_the_ring_is_empty_when_nothing_ticked() {
+    rec().begin();
+    reboot(P::ResetReason::Watchdog);
+    rec().begin();
+    char buf[400];
+    rec().format(buf, sizeof(buf));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "ring: (empty)"));
 }
 
 void test_format_without_a_death_says_so_and_fits_a_small_buffer() {
@@ -345,17 +492,28 @@ int main(int, char**) {
     RUN_TEST(test_first_boot_starts_a_fresh_record_in_rtc);
     RUN_TEST(test_owned_software_reset_is_not_promoted_and_bumps_the_sequence);
     RUN_TEST(test_garbage_in_rtc_reads_as_power_on);
+    RUN_TEST(test_a_restart_before_begin_still_marks_the_record_as_ours);
+    RUN_TEST(test_dedup_key_uses_the_phase_when_there_is_no_site);
+    RUN_TEST(test_format_with_a_tiny_buffer_never_reports_more_than_it_wrote);
     RUN_TEST(test_tick_and_phase_before_begin_do_nothing);
     RUN_TEST(test_crash_callback_promotes_a_software_reset);
     RUN_TEST(test_unowned_software_reset_is_promoted);
     RUN_TEST(test_unexpected_reset_without_callback_is_promoted_with_its_phase);
     RUN_TEST(test_power_on_after_a_valid_record_is_not_promoted);
     RUN_TEST(test_torn_record_still_reports_its_phase);
+    RUN_TEST(test_phase_moving_after_a_flush_does_not_tear_the_record);
     RUN_TEST(test_promoted_record_stays_in_rtc_until_acknowledged);
     RUN_TEST(test_dying_again_before_acknowledgement_keeps_the_first_death);
+    RUN_TEST(test_a_crash_during_bring_up_with_nothing_promoted_is_recorded);
+    RUN_TEST(test_the_first_begin_decides_the_hold);
+    RUN_TEST(test_a_record_with_another_layout_reads_as_power_on);
+    RUN_TEST(test_a_failed_hook_registration_is_reported_not_claimed);
+    RUN_TEST(test_event_drops_saturate_at_sixteen_bits);
+    RUN_TEST(test_format_prints_a_wrapped_ring_oldest_first);
     RUN_TEST(test_acknowledge_without_promotion_is_harmless);
     RUN_TEST(test_running_minimum_survives_between_ticks);
     RUN_TEST(test_cliff_earns_exactly_one_extra_walk_per_interval);
+    RUN_TEST(test_free_heap_is_read_at_most_once_per_millisecond);
     RUN_TEST(test_no_walk_between_ticks_without_a_cliff);
     RUN_TEST(test_fast_ring_wraps_after_sixteen_samples);
     RUN_TEST(test_slow_ring_samples_every_ten_minutes);
@@ -367,6 +525,8 @@ int main(int, char**) {
     RUN_TEST(test_user_crash_hook_runs_after_the_record);
     RUN_TEST(test_dedup_key_uses_the_fail_caller_when_there_is_no_epc1);
     RUN_TEST(test_format_names_the_death);
+    RUN_TEST(test_format_prints_the_ring_oldest_first);
+    RUN_TEST(test_format_says_the_ring_is_empty_when_nothing_ticked);
     RUN_TEST(test_format_without_a_death_says_so_and_fits_a_small_buffer);
     RUN_TEST(test_crc32_matches_zlib_on_a_known_vector);
     return UNITY_END();

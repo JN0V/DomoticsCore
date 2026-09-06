@@ -601,8 +601,18 @@ private:
     }
     
     String getBootDiagnostics() {
-        char buf[960];
-        size_t pos = FlightRecorder::instance().format(buf, sizeof(buf));
+        char buf[1024];
+        FlightRecorder& rec = FlightRecorder::instance();
+        size_t pos = rec.format(buf, sizeof(buf));
+        if (rec.hasPromotedRecord()) {
+            // The marker is an index into this build's initialization order; say whose.
+            const uint16_t ph = rec.promoted().phase();
+            const char* who = core.componentNameAtInitIndex(ph & 0xFF);
+            if (ph == FlightRecorder::PHASE_EVENT_DISPATCH) who = "event dispatch";
+            pos += snprintf(buf + pos, sizeof(buf) - pos, "  phase %u = %s%s\n", (unsigned)ph,
+                            who ? who : (ph == FlightRecorder::PHASE_IDLE ? "idle" : "?"),
+                            (ph & FlightRecorder::PHASE_INIT) ? " (during begin())" : "");
+        }
 #if __has_include(<DomoticsCore/SystemInfo.h>)
         auto* sysInfo = core.getComponent<Components::SystemInfoComponent>("System Info");
         if (!sysInfo) {
@@ -617,9 +627,10 @@ private:
 #if __has_include(<DomoticsCore/Storage.h>) && __has_include(<DomoticsCore/SystemInfo.h>)
         auto* storage = core.getComponent<Components::StorageComponent>("Storage");
         if (storage) {
-            SystemHelpers::formatPersistedBootDiagnostics(*storage, buf + pos, sizeof(buf) - pos);
+            pos += SystemHelpers::formatPersistedBootDiagnostics(*storage, buf + pos, sizeof(buf) - pos);
         }
 #endif
+        if (pos >= sizeof(buf) - 1) memcpy(buf + sizeof(buf) - 5, "...\n", 5);   // cut, and say so
         return String(buf);
     }
 };

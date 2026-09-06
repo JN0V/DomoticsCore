@@ -132,6 +132,11 @@ public:
     /**
      * @brief Current number of registered components.
      */
+    /** Name of the component at 1-based initialization index (the flight recorder's phase), or nullptr. */
+    const char* componentNameAtInitIndex(size_t index1) const {
+        return componentRegistry.componentNameAtInitIndex(index1);
+    }
+
     size_t getComponentCount() const {
         return componentRegistry.getComponentCount();
     }

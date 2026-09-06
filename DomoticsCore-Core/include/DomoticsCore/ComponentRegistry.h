@@ -92,7 +92,9 @@ public:
         }
         
         // Initialize components in dependency order
+        uint16_t initIndex = 0;
         for (auto* component : initializationOrder) {
+            ++initIndex;
             // Skip if already initialized (e.g., early init by System)
             if (component->getLastStatus() == ComponentStatus::Success && component->isActive()) {
                 DLOG_I(LOG_CORE, "Component already initialized, skipping: %s", component->metadata.name);
@@ -100,6 +102,8 @@ public:
             }
             
             DLOG_I(LOG_CORE, "Initializing component: %s", component->metadata.name);
+            // OBS-3: a death inside this begin() names the component, not "idle".
+            FlightRecorder::instance().setPhase(static_cast<uint16_t>(FlightRecorder::PHASE_INIT | initIndex));
             
             // Provide framework services (EventBus, Core) to the component before begin()
             if (component) {
@@ -153,6 +157,12 @@ public:
     /**
      * Call loop() on all active components
      */
+    /** Name of the component at 1-based initialization index, or nullptr (phase marker decoding, OBS-3). */
+    const char* componentNameAtInitIndex(size_t index1) const {
+        if (index1 == 0 || index1 > initializationOrder.size()) return nullptr;
+        return initializationOrder[index1 - 1]->metadata.name;
+    }
+
     void loopAll() {
         if (!initialized) return;
         
@@ -162,7 +172,7 @@ public:
         for (auto* component : initializationOrder) {
             ++index;
             if (component->isActive()) {
-                rec.setPhase(index);
+                rec.setPhase(index < FlightRecorder::PHASE_EVENT_DISPATCH ? index : FlightRecorder::PHASE_EVENT_DISPATCH - 1);
                 component->loop();
             }
         }

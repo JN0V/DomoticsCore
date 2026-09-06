@@ -1,8 +1,8 @@
-- source_spec: `spec-stor-esp-1-esp8266-storage-write-leak.md`
+- source_spec: `spec-stor-esp-1-esp8266-storage-write-leak.md` — **DONE 2026-09-06 as BUG-36 (OBS Lot B)**
   summary: `EventBus::enqueue` never decrements `pendingByTopic` for the event it drops on overflow, so the counter drifts up permanently and sticky replay is inhibited for any topic that has ever overflowed.
   evidence: `EventBus.h:236-252` increments on every push including the overflow path; `poll()` decrements only for events it dispatches (`:203-207`); the `queue.pop()` in the overflow branch decrements nothing. The plateau test drives 80 undrained writes on one topic, of which at most 32 can ever be dispatched.
 
-- source_spec: `spec-stor-esp-1-esp8266-storage-write-leak.md`
+- source_spec: `spec-stor-esp-1-esp8266-storage-write-leak.md` — **DONE 2026-09-06 with BUG-36 (entries erased at zero)**
   summary: `EventBus` keeps a topic's `pendingByTopic` entry forever — `poll()` decrements the counter but never erases the entry — which is one of the two sources of the 128 B one-time residue the reclaim test had to be restructured around.
   evidence: measured on the board: a first fill-and-drain cycle leaves 128 B behind, a second identical cycle leaves under 64 B.
 

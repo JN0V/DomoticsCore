@@ -36,12 +36,19 @@ def main() -> int:
         s.recv(4096)
     except OSError:
         pass
-    s.sendall((args.command + "\n").encode())
+    try:
+        s.sendall((args.command + "\n").encode())
+    except OSError as e:
+        print(f"send failed: {e}")
+        return 1
     reply = b""
     dropped = False
-    deadline = time.time() + args.timeout
+    # A command meant to kill the device gets a short reply window: what
+    # matters is probing the console right after, before it has rebooted.
+    deadline = time.time() + (0.8 if args.expect_drop else args.timeout)
     while time.time() < deadline:
         try:
+            s.settimeout(max(0.1, deadline - time.time()))
             chunk = s.recv(4096)
         except socket.timeout:
             break
@@ -57,9 +64,21 @@ def main() -> int:
     if text.strip():
         print(text.rstrip())
     if args.expect_drop:
-        if dropped or not text.strip():
+        if dropped:
             print("(connection dropped — the device is going down)")
             return 0
+        # No drop seen. A silent timeout is not a death: a wedged console or a
+        # wrong host looks the same. And the device reboots within seconds, so
+        # a late probe finds it up again. Probe at once, briefly: a device that
+        # accepted the command is unreachable within the next two seconds.
+        for _ in range(7):
+            try:
+                probe = socket.create_connection((args.host, args.port), timeout=0.3)
+                probe.close()
+            except OSError:
+                print("(no drop seen, but the console vanished right after — the device went down)")
+                return 0
+            time.sleep(0.3)
         print("FAIL: the device answered and stayed up")
         return 1
     return 0 if text.strip() else 1

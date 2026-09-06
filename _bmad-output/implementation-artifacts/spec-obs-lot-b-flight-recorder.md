@@ -1,6 +1,6 @@
 # OBS Lot B — the flight recorder (OBS-3, BUG-36, ARCH-1's residue)
 
-Status: **v2, 2026-09-06 — plan, nothing implemented.** v1 was reviewed
+Status: **v2, 2026-09-06 — executed the same day (S1–S5), see the OBS-3 entry in `docs/CODE-ROADMAP.md` for what the boards changed: the CRC excludes the phase word, the OOM command writes through a volatile, `bootdiag` prints the ring, the free-heap read is gated to once per millisecond; the three-layer review of the diff then fixed the hold, the ring order and the unobserved loop wiring.** The plan as it stood before execution: v1 was reviewed
 adversarially the same day (22 findings, folded below; the four claims the
 review said were wrong were checked against the sources and were wrong).
 Derived from `spec-obs-crash-observability.md` v2 §L1, §5, §6, §8. Every
