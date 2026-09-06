@@ -1,6 +1,8 @@
 #include <unity.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/IComponent.h>
+#include <DomoticsCore/FlightRecorder.h>
+#include <DomoticsCore/Platform_Stub.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -29,9 +31,29 @@ public:
     std::vector<Dependency> getDependencies() const override { return {}; }
 };
 
+// OBS-3: a component that looks at the flight recorder from inside begin().
+// Asserting after Core::begin() returns would pass whatever the order was.
+class SeesRecorderComponent : public IComponent {
+public:
+    bool recorderHadBegun = false;
+    bool sawPromotedRecord = false;
+    SeesRecorderComponent() { metadata.name = "SeesRecorder"; metadata.version = "1.0.0"; }
+    ComponentStatus begin() override {
+        recorderHadBegun = FlightRecorder::instance().begun();
+        sawPromotedRecord = FlightRecorder::instance().hasPromotedRecord();
+        return ComponentStatus::Success;
+    }
+    void loop() override {}
+    ComponentStatus shutdown() override { return ComponentStatus::Success; }
+    std::vector<Dependency> getDependencies() const override { return {}; }
+};
+
 Core* testCore = nullptr;
 
 void setUp(void) {
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::clearRtcForTest();
+    HAL::Platform::resetDiagnosticsForTest();
     testCore = new Core();
 }
 
@@ -107,9 +129,43 @@ void test_logging_initialization(void) {
     TEST_PASS();
 }
 
+void test_flight_recorder_promotes_before_any_component_begins() {
+    // A previous run died in the crash callback; RTC kept it (the stub's array
+    // survives resetForTest, not clearRtcForTest).
+    FlightRecorder::instance().begin();
+    CrashInfo death; death.reason = 254; death.failSize = 1024;
+    FlightRecorder::instance().recordCrash(death);
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Software);
+
+    auto comp = std::unique_ptr<SeesRecorderComponent>(new SeesRecorderComponent());
+    SeesRecorderComponent* raw = comp.get();
+    testCore->addComponent(std::move(comp));
+    TEST_ASSERT_TRUE(testCore->begin());
+
+    TEST_ASSERT_TRUE_MESSAGE(raw->recorderHadBegun, "recorder must begin before the first component");
+    TEST_ASSERT_TRUE_MESSAGE(raw->sawPromotedRecord, "the death must already be promoted when components start");
+    // A bare Core acknowledges after logging: RTC now holds the fresh record.
+    FlightRecord fresh;
+    HAL::Platform::rtcRead(0, fresh.w, FlightRecord::WORDS);
+    TEST_ASSERT_EQUAL_UINT32(1, fresh.bootSequence());
+    TEST_ASSERT_EQUAL_UINT32(0, fresh.flags() & FlightRecord::UNPERSISTED);
+}
+
+void test_loop_marks_the_phase_and_returns_to_idle() {
+    testCore->addComponent(std::unique_ptr<SimpleComponent>(new SimpleComponent("A")));
+    TEST_ASSERT_TRUE(testCore->begin());
+    testCore->loop();
+    // after a full loop the marker is back at idle, encoded with its complement
+    TEST_ASSERT_EQUAL_HEX32(FlightRecord::encodePhase(FlightRecorder::PHASE_IDLE),
+                            HAL::Platform::stubRtcWordsForTest[FlightRecord::W_PHASE]);
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
     
+    RUN_TEST(test_flight_recorder_promotes_before_any_component_begins);
+    RUN_TEST(test_loop_marks_the_phase_and_returns_to_idle);
     RUN_TEST(test_component_count_after_init);
     RUN_TEST(test_get_component_after_init);
     RUN_TEST(test_remove_component);

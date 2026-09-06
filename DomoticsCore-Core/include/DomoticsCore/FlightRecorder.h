@@ -101,6 +101,10 @@ class FlightRecorder {
 public:
     enum class Promotion : uint8_t { None = 0, CrashCallback = 1, UnexpectedReset = 2, UnownedSoftwareReset = 3 };
     enum : uint32_t { FAST_INTERVAL_MS = 10000, SLOW_INTERVAL_MS = 600000 };
+    // Phase marker values: 0 idle, 1..N the component's 1-based initialization
+    // index (ComponentRegistry::loopAll), 0xFF event dispatch. Handlers that do
+    // real work outside loop() may set their own in the high byte later.
+    enum : uint16_t { PHASE_IDLE = 0, PHASE_EVENT_DISPATCH = 0xFF };
 
     static FlightRecorder& instance();
 

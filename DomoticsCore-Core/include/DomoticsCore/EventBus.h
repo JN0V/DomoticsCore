@@ -215,11 +215,7 @@ public:
                         }
                     }
                 }
-                // Decrement pending counter for this topic
-                auto itp = pendingByTopic.find(qe.topic);
-                if (itp != pendingByTopic.end() && itp->second > 0) {
-                    itp->second -= 1;
-                }
+                releasePending(qe.topic);
             } else {
                 auto it = subscriptions.find(qe.type);
                 if (it != subscriptions.end()) {
@@ -233,6 +229,9 @@ public:
         dispatching_ = false;
     }
 
+    /** @brief Events dropped on queue overflow since construction or reset() (BUG-36, LO-5). */
+    uint32_t getDroppedCount() const { return droppedEvents_; }
+
     // Contract: reset() must leave the EventBus in the exact same state
     // as a freshly constructed instance. If you add new members, update this method.
     // Note: dispatching_ is not reset because the assert guarantees it is already false.
@@ -245,25 +244,34 @@ public:
         nextId = 1;
         lastByTopic.clear();
         pendingByTopic.clear();
+        droppedEvents_ = 0;
     }
 
 private:
     void enqueue(QueuedEvent&& qe) {
         // Basic backpressure: cap queue length
-        if (queue.size() < 32) {
-            queue.push(std::move(qe));
-        } else {
-            // drop oldest
+        if (queue.size() >= 32) {
+            // BUG-36: the dropped event is still counted as pending for its
+            // topic unless it is released here; a stale count blocks the
+            // topic's sticky replay for the life of the process.
+            releasePending(queue.front().topic);
             queue.pop();
-            queue.push(std::move(qe));
+            ++droppedEvents_;
         }
+        queue.push(std::move(qe));
         // Track pending by topic to help skip duplicate sticky replay
-        if (!queue.empty()) {
-            const QueuedEvent& back = queue.back();
-            if (back.topic.length() > 0) {
-                pendingByTopic[back.topic] = pendingByTopic[back.topic] + 1;
-            }
+        const QueuedEvent& back = queue.back();
+        if (back.topic.length() > 0) {
+            pendingByTopic[back.topic] = pendingByTopic[back.topic] + 1;
         }
+    }
+
+    void releasePending(const String& topic) {
+        if (topic.length() == 0) return;
+        auto itp = pendingByTopic.find(topic);
+        if (itp == pendingByTopic.end()) return;
+        if (itp->second > 1) itp->second -= 1;
+        else pendingByTopic.erase(itp);
     }
 
     static bool isWildcard(const String& topic) {
@@ -312,6 +320,7 @@ private:
     std::map<String, std::vector<uint8_t>> lastByTopic;
     // Pending counts per topic to prevent duplicate sticky replay
     std::map<String, int> pendingByTopic;
+    uint32_t droppedEvents_ = 0;   // BUG-36: events popped on overflow, since construction or reset()
     bool dispatching_ = false;
 };
 

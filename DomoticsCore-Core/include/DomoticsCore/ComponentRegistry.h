@@ -9,6 +9,7 @@
 #include "Logger.h"
 #include "EventBus.h"
 #include "Events.h"
+#include "FlightRecorder.h"
 
 namespace DomoticsCore {
     class Core; // Forward declaration
@@ -155,13 +156,19 @@ public:
     void loopAll() {
         if (!initialized) return;
         
+        // OBS-3: the phase marker names who was running when the device died.
+        FlightRecorder& rec = FlightRecorder::instance();
+        uint16_t index = 0;
         for (auto* component : initializationOrder) {
+            ++index;
             if (component->isActive()) {
+                rec.setPhase(index);
                 component->loop();
             }
         }
-        // Dispatch queued events
+        rec.setPhase(FlightRecorder::PHASE_EVENT_DISPATCH);
         eventBus.poll();
+        rec.setPhase(FlightRecorder::PHASE_IDLE);
     }
     
     /**
