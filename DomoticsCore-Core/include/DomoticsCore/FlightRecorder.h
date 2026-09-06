@@ -37,7 +37,8 @@
 #endif
 // -DDOMOTICS_FLIGHT_RECORDER_TICK=0 compiles the sampler and the phase marker
 // out (promotion and the crash record stay): the removal check for the rings,
-// and the other side of the loop-cost measurement.
+// and the other side of the loop-cost measurement. The ESP8266 latch of OBS-4
+// lives in the sampler: with it out, survived failures go unrecorded there.
 #ifndef DOMOTICS_FLIGHT_RECORDER_TICK
 #define DOMOTICS_FLIGHT_RECORDER_TICK 1
 #endif
@@ -196,16 +197,16 @@ public:
     void markOurs();
     /** From the platform's crash callback: no allocation, no log, one RTC write; then the user hook. */
     void recordCrash(const CrashInfo& info);
-    /**
-     * An allocation failed and the firmware survived it (OBS-4): from the ESP32
-     * heap hook on whichever task failed, or from the ESP8266 latch in tick().
-     * No allocation, no log; the group goes to RTC at once, count word last.
-     */
-    void noteFailedAlloc(uint32_t size, uint32_t site);
+    /** A survived allocation failure (OBS-4), from the ESP32 heap hook on any task or the
+     *  ESP8266 latch in tick(): no allocation, no log; the group goes to RTC at once, count last. */
+    void noteFailedAlloc(uint32_t size, uint32_t site) { noteFailedAllocImpl(size, site, true); }
     typedef void (*FailedAllocHook)(uint32_t size, uint32_t site);
+    /** Runs in the failing task's context, inside the allocator: no allocation, no log, no blocking. */
     void onFailedAlloc(FailedAllocHook hook) { userFailedAllocHook_ = hook; }
     uint32_t failedAllocCount() const { return current_.failAllocCount(); }
     uint32_t lastFailedAllocSize() const { return current_.failAllocSize(); }
+    /** Count and last size read together under the group's section (OBS-4). */
+    void failedAllocSnapshot(uint32_t& count, uint32_t& lastSize) const;
     /** A user hook to run after the record is written, from the crash context. */
     typedef void (*CrashHook)(const CrashInfo&);
     void onCrash(CrashHook hook) { userCrashHook_ = hook; }
@@ -225,6 +226,7 @@ private:
     void startFresh(uint32_t seq);
     void writeAll(const FlightRecord& r);
     void flush();
+    void noteFailedAllocImpl(uint32_t size, uint32_t site, bool walk);
     // RTC is held only while a PROMOTED record waits for acknowledgement: a
     // fresh record must be writable during bring-up, or a death in begin()
     // — the boot loop this exists for — leaves nothing (found in review).
@@ -238,7 +240,7 @@ private:
     uint32_t runMin_, lastTickFree_, largestAtMin_, lastTickMs_, lastSlowMs_, lastSampleMs_;
     uint32_t fastIdx_, slowIdx_;
     bool extraWalkDone_;
-    bool restartHookInstalled_, failedAllocHookInstalled_;
+    bool restartHookInstalled_, failedAllocHookInstalled_, inUserFailedAllocHook_;
     CrashHook userCrashHook_;
     FailedAllocHook userFailedAllocHook_;
 };

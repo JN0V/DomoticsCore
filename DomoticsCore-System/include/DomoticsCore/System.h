@@ -320,11 +320,13 @@ private:
         console->registerCommand("storage", [this](const String& args) { return getStorageContents(args); });
         console->registerCommand("bootdiag", [this](const String&) { return getBootDiagnostics(); });
 #if DOMOTICS_ENABLE_CRASH_COMMANDS
-        // OBS-3: die on purpose so the next boot's record can be checked.
+        // OBS-3: die on purpose so the next boot's record can be checked; OBS-4
+        // adds three the firmware survives (nothrow, squeeze, release).
         // Never in a shipped build (SEC-4): the flag lives in test environments only.
         console->registerCommand("crash", [](const String& args) -> String {
-            if (HAL::Platform::crashForTest(args.c_str())) return String("crashing: ") + args;
-            return String("usage: crash abort|oom|null|swdt|hwdt|hang");
+            const bool survived = HAL::Platform::crashKindSurvives(args.c_str());
+            if (HAL::Platform::crashForTest(args.c_str())) return String(survived ? "done: " : "crashing: ") + args;
+            return String("usage: crash abort|oom|null|swdt|hwdt|hang|nothrow|squeeze|release");
         });
 #endif
         
@@ -615,9 +617,11 @@ private:
                        (ph & FlightRecorder::PHASE_INIT) ? " (during begin())" : "");
         }
         // OBS-4: survived failures of this run, readable without a reboot.
-        if (rec.failedAllocCount() > 0) {
+        uint32_t fails = 0, lastFailSize = 0;
+        rec.failedAllocSnapshot(fails, lastFailSize);
+        if (fails > 0) {
             appendDiag(buf, sizeof(buf), pos, "  this boot: failed allocs %lu, last %lu B\n",
-                       (unsigned long)rec.failedAllocCount(), (unsigned long)rec.lastFailedAllocSize());
+                       (unsigned long)fails, (unsigned long)lastFailSize);
         }
 #if __has_include(<DomoticsCore/SystemInfo.h>)
         auto* sysInfo = core.getComponent<Components::SystemInfoComponent>("System Info");

@@ -215,8 +215,16 @@ OBS-3's board checks: `crash <kind>` kills the device on purpose — the
 connection drops, which `--expect-drop` treats as the pass — and `bootdiag`
 on the next boot prints what the flight recorder kept: the death, its
 phase, the heap minimum since the last tick, the callback's registers on
-ESP8266, and the fast ring. The `crash` command exists only in builds made
-with `-DDOMOTICS_ENABLE_CRASH_COMMANDS=1` (`EXTRA_BUILD_FLAGS` for
+ESP8266, the failed-allocation group (OBS-4) and the fast ring. Three kinds
+the firmware survives, from OBS-4: `nothrow` (a 1 MiB request that fails —
+the ESP32 heap hook fires, the ESP8266 latch takes it at the next sample;
+`bootdiag` in the same run then shows `this boot: failed allocs N`, one more
+than before),
+`squeeze` (holds heap in 1 KB / 4 KB chunks until about 12 KB stays
+allocatable: a leaking device an hour before it dies) and `release`. The
+console answers `done:` for those rather than `crashing:`. The `crash`
+command exists only in builds made with
+`-DDOMOTICS_ENABLE_CRASH_COMMANDS=1` (`EXTRA_BUILD_FLAGS` for
 `run-example.sh`, or `PLATFORMIO_BUILD_FLAGS`); no shipped environment has
 it. A device that reboots faster than its WiFi rejoins answers
 "connect failed" for a few seconds — wait, do not conclude.
@@ -236,7 +244,11 @@ values per kind, and a fourth argument overrides them (on ESP32 every panic
 is "unexpected reset": pass that). Exit 0 is the pass; the serial capture and
 the `bootdiag` text land under `$CRASH_CHECK_OUT` (default `/tmp/crash-check`).
 Loop it over `abort oom null swdt hwdt reboot` on an ESP8266, `abort null
-hang restart reboot` on an ESP32.
+hang restart reboot` on an ESP32. `nothrow` is the no-drop kind (OBS-4): the
+script sends it without expecting the connection to fall, reads the same
+run's `bootdiag` before and after and passes on a count one higher; the
+serial capture keeps the diag profile's `:oom(...)` line. `squeeze` and
+`release` pass on the console's `done:` reply.
 
 ## `read_noreset.py` and `read_acm.py`
 
@@ -269,6 +281,14 @@ the WROOM-32D ran FullStack for the death sequence and this probe for the
 loop cost. Its `extra_scripts` runs `clean_examples.py` first: the copy of
 `DomoticsCore-System` into its libdeps would otherwise drag
 `examples/FullStack/.pio` along, recursively (3.8 GB in ten minutes, once).
+
+`[env:nodemcuv2-diag]` is OBS-4's ESP8266 diagnostic profile —
+`-DDEBUG_ESP_OOM -g` with a fixed build id — the recipe for any example
+through `EXTRA_BUILD_FLAGS`. What each flag buys and costs is measured in
+the OBS-4 entry of `docs/CODE-ROADMAP.md`; the flags must be `build_flags`
+(they have to reach every library). Optionally add `-DDEBUG_ESP_HWDT` for a
+stack dump after a hardware watchdog; its greeting prints at the ROM's
+74 880 baud, so at 115 200 it is the noise on the first line.
 
 ## `probes/` — the OBS session's board probes
 

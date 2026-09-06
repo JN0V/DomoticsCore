@@ -294,6 +294,9 @@ void test_loop_warns_about_survived_failures_at_most_once_a_minute() {
     HAL::Platform::advanceMillisForTest(60000);
     testCore->loop();                                       // next minute: the new count
     TEST_ASSERT_EQUAL_UINT(2, countAllocWarnings());
+    HAL::Platform::advanceMillisForTest(60000);
+    testCore->loop();                                       // a minute with no new failure: silent (the change gate)
+    TEST_ASSERT_EQUAL_UINT(2, countAllocWarnings());
     bool sawTwo = false;
     for (const auto& l : g_lines) if (l.find("since boot: 2, last 512 B") != std::string::npos) sawTwo = true;
     TEST_ASSERT_TRUE(sawTwo);
@@ -301,8 +304,33 @@ void test_loop_warns_about_survived_failures_at_most_once_a_minute() {
     HAL::Platform::resetMillisForTest();
 }
 
+void test_begin_logs_every_ring_line_of_a_saturated_record() {
+    // The boot-log buffer must hold format()'s longest output, or the ring's
+    // tail — the heap's trend into the death — is cut silently.
+    FlightRecorder::instance().begin();
+    FlightRecord r;
+    HAL::Platform::rtcRead(0, r.w, FlightRecord::WORDS);
+    for (size_t i = FlightRecord::W_SEQ; i < FlightRecord::WORDS; ++i) r.w[i] = 0xFFFFFFFFu;
+    r.w[FlightRecord::W_PHASE] = FlightRecord::encodePhase(0xFFFF);
+    r.w[FlightRecord::W_FAIL] = FlightRecord::encodeCount(0xFFFF);
+    r.w[FlightRecord::W_META] |= FlightRecord::CALLBACK_RAN;
+    r.w[FlightRecord::W_CRC] = r.bodyCrc();
+    HAL::Platform::rtcWrite(0, r.w, FlightRecord::WORDS);
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Software);
+    g_lines.clear();
+    auto id = LoggerCallbacks::addCallback([](LogLevel, const char*, const char* msg) { g_lines.emplace_back(msg ? msg : ""); });
+    TEST_ASSERT_TRUE(testCore->begin());
+    LoggerCallbacks::removeCallback(id);
+    unsigned ringLines = 0;
+    for (const auto& l : g_lines) if (l.find("ring:") != std::string::npos) ++ringLines;
+    TEST_ASSERT_EQUAL_UINT(4, ringLines);                   // 16 samples, four per line; red with a 768-byte buffer
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
+    
+    RUN_TEST(test_begin_logs_every_ring_line_of_a_saturated_record);
     
     RUN_TEST(test_begin_registers_the_heap_hook_after_the_record_is_written);
     RUN_TEST(test_a_platform_failure_reaches_the_record_through_the_hook);

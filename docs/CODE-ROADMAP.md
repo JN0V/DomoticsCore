@@ -3347,7 +3347,8 @@ not.
   crash loop are not counted (the held record keeps the first, the
   sequence number stands still); `umm_last_fail_alloc` is "since boot", a
   handled `nothrow` failure earlier in the run is what a later unrelated
-  death reports (Lot C latches and clears it); residual 8 of the design
+  death reports (**closed by Lot C**: latched into the record's group and
+  cleared at every sample, measured on the board); residual 8 of the design
   (the `cont` stack during `bootdiag`) now stands against a 1 KB buffer,
   unmeasured.
 - **What it does not do, still**: read the ESP32 core dump or publish
@@ -3359,25 +3360,146 @@ not.
   `DOMOTICS_ENABLE_CRASH_COMMANDS`, the `bootdiag` blob replacing three
   Storage keys, the `bootdiag` text change, the new per-loop cost.
 
-### OBS-4 — the moment memory ran out is never recorded [MEDIUM] — **NEW (2026-09-05)**
+### OBS-4 — the moment memory ran out is never recorded [MEDIUM] — **DONE (2026-09-06, Lot C)**
 
-- **Measured**: on the nodemcuv2 a failing `new` recorded its caller
-  (`0x40201287`) and size (1024) **on a stock build** — `operator new` sets
-  `umm_last_fail_alloc_addr/size` before aborting (`abi.cpp:38-46`); only
-  the C allocation paths need `-DDEBUG_ESP_OOM` (`heap.cpp:104-127`). On the
-  WROOM-32D `heap_caps_register_failed_alloc_callback()` fired once, at the
-  terminal failure (4 096 B, caps `INTERNAL|DEFAULT`) — **while reporting
-  91 264 B of internal heap "free"**, which is 32-bit-only IRAM that
-  `malloc` cannot use. Zero firings in 60 s idle without WiFi.
-- **Fix**: ESP8266 — the crash callback copies the two words into OBS-3's
-  record; the diagnostic profile (`-DDEBUG_ESP_OOM`, `-g`, optionally
-  `-DDEBUG_ESP_HWDT`) adds C-allocation sites and line tables, its cost
-  measured and written down. ESP32 — the hook writes size, allocatable
-  free (`MALLOC_CAP_8BIT|INTERNAL`), largest block and uptime under a
-  seqlock, with a **counter** because the hook fires per failed attempt;
-  its rate under WiFi + MQTT load is measured in this lot before one call
-  is read as death.
-- **Depends on**: OBS-3.
+- **Problem**: the record said how the heap *trended* before a death and,
+  on ESP8266 only, which allocation *killed* the process. An allocation
+  that failed and was survived — the way a WiFi stack or a JSON document
+  degrades for minutes before something dies — left nothing; on ESP32 the
+  `last fail` fields were always zero, and on ESP8266 the core's
+  `umm_last_fail_alloc_addr/size` were "since boot", so a handled failure
+  early in the run is what a later unrelated death reported (Lot B's
+  recorded residual).
+- **Measured before the lot (2026-09-05)**: on the nodemcuv2 a failing
+  `new` recorded its caller and size on a stock build (`abi.cpp:38-46`);
+  on the WROOM-32D `heap_caps_register_failed_alloc_callback()` fired once,
+  at the terminal failure (4 096 B, caps `INTERNAL|DEFAULT`) while
+  `ESP.getFreeHeap()` reported 91 264 B "free" of IRAM `malloc` cannot use;
+  zero firings in 60 s idle without WiFi.
+- **Read for the plan, and what the review corrected** (plan
+  `spec-obs-lot-c-oom-moment.md` v2, `review-obs-lot-c-adversarial.md`, 19
+  findings): the ESP32 hook slot is a single `.bss` word with no getter;
+  `heap_caps_alloc_failed` runs on the failing task on either core after the
+  heap lock is released, and sits in `.iram1` where the two heap reads sit
+  in `.text`; the shipped `sdkconfig` has `CONFIG_SPIRAM` and
+  `ALWAYSINTERNAL 4096` — one firing per failed `malloc` on the bench
+  boards only because `esp_spiram_init()` fails without the chip, **two per
+  request over 4 096 B on a PSRAM board**, the first with caps `0x1400`. On
+  ESP8266 **the stock build records almost nothing for the C paths**:
+  `operator new` (`nothrow` included) and newlib's `_malloc_r` family set
+  the globals; `String` (`WString.cpp:246`), ArduinoJson, lwIP and the SDK
+  allocate through umm's own `malloc`/`realloc`/`pvPortMalloc`, whose
+  recording macro the stock build compiles to nothing (`heap.cpp:209-217`,
+  "64 more bytes of IRAM to turn on") — `-DDEBUG_ESP_OOM` is what makes
+  them visible. This repository has zero `nothrow` sites.
+- **Fix (Lot C, PR pending)**: **layout 2** of the RTC record — `w56-60`
+  become the failed-allocation group (a count word validated by its
+  complement, size, `free16|largest16`, the site — ESP8266 caller / ESP32
+  caps — and uptime), **outside the CRC like the phase marker and never
+  written by the tick's flush**, because the ESP32 hook stores it straight
+  to RTC from whichever task failed, under a `portMUX` critical section,
+  count word last; a layout-1 record is read with its own CRC rule once and
+  rewritten (the first boot after the upgrade keeps its death — measured:
+  `boot #29` continuing Lot B's `#27` where a rejected layout restarts at
+  `#0`). ESP32: the hook is taken as the **last act** of `begin()`, so a
+  failure on another task during the fresh record's write is not erased
+  (pinned natively: "Expected 1 Was 0" when registered first); a user hook
+  chains through `onFailedAlloc()`; opt-out `DOMOTICS_CRASH_HOOKS=0`.
+  ESP8266: every millisecond-gated sample of `tick()` takes the two globals
+  into the group under `xt_rsil(15)` and **clears them**, so the crash
+  callback's fail fields mean "the allocation that killed us, or nothing"
+  — and the core's own postmortem line `last failed alloc call` now means
+  the same narrower thing. One largest-block walk per tick interval, shared
+  with the cliff walk. `Core::loop()` logs `Allocation failures since boot:
+  N, last S B` at most once a minute; `bootdiag` prints the promoted
+  record's group before the ring and a `this boot: failed allocs N` line
+  for the current run. Two buffers from Lot B fixed on the way:
+  `Core::begin()`'s 768 bytes against a saturated 942, and
+  `getBootDiagnostics()`'s unclamped cursor (eight bytes short of
+  reachable, kept as a defence). Crash commands `nothrow`, `squeeze`,
+  `release` (survived; the console answers `done:`), `crash_check.sh`'s
+  no-drop mode.
+- **Measured, nodemcuv2 (`obs-lotb-probe`)**: `oom` → callback `last
+  failed alloc 1024 B from 0x4020b948`, group empty; `nothrow` → `this
+  boot: failed allocs 1` in the same run, then `abort` → the callback's
+  fields **zero** and the group `1 | last 1048576 B from 0x4020b864 | free
+  29696 B, largest 28880 B` — Lot B's residual closed on the board;
+  `nothrow` then `hwdt` → the group survives a reset that ran no code.
+  **Removal check**: `-DDOMOTICS_FLIGHT_RECORDER_TICK=0` (no latch) →
+  `nothrow` then `abort` reports the stale 1 048 576 B failure as the
+  death's (`from 0x4020b62c`) — the residual reproduced on demand. Loop
+  cost: 39 µs with the tick off, 46 with it on, as Lot B measured; the
+  latch adds nothing resolvable — **but two boots of the stock build read
+  81–82 µs where two of the HWDT build read 46 on the same day**, and the split follows the build, not the boot (three boots each: 81–82 vs 46). **Then one flash settled it**: the `-g` image of the same source — the same code, laid out 416 B differently — reads 58 µs where the stock image reads 87–88. **The ESP8266's per-loop cost depends on the link layout**, by up to a factor of two: the loop's hot code sits in flash behind a 32 KB instruction cache, and where the linker puts it decides the miss rate. So no per-loop cost below ~40 µs can be resolved by comparing two builds on this platform — Lot B's 39/46 figures were two builds too, and the recorder's "7 µs" is inside this spread. What holds: the tick-off build of this lot reads 39 like Lot B's, and nothing this lot adds per loop is more than two loads and a branch per millisecond.
+- **The diagnostic profile, measured** (five probe builds with a fixed
+  build id; `.irom0.text` is flash code, `.text1` is IRAM):
+
+  | build | `firmware.bin` | `.irom0.text` | `.text1` (IRAM) | `.rodata` / `.bss` | heap at boot | what it bought |
+  |---|---|---|---|---|---|---|
+  | stock | 413 695 | 375 380 | 28 717 | 7 780 / 31 864 | 34 752–34 800 | — |
+  | `-g` | 413 279 (**−416**) | 374 964 | 28 717 | same | — | `addr2line` on the `oom` caller: `Platform_ESP8266.h:399` where the stock ELF gives `crashForTest ??:?`; the group's `bigstring` site: `String::changeBuffer` `WString.cpp:246`. **Not byte-identical**, against the plan's "by construction": two stock builds of one source hash identically (`d0a9764a…`), the `-g` build differs (`.irom0.text` −416 B, twice); the delta sits in ArduinoJson template instantiations whose sizes move both ways between the two ELFs — the shape of GCC's identical-code folding (`-fipa-icf`, on at `-Os`) choosing different representatives once debug info tells functions apart. Hypothesis, not chased further; the point stands that `-g` is free in RAM and IRAM, not invisible in flash |
+  | `-DDEBUG_ESP_OOM` | 415 011 (+1 316) | +440 | **+840** | +36 / +8 | 34 760 | `:oom(1048576)@abi.cpp:72` on the console at each `nothrow` (debug output on); **`bigstring` — a `String` grown until its `realloc` fails — counts under the profile (`failed allocs 3, last 30032 B`) and not on the stock build (no line)**; loop 70 µs, inside the boot-to-boot spread |
+  | `-DDEBUG_ESP_HWDT` | 415 079 (+1 384) | +1 208 | +212 | −16 `.bss` | 34 704 (−48) | after `crash hwdt`: `Hardware WDT reset`, then 372 stack lines (`ctx: sys`, `ctx: cont`) for the exception decoder; the greeting prints at the ROM's 74 880 baud and reads as noise at 115 200 |
+  | `-DDEBUG_ESP_HWDT_NOEXTRA4K` | 415 095 | +1 224 | +212 | same | 34 704 | the same; the 4 KB the name is about moves between the `sys` stack and the dump, not the heap at boot — the review expected −4 096 here and measured none |
+
+  Recipe: `[env:nodemcuv2-diag]` in the probe's `platformio.ini`
+  (`-DDEBUG_ESP_OOM -g`, the fixed id), `EXTRA_BUILD_FLAGS` for any
+  example; the flags must be `build_flags` so they reach every library.
+- **Measured, WROOM-32D (FullStack with the crash commands, WiFi + MQTT
+  connected, HA entities published)**: `oom` → `unexpected reset` with the
+  group `1 | last 4096 B caps 0x1800 at 40.221 s | free 6720 B, largest
+  2800 B` — the failure stamped 9 s after the record's last tick, which is
+  the panic-right-after shape the RTC-direct store exists for; `nothrow` →
+  `Allocation failures since boot: 1, last 1048576 B` on serial and `this
+  boot: failed allocs 1` in the same run; `crash restart` → `none
+  recorded`, unchanged. **The rate on a healthy device** (the reading D6
+  wanted before one firing is believed): **zero** in ten minutes idle on
+  the LAN, **zero** through one natural 1.35 MB OTA upload, **zero**
+  through a 60 s WebUI session of 240 requests over six routes with the SSE
+  stream open, MQTT connected throughout. **Squeezed to 12 KB allocatable**:
+  13 firings within seconds, the Telnet console stopped answering (a dying
+  console is not the device dying — the plan said so, and the readings
+  taken through it in that state are void), and **twelve minutes later the
+  device died of the task watchdog after 168 survived failures**, the last
+  2 308 B at 4 752 B free and 1 264 B largest, phase 5 — the record of a
+  death by starvation, which is what OBS-4 was for. So on ESP32 one firing
+  is news, not weather: a healthy FullStack never fires; a device that
+  fires is on its way down, and the count says how far. 12 KB is past the
+  cliff on this platform (lwIP and WiFi fail at once); a slower leak was
+  not staged. **Removal check**: `-DDOMOTICS_CRASH_HOOKS=0` → `oom` reads
+  `unexpected reset` with no group. Flash: +1 032 B esp32dev, +572 B
+  esp8266dev (S2 over S1); the hook path itself +148 B.
+- **Verification, native**: 23 cases over the lot (21 in Core, 2 in System; 913 → 936 on the count the Lot B handoff used): the count word by literal (`0x0003FFFC`, `0xFFFF0000`), a
+  firing with no tick then a boot, the flush never writing the group (red
+  on the single `memcpy`), the group outside the CRC (red inside it), one
+  walk for a burst and a cliff, RAM-only while a death is held, the layout-1
+  migration, the saturated `format()` under 128 per line and 1024 in all,
+  registration last, the once-a-minute line, one failure across twenty
+  samples counting once (red without the clear: "Expected 1 Was 20").
+- **Residuals recorded, unfiled**: a PSRAM board counts attempts (two per
+  request over 4 096 B, the caps word of the last); a panic between the
+  group's field stores and its count store leaves the previous count over
+  new fields; two ESP32 writers serialise on the spinlock and the second's
+  fields win; survived failures during a bring-up that dies before
+  `acknowledge()` stay in RAM and are lost — by design, since writing them
+  over a held death's group would attribute them to it (`deferred-work.md`);
+  a slower ESP32 leak than "12 KB at once" was not staged; the ESP8266
+  stock build's coverage is what it is — the profile is the answer.
+- **The code review before the PR** (`review-obs-lot-c-code.md`, four
+  layers, 41 raw findings, 24 patched): a survived failure that reaches the
+  crash callback under an exception within the millisecond before the latch
+  was reported as the death's cause — routed to the group now, pinned; a
+  deliberate `DOMOTICS_CRASH_HOOKS=0` warned "hook not registered" on every
+  ESP32 boot; `nothrow` and `squeeze` would have allocated from PSRAM;
+  the once-a-minute gate, the count-last store, the per-platform site
+  label and the boot-log buffer had no observer — four tests, each red on
+  the mutation it names.
+- **The release that ships this must announce**: layout 2 (a one-boot
+  migration, nothing lost); the ESP32 failed-allocation slot taken unless
+  `DOMOTICS_CRASH_HOOKS=0`; the ESP8266 postmortem's `last failed alloc
+  call` now meaning "since the last sample"; what a stock ESP8266 build can
+  count and what needs `-DDEBUG_ESP_OOM`; the new WARN line and the two
+  `bootdiag` lines; the two buffer fixes.
 
 ### OBS-7 — ESP32: a stuck `loop()` never reboots [MEDIUM] — **DONE (2026-09-05, Lot A)**
 
@@ -3533,8 +3655,8 @@ not.
 | 8. CI/Infrastructure | CI-1 to CI-15 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 open, **CI-13 done 2026-09-01** — paid a second time at 19 GB before the fix its entry prescribed was finally applied; **CI-14** — FullStack is green in CI and unusable on an ESP8266; **CI-15 new** — no `library.json` declares `export.exclude`, the family's root cause, deferred to a release-aware lot) |
 | 9. Dead Code | DC-1 to DC-15, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M (**DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
-| 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 3M, 0L (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-3 closed by Lot B on 2026-09-06** — the recorder in Core, promotion first, the record held until persisted, both boards' death sequences read back, three removal checks; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check — its transport half stays open with OBS-4 and OBS-5; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
-| **Total** | **141 items** | | **0C, 0H, 42M, 34L** (78 resolved) |
+| 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 2M, 0L (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-4 closed by Lot C on 2026-09-06** — the failed-allocation group in the record, the ESP32 heap hook, the ESP8266 latch-and-clear, the diagnostic profile measured; **OBS-3 closed by Lot B on 2026-09-06** — the recorder in Core, promotion first, the record held until persisted, both boards' death sequences read back, three removal checks; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check — its transport half stays open with OBS-4 and OBS-5; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
+| **Total** | **141 items** | | **0C, 0H, 41M, 34L** (79 resolved) |
 
 The severity columns sum across the rows: **zero open HIGH again — and
 this time the last one left by a fix.** BUG-35 was filed by the 2026-09-01
@@ -3544,10 +3666,11 @@ board-measured red-then-green on both platforms. The sequence is the
 system working: the campaign refilled the column, the fix emptied it. The
 rows were checked against the section headings rather than only re-summed
 — the sweep below, re-run for the BUG-35 lot, reports **35 `[HIGH]`
-headings, 35 with evidence, 0 open**. The MEDIUM column sums to 42:
-6 + 4 + 6 + 4 + 3 + 1 + 5 + 10 + 0 + 3 — the three at the end are OBS-1
-(transport half), OBS-4 and OBS-5; Lot B closed OBS-3 and BUG-36 on
-2026-09-06 (44 → 42, resolved 76 → 78). BUG-37 was Code Safety's eighth
+headings, 35 with evidence, 0 open**. The MEDIUM column sums to 41:
+6 + 4 + 6 + 4 + 3 + 1 + 5 + 10 + 0 + 2 — the two at the end are OBS-1
+(transport half) and OBS-5; Lot C closed OBS-4 on 2026-09-06 (42 → 41,
+resolved 78 → 79); Lot B closed OBS-3 and BUG-36 the same day (44 → 42,
+resolved 76 → 78). BUG-37 was Code Safety's eighth
 for one day: filed by OBS-7's residual-6 measurement (total 140 → 141,
 45M) and fixed the same evening (44M, resolved 75 → 76).
 The seven OBS items and BUG-36 were filed 2026-09-05 and moved the total

@@ -19,13 +19,12 @@
 #include "Platform_Arduino.h"
 #include <bearssl/bearssl_hash.h>
 
+#include <new>      // std::nothrow (crash nothrow, OBS-4)
 extern "C" {
 #include <user_interface.h>
 #include <osapi.h>  // os_get_random() — hardware RNG for the WebUI CSRF token
-extern "C" {
 extern void* umm_last_fail_alloc_addr;   // heap.cpp: the last allocation that returned NULL (OBS-4)
 extern int umm_last_fail_alloc_size;
-}
 }
 
 // ESP8266 logging macros (ESP32 has these built-in)
@@ -356,11 +355,41 @@ inline void rtcStoreWord(uint32_t wordOffset, uint32_t value) {
 }
 
 /**
+ * @brief Hold heap in chunks until about 12 KB stays allocatable (OBS-4 D6: a leaking device an hour
+ * before it dies), or give it back. The table is static so the chunks stay reachable.
+ */
+inline bool squeezeForTest(bool hold, size_t chunk) {
+    static void* s_chunks[256];
+    static size_t s_held = 0;
+    if (!hold) {
+        while (s_held > 0) { free(s_chunks[--s_held]); s_chunks[s_held] = nullptr; }
+        return true;
+    }
+    // Never the failing malloc itself: under DEBUG_ESP_OOM the latch would count the squeeze.
+    while (s_held < 256 && getAllocatableFreeHeap() > 12 * 1024 && getLargestFreeBlock() >= chunk) {
+        void* p = malloc(chunk);
+        if (!p) break;
+        s_chunks[s_held++] = p;
+    }
+    return true;
+}
+
+/**
  * @brief Provoke one death class on purpose, for the flight recorder's board checks (OBS-3).
  * Compile-gated at the call site (DOMOTICS_ENABLE_CRASH_COMMANDS); returns false for an unknown kind.
  */
 inline bool crashForTest(const char* kind) {
     String k(kind);
+    if (k == "nothrow") {
+        // OBS-4: a survived failure. Kept in a volatile sink or the compiler
+        // drops the allocation (Lot B's lesson); the request cannot succeed.
+        static volatile uint8_t* volatile s_nothrowKeep = nullptr;
+        s_nothrowKeep = new (std::nothrow) uint8_t[1u << 20];
+        const bool failed = s_nothrowKeep == nullptr;
+        if (s_nothrowKeep) { delete[] s_nothrowKeep; s_nothrowKeep = nullptr; }
+        return failed;
+    }
+    if (k == "squeeze" || k == "release") { return squeezeForTest(k == "squeeze", 1024); }
     if (k == "abort") { abort(); }
     if (k == "oom")   {
         // Through a volatile global, or the compiler elides the whole chain of

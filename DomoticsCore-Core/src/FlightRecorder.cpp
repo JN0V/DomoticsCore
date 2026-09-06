@@ -31,12 +31,11 @@ void rtcStoreWord(uint32_t wordOffset, uint32_t value) {
 static portMUX_TYPE s_failGroupMux = portMUX_INITIALIZER_UNLOCKED;
 void failGroupEnter() { portENTER_CRITICAL_SAFE(&s_failGroupMux); }
 void failGroupLeave() { portEXIT_CRITICAL_SAFE(&s_failGroupMux); }
-static FailedAllocHook s_failedAllocHook = nullptr;
 #if DOMOTICS_CRASH_HOOKS
-// IDF's signature. Runs on the failing task after the heap lock is released
-// (heap_caps_malloc, .iram1). Not IRAM itself: a failed allocation never
-// runs with the flash cache off — IDF's own reason for heap_caps_get_free_size
-// living in .text.
+static FailedAllocHook s_failedAllocHook = nullptr;
+// IDF's signature, on the failing task after the heap lock is released. Not
+// IRAM: a failed allocation never runs cache-off (heap_caps_get_free_size is
+// in .text for the same reason). OBS-4.
 static void failedAllocTrampoline(size_t size, uint32_t caps, const char*) {
     if (s_failedAllocHook) s_failedAllocHook(static_cast<uint32_t>(size), caps);
 }
@@ -112,7 +111,7 @@ void FlightRecorder::resetForTest() {
     lastTickMs_ = lastSlowMs_ = lastSampleMs_ = 0;
     fastIdx_ = slowIdx_ = 0;
     extraWalkDone_ = false;
-    restartHookInstalled_ = failedAllocHookInstalled_ = false;
+    restartHookInstalled_ = failedAllocHookInstalled_ = inUserFailedAllocHook_ = false;
     userCrashHook_ = nullptr;
     userFailedAllocHook_ = nullptr;
 }
@@ -246,6 +245,10 @@ void FlightRecorder::tick() {
     // (measured, both boards); a cliff shorter than 1 ms is not a trend.
     if (now == lastSampleMs_ && now != lastTickMs_) return;
     lastSampleMs_ = now;
+    // OBS-4, ESP8266: the core's last failed allocation, latched into the
+    // group and cleared, so the crash callback reads only a fatal one.
+    uint32_t failAddr = 0, failSize = 0;
+    if (HAL::Platform::takeLastFailedAlloc(failAddr, failSize)) noteFailedAlloc(failSize, failAddr);
     const uint32_t freeNow = HAL::Platform::getAllocatableFreeHeap();
     if (freeNow < runMin_) runMin_ = freeNow;
     // One extra largest-block walk per interval, only on a cliff (D3): the
@@ -282,18 +285,18 @@ void FlightRecorder::tick() {
     flush();
 }
 
-void FlightRecorder::noteFailedAlloc(uint32_t size, uint32_t site) {
+void FlightRecorder::noteFailedAllocImpl(uint32_t size, uint32_t site, bool walk) {
     if (!begun_) return;
     const uint32_t freeNow = HAL::Platform::getAllocatableFreeHeap();
-    if (freeNow < runMin_) runMin_ = freeNow;
+    if (freeNow < runMin_) runMin_ = freeNow;   // a benign race with tick() on the other core: a minimum
     // One largest-block walk per tick interval, shared with the cliff walk
-    // (the walk runs with interrupts off on ESP8266). Checked outside the
-    // section: two writers may walk twice, never more.
-    if (!extraWalkDone_) {
-        largestAtMin_ = HAL::Platform::getLargestFreeBlock();
+    // (interrupts off on ESP8266); none from the crash callback. Checked
+    // outside the section: two writers may walk twice, never more.
+    uint32_t largest = largestAtMin_;
+    if (walk && (!extraWalkDone_ || largest == 0)) {   // 0: tick() reset the gate between the two reads
+        largest = largestAtMin_ = HAL::Platform::getLargestFreeBlock();
         extraWalkDone_ = true;
     }
-    const uint32_t largest = largestAtMin_;
     const uint32_t now = HAL::Platform::getMillisAnyContext();
     HAL::Platform::failGroupEnter();
     uint32_t* g = &current_.w[FlightRecord::W_FAIL];
@@ -308,18 +311,38 @@ void FlightRecorder::noteFailedAlloc(uint32_t size, uint32_t site) {
         HAL::Platform::rtcStoreWord(FlightRecord::W_FAIL, g[0]);   // count last: the word that validates the group
     }
     HAL::Platform::failGroupLeave();
-    if (userFailedAllocHook_) userFailedAllocHook_(size, site);
+    // A user hook that allocates and fails would re-enter here: once, not forever.
+    if (userFailedAllocHook_ && !inUserFailedAllocHook_) {
+        inUserFailedAllocHook_ = true;
+        userFailedAllocHook_(size, site);
+        inUserFailedAllocHook_ = false;
+    }
+}
+
+void FlightRecorder::failedAllocSnapshot(uint32_t& count, uint32_t& lastSize) const {
+    HAL::Platform::failGroupEnter();
+    count = current_.failAllocCount();
+    lastSize = current_.failAllocSize();
+    HAL::Platform::failGroupLeave();
 }
 
 void FlightRecorder::recordCrash(const CrashInfo& info) {
     if (!begun_) return;
     FlightRecord& r = current_;
+    // The fail fields belong to the abort/OOM class (253/254): a fatal new set
+    // them and aborted. With any other reason they are a survived failure the
+    // sampler had not latched yet — the group's, not the death's (OBS-4).
+    uint32_t failCaller = info.failCaller, failSize = info.failSize;
+    if (info.reason != 253 && info.reason != 254 && (failCaller || failSize)) {
+        noteFailedAllocImpl(failSize, failCaller, false);
+        failCaller = failSize = 0;
+    }
     r.w[FlightRecord::W_EXC + 0] = info.reason;
     r.w[FlightRecord::W_EXC + 1] = info.exccause;
     r.w[FlightRecord::W_EXC + 2] = info.epc1;
     r.w[FlightRecord::W_EXC + 3] = info.excvaddr;
-    r.w[FlightRecord::W_EXC + 4] = info.failCaller;
-    r.w[FlightRecord::W_EXC + 5] = info.failSize;
+    r.w[FlightRecord::W_EXC + 4] = failCaller;
+    r.w[FlightRecord::W_EXC + 5] = failSize;
     size_t n = info.stackWords < FlightRecord::STACK_WORDS ? info.stackWords : FlightRecord::STACK_WORDS;
     for (size_t i = 0; i < FlightRecord::STACK_WORDS; ++i) {
         r.w[FlightRecord::W_STACK + i] = (info.stack && i < n) ? info.stack[i] : 0;
@@ -343,8 +366,7 @@ void FlightRecorder::recordCrash(const CrashInfo& info) {
 #if DOMOTICS_PLATFORM_ESP8266 && DOMOTICS_CRASH_HOOKS
 extern "C" {
 #include <user_interface.h>
-extern void* umm_last_fail_alloc_addr;   // operator new records these on every build (abi.cpp)
-extern int umm_last_fail_alloc_size;
+// umm_last_fail_alloc_addr/size: declared with the HAL (Platform_ESP8266.h).
 void custom_crash_callback(struct rst_info* rst, uint32_t stack, uint32_t stack_end) {
     CrashInfo c;
     if (rst) {

@@ -74,3 +74,7 @@
 
 - TEST-8's Problem paragraph still says "52 native, 8 per board"; the OTA native suite has 54 cases (BUG-37 added assertions to two of them, not cases) and its `Files` line points at `OTAWebUI.h:353-443`, a handler that now runs past line 500. Pre-existing staleness in an entry BUG-37 cites; not re-derived in that lot.
 - `OTAComponent::setConfig()` logs three of the nine `OTAConfig` fields (`updateUrl`, `autoReboot`, `enableWebUIUpload`) and omits `maxDownloadSize`, `requireUploadHash` and now `uploadIdleTimeoutSec`; a runtime change to a security-relevant field leaves no trace. Pre-existing; the ESP8266 log buffer (128 bytes) is the constraint any fuller line has to fit.
+
+## Deferred from: code review of spec-obs-lot-c-oom-moment (2026-09-06)
+
+- Survived allocation failures during a bring-up that dies before `acknowledge()` stay in RAM and are lost with the next reset: while a promoted death is held in RTC, the new run's group is not written over `w56-60`, or the next boot would attribute this run's failures to the old death. By design (D2 of the plan); sits beside Lot B's residual on uncounted deaths in a crash loop. Evidence: `FlightRecorder.cpp` `noteFailedAllocImpl`, the `rtcHeld()` branch; `test_group_stays_in_ram_while_a_death_is_held_and_lands_at_acknowledge`.

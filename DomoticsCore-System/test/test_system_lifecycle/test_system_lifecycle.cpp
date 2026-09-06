@@ -621,6 +621,11 @@ void test_crash_command_reaches_the_platform(void) {
     TEST_ASSERT_EQUAL_STRING("oom", HAL::Platform::crashKindForTest);
     out = con.run(sys, "crash coffee");
     TEST_ASSERT_TRUE(mentions(out, "usage: crash"));
+    out = con.run(sys, "crash nothrow");                        // OBS-4: survived, so not "crashing"
+    TEST_ASSERT_TRUE(mentions(out, "done: nothrow"));
+    TEST_ASSERT_EQUAL_STRING("nothrow", HAL::Platform::crashKindForTest);
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "crash squeeze"), "done: squeeze"));
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "crash release"), "done: release"));
 }
 
 int main(int argc, char** argv) {

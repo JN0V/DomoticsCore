@@ -33,6 +33,9 @@ class Core {
 private:
     CoreConfig config;
     bool initialized;
+    // The two once-a-minute lines of loop() (LO-5/BUG-36 drops, OBS-4 failures): per instance, not static.
+    uint32_t lastDropsLogged_ = 0, lastFailsLogged_ = 0;
+    unsigned long lastDropLog_ = 0, lastFailLog_ = 0;
     Components::ComponentRegistry componentRegistry;
     
 public:
