@@ -118,10 +118,13 @@ public:
 
         webServer->begin();
         webServer->setAuthHandler([this](AsyncWebServerRequest* request) {
-            return authenticate(request);
+            return authorize(request);
         });
         
         if (config.enableWebSocket) {
+            // SEC-13: the stream honours enableAuth like every route, through
+            // the live config rather than credentials copied at begin().
+            webSocket->setAuthGate([this](AsyncWebServerRequest* request) { return authorize(request); });
             webSocket->begin(webServer->getServer());
             
             webSocket->setForceUpdateCallback([this]() {
@@ -236,6 +239,16 @@ public:
      * each route after this. Public so sibling providers (OTAWebUI) gate their
      * own state-changing routes through the same check instead of copying it.
      */
+    /**
+     * @brief The auth gate every route shares: true when enableAuth is off or
+     * the request carries this device's credentials, read live (SEC-13).
+     * Public so sibling providers and the SSE middleware use it rather than a copy.
+     */
+    bool authorize(AsyncWebServerRequest* request) const {
+        if (!config.enableAuth) return true;
+        return request->authenticate(config.username, config.password);
+    }
+
     bool checkCsrf(AsyncWebServerRequest* request) const {
         if (csrfToken_[0] == '\0') return false;  // not yet generated — fail closed
         String tok;
@@ -379,10 +392,6 @@ public:
     }
 
 private:
-    bool authenticate(AsyncWebServerRequest* request) {
-        if (!config.enableAuth) return true;
-        return request->authenticate(config.username, config.password);
-    }
 
     /**
      * @brief SEC-10: mint a fresh 64-bit CSRF token for this boot.
@@ -437,7 +446,7 @@ private:
         // Polling endpoint for real-time updates AND schema delivery
         // Use ?schema=1 to get schema (avoids separate TCP connection that fails during TIME_WAIT)
         webServer->registerRoute("/api/ui/updates", HTTP_GET, [this](AsyncWebServerRequest* request) {
-            if (config.enableAuth && !authenticate(request)) {
+            if (config.enableAuth && !authorize(request)) {
                 return request->requestAuthentication();
             }
             
@@ -485,7 +494,7 @@ private:
         // addCorsHeaders (ten neighbours do; this one must not), and carries no
         // expiry: a reader with same-origin access is already past every defence.
         webServer->registerRoute("/api/ui/token", HTTP_GET, [this](AsyncWebServerRequest* request) {
-            if (config.enableAuth && !authenticate(request)) {
+            if (config.enableAuth && !authorize(request)) {
                 return request->requestAuthentication();
             }
             char body[40];
@@ -505,7 +514,7 @@ private:
             if (!checkCsrf(request)) {
                 return request->send(403, "application/json", "{\"error\":\"Bad or missing CSRF token\"}");
             }
-            if (config.enableAuth && !authenticate(request)) {
+            if (config.enableAuth && !authorize(request)) {
                 return request->requestAuthentication();
             }
 
@@ -530,6 +539,7 @@ private:
 
         // System info API - optimized for ESP8266: use snprintf instead of String concatenation
         webServer->registerRoute("/api/system/info", HTTP_GET, [this](AsyncWebServerRequest* request) {
+            if (config.enableAuth && !authorize(request)) return request->requestAuthentication();   // SEC-13
             char sysInfo[128];
             snprintf(sysInfo, sizeof(sysInfo), "{\"uptime\":%u,\"heap\":%u,\"clients\":%d}",
                 (unsigned)HAL::Platform::getMillis(), (unsigned)HAL::Platform::getFreeHeap(), getWebSocketClients());
@@ -540,7 +550,7 @@ private:
         
         // API components
         webServer->registerRoute("/api/components", HTTP_GET, [this](AsyncWebServerRequest* request) {
-            if (config.enableAuth && !authenticate(request)) {
+            if (config.enableAuth && !authorize(request)) {
                 return request->requestAuthentication();
             }
             
@@ -557,7 +567,7 @@ private:
             if (!checkCsrf(request)) {
                 return request->send(403, "application/json", "{\"error\":\"Bad or missing CSRF token\"}");
             }
-            if (config.enableAuth && !authenticate(request)) {
+            if (config.enableAuth && !authorize(request)) {
                 return request->requestAuthentication();
             }
 
@@ -594,7 +604,7 @@ private:
 
         // Context schema endpoint - loads full schema for a specific context
         webServer->registerRoute("/api/ui/context", HTTP_GET, [this](AsyncWebServerRequest* request) {
-            if (config.enableAuth && !authenticate(request)) {
+            if (config.enableAuth && !authorize(request)) {
                 return request->requestAuthentication();
             }
 
@@ -654,7 +664,7 @@ private:
         // Schema endpoint - uses ResponseStream for better memory management than chunked
         // ESPAsyncWebServer's chunked response has known memory leak issues
         webServer->registerChunkedRoute("/api/ui/schema", HTTP_GET, [this](AsyncWebServerRequest* request) {
-            if (config.enableAuth && !authenticate(request)) {
+            if (config.enableAuth && !authorize(request)) {
                 request->requestAuthentication();
                 return;
             }

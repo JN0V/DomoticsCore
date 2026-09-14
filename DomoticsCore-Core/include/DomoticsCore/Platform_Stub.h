@@ -701,6 +701,9 @@ inline uint32_t loopWatchdogFeedsForTest = 0;
 inline String resetReasonCaveatForTest;           // scripted; empty = no caveat, the ESP32 shape
 inline bool minFreeHeapTrackedForTest = false;    // scripted; false = the ESP8266 shape
 inline bool loopWatchdogArmFailsForTest = false;  // scripted; true = the platform refuses to arm
+inline uint8_t coreDumpImageForTest[256];         // scripted image bytes (OBS-1)
+inline size_t coreDumpImageLenForTest = 0;
+inline uint32_t coreDumpEraseCallsForTest = 0;
 
 inline void setResetReasonForTest(ResetReason r) { resetReasonForTest = r; }
 inline void setResetDetailForTest(const ResetDetail& d) { resetDetailForTest = d; }
@@ -714,12 +717,39 @@ inline void resetDiagnosticsForTest() {
     resetReasonCaveatForTest = String();
     minFreeHeapTrackedForTest = false;
     loopWatchdogArmFailsForTest = false;
+    coreDumpImageLenForTest = 0;
+    coreDumpEraseCallsForTest = 0;
+}
+/** @brief Script an image: status says a dump of this size waits, reads return these bytes. */
+inline void setCoreDumpImageForTest(const uint8_t* bytes, size_t len) {
+    if (!bytes) len = 0;
+    if (len > sizeof(coreDumpImageForTest)) len = sizeof(coreDumpImageForTest);   // a test asking for more gets the buffer's size back in status
+    if (len) memcpy(coreDumpImageForTest, bytes, len);
+    coreDumpImageLenForTest = len;
+    coreDumpStatusForTest.supported = true;
+    coreDumpStatusForTest.partitionPresent = true;
+    coreDumpStatusForTest.dumpPresent = len > 0;
+    coreDumpStatusForTest.size = static_cast<uint32_t>(len);
 }
 
 inline ResetDetail getResetDetail() { return resetDetailForTest; }
 inline String getResetReasonCaveat(ResetReason /*reason*/) { return resetReasonCaveatForTest; }
 inline bool tracksMinFreeHeap() { return minFreeHeapTrackedForTest; }
 inline CoreDumpStatus getCoreDumpStatus() { return coreDumpStatusForTest; }
+inline size_t coreDumpRead(uint32_t offset, uint8_t* buf, size_t len) {
+    if (!buf || len == 0 || !coreDumpStatusForTest.dumpPresent || offset >= coreDumpImageLenForTest) return 0;
+    if (len > coreDumpImageLenForTest - offset) len = coreDumpImageLenForTest - offset;
+    memcpy(buf, coreDumpImageForTest + offset, len);
+    return len;
+}
+inline bool coreDumpErase() {
+    ++coreDumpEraseCallsForTest;
+    if (!coreDumpStatusForTest.dumpPresent) return false;
+    coreDumpStatusForTest.dumpPresent = false;
+    coreDumpStatusForTest.size = 0;
+    coreDumpImageLenForTest = 0;
+    return true;
+}
 inline constexpr bool supportsLoopWatchdog() { return true; }   // mirrors ESP32 so the not-armed path is testable
 inline bool enableLoopWatchdog(uint32_t seconds) {
     if (seconds == 0 || loopWatchdogArmFailsForTest) return false;

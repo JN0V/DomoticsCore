@@ -323,6 +323,50 @@ void test_core_dump_status_scripted_reaches_boot_diagnostics(void) {
     TEST_ASSERT_EQUAL_UINT32(8964, cd.size);
 }
 
+// OBS-1's transport reads the image through the HAL in whatever chunks the
+// server asks for; past the end it returns 0, which ends a fixed-length response.
+void test_core_dump_image_reads_back_in_chunks_and_ends_at_its_size(void) {
+    uint8_t image[100];
+    for (int i = 0; i < 100; i++) image[i] = (uint8_t)i;
+    HAL::Platform::setCoreDumpImageForTest(image, sizeof(image));
+    TEST_ASSERT_EQUAL_UINT32(100, HAL::Platform::getCoreDumpStatus().size);
+
+    uint8_t buf[64];
+    TEST_ASSERT_EQUAL_size_t(64, HAL::Platform::coreDumpRead(0, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_UINT8(0, buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(63, buf[63]);
+    TEST_ASSERT_EQUAL_size_t(36, HAL::Platform::coreDumpRead(64, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_UINT8(64, buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(99, buf[35]);
+    TEST_ASSERT_EQUAL_size_t(0, HAL::Platform::coreDumpRead(100, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_size_t(0, HAL::Platform::coreDumpRead(0, nullptr, sizeof(buf)));
+}
+
+void test_erasing_the_core_dump_refreshes_what_boot_diagnostics_say(void) {
+    uint8_t image[16] = {0};
+    HAL::Platform::setCoreDumpImageForTest(image, sizeof(image));
+    SystemInfoComponent sysinfo;
+    sysinfo.begin();
+    TEST_ASSERT_TRUE(sysinfo.getBootDiagnostics().coreDump.dumpPresent);
+
+    TEST_ASSERT_TRUE(HAL::Platform::coreDumpErase());
+    TEST_ASSERT_EQUAL_UINT32(1, HAL::Platform::coreDumpEraseCallsForTest);
+    // captured at begin(): stale until refreshed — the erase route refreshes it
+    TEST_ASSERT_TRUE(sysinfo.getBootDiagnostics().coreDump.dumpPresent);
+    sysinfo.refreshCoreDumpStatus();
+    TEST_ASSERT_FALSE(sysinfo.getBootDiagnostics().coreDump.dumpPresent);
+    TEST_ASSERT_EQUAL_UINT32(0, sysinfo.getBootDiagnostics().coreDump.size);
+    uint8_t buf[8];
+    TEST_ASSERT_EQUAL_size_t(0, HAL::Platform::coreDumpRead(0, buf, sizeof(buf)));
+    TEST_ASSERT_FALSE_MESSAGE(HAL::Platform::coreDumpErase(), "nothing left to erase");
+}
+
+void test_core_dump_is_unreadable_and_unerasable_where_unsupported(void) {
+    uint8_t buf[8];
+    TEST_ASSERT_EQUAL_size_t(0, HAL::Platform::coreDumpRead(0, buf, sizeof(buf)));
+    TEST_ASSERT_FALSE(HAL::Platform::coreDumpErase());
+}
+
 // OBS-6: a platform that does not track a minimum must say so rather than
 // report the current heap under the minimum's name.
 void test_boot_min_heap_is_marked_untracked_where_the_platform_has_none(void) {
@@ -437,6 +481,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_a_software_reset_carries_no_detail_and_is_not_unexpected);
     RUN_TEST(test_core_dump_status_is_unsupported_by_default);
     RUN_TEST(test_core_dump_status_scripted_reaches_boot_diagnostics);
+    RUN_TEST(test_core_dump_image_reads_back_in_chunks_and_ends_at_its_size);
+    RUN_TEST(test_erasing_the_core_dump_refreshes_what_boot_diagnostics_say);
+    RUN_TEST(test_core_dump_is_unreadable_and_unerasable_where_unsupported);
     RUN_TEST(test_boot_min_heap_is_marked_untracked_where_the_platform_has_none);
     RUN_TEST(test_boot_diagnostics_new_fields_default_empty);
     RUN_TEST(test_a_platform_caveat_is_logged_exactly_once);

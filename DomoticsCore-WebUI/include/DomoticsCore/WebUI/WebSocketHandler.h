@@ -39,6 +39,7 @@ private:
     // Callbacks to WebUIComponent
     UIActionCallback onUIAction;
     std::function<void()> onForceUpdate;
+    std::function<bool(AsyncWebServerRequest*)> authGate;   // SEC-13: WebUIComponent::authorize, live
     
     // Polling fallback state
     volatile int pollingClients = 0;
@@ -57,6 +58,7 @@ public:
 
     void setUIActionCallback(UIActionCallback cb) { onUIAction = cb; }
     void setForceUpdateCallback(std::function<void()> cb) { onForceUpdate = cb; }
+    void setAuthGate(std::function<bool(AsyncWebServerRequest*)> gate) { authGate = gate; }
 
     void begin(AsyncWebServer* server) {
         if (!config.enableWebSocket || !server) return;
@@ -69,6 +71,15 @@ public:
                        (unsigned)client->lastId(), (unsigned)sseSource->count());
                 if (onForceUpdate) onForceUpdate();
             });
+            // SEC-13: a refused request gets the same challenge as the API
+            // routes, so the browser's one prompt covers the stream too.
+            if (authGate) {
+                auto gate = authGate;
+                sseSource->addMiddleware([gate](AsyncWebServerRequest* request, ArMiddlewareNext next) {
+                    if (!gate(request)) return request->requestAuthentication();
+                    next();
+                });
+            }
             server->addHandler(sseSource);
             sseEnabled = true;
             DLOG_I(LOG_WEB, "SSE mode enabled on /api/ui/events (heap=%u)", (unsigned)heap);
