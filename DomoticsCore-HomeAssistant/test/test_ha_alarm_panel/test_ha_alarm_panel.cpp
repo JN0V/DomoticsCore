@@ -335,29 +335,45 @@ void test_alarm_panel_add_method() {
     const auto& stats = ha->getStatistics();
     TEST_ASSERT_EQUAL_UINT32(1, stats.entityCount);
 
-    // Verify discovery is published when connected
+    // BUG-38: with the default device block this panel's discovery document
+    // is over the 699-character event field. It used to be cut mid-JSON and
+    // published anyway — this test passed because ArduinoJson yields the keys
+    // parsed before the cut, and it asserted only those — and Home Assistant
+    // discarded it. Since OBS Lot D the component refuses it, aloud; the
+    // config keys are checked on the document the entity builds, not on
+    // what reached the broker, which is nothing.
+    static char warn[160]; warn[0] = '\0';
+    auto cb = LoggerCallbacks::addCallback([](LogLevel level, const char*, const char* msg) {
+        if (level == LOG_LEVEL_WARN && strstr(msg, "not published")) snprintf(warn, sizeof(warn), "%s", msg);
+    });
     bool discoveryPublished = false;
+    HAEntity* panel = ha->entity("alarm");
+    TEST_ASSERT_NOT_NULL(panel);
+    {
+        JsonDocument doc, deviceDoc;
+        JsonObject device = deviceDoc.to<JsonObject>();
+        panel->buildDiscoveryPayload(doc, "test_node", "homeassistant", device, "homeassistant/test_node/availability");
+        TEST_ASSERT_EQUAL_STRING("5678", doc["code"].as<String>().c_str());
+        TEST_ASSERT_TRUE(doc["code_arm_required"].as<bool>());
+        TEST_ASSERT_TRUE(doc["code_disarm_required"].as<bool>());
+        TEST_ASSERT_FALSE(doc["code_trigger_required"].as<bool>());
+        TEST_ASSERT_FALSE(doc["command_template"].isNull());
+    }
     core.addComponent(std::move(ha));
     core.begin();
 
     core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
         [&](const MQTTPublishEvent& ev) {
             String topic(ev.topic);
-            if (topic.indexOf("alarm_control_panel") >= 0 && topic.indexOf("/config") >= 0) {
+            if (topic.indexOf("alarm_control_panel") >= 0 && topic.indexOf("/config") >= 0 && ev.payload[0] != '\0') {
                 discoveryPublished = true;
-                // Verify code params passed through in discovery payload
-                JsonDocument doc;
-                deserializeJson(doc, ev.payload);
-                TEST_ASSERT_EQUAL_STRING("5678", doc["code"].as<String>().c_str());
-                TEST_ASSERT_TRUE(doc["code_arm_required"].as<bool>());
-                TEST_ASSERT_TRUE(doc["code_disarm_required"].as<bool>());
-                TEST_ASSERT_FALSE(doc["code_trigger_required"].as<bool>());
-                TEST_ASSERT_FALSE(doc["command_template"].isNull());
             }
         });
 
     simulateMqttConnect(core);
-    TEST_ASSERT_TRUE(discoveryPublished);
+    TEST_ASSERT_FALSE_MESSAGE(discoveryPublished, "BUG-38: a document over the event field must be refused, not cut");
+    TEST_ASSERT_EQUAL_STRING("Payload for 'homeassistant/alarm_control_panel/test_node/alarm/config' is 774 bytes, over the 699-byte event field: not published", warn);
+    LoggerCallbacks::removeCallback(cb);
 
     core.shutdown();
 }
