@@ -156,6 +156,11 @@ public:
             return ComponentStatus::Success;
         }
         
+        if (config.requireAuth && config.password.isEmpty()) {
+            DLOG_W(LOG_CONSOLE, "requireAuth with an empty password: authentication disabled");  // SEC-14
+            config.requireAuth = false;
+        }
+
         // Register logger callback
         loggerCallbackId_ = LoggerCallbacks::addCallback([this](LogLevel level, const char* tag, const char* msg) {
             this->log(level, tag, msg);
@@ -623,7 +628,7 @@ private:
                 if (cmd == "auth") {
                     if (!config.requireAuth) {
                         client.println("Authentication not required.");
-                    } else if (config.password == args) {
+                    } else if (!args.isEmpty() && !config.password.isEmpty() && config.password == args) {  // SEC-14
                         clientAuthenticated[clientId] = true;
                         client.println("Authentication successful!");
                     } else {

@@ -265,16 +265,41 @@ void test_remoteconsole_multiple_config_changes(void) {
     TEST_ASSERT_EQUAL(ComponentStatus::Success, consolePtr->getLastStatus());
 }
 
+// SEC-14: requireAuth with an empty password used to accept a bare `auth` line
+// (`config.password == args` with both empty). The console now opens and warns
+// at begin(), and an empty password never authenticates anywhere.
 void test_remoteconsole_empty_password(void) {
     RemoteConsoleConfig config;
+    config.enabled = true;
     config.requireAuth = true;
-    config.password = "";  // Empty password
+    config.password = "";
+    config.authTimeoutMs = 0;
 
+    static bool warned; warned = false;
+    auto cb = LoggerCallbacks::addCallback([](LogLevel level, const char*, const char* msg) {
+        if (level == LOG_LEVEL_WARN && strstr(msg, "empty password")) warned = true;
+    });
     auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* consolePtr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+    LoggerCallbacks::removeCallback(cb);
+    TEST_ASSERT_TRUE_MESSAGE(warned, "begin() must say that auth was disabled");
 
-    // Should create successfully (validation happens at runtime)
-    TEST_ASSERT_NOT_NULL(console.get());
+    HAL::WiFiClient clientHandle = consolePtr->getServer()->simulateClient(true, 42);
+    testCore->loop();
+    clientHandle.clearWriteBuffer();
+    clientHandle.simulateIncomingData("auth\n");
+    testCore->loop();
+    std::string output = clientHandle.getWriteBufferAsString();
+    TEST_ASSERT_TRUE_MESSAGE(output.find("Authentication not required") != std::string::npos, "auth is disabled, not satisfied");
+    clientHandle.clearWriteBuffer();
+    clientHandle.simulateIncomingData("heap\n");
+    testCore->loop();
+    output = clientHandle.getWriteBufferAsString();
+    TEST_ASSERT_TRUE_MESSAGE(output.find("Free Heap") != std::string::npos, "the console is open, and said so");
 }
+
 
 void test_remoteconsole_color_output_disabled(void) {
     RemoteConsoleConfig config;

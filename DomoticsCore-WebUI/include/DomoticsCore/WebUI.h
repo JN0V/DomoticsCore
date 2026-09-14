@@ -103,6 +103,7 @@ public:
      * @brief Initialize the AsyncWebServer, register websocket handler, and configure routes.
      */
     ComponentStatus begin() override {
+        checkAuthConfig();
         // Adapt WS limits based on runtime memory profile
         auto& memMgr = MemoryManager::instance();
         int adaptiveMaxClients = memMgr.getMaxWsClients();
@@ -211,6 +212,7 @@ public:
     
     void setConfig(const WebUIConfig& cfg) {
         config = cfg;
+        checkAuthConfig();
         DLOG_I(LOG_WEB, "Config updated: theme=%s, deviceName=%s", 
                config.theme, config.deviceName);
     }
@@ -363,23 +365,9 @@ public:
             auto fieldIt = params.find("field");
             auto valueIt = params.find("value");
             if (fieldIt != params.end() && valueIt != params.end()) {
-                const String& field = fieldIt->second;
-                const String& value = valueIt->second;
-                
-                if (field == "theme") {
-                    config.setTheme(value.c_str());
-                } else if (field == "primary_color") {
-                    config.setPrimaryColor(value.c_str());
-                } else if (field == "enable_auth") {
-                    config.enableAuth = (value == "true" || value == "1");
-                } else if (field == "username") {
-                    config.setUsername(value.c_str());
-                } else if (field == "password") {
-                    if (value.length() > 0) {
-                        config.setPassword(value.c_str());
-                    }
-                } else {
-                    return "{\"success\":false, \"error\":\"Unknown field\"}";
+                const char* error = nullptr;
+                if (!config.applySetting(fieldIt->second, valueIt->second, error)) {
+                    return String("{\"success\":false, \"error\":\"") + error + "\"}";
                 }
                 
                 if (onConfigChanged) {
@@ -429,6 +417,11 @@ private:
         size_t written = state.writeChunk(buffer, maxLen);
         if (written == 0 && !state.finished) return RESPONSE_TRY_AGAIN;
         return written;
+    }
+
+    /** SEC-14: a config that enables authentication with an empty password is applied without it, and says so. */
+    void checkAuthConfig() {
+        if (config.normalizeAuth()) DLOG_W(LOG_WEB, "enableAuth with an empty password: authentication disabled");
     }
 
     /**
