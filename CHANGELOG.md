@@ -26,6 +26,207 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.4.0] - 2026-09-14
+
+> **This release turns two behaviours on by default, adds one strong symbol,
+> renames what three Storage keys held, and changes the bytes every Home
+> Assistant discovery document carries. It ships as a minor release**, the
+> departure 2.1.0, 2.2.0 and 2.3.0 took, recorded here for the same reason.
+>
+> **A device with MQTT now publishes `{clientId}/telemetry` once a minute and
+> `{clientId}/crash` retained at every connect** —
+> `SystemConfig::telemetryIntervalSec` (60; `0` turns it off) and
+> `telemetryHeapFloor`. With the HomeAssistant component present, eight
+> `diagnostic` sensors are discovered per device, reading those two topics
+> through a value template; three of them carry the ids FullStack used to
+> declare by hand (`free_heap`, `uptime`, `wifi_signal`), so an upgraded
+> device keeps its history rather than growing three frozen entities. An id
+> the application declares first is left to it. The retained crash topic
+> outlives a decommissioned device until someone clears it
+> (`tools/on-device/mqtt_watch.py --clear`). The EventBus's 32-entry cap
+> leaves **21 entities** to an application at connect. A sketch driving
+> `Core` without `System` gets none of this.
+>
+> **Every Home Assistant discovery document is now written with Home
+> Assistant's documented short keys** — `uniq_id`, `stat_t`, `cmd_t`, `dev`
+> with `ids`/`mf`/`mdl`/`sw`, `pl_avail`, `cod_arm_req`, `sup_feat`, … Home
+> Assistant reads both spellings and expands the short ones on receipt, so
+> nothing migrates: a retained long-key config is replaced at the next
+> connect. Anything *else* that parsed these documents by key must read the
+> short names. The reason is below (BUG-38): the alarm control panel's
+> document had been cut at 699 characters and published anyway for months.
+> A document that still does not fit is refused, with a warning naming the
+> topic and the size, counted in `HAStatistics::discoveryRefused`, never
+> announced as queued.
+>
+> **`/api/system/info` and the SSE stream require credentials when
+> `enableAuth` is on** (SEC-13), and `/` follows a runtime `enable_auth`
+> change like every other route. A dashboard that read the info route or the
+> stream without credentials on a device with auth enabled now gets `401`.
+> **Two routes are new**: `GET /api/system/coredump` and
+> `POST /api/system/coredump/erase` (OBS-1).
+>
+> **`OTAConfig::uploadIdleTimeoutSec` is new and defaults to 30 s**, replacing
+> the 3 s receive-idle limit ESPAsyncWebServer applied to an upload's body
+> (BUG-37). A client that vanishes mid-upload is dropped after 30 s of
+> silence instead of 3; `0` disables the limit and restores the lock BUG-35
+> removed.
+>
+> **`DOMOTICS_CRASH_HOOKS`** (set by `System`, off for bare-`Core` users)
+> defines a **strong `custom_crash_callback`** on ESP8266 and takes the
+> ESP32 failed-allocation hook; a sketch that defined its own
+> `custom_crash_callback` gets a link error until it passes
+> `-DDOMOTICS_CRASH_HOOKS=0` or chains through the user hook the recorder
+> forwards to. The three Storage keys `BootDiagnostics` persisted are
+> replaced by one `bootdiag` blob, migrated on the first boot; the `bootdiag`
+> console text changes shape; the forced-crash console commands (`crash
+> abort|oom|null|swdt|hwdt|hang`) exist only under
+> `DOMOTICS_ENABLE_CRASH_COMMANDS`, on in the test environments and off in
+> every shipped default. The flight record moved to layout 2, migrated once
+> with the previous death intact. On ESP8266 the core's own postmortem line
+> `last failed alloc call` now means "since the last sample", not "since
+> boot". QoS is 0 everywhere the roadmap had said 1: the client sends nothing
+> else.
+
+### Security
+
+**SEC-13 — WebUI: `/api/system/info` and the SSE stream ignored `enableAuth`.**
+The info route had no gate; the stream had none either. Both read `200` to
+nobody with auth on, measured on a WROOM-32D. The info route takes the idiom
+its nine siblings use; the stream takes a middleware that calls the WebUI's
+gate live — not `setAuthentication()`, which copies the credentials at
+`begin()` and misses a password changed at runtime, and not `setFilter()`,
+which turns a refusal into a `404` the browser never re-prompts on. The
+gate is now public as `WebUIComponent::authorize()`, and OTAWebUI's three
+inlined copies call it. Found on the way: `/` was gated on a copy of
+`enableAuth` taken at construction. After: `401` without credentials, `200`
+with, the stream flowing events, in `curl` and in Chromium.
+
+### Observability
+
+The series that 2.3.0 opened closes here. Every item filed on 2026-09-05 is
+done; nothing in Observability remains open.
+
+- **A flight recorder in RTC memory (OBS-3, Lot B)**: an 83-word record —
+  heap trend, phase marker, last loop timestamp, the crash callback's
+  registers — survives every death class on both platforms, and reaches the
+  next boot's `bootdiag` before anything else runs. The record stays in RTC
+  until persisted, so a device that dies again during bring-up still gets
+  it out on the boot that connects. The phase marker and the failed-
+  allocation group sit outside the CRC, self-validated, because the boards
+  showed every promoted record torn when they were inside it. Cost on a
+  nodemcuv2 idle loop: 46 µs with the tick against 39 without, on one
+  build — another build of the same source read 81–82 with it on, so the
+  figure belongs to the link layout, not to the recorder.
+- **The out-of-memory moment (OBS-4, Lot C)**: on ESP32 the platform's
+  failed-allocation hook stores count, size, free/largest and the caller's
+  caps straight to RTC from whichever task failed; on ESP8266 the sampler
+  takes the core's two globals into the record and clears them. Measured: a
+  healthy FullStack on a WROOM-32D never fires; squeezed to 12 KB it died
+  of the task watchdog after 168 survived failures, the count saying how
+  far down it was. `Core::loop()` logs the count at most once a minute.
+- **What leaves the device (OBS-5, Lot D)**: the telemetry and crash topics
+  above, published through the new `MQTTComponent::publishNow()` from a
+  stack buffer. Measured on the WROOM-32D: 144–161 bytes per tick, the
+  crash record retained at connect, every minute for 21 minutes at 13 KB
+  allocatable; 142 bytes on the nodemcuv2. A Home Assistant container on
+  the bench, onboarded through its REST API, discovered the eleven FullStack
+  entities and kept them across the BUG-38 change of keys.
+- **The core dump off the device (OBS-1, Lot D)**: `GET /api/system/coredump`
+  streams the image the ESP32 core wrote at the last panic as a fixed-length
+  response with a `Content-Disposition` naming the build id;
+  `POST /api/system/coredump/erase` checks the CSRF token first, then auth,
+  refuses `409` while a download is in flight, and refreshes the boot
+  diagnostics so `bootdiag` stops announcing the dump. Measured: a null
+  dereference from the console handler, 18 052 bytes downloaded and decoded
+  against the build's ELF to the crashing line, erased in 0.05 s.
+
+### Fixed
+
+- **BUG-38 — HomeAssistant: the alarm control panel's discovery document was
+  longer than the event field, and was published cut.** 774 characters with
+  the default device block against a 699-character `MQTTPublishEvent`
+  field; the panel suite had passed for months because ArduinoJson yields
+  the keys parsed before the cut and the test asserted only those, and Home
+  Assistant discards a document that does not parse. The keys are
+  abbreviated (see the top): the tested panel is 638 characters. The
+  alternative, a 1024-byte field, was refuted on ESP8266 by a second gate —
+  PubSubClient's 768-byte packet buffer, which the 774-byte panel already
+  exceeded — and would have grown every EventBus copy by 324 bytes on both
+  platforms. A panel with six arm modes, a 32-character node id, a
+  configuration URL and an area is 974 characters and stays refused, aloud.
+- **BUG-39 — MQTT: a queued message larger than the client buffer stalled
+  the queue for good.** The queue retried a message PubSubClient refused for
+  size on every `loop()` and never dropped it, so everything behind it
+  waited forever, with one `ERROR` line naming no topic — reachable since
+  BUG-29 sends the eleventh and later publishes of a connect burst through
+  that queue. One `packetFits()` (`topic + payload + 7` against
+  `getBufferSize()`) is now shared by `publish()`, `publishNow()` and the
+  queue; it names the topic, counts a `publishErrors`, and the queue drops
+  what never fits. `publishNow()` had been counting `+5` where the client
+  tests `+7`.
+- **BUG-37 — OTA: an HTTP firmware upload died with a broken pipe whenever
+  the link was quiet for 3 s.** ESPAsyncWebServer arms a 3 s receive-idle
+  timeout on every client and clears it only when a response starts, so it
+  ran for the whole body of an upload — and an ordinary WiFi link is quiet
+  for longer than that in TCP retransmission backoff. `uploadIdleTimeoutSec`
+  (30 s) replaces it once the first body chunk has passed the gates. Proven
+  with a drained-silence probe on both boards, 3 of 3 natural uploads and
+  one full commit on the WROOM-32D.
+- **BUG-36 — Core: `EventBus::enqueue` never decremented `pendingByTopic`
+  for the event it dropped on overflow.** Fixed with the recorder's lot; the
+  per-bus drop counter it needed is in the flight record and in
+  `getDroppedCount()`.
+- **DC-16 — `/api/ntp/timezones` was registered twice** by a FullStack
+  build: once by `NTPWebUI::init()`, which nothing in System called, and
+  once by System's own copy of the handler. One registration, by the
+  provider.
+
+### Changed
+
+- **MQTT**: `publishNow(topic, payload, len, retain)` — no queue, no
+  `String`; offline, over the rate limit or over the client buffer it
+  returns `false` and the sample is gone. A size refusal in `publish()` now
+  says which topic.
+- **HomeAssistant**: `HAEntity` gains `entityCategory`, `valueTemplate`,
+  `jsonAttributesTopic`, `stateTopicOverride` and `useAvailability`, emitted
+  only when set and honoured by `publishState()`/`publishAttributes()`;
+  `entity(id)`; a duplicate id warns at registration (Home Assistant keeps
+  the first config); an `entity_category` Home Assistant does not accept is
+  left out and warned; `HAStatistics::discoveryRefused`, on the WebUI detail
+  card.
+- **WebUI**: `authorize(request)` is public.
+- **System**: `telemetryIntervalSec`, `telemetryHeapFloor`; the recorder is
+  promoted first in `System::begin()` and held until persisted; the boot-
+  diagnostics formatter left `System.h` (ARCH-1's residue, restated on the
+  number — `begin()` is 79 lines).
+- **Core**: `FlightRecorder`, the crash and restart hooks, the HAL seams
+  `coreDumpRead()`/`coreDumpErase()` and the allocatable heap gauges — on
+  ESP32 `getFreeHeap()` counts IRAM that `malloc` cannot hand out: 116 068 B
+  allocatable against the 165 292 B the old sensor reported.
+
+### Testing
+
+- **Native**: 972 test cases across 13 projects, up from 844 at v2.3.0 —
+  both figures read from the CI runs at the tags rather than projected (the
+  2.3.0 entry said 851; that was a projection). The System native suite
+  proves every telemetry rule with a scripted sink, since it compiles
+  without MQTT and HA by design; the HA suite pins the exact bytes of a
+  discovery document before and after the lot; the MQTT suite pins
+  `publishNow()`'s three refusals and the queue drop, each with a mutation
+  that turns it red.
+- **On hardware**: three campaigns on the WROOM-32D and the nodemcuv2, and
+  a Home Assistant container for Lot D.
+  Every board finding that the native suites had missed is recorded in the
+  roadmap with the fix it caused — the torn RTC record, the elided `new`
+  chain, the SSE stream unreachable without `Accept: text/event-stream`,
+  the alarm panel's cut document.
+- **Tooling**: `tools/on-device/` gains the flight-recorder probe with MQTT,
+  `crash_check.sh`, `mqtt_watch.py`, `webui_auth_check.py` and
+  `coredump_check.py`. Working documents — specs, plans, reviews, handoffs
+  — now stay out of the tree; `docs/deferred-work.md` and `docs/decisions/`
+  are what survives a lot.
+
 ## [2.3.0] - 2026-09-05
 
 > **This release changes two public contracts and ships as a minor release.**
