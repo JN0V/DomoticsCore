@@ -122,6 +122,7 @@ All fields have sensible defaults. Fields are grouped by functional area.
 | `enableConsole` | `bool` | `true` | Enable the telnet console |
 | `consolePort` | `uint16_t` | `23` | TCP port for telnet connections |
 | `consoleMaxClients` | `uint8_t` | `3` | Maximum simultaneous telnet clients |
+| `consolePassword` | `String` | `""` | When non-empty, the console requires `auth <password>` before commands and log output (`RemoteConsoleConfig::requireAuth`) |
 
 ### WebUI
 

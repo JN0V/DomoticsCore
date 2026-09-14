@@ -86,3 +86,28 @@ their own.
 ## Deferred from: code review of spec-obs-lot-c-oom-moment (2026-09-06)
 
 - Survived allocation failures during a bring-up that dies before `acknowledge()` stay in RAM and are lost with the next reset: while a promoted death is held in RTC, the new run's group is not written over `w56-60`, or the next boot would attribute this run's failures to the old death. By design (D2 of the plan); sits beside Lot B's residual on uncounted deaths in a crash loop. Evidence: `FlightRecorder.cpp` `noteFailedAllocImpl`, the `rtcHeld()` branch; `test_group_stays_in_ram_while_a_death_is_held_and_lands_at_acknowledge`.
+
+## Deferred from: code review of OBS Lot D (2026-09-14)
+
+- A System native environment with MQTT and HomeAssistant: the telemetry sink, the connect subscription and the entity registration are proven on a board only; the native System suite compiles without both by design.
+  source_spec: `spec-obs-lot-d-off-the-device.md`
+- `PROGMEM` for the ESP8266 literals Lot D added: its RAM cost is `.rodata` in DRAM (+1 216 B measured against `main`).
+  source_spec: `spec-obs-lot-d-off-the-device.md`
+- `POST /api/system/coredump/erase` answering `409` while a download is in flight is never exercised; the race needs two clients on a board.
+  source_spec: `spec-obs-lot-d-off-the-device.md`
+- Discovery document sizes with a `configuration_url` on ESP8266 were reconstructed (974 characters for a maximal alarm panel, BUG-38), not measured on that board.
+  source_spec: `spec-obs-lot-d-off-the-device.md`
+
+## Deferred from: the SEC-4 / SEC-6 / SEC-14 lot (2026-09-14)
+
+- A constant-time password compare in the console (`String ==`): a timing oracle over Telnet on Wi-Fi behind the auth wait is not the threat the lot closed.
+  source_spec: `spec-sec-webui-console-lot.md`
+- Hashing the stored WebUI and console passwords (Storage keys, a migration): a design question, not a patch.
+  source_spec: `spec-sec-webui-console-lot.md`
+- Rate-limiting the WebUI's HTTP authentication: ESPAsyncWebServer answers the challenge; a limiter would sit in `authorize()`.
+  source_spec: `spec-sec-webui-console-lot.md`
+- `allowedOrigin` with `Access-Control-Allow-Credentials: true`, for a cross-origin dashboard against an authenticated device; and `enableCORS` applied to every response through `DefaultHeaders` — both behaviour changes nobody has asked for.
+  source_spec: `spec-sec-webui-console-lot.md`
+- OTAWebUI's three inlined `authenticate()` copies should call `WebUIComponent::authorize()` once OTA can require the WebUI version that has it.
+  source_spec: `spec-sec-webui-console-lot.md`
+

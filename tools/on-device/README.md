@@ -309,6 +309,20 @@ against. `--clear TOPIC` publishes an empty retained message: what a
 decommissioned device's `{clientId}/crash` needs. Needs `uv` (paho-mqtt is
 declared inline; nothing to install).
 
+## `console_auth_check.py`
+
+The RemoteConsole's auth wait, measured from the outside. Against a build
+whose console requires a password (`SystemConfig::consolePassword`; the
+probe takes `-DDC_CONSOLE_PASSWORD="…"` in `PLATFORMIO_BUILD_FLAGS`), it
+opens Telnet connections and times every `auth` answer: wrong attempts back
+to back on one connection (0, 1, 2 s …), a fresh connection from the same
+address with the right password (inherits the wait), then another after the
+success (no wait). Every attempt is answered; nothing is refused or cut.
+
+```bash
+python3 tools/on-device/console_auth_check.py 192.168.1.218 --password probe
+```
+
 ## `webui_auth_check.py`
 
 Which routes an unauthenticated client can read:
