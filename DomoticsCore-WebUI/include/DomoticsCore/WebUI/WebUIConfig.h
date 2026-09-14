@@ -84,6 +84,43 @@ struct WebUIConfig {
         strncpy(password, v, sizeof(password) - 1);
         password[sizeof(password) - 1] = '\0';
     }
+
+    /** SEC-14: authentication with an empty password is authentication with none. */
+    bool authIsUsable() const { return !enableAuth || password[0] != '\0'; }
+
+    /** SEC-14: clears enableAuth when the password is empty; true when it did. */
+    bool normalizeAuth() {
+        if (authIsUsable()) return false;
+        enableAuth = false;
+        return true;
+    }
+
+    /**
+     * Apply one settings-card field. Returns false with `error` set when the
+     * value is refused, and the config is then untouched (SEC-14).
+     */
+    bool applySetting(const String& field, const String& value, const char*& error) {
+        error = nullptr;
+        if (field == "theme") { setTheme(value.c_str()); return true; }
+        if (field == "primary_color") { setPrimaryColor(value.c_str()); return true; }
+        if (field == "username") { setUsername(value.c_str()); return true; }
+        if (field == "enable_auth") {
+            const bool on = (value == "true" || value == "1");
+            if (on && password[0] == '\0') { error = "Set a password before enabling authentication"; return false; }
+            enableAuth = on;
+            return true;
+        }
+        if (field == "password") {
+            if (value.length() == 0) {
+                error = enableAuth ? "Authentication is enabled; the password cannot be empty" : "Password unchanged";
+                return false;
+            }
+            setPassword(value.c_str());
+            return true;
+        }
+        error = "Unknown field";
+        return false;
+    }
 };
 
 } // namespace WebUI

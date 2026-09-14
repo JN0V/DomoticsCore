@@ -1057,7 +1057,9 @@ class DomoticsApp {
                 // Pause polling to free heap for POST on ESP8266
                 this.stopPolling();
                 await new Promise(r => setTimeout(r, 600));
-                await this.sendUICommand(context.contextId, field.name, value);
+                const result = await this.sendUICommand(context.contextId, field.name, value);
+                // A refused toggle must not stay drawn as accepted (SEC-14)
+                if (e.target.type === 'checkbox' && (!result || result.success === false)) e.target.checked = !value;
                 // Apply theme and primary color immediately on client side when changed from settings
                 if (context.contextId === 'webui_settings') {
                     if (field.name === 'theme') {
@@ -1115,7 +1117,11 @@ class DomoticsApp {
             this.stopPolling();
             await new Promise(r => setTimeout(r, 600));
             for (const [fieldName, value] of entries) {
-                await this.sendUICommand(context.contextId, fieldName, value);
+                const result = await this.sendUICommand(context.contextId, fieldName, value);
+                if (fieldTypes[fieldName] === this.WebUIFieldType.Boolean && (!result || result.success === false)) {
+                    const el = document.getElementById(`${context.contextId}_${fieldName}`);
+                    if (el) el.checked = !value;  // SEC-14: a refused toggle is drawn refused
+                }
                 // Delay between requests to let ESP8266 reclaim TCP memory
                 await new Promise(r => setTimeout(r, 400));
                 if (context.contextId === 'webui_settings') {

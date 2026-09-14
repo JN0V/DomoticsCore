@@ -50,6 +50,55 @@ void test_webui_config_defaults() {
     TEST_ASSERT_FALSE(config.enableCORS);
 }
 
+// SEC-14: the settings-card rules live on the config, where a native test reaches them
+void test_webui_config_refuses_auth_without_a_password() {
+    WebUIConfig c;
+    const char* err = nullptr;
+    TEST_ASSERT_FALSE(c.applySetting("enable_auth", "true", err));
+    TEST_ASSERT_EQUAL_STRING("Set a password before enabling authentication", err);
+    TEST_ASSERT_FALSE(c.enableAuth);
+    TEST_ASSERT_TRUE(c.applySetting("password", "s3cret", err));
+    TEST_ASSERT_TRUE(c.applySetting("enable_auth", "true", err));
+    TEST_ASSERT_TRUE(c.enableAuth);
+    TEST_ASSERT_FALSE(c.applySetting("password", "", err));
+    TEST_ASSERT_EQUAL_STRING("Authentication is enabled; the password cannot be empty", err);
+    TEST_ASSERT_EQUAL_STRING("s3cret", c.password);
+    TEST_ASSERT_TRUE(c.enableAuth);
+    TEST_ASSERT_TRUE(c.applySetting("enable_auth", "false", err));
+    TEST_ASSERT_FALSE(c.applySetting("password", "", err));
+    TEST_ASSERT_EQUAL_STRING("Password unchanged", err);
+    TEST_ASSERT_EQUAL_STRING("s3cret", c.password);
+    TEST_ASSERT_FALSE(c.applySetting("nope", "x", err));
+    TEST_ASSERT_EQUAL_STRING("Unknown field", err);
+}
+
+void test_webui_config_applies_the_other_settings_fields() {
+    WebUIConfig c;
+    const char* err = nullptr;
+    TEST_ASSERT_TRUE(c.applySetting("theme", "dark", err));
+    TEST_ASSERT_TRUE(c.applySetting("primary_color", "#123456", err));
+    TEST_ASSERT_TRUE(c.applySetting("username", "bench", err));
+    TEST_ASSERT_FALSE(c.applySetting("enable_auth", "1", err));  // still no password
+    TEST_ASSERT_EQUAL_STRING("dark", c.theme);
+    TEST_ASSERT_EQUAL_STRING("#123456", c.primaryColor);
+    TEST_ASSERT_EQUAL_STRING("bench", c.username);
+    TEST_ASSERT_NOT_NULL(err);  // set by the refusal
+}
+
+void test_webui_config_normalize_auth_clears_an_unusable_flag() {
+    WebUIConfig c;
+    c.enableAuth = true;   // the stored state SEC-14 guards against: auth on, no password
+    TEST_ASSERT_FALSE(c.authIsUsable());
+    TEST_ASSERT_TRUE(c.normalizeAuth());
+    TEST_ASSERT_FALSE(c.enableAuth);
+    TEST_ASSERT_FALSE(c.normalizeAuth());
+    c.setPassword("x");
+    c.enableAuth = true;
+    TEST_ASSERT_TRUE(c.authIsUsable());
+    TEST_ASSERT_FALSE(c.normalizeAuth());
+    TEST_ASSERT_TRUE(c.enableAuth);
+}
+
 void test_webui_config_custom_values() {
     WebUIConfig config;
     config.setDeviceName("Custom Device");
@@ -2401,6 +2450,9 @@ int main() {
     // WebUIConfig tests
     RUN_TEST(test_webui_config_defaults);
     RUN_TEST(test_webui_config_custom_values);
+    RUN_TEST(test_webui_config_refuses_auth_without_a_password);
+    RUN_TEST(test_webui_config_applies_the_other_settings_fields);
+    RUN_TEST(test_webui_config_normalize_auth_clears_an_unusable_flag);
 
     // WebUIField tests
     RUN_TEST(test_webui_field_basic_construction);
