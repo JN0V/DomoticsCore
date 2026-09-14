@@ -306,22 +306,6 @@ inline void setupWebUIProviders(
     }
     auto* ntpComponent = core.getComponent<Components::NTPComponent>("NTP");
     if (ntpComponent) {
-        // Register timezone options endpoint - streams options from flash
-        webuiComponent->registerApiRoute("/api/ntp/timezones", HTTP_GET, [](AsyncWebServerRequest* request) {
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
-            response->print("[");
-            for (size_t i = 0; i < Components::WebUI::TIMEZONE_LOOKUP_COUNT; ++i) {
-                if (i > 0) response->print(",");
-                response->print("{\"value\":\"");
-                response->print(Components::WebUI::TIMEZONE_LOOKUP[i].posix);
-                response->print("\",\"label\":\"");
-                response->print(Components::WebUI::TIMEZONE_LOOKUP[i].friendly);
-                response->print("\"}");
-            }
-            response->print("]");
-            request->send(response);
-        });
-
         providers.ntp = new Components::WebUI::NTPWebUI(ntpComponent);
 
 #if WEBUI_SETUP_HAS_STORAGE
@@ -341,6 +325,7 @@ inline void setupWebUIProviders(
         }
 #endif
         webuiComponent->registerProviderWithComponent(providers.ntp, ntpComponent);
+        providers.ntp->init(webuiComponent);  // DC-16: /api/ntp/timezones is the provider's route, registered once
         DLOG_I(LOG_WEBUI_SETUP, "✓ NTP WebUI provider registered (heap: %u)", HAL::getFreeHeap());
     }
 #endif
