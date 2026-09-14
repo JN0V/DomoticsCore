@@ -19,6 +19,9 @@ using namespace DomoticsCore;
 #ifndef DC_MQTT_BROKER
 #  define DC_MQTT_BROKER ""
 #endif
+#ifndef DC_CONSOLE_PASSWORD
+#  define DC_CONSOLE_PASSWORD ""      // non-empty: the console requires auth (SEC-4 campaign)
+#endif
 
 static System* sys = nullptr;
 static uint32_t iters = 0, maxUs = 0, lastReport = 0;
@@ -38,6 +41,7 @@ void setup() {
     cfg.wifiAutoConfig = false;
     cfg.enableMQTT = DC_MQTT_BROKER[0] != '\0';   // Lot D: the raw topics, no HA on this board
     cfg.mqttBroker = DC_MQTT_BROKER;
+    cfg.consolePassword = DC_CONSOLE_PASSWORD;
     sys = new System(cfg);
     sys->begin();
 #ifdef DEBUG_ESP_OOM
