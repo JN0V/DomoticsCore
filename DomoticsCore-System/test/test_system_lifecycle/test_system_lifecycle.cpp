@@ -628,6 +628,339 @@ void test_crash_command_reaches_the_platform(void) {
     TEST_ASSERT_TRUE(mentions(con.run(sys, "crash release"), "done: release"));
 }
 
+// ============================================================================
+// OBS-5: the telemetry publisher, with a scripted sink
+// ============================================================================
+
+using SystemHelpers::SystemTelemetry;
+using SystemHelpers::TelemetrySample;
+using SystemHelpers::CrashSummary;
+
+struct SinkLog {
+    int calls = 0;
+    bool answer = true;
+    std::string topic, payload;
+    bool retain = false, mayQueue = false;
+    SystemTelemetry::Sink fn() {
+        return [this](const char* t, const char* p, size_t len, bool r, bool q) {
+            calls++; topic = t; payload = std::string(p, len); retain = r; mayQueue = q;
+            return answer;
+        };
+    }
+};
+
+static TelemetrySample healthySample() {
+    TelemetrySample s;
+    s.heap = 41216; s.largest = 20480; s.trough = 38400; s.uptimeS = 60; s.bootCount = 7;
+    s.hasRssi = true; s.rssi = -61; s.fails = 2; s.failLast = 1024; s.buildId = 0x1a2b3c4du;
+    return s;
+}
+
+void test_telemetry_payload_is_this_exact_document(void) {
+    char buf[SystemTelemetry::TELEMETRY_MAX];
+    size_t n = SystemTelemetry::formatTelemetry(buf, sizeof(buf), healthySample(), 36864, 3, 1);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"heap\":41216,\"largest\":20480,\"min\":36864,\"trough\":38400,\"uptime\":60,\"boot\":7,\"rssi\":-61,"
+        "\"fails\":2,\"fail_last\":1024,\"skipped\":3,\"failed\":1,\"build\":\"1a2b3c4d\"}", buf);
+    TEST_ASSERT_EQUAL_size_t(strlen(buf), n);
+}
+
+void test_telemetry_rssi_is_null_without_a_station_link(void) {
+    // 0 dBm would graph as a perfect signal; null makes Home Assistant read unknown.
+    TelemetrySample s = healthySample();
+    s.hasRssi = false; s.rssi = 0;
+    char buf[SystemTelemetry::TELEMETRY_MAX];
+    SystemTelemetry::formatTelemetry(buf, sizeof(buf), s, 36864, 0, 0);
+    TEST_ASSERT_TRUE(mentions(buf, "\"rssi\":null,"));
+}
+
+void test_telemetry_min_is_the_boot_long_minimum_across_ticks(void) {
+    // The recorder's trough covers one 10 s window; the payload's min never rises.
+    SystemTelemetry t;
+    SinkLog sink;
+    t.configure("node", 60, 4096);
+    t.setSink(sink.fn());
+    TelemetrySample a = healthySample(); a.heap = 40000; a.trough = 30000;
+    TelemetrySample b = healthySample(); b.heap = 41000; b.trough = 39000;   // the window recovered
+    TelemetrySample c = healthySample(); c.heap = 25000; c.trough = 0;       // no trough sample yet
+    t.tick(60000, a);  TEST_ASSERT_TRUE(mentions(sink.payload, "\"min\":30000,\"trough\":30000"));
+    t.tick(120000, b); TEST_ASSERT_TRUE(mentions(sink.payload, "\"min\":30000,\"trough\":39000"));
+    t.tick(180000, c); TEST_ASSERT_TRUE(mentions(sink.payload, "\"min\":25000,\"trough\":0"));
+    TEST_ASSERT_EQUAL_UINT32(25000, t.minSeen());
+}
+
+void test_telemetry_uptime_survives_the_millis_wrap(void) {
+    SystemTelemetry t;
+    TEST_ASSERT_EQUAL_UINT64(0xFFFFF000ull, t.noteMillis(0xFFFFF000u));
+    TEST_ASSERT_EQUAL_UINT64(0x100000000ull + 0x1000u, t.noteMillis(0x1000u));   // wrapped: still climbing
+    TEST_ASSERT_EQUAL_UINT64(0x100000000ull + 0x1000u, t.uptimeMs());   // the last clock noted, past the wrap
+}
+
+void test_a_client_id_with_a_wildcard_disables_telemetry(void) {
+    // '+' and '#' are subscription wildcards; a broker drops the connection on a publish to them.
+    SystemTelemetry t;
+    TEST_ASSERT_FALSE(t.configure("esp32-#1", 60, 4096));
+    TEST_ASSERT_FALSE(t.configure("room+bench", 60, 4096));
+    TEST_ASSERT_FALSE(t.enabled());
+    TEST_ASSERT_TRUE(t.configure("room-bench", 60, 4096));
+}
+
+void test_every_entity_definition_reads_a_key_the_payload_carries(void) {
+    // The discovery templates and the formatter are tied by this test alone.
+    size_t n = 0;
+    const SystemTelemetry::EntityDef* defs = SystemTelemetry::entityDefs(n);
+    TEST_ASSERT_EQUAL_size_t(7, n);
+    char buf[SystemTelemetry::TELEMETRY_MAX];
+    SystemTelemetry::formatTelemetry(buf, sizeof(buf), healthySample(), 1, 0, 0);
+    for (size_t i = 0; i < n; i++) {
+        std::string key = std::string("\"") + defs[i].key + "\":";
+        TEST_ASSERT_TRUE_MESSAGE(mentions(buf, key.c_str()), defs[i].key);
+        TEST_ASSERT_NOT_NULL(defs[i].id); TEST_ASSERT_NOT_NULL(defs[i].name);
+    }
+    char cbuf[SystemTelemetry::CRASH_MAX];
+    CrashSummary c; c.source = CrashSummary::Rtc; c.promotion = "crash callback";
+    SystemTelemetry::formatCrash(cbuf, sizeof(cbuf), c);
+    TEST_ASSERT_TRUE_MESSAGE(mentions(cbuf, "\"promotion\":"), "the last-death template reads promotion");
+    TEST_ASSERT_EQUAL_STRING("sys_last_death", SystemTelemetry::LAST_DEATH_ID);
+}
+
+void test_a_crash_summary_with_no_promotion_text_formats_as_none(void) {
+    CrashSummary c; c.source = CrashSummary::Rtc; c.promotion = nullptr;
+    char buf[SystemTelemetry::CRASH_MAX];
+    SystemTelemetry::formatCrash(buf, sizeof(buf), c);
+    TEST_ASSERT_TRUE(mentions(buf, "\"promotion\":\"none\""));
+}
+
+void test_telemetry_and_crash_payloads_saturated_fit_their_buffers(void) {
+    TelemetrySample s;
+    s.heap = s.largest = s.trough = s.uptimeS = s.bootCount = s.fails = s.failLast = s.buildId = 0xFFFFFFFFu;
+    s.hasRssi = true; s.rssi = -2147483647 - 1;
+    char buf[SystemTelemetry::TELEMETRY_MAX];
+    size_t n = SystemTelemetry::formatTelemetry(buf, sizeof(buf), s, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu);
+    TEST_ASSERT_TRUE_MESSAGE(n < sizeof(buf) - 1, "telemetry payload must never fill its buffer");
+    TEST_ASSERT_EQUAL('}', buf[n - 1]);
+
+    CrashSummary c;
+    c.source = CrashSummary::Rtc; c.promotion = "software reset not requested by the firmware";
+    snprintf(c.reset, sizeof(c.reset), "%s", "Interrupt watchdog!!");
+    c.phase = c.buildId = c.uptimeMs = c.reason = c.epc1 = c.failSize = c.failCaller = c.minFree = c.dedupKey = 0xFFFFFFFFu;
+    c.sameCount = 0xFFFFFFFFu; c.coreDumpSupported = true; c.coreDumpWaiting = true; c.coreDumpSize = 0xFFFFFFFFu;
+    char cbuf[SystemTelemetry::CRASH_MAX];
+    size_t m = SystemTelemetry::formatCrash(cbuf, sizeof(cbuf), c);
+    TEST_ASSERT_TRUE_MESSAGE(m < sizeof(cbuf) - 1, "crash payload must never fill its buffer");
+    TEST_ASSERT_EQUAL('}', cbuf[m - 1]);
+}
+
+void test_crash_payload_shapes(void) {
+    char buf[SystemTelemetry::CRASH_MAX];
+    CrashSummary none;
+    SystemTelemetry::formatCrash(buf, sizeof(buf), none);
+    TEST_ASSERT_EQUAL_STRING("{\"source\":\"none\",\"promotion\":\"none\"}", buf);
+
+    CrashSummary torn;
+    torn.source = CrashSummary::Persisted; torn.promotion = "unexpected reset"; torn.torn = true;
+    torn.phase = 0x103; torn.epc1 = 0x40201234u; torn.minFree = 0;   // must not appear
+    SystemTelemetry::formatCrash(buf, sizeof(buf), torn);
+    TEST_ASSERT_EQUAL_STRING("{\"source\":\"persisted\",\"promotion\":\"unexpected reset\",\"phase\":259,\"torn\":1}", buf);
+
+    CrashSummary full;
+    full.source = CrashSummary::Persisted; full.promotion = "crash callback";
+    full.phase = 5; full.buildId = 0xdeadbeefu; full.uptimeMs = 123456; full.reason = 254;
+    full.epc1 = 0x40201287u; full.failSize = 1024; full.failCaller = 0x4020b864u; full.minFree = 6720;
+    full.dedupKey = 0x0badf00du; full.sameCount = 3;
+    full.coreDumpSupported = true; full.coreDumpWaiting = true; full.coreDumpSize = 15268;
+    SystemTelemetry::formatCrash(buf, sizeof(buf), full);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"source\":\"persisted\",\"promotion\":\"crash callback\",\"phase\":5,\"build\":\"deadbeef\","
+        "\"uptime_ms\":123456,\"reason\":254,\"epc1\":\"0x40201287\",\"fail_size\":1024,"
+        "\"fail_caller\":\"0x4020b864\",\"min_free\":6720,\"dedup\":\"0badf00d\","
+        "\"same_count\":3,\"coredump\":{\"waiting\":true,\"size\":15268}}", buf);
+
+    CrashSummary rtc = full;
+    rtc.source = CrashSummary::Rtc; rtc.sameCount = 0; rtc.coreDumpSupported = false;
+    snprintf(rtc.reset, sizeof(rtc.reset), "%s", "Software reset");
+    SystemTelemetry::formatCrash(buf, sizeof(buf), rtc);
+    TEST_ASSERT_TRUE(mentions(buf, "\"source\":\"rtc\""));
+    TEST_ASSERT_TRUE(mentions(buf, "\"reset\":\"Software reset\"}"));
+    TEST_ASSERT_FALSE(mentions(buf, "same_count"));
+    TEST_ASSERT_FALSE(mentions(buf, "coredump"));
+}
+
+void test_telemetry_ticks_on_the_interval_and_not_before(void) {
+    SystemTelemetry t;
+    SinkLog sink;
+    TEST_ASSERT_TRUE(t.configure("esp32-abc123", 60, 4096));
+    t.setSink(sink.fn());
+    TEST_ASSERT_EQUAL_STRING("esp32-abc123/telemetry", t.telemetryTopic());
+    TEST_ASSERT_EQUAL_STRING("esp32-abc123/crash", t.crashTopic());
+
+    TEST_ASSERT_FALSE(t.tick(1000, healthySample()));
+    TEST_ASSERT_FALSE(t.tick(59999, healthySample()));
+    TEST_ASSERT_TRUE(t.tick(60000, healthySample()));
+    TEST_ASSERT_EQUAL_INT(1, sink.calls);
+    TEST_ASSERT_EQUAL_STRING("esp32-abc123/telemetry", sink.topic.c_str());
+    TEST_ASSERT_FALSE(sink.retain);
+    TEST_ASSERT_FALSE_MESSAGE(sink.mayQueue, "a sample deferred is a sample stale: the tick never queues");
+    TEST_ASSERT_FALSE(t.tick(61000, healthySample()));
+    TEST_ASSERT_TRUE(t.tick(120000, healthySample()));
+    TEST_ASSERT_EQUAL_INT(2, sink.calls);
+    TEST_ASSERT_EQUAL_UINT32(2, t.sent());
+}
+
+void test_a_tick_under_the_floor_is_skipped_and_the_next_payload_says_so(void) {
+    SystemTelemetry t;
+    SinkLog sink;
+    t.configure("node", 60, 4096);
+    t.setSink(sink.fn());
+    TelemetrySample starved = healthySample();
+    starved.heap = 4000;
+    TEST_ASSERT_FALSE(t.tick(60000, starved));
+    TEST_ASSERT_EQUAL_INT(0, sink.calls);
+    TEST_ASSERT_EQUAL_UINT32(1, t.skipped());
+    TEST_ASSERT_EQUAL_UINT32(0, t.failed());
+    TEST_ASSERT_TRUE(t.tick(120000, healthySample()));
+    TEST_ASSERT_TRUE(mentions(sink.payload, "\"skipped\":1,\"failed\":0"));
+}
+
+void test_a_refused_publish_is_counted_and_carried_by_the_next_payload(void) {
+    // The removal check: drop the ++failed_ on a refused sink and the second
+    // payload reads "failed":0 for a sample that never left.
+    SystemTelemetry t;
+    SinkLog sink;
+    t.configure("node", 60, 4096);
+    t.setSink(sink.fn());
+    sink.answer = false;
+    TEST_ASSERT_FALSE(t.tick(60000, healthySample()));
+    TEST_ASSERT_EQUAL_INT(1, sink.calls);
+    TEST_ASSERT_EQUAL_UINT32(1, t.failed());
+    TEST_ASSERT_EQUAL_UINT32(0, t.skipped());
+    sink.answer = true;
+    TEST_ASSERT_TRUE(t.tick(120000, healthySample()));
+    TEST_ASSERT_TRUE(mentions(sink.payload, "\"skipped\":0,\"failed\":1"));
+}
+
+void test_telemetry_interval_zero_publishes_nothing(void) {
+    SystemTelemetry t;
+    SinkLog sink;
+    TEST_ASSERT_TRUE(t.configure("node", 0, 4096));
+    t.setSink(sink.fn());
+    TEST_ASSERT_FALSE(t.enabled());
+    for (uint32_t now = 0; now < 600000; now += 1000) TEST_ASSERT_FALSE(t.tick(now, healthySample()));
+    TEST_ASSERT_EQUAL_INT(0, sink.calls);
+}
+
+void test_an_over_long_client_id_disables_telemetry(void) {
+    SystemTelemetry t;
+    std::string id(81, 'x');
+    TEST_ASSERT_FALSE(t.configure(id.c_str(), 60, 4096));
+    TEST_ASSERT_FALSE(t.enabled());
+    TEST_ASSERT_EQUAL_STRING("", t.telemetryTopic());
+    std::string ok(80, 'x');
+    TEST_ASSERT_TRUE(t.configure(ok.c_str(), 60, 4096));
+    TEST_ASSERT_EQUAL_size_t(80 + strlen("/telemetry"), strlen(t.telemetryTopic()));
+}
+
+void test_the_crash_publish_is_retained_and_may_queue(void) {
+    SystemTelemetry t;
+    SinkLog sink;
+    t.configure("node", 60, 4096);
+    t.setSink(sink.fn());
+    CrashSummary c;
+    TEST_ASSERT_TRUE(t.publishCrash(c));
+    TEST_ASSERT_EQUAL_STRING("node/crash", sink.topic.c_str());
+    TEST_ASSERT_TRUE(sink.retain);
+    TEST_ASSERT_TRUE(sink.mayQueue);
+    TEST_ASSERT_EQUAL_STRING("{\"source\":\"none\",\"promotion\":\"none\"}", sink.payload.c_str());
+}
+
+void test_the_last_death_comes_from_the_persisted_record_when_storage_has_it(void) {
+    stageDeath();
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.begin();
+    const CrashSummary& d = sys.lastDeath();
+    TEST_ASSERT_EQUAL(CrashSummary::Persisted, d.source);
+    TEST_ASSERT_EQUAL_STRING("crash callback", d.promotion);
+    TEST_ASSERT_EQUAL_UINT32(254, d.reason);
+    TEST_ASSERT_EQUAL_UINT32(1024, d.failSize);
+    TEST_ASSERT_EQUAL_UINT32(0x40201287u, d.failCaller);
+    TEST_ASSERT_EQUAL_UINT32(1, d.sameCount);
+    TEST_ASSERT_FALSE(d.torn);
+    char buf[SystemTelemetry::CRASH_MAX];
+    SystemTelemetry::formatCrash(buf, sizeof(buf), d);
+    TEST_ASSERT_TRUE(mentions(buf, "\"source\":\"persisted\",\"promotion\":\"crash callback\""));
+    TEST_ASSERT_TRUE(mentions(buf, "\"fail_caller\":\"0x40201287\""));
+    TEST_ASSERT_TRUE(mentions(buf, "\"same_count\":1"));
+}
+
+void test_the_last_death_comes_from_rtc_without_storage(void) {
+    stageDeath();
+    System sys(SystemConfig::minimal());
+    sys.begin();
+    const CrashSummary& d = sys.lastDeath();
+    TEST_ASSERT_EQUAL(CrashSummary::Rtc, d.source);
+    TEST_ASSERT_EQUAL_STRING("crash callback", d.promotion);
+    TEST_ASSERT_EQUAL_STRING("Software reset", d.reset);
+    TEST_ASSERT_EQUAL_UINT32(1024, d.failSize);
+    TEST_ASSERT_EQUAL_UINT32(0, d.sameCount);
+}
+
+static void stageTornDeath() {
+    FlightRecorder::instance().begin();
+    FlightRecorder::instance().setPhase(3);
+    HAL::Platform::stubRtcWordsForTest[FlightRecord::W_FAST + 1] ^= 1;   // tear the body
+    FlightRecorder::instance().resetForTest();
+    HAL::Platform::setResetReasonForTest(HAL::Platform::ResetReason::Watchdog);
+}
+
+void test_a_torn_persisted_death_publishes_two_fields_and_torn(void) {
+    stageTornDeath();
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.begin();
+    const CrashSummary& d = sys.lastDeath();
+    TEST_ASSERT_EQUAL(CrashSummary::Persisted, d.source);
+    TEST_ASSERT_TRUE(d.torn);
+    char buf[SystemTelemetry::CRASH_MAX];
+    SystemTelemetry::formatCrash(buf, sizeof(buf), d);
+    TEST_ASSERT_EQUAL_STRING("{\"source\":\"persisted\",\"promotion\":\"unexpected reset\",\"phase\":3,\"torn\":1}", buf);
+}
+
+void test_a_torn_rtc_death_publishes_two_fields_and_torn(void) {
+    stageTornDeath();
+    System sys(SystemConfig::minimal());
+    sys.begin();
+    const CrashSummary& d = sys.lastDeath();
+    TEST_ASSERT_EQUAL(CrashSummary::Rtc, d.source);
+    TEST_ASSERT_TRUE(d.torn);
+    char buf[SystemTelemetry::CRASH_MAX];
+    SystemTelemetry::formatCrash(buf, sizeof(buf), d);
+    TEST_ASSERT_EQUAL_STRING("{\"source\":\"rtc\",\"promotion\":\"unexpected reset\",\"phase\":3,\"torn\":1}", buf);
+}
+
+void test_the_death_boot_carries_the_reset_reason_even_when_persisted(void) {
+    // The blob has no reset field; on the boot right after the death RTC still knows it.
+    stageDeath();
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    System sys(cfg);
+    sys.begin();
+    TEST_ASSERT_EQUAL(CrashSummary::Persisted, sys.lastDeath().source);
+    TEST_ASSERT_EQUAL_STRING("Software reset", sys.lastDeath().reset);
+}
+
+void test_a_clean_boot_with_no_history_has_no_death_to_report(void) {
+    System sys(SystemConfig::minimal());
+    sys.begin();
+    TEST_ASSERT_EQUAL(CrashSummary::None, sys.lastDeath().source);
+    TEST_ASSERT_FALSE_MESSAGE(sys.telemetry().enabled(), "no MQTT in this build: nothing configures the publisher");
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
 
@@ -677,6 +1010,29 @@ int main(int argc, char** argv) {
     RUN_TEST(test_crash_command_reaches_the_platform);
     RUN_TEST(test_bootdiag_reports_this_boots_failed_allocs);
     RUN_TEST(test_bootdiag_with_a_saturated_record_is_cut_not_overrun);
+
+    // OBS-5 — the telemetry publisher and the crash summary
+    RUN_TEST(test_telemetry_payload_is_this_exact_document);
+    RUN_TEST(test_telemetry_and_crash_payloads_saturated_fit_their_buffers);
+    RUN_TEST(test_crash_payload_shapes);
+    RUN_TEST(test_telemetry_ticks_on_the_interval_and_not_before);
+    RUN_TEST(test_a_tick_under_the_floor_is_skipped_and_the_next_payload_says_so);
+    RUN_TEST(test_a_refused_publish_is_counted_and_carried_by_the_next_payload);
+    RUN_TEST(test_telemetry_interval_zero_publishes_nothing);
+    RUN_TEST(test_an_over_long_client_id_disables_telemetry);
+    RUN_TEST(test_the_crash_publish_is_retained_and_may_queue);
+    RUN_TEST(test_the_last_death_comes_from_the_persisted_record_when_storage_has_it);
+    RUN_TEST(test_the_last_death_comes_from_rtc_without_storage);
+    RUN_TEST(test_a_clean_boot_with_no_history_has_no_death_to_report);
+    RUN_TEST(test_telemetry_rssi_is_null_without_a_station_link);
+    RUN_TEST(test_telemetry_min_is_the_boot_long_minimum_across_ticks);
+    RUN_TEST(test_telemetry_uptime_survives_the_millis_wrap);
+    RUN_TEST(test_a_client_id_with_a_wildcard_disables_telemetry);
+    RUN_TEST(test_every_entity_definition_reads_a_key_the_payload_carries);
+    RUN_TEST(test_a_crash_summary_with_no_promotion_text_formats_as_none);
+    RUN_TEST(test_a_torn_persisted_death_publishes_two_fields_and_torn);
+    RUN_TEST(test_a_torn_rtc_death_publishes_two_fields_and_torn);
+    RUN_TEST(test_the_death_boot_carries_the_reset_reason_even_when_persisted);
 
     return UNITY_END();
 }

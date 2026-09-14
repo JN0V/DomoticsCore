@@ -190,18 +190,11 @@ void setup() {
         
         // Temperature sensor (simulated)
         haPtr->addSensor("temperature", "Temperature", "°C", "temperature", "mdi:thermometer");
-        
-        // System uptime sensor
-        haPtr->addSensor("uptime", "Uptime", "s", "", "mdi:clock-outline");
-        
-        // Free heap sensor (system health)
-        haPtr->addSensor("free_heap", "Free Heap", "bytes", "", "mdi:memory");
-        
-        // WiFi signal strength sensor
-        auto* wifiComp = domotics->getWiFi();
-        if (wifiComp) {
-            haPtr->addSensor("wifi_signal", "WiFi Signal", "dBm", "signal_strength", "mdi:wifi");
-        }
+
+        // Uptime, free heap and WiFi signal are no longer declared here: System
+        // registers them, with five more diagnostics and the last death, and
+        // publishes them once a minute (SystemConfig::telemetryIntervalSec).
+        // Setting that interval to 0 removes all eight; declare your own then.
         
         // ====================================================================
         // ADD SWITCH (Relay control)
@@ -311,26 +304,9 @@ void loop() {
     // MQTT STATE PUBLISHING (to Home Assistant)
     // ========================================================================
     if (mqttPublishTimer.isReady() && haPtr && haPtr->isMQTTConnected()) {
-        // Read current values
         float temp = readTemperature();
-        uint32_t uptime = HAL::Platform::getMillis() / 1000;
-        uint32_t freeHeap = HAL::Platform::getFreeHeap();
-        
-        // Publish sensor states
         haPtr->publishState("temperature", temp);
-        haPtr->publishState("uptime", (float)uptime);
-        haPtr->publishState("free_heap", (float)freeHeap);
-        
-        // Publish WiFi signal if available
-        auto* wifiComp = domotics->getWiFi();
-        if (wifiComp && wifiComp->isSTAConnected()) {
-            // Get RSSI from WifiComponent (no need for WiFi.h)
-            int32_t rssi = wifiComp->getRSSI();
-            haPtr->publishState("wifi_signal", (float)rssi);
-        }
-        
-        DLOG_D(LOG_APP, "📡 Published to HA: Temp=%.1f°C, Uptime=%ds, Heap=%d",
-               temp, uptime, freeHeap);
+        DLOG_D(LOG_APP, "📡 Published to HA: Temp=%.1f°C", temp);
     }
     
     // Note: When relay changes via HA command, state is auto-published by HA component
