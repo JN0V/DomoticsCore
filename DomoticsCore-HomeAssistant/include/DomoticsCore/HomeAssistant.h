@@ -505,6 +505,7 @@ public:
     struct HAStatistics {
         uint32_t entityCount = 0;
         uint32_t discoveryCount = 0;
+        uint32_t discoveryRefused = 0;  ///< Configs never handed to MQTT: over the event field (BUG-38)
         uint32_t stateUpdates = 0;
         uint32_t commandsReceived = 0;
     };
@@ -569,7 +570,7 @@ private:
     /**
      * @brief Publish MQTT message via EventBus
      */
-    void mqttPublish(const char* topic, const String& payload, uint8_t qos = 0, bool retain = false) {
+    bool mqttPublish(const char* topic, const String& payload, uint8_t qos = 0, bool retain = false) {
         using namespace DomoticsCore::Components;
         MQTTPublishEvent ev{};
         // OBS-5: the event's payload field is the cap. A cut JSON would sit
@@ -578,7 +579,7 @@ private:
         if (payload.length() >= MQTT_EVENT_PAYLOAD_SIZE) {
             DLOG_W(LOG_HA, "Payload for '%s' is %u bytes, over the %u-byte event field: not published", topic,
                    (unsigned)payload.length(), (unsigned)(MQTT_EVENT_PAYLOAD_SIZE - 1));
-            return;
+            return false;
         }
 
         // Copy strings into fixed-size buffers
@@ -590,26 +591,27 @@ private:
         ev.retain = retain;
 
         emit(DomoticsCore::MQTTEvents::EVENT_PUBLISH, ev);
+        return true;
     }
     
     /**
      * @brief Build device information JSON
      */
     void buildDeviceInfo(JsonObject& device) {
-        JsonArray identifiers = device["identifiers"].to<JsonArray>();
+        JsonArray identifiers = device["ids"].to<JsonArray>();
         identifiers.add((const char*)config.nodeId);
 
         device["name"] = (const char*)config.deviceName;
-        device["model"] = (const char*)config.model;
-        device["manufacturer"] = (const char*)config.manufacturer;
-        device["sw_version"] = (const char*)config.swVersion;
+        device["mdl"] = (const char*)config.model;
+        device["mf"] = (const char*)config.manufacturer;
+        device["sw"] = (const char*)config.swVersion;
 
         if (config.configUrl[0] != '\0') {
-            device["configuration_url"] = (const char*)config.configUrl;
+            device["cu"] = (const char*)config.configUrl;
         }
 
         if (config.suggestedArea[0] != '\0') {
-            device["suggested_area"] = (const char*)config.suggestedArea;
+            device["sa"] = (const char*)config.suggestedArea;
         }
     }
     
@@ -635,7 +637,10 @@ private:
         DLOG_I(LOG_HA, "  Payload size: %d bytes", payload.length());
         DLOG_D(LOG_HA, "  Payload: %s", payload.c_str());
         
-        mqttPublish(topic, payload, 0, config.retainDiscovery);
+        if (!mqttPublish(topic, payload, 0, config.retainDiscovery)) {
+            stats.discoveryRefused++;  // BUG-38: refused, warned about above, and counted
+            return;
+        }
         // Handed to the EventBus, not published: mqttPublish() emits, and MQTT
         // consumes it later. This component never learns the outcome, so saying
         // "published" claimed something it cannot know — and did so even while

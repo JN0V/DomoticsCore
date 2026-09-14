@@ -92,6 +92,7 @@ protected:
                                        WebUILocation::ComponentDetail, WebUIPresentation::Card)
             .withField(WebUIField("entity_count", "Total Entities", WebUIFieldType::Display, "0", "", true))
             .withField(WebUIField("discovery_count", "Discovery Publishes", WebUIFieldType::Display, "0", "", true))
+            .withField(WebUIField("discovery_refused", "Configs Refused (too long)", WebUIFieldType::Display, "0", "", true))
             .withField(WebUIField("state_updates", "State Updates Sent", WebUIFieldType::Display, "0", "", true))
             .withField(WebUIField("commands_received", "Commands Received", WebUIFieldType::Display, "0", "", true))
             .withField(WebUIField("availability_topic", "Availability Topic", WebUIFieldType::Display, "", "", true))
@@ -132,6 +133,7 @@ public:
         } else if (contextId == "ha_detail") {
             doc["entity_count"] = stats.entityCount;
             doc["discovery_count"] = stats.discoveryCount;
+            doc["discovery_refused"] = stats.discoveryRefused;
             doc["state_updates"] = stats.stateUpdates;
             doc["commands_received"] = stats.commandsReceived;
             doc["availability_topic"] = (const char*)cfg.availabilityTopic;

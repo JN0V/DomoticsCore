@@ -31,24 +31,24 @@ public:
         // Add light-specific fields
         char buf[HA_TOPIC_BUF_SIZE];
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
-        doc["command_topic"] = buf;
-        doc["payload_on"] = "ON";
-        doc["payload_off"] = "OFF";
-        doc["state_value_template"] = "{{ value_json.state }}";
+        doc["cmd_t"] = buf;
+        doc["pl_on"] = "ON";
+        doc["pl_off"] = "OFF";
+        doc["stat_val_tpl"] = "{{ value_json.state }}";
 
         if (supportsBrightness) {
             doc["brightness"] = true;
-            doc["brightness_scale"] = 255;
+            doc["bri_scl"] = 255;
             getStateTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
-            doc["brightness_state_topic"] = buf;
+            doc["bri_stat_t"] = buf;
             // brightness_command_topic is the same as command_topic
-            doc["brightness_command_topic"] = doc["command_topic"];
-            doc["brightness_value_template"] = "{{ value_json.brightness }}";
-            doc["on_command_type"] = "brightness";
+            doc["bri_cmd_t"] = doc["cmd_t"];
+            doc["bri_val_tpl"] = "{{ value_json.brightness }}";
+            doc["on_cmd_type"] = "brightness";
         }
         
         if (optimistic) {
-            doc["optimistic"] = true;
+            doc["opt"] = true;
         }
     }
     

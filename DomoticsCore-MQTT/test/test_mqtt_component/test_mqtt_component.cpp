@@ -955,6 +955,35 @@ void test_mqtt_rate_limit_unlimited_when_zero() {
 // publishNow — no queue, no String (OBS-5)
 // ============================================================================
 
+void test_an_oversized_queued_message_is_dropped_and_the_queue_keeps_draining() {
+    // BUG-39: PubSubClient refuses a packet over its buffer on every attempt, and
+    // processMessageQueue() broke on the false without erasing — the message was
+    // retried on every loop() and everything queued behind it waited forever.
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.maxQueueSize = 0;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    // Offline: three messages queue, the middle one over the stub's 1024-byte buffer.
+    TEST_ASSERT_TRUE(mqtt.publish("q/first", "1"));
+    std::string big(1100, 'x');
+    TEST_ASSERT_TRUE(mqtt.publish("q/oversized", String(big.c_str())));
+    TEST_ASSERT_TRUE(mqtt.publish("q/last", "3"));
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+    mqtt.loop();
+    auto* stub = static_cast<HAL::MQTT::MQTTClientImpl*>(mqtt.getClientForTest());
+    TEST_ASSERT_NOT_NULL(stub);
+    // The last one went out: the oversized one was dropped, not retried.
+    TEST_ASSERT_EQUAL_STRING("q/last", stub->lastTopic.c_str());
+    TEST_ASSERT_EQUAL_UINT32(2, mqtt.getStatistics().publishCount);
+    TEST_ASSERT_EQUAL_UINT32(1, mqtt.getStatistics().publishErrors);
+    mqtt.loop();
+    TEST_ASSERT_EQUAL_UINT32(1, mqtt.getStatistics().publishErrors);  // and not counted again
+    mqtt.shutdown();
+    HAL::WiFiImpl::setConnectedForTest(false);
+}
+
 void test_publish_now_offline_returns_false_and_queues_nothing() {
     MQTTConfig cfg;
     cfg.broker = "test.local";
@@ -1127,6 +1156,7 @@ int main() {
     RUN_TEST(test_publish_now_over_the_rate_limit_returns_false_and_queues_nothing);
     RUN_TEST(test_publish_now_connected_reaches_the_client_and_shares_the_window);
     RUN_TEST(test_publish_now_refuses_a_packet_larger_than_the_client_buffer);
+    RUN_TEST(test_an_oversized_queued_message_is_dropped_and_the_queue_keeps_draining);
     RUN_TEST(test_mqtt_rate_limited_queue_still_bounded);
 
     return UNITY_END();

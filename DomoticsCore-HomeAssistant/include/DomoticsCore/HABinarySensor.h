@@ -31,8 +31,8 @@ public:
         HAEntity::buildDiscoveryPayload(doc, nodeId, discoveryPrefix, device, availabilityTopic);
         
         // Add binary sensor-specific fields
-        doc["payload_on"] = payloadOn;
-        doc["payload_off"] = payloadOff;
+        doc["pl_on"] = payloadOn;
+        doc["pl_off"] = payloadOff;
     }
 };
 

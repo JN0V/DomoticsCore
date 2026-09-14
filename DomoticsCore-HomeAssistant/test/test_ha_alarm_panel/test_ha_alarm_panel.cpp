@@ -69,30 +69,30 @@ void test_alarm_panel_discovery_payload() {
     panel.buildDiscoveryPayload(doc, "node1", "homeassistant", device, "homeassistant/node1/availability");
 
     TEST_ASSERT_EQUAL_STRING("homeassistant/alarm_control_panel/node1/alarm/set",
-                             doc["command_topic"].as<String>().c_str());
+                             doc["cmd_t"].as<String>().c_str());
     TEST_ASSERT_EQUAL_STRING("homeassistant/alarm_control_panel/node1/alarm/state",
-                             doc["state_topic"].as<String>().c_str());
+                             doc["stat_t"].as<String>().c_str());
     TEST_ASSERT_EQUAL_STRING("1234", doc["code"].as<String>().c_str());
-    TEST_ASSERT_TRUE(doc["code_disarm_required"].as<bool>());
-    TEST_ASSERT_FALSE(doc["code_arm_required"].as<bool>());
-    TEST_ASSERT_FALSE(doc["code_trigger_required"].as<bool>());
+    TEST_ASSERT_TRUE(doc["cod_dis_req"].as<bool>());
+    TEST_ASSERT_FALSE(doc["cod_arm_req"].as<bool>());
+    TEST_ASSERT_FALSE(doc["cod_trig_req"].as<bool>());
 
     // Command template must be present when code config is active
-    TEST_ASSERT_FALSE(doc["command_template"].isNull());
+    TEST_ASSERT_FALSE(doc["cmd_tpl"].isNull());
     TEST_ASSERT_EQUAL_STRING("{{ action }}{% if code %} {{ code }}{% endif %}",
-                             doc["command_template"].as<String>().c_str());
+                             doc["cmd_tpl"].as<String>().c_str());
 
     // Command payload constants (only for supported features + always disarm)
-    TEST_ASSERT_EQUAL_STRING("ARM_HOME", doc["payload_arm_home"].as<String>().c_str());
-    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", doc["payload_arm_away"].as<String>().c_str());
-    TEST_ASSERT_TRUE(doc["payload_arm_night"].isNull());       // Not in supportedFeatures
-    TEST_ASSERT_TRUE(doc["payload_arm_vacation"].isNull());    // Not in supportedFeatures
-    TEST_ASSERT_TRUE(doc["payload_arm_custom_bypass"].isNull()); // Not in supportedFeatures
-    TEST_ASSERT_EQUAL_STRING("DISARM", doc["payload_disarm"].as<String>().c_str());  // Always present
-    TEST_ASSERT_EQUAL_STRING("TRIGGER", doc["payload_trigger"].as<String>().c_str());
+    TEST_ASSERT_EQUAL_STRING("ARM_HOME", doc["pl_arm_home"].as<String>().c_str());
+    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", doc["pl_arm_away"].as<String>().c_str());
+    TEST_ASSERT_TRUE(doc["pl_arm_nite"].isNull());       // Not in supportedFeatures
+    TEST_ASSERT_TRUE(doc["pl_arm_vacation"].isNull());    // Not in supportedFeatures
+    TEST_ASSERT_TRUE(doc["pl_arm_custom_b"].isNull()); // Not in supportedFeatures
+    TEST_ASSERT_EQUAL_STRING("DISARM", doc["pl_disarm"].as<String>().c_str());  // Always present
+    TEST_ASSERT_EQUAL_STRING("TRIGGER", doc["pl_trig"].as<String>().c_str());
 
     // Supported features array
-    JsonArray features = doc["supported_features"].as<JsonArray>();
+    JsonArray features = doc["sup_feat"].as<JsonArray>();
     TEST_ASSERT_EQUAL(3, features.size());
     TEST_ASSERT_EQUAL_STRING("arm_home", features[0].as<String>().c_str());
     TEST_ASSERT_EQUAL_STRING("arm_away", features[1].as<String>().c_str());
@@ -117,7 +117,7 @@ void test_alarm_panel_discovery_supported_features() {
     // Single flag
     {
         JsonDocument doc = buildFeatures(AlarmFeature::ArmNight);
-        JsonArray f = doc["supported_features"].as<JsonArray>();
+        JsonArray f = doc["sup_feat"].as<JsonArray>();
         TEST_ASSERT_EQUAL(1, f.size());
         TEST_ASSERT_EQUAL_STRING("arm_night", f[0].as<String>().c_str());
     }
@@ -125,7 +125,7 @@ void test_alarm_panel_discovery_supported_features() {
     // Multiple flags
     {
         JsonDocument doc = buildFeatures(AlarmFeature::ArmAway | AlarmFeature::ArmHome);
-        JsonArray f = doc["supported_features"].as<JsonArray>();
+        JsonArray f = doc["sup_feat"].as<JsonArray>();
         TEST_ASSERT_EQUAL(2, f.size());
         TEST_ASSERT_EQUAL_STRING("arm_home", f[0].as<String>().c_str());
         TEST_ASSERT_EQUAL_STRING("arm_away", f[1].as<String>().c_str());
@@ -136,7 +136,7 @@ void test_alarm_panel_discovery_supported_features() {
         AlarmFeature all = AlarmFeature::ArmHome | AlarmFeature::ArmAway | AlarmFeature::ArmNight
                          | AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass | AlarmFeature::Trigger;
         JsonDocument doc = buildFeatures(all);
-        JsonArray f = doc["supported_features"].as<JsonArray>();
+        JsonArray f = doc["sup_feat"].as<JsonArray>();
         TEST_ASSERT_EQUAL(6, f.size());
     }
 }
@@ -155,10 +155,10 @@ void test_alarm_panel_discovery_code_fields() {
         panel.buildDiscoveryPayload(doc, "n", "ha", device, "");
 
         TEST_ASSERT_TRUE(doc["code"].isNull());
-        TEST_ASSERT_TRUE(doc["command_template"].isNull());
-        TEST_ASSERT_TRUE(doc["code_arm_required"].isNull());
-        TEST_ASSERT_TRUE(doc["code_disarm_required"].isNull());
-        TEST_ASSERT_TRUE(doc["code_trigger_required"].isNull());
+        TEST_ASSERT_TRUE(doc["cmd_tpl"].isNull());
+        TEST_ASSERT_TRUE(doc["cod_arm_req"].isNull());
+        TEST_ASSERT_TRUE(doc["cod_dis_req"].isNull());
+        TEST_ASSERT_TRUE(doc["cod_trig_req"].isNull());
     }
 
     // Code set -> command_template present
@@ -173,11 +173,11 @@ void test_alarm_panel_discovery_code_fields() {
         panel.buildDiscoveryPayload(doc, "n", "ha", device, "");
 
         TEST_ASSERT_EQUAL_STRING("5678", doc["code"].as<String>().c_str());
-        TEST_ASSERT_TRUE(doc["code_arm_required"].as<bool>());
-        TEST_ASSERT_TRUE(doc["code_disarm_required"].as<bool>());
-        TEST_ASSERT_FALSE(doc["command_template"].isNull());
+        TEST_ASSERT_TRUE(doc["cod_arm_req"].as<bool>());
+        TEST_ASSERT_TRUE(doc["cod_dis_req"].as<bool>());
+        TEST_ASSERT_FALSE(doc["cmd_tpl"].isNull());
         TEST_ASSERT_EQUAL_STRING("{{ action }}{% if code %} {{ code }}{% endif %}",
-                                 doc["command_template"].as<String>().c_str());
+                                 doc["cmd_tpl"].as<String>().c_str());
     }
 }
 
@@ -335,18 +335,18 @@ void test_alarm_panel_add_method() {
     const auto& stats = ha->getStatistics();
     TEST_ASSERT_EQUAL_UINT32(1, stats.entityCount);
 
-    // BUG-38: with the default device block this panel's discovery document
-    // is over the 699-character event field. It used to be cut mid-JSON and
-    // published anyway — this test passed because ArduinoJson yields the keys
-    // parsed before the cut, and it asserted only those — and Home Assistant
-    // discarded it. Since OBS Lot D the component refuses it, aloud; the
-    // config keys are checked on the document the entity builds, not on
-    // what reached the broker, which is nothing.
+    // BUG-38: with Home Assistant's long key names this panel's discovery
+    // document was 774 characters, over the 699-character event field. It was
+    // cut mid-JSON and published anyway for months — this test passed because
+    // ArduinoJson yields the keys parsed before the cut, and it asserted only
+    // those — then refused aloud since OBS Lot D. With the abbreviated keys it
+    // is 638 characters and reaches the bus whole.
     static char warn[160]; warn[0] = '\0';
     auto cb = LoggerCallbacks::addCallback([](LogLevel level, const char*, const char* msg) {
         if (level == LOG_LEVEL_WARN && strstr(msg, "not published")) snprintf(warn, sizeof(warn), "%s", msg);
     });
-    bool discoveryPublished = false;
+    String published;
+    HomeAssistantComponent* haPtr = ha.get();
     HAEntity* panel = ha->entity("alarm");
     TEST_ASSERT_NOT_NULL(panel);
     {
@@ -354,10 +354,10 @@ void test_alarm_panel_add_method() {
         JsonObject device = deviceDoc.to<JsonObject>();
         panel->buildDiscoveryPayload(doc, "test_node", "homeassistant", device, "homeassistant/test_node/availability");
         TEST_ASSERT_EQUAL_STRING("5678", doc["code"].as<String>().c_str());
-        TEST_ASSERT_TRUE(doc["code_arm_required"].as<bool>());
-        TEST_ASSERT_TRUE(doc["code_disarm_required"].as<bool>());
-        TEST_ASSERT_FALSE(doc["code_trigger_required"].as<bool>());
-        TEST_ASSERT_FALSE(doc["command_template"].isNull());
+        TEST_ASSERT_TRUE(doc["cod_arm_req"].as<bool>());
+        TEST_ASSERT_TRUE(doc["cod_dis_req"].as<bool>());
+        TEST_ASSERT_FALSE(doc["cod_trig_req"].as<bool>());
+        TEST_ASSERT_FALSE(doc["cmd_tpl"].isNull());
     }
     core.addComponent(std::move(ha));
     core.begin();
@@ -366,13 +366,14 @@ void test_alarm_panel_add_method() {
         [&](const MQTTPublishEvent& ev) {
             String topic(ev.topic);
             if (topic.indexOf("alarm_control_panel") >= 0 && topic.indexOf("/config") >= 0 && ev.payload[0] != '\0') {
-                discoveryPublished = true;
+                published = ev.payload;
             }
         });
 
     simulateMqttConnect(core);
-    TEST_ASSERT_FALSE_MESSAGE(discoveryPublished, "BUG-38: a document over the event field must be refused, not cut");
-    TEST_ASSERT_EQUAL_STRING("Payload for 'homeassistant/alarm_control_panel/test_node/alarm/config' is 774 bytes, over the 699-byte event field: not published", warn);
+    TEST_ASSERT_EQUAL_MESSAGE(638, published.length(), "BUG-38: the abbreviated panel config reaches the bus whole");
+    TEST_ASSERT_EQUAL_STRING("", warn);
+    TEST_ASSERT_EQUAL_UINT32(0, haPtr->getStatistics().discoveryRefused);
     LoggerCallbacks::removeCallback(cb);
 
     core.shutdown();
@@ -381,6 +382,51 @@ void test_alarm_panel_add_method() {
 // ============================================================================
 // Test 11: Command routing
 // ============================================================================
+
+void test_alarm_panel_over_the_event_field_is_refused_and_counted() {
+    // The shape the abbreviations do not rescue: six arm modes, a 32-character
+    // node id, a configuration URL and an area — 974 characters against the
+    // 699-character field (and a 1060-byte packet against PubSubClient's 768 on
+    // ESP8266). Refused before the bus, named in one warning, counted, and not
+    // announced as queued (BUG-38).
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "abcdefghijklmnopqrstuvwxyz012345", sizeof(config.nodeId));
+    HA::setField(config.configUrl, "http://10.0.0.100:80/", sizeof(config.configUrl));
+    HA::setField(config.suggestedArea, "Living Room", sizeof(config.suggestedArea));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addAlarmControlPanel("alarm", "Alarm Panel", "mdi:shield-lock",
+        AlarmFeature::ArmAway | AlarmFeature::ArmHome | AlarmFeature::ArmNight |
+        AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass | AlarmFeature::Trigger,
+        "5678", true, true, true);
+    HomeAssistantComponent* haPtr = ha.get();
+
+    static char warn[200]; warn[0] = '\0';
+    static int queuedInfo; queuedInfo = 0;
+    auto cb = LoggerCallbacks::addCallback([](LogLevel level, const char*, const char* msg) {
+        if (level == LOG_LEVEL_WARN && strstr(msg, "not published")) snprintf(warn, sizeof(warn), "%s", msg);
+        if (level == LOG_LEVEL_INFO && strstr(msg, "Discovery queued")) queuedInfo++;
+    });
+    bool discoveryPublished = false;
+    core.addComponent(std::move(ha));
+    core.begin();
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            if (strstr(ev.topic, "alarm_control_panel") && strstr(ev.topic, "/config") && ev.payload[0] != '\0') {
+                discoveryPublished = true;
+            }
+        });
+
+    simulateMqttConnect(core);
+    TEST_ASSERT_FALSE_MESSAGE(discoveryPublished, "BUG-38: a document over the event field must be refused, not cut");
+    TEST_ASSERT_EQUAL_STRING("Payload for 'homeassistant/alarm_control_panel/abcdefghijklmnopqrstuvwxyz012345/alarm/config' is 974 bytes, over the 699-byte event field: not published", warn);
+    TEST_ASSERT_EQUAL_UINT32(1, haPtr->getStatistics().discoveryRefused);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, queuedInfo, "a refused config must not be announced as queued");
+    LoggerCallbacks::removeCallback(cb);
+
+    core.shutdown();
+}
 
 void test_alarm_panel_command_routing() {
     Core core;
@@ -501,6 +547,7 @@ int runAllTests() {
     RUN_TEST(test_alarm_panel_state_publish);
     RUN_TEST(test_alarm_panel_no_auto_publish);
     RUN_TEST(test_alarm_panel_add_method);
+    RUN_TEST(test_alarm_panel_over_the_event_field_is_refused_and_counted);
     RUN_TEST(test_alarm_panel_command_routing);
     RUN_TEST(test_alarm_panel_polymorphic_dispatch);
     RUN_TEST(test_alarm_panel_heap_stability);

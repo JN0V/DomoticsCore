@@ -29,28 +29,28 @@ public:
         char buf[HA_TOPIC_BUF_SIZE];
         doc["name"] = name;
         getUniqueId(buf, sizeof(buf), nodeId.c_str());
-        doc["unique_id"] = buf;
+        doc["uniq_id"] = buf;
 
         if (!icon.isEmpty()) {
-            doc["icon"] = icon;
+            doc["ic"] = icon;
         }
 
         if (!deviceClass.isEmpty()) {
-            doc["device_class"] = deviceClass;
+            doc["dev_cla"] = deviceClass;
         }
 
-        doc["device"] = device;
+        doc["dev"] = device;
 
         if (!availabilityTopic.isEmpty()) {
-            doc["availability_topic"] = availabilityTopic;
-            doc["payload_available"] = "online";
-            doc["payload_not_available"] = "offline";
+            doc["avty_t"] = availabilityTopic;
+            doc["pl_avail"] = "online";
+            doc["pl_not_avail"] = "offline";
         }
 
         // Add button-specific fields
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
-        doc["command_topic"] = buf;
-        doc["payload_press"] = payloadPress;
+        doc["cmd_t"] = buf;
+        doc["pl_prs"] = payloadPress;
     }
     
     /**

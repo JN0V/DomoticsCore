@@ -33,18 +33,18 @@ public:
         
         // Add sensor-specific fields
         if (!unit.isEmpty()) {
-            doc["unit_of_measurement"] = unit;
+            doc["unit_of_meas"] = unit;
         }
         
         if (!stateClass.isEmpty()) {
-            doc["state_class"] = stateClass;
+            doc["stat_cla"] = stateClass;
         } else if (!unit.isEmpty()) {
             // Auto-set state_class for numeric sensors
-            doc["state_class"] = "measurement";
+            doc["stat_cla"] = "measurement";
         }
         
         if (expireAfter > 0) {
-            doc["expire_after"] = (int)expireAfter;
+            doc["exp_aft"] = (int)expireAfter;
         }
     }
 };
