@@ -290,6 +290,28 @@ inline bool MQTTComponent::publish(const String& topic, const String& payload, u
     return success;
 }
 
+inline bool MQTTComponent::publishNow(const char* topic, const char* payload, size_t len, bool retain) {
+    if (!topic || !payload || !mqttClient) return false;
+    if (!isConnected() || !rateLimitAllowsPublish()) return false;
+    // PubSubClient refuses a packet larger than its buffer with a bare false;
+    // say why once per attempt, since the caller can only count it.
+    const size_t packet = strlen(topic) + len + 5;
+    if (packet > mqttClient->getBufferSize()) {
+        DLOG_W(LOG_MQTT, "publishNow: %u-byte packet exceeds the %u-byte client buffer", (unsigned)packet,
+               (unsigned)mqttClient->getBufferSize());
+        stats.publishErrors++;
+        return false;
+    }
+    bool success = mqttClient->publish(topic, reinterpret_cast<const uint8_t*>(payload), len, retain);
+    if (success) {
+        stats.publishCount++;
+        publishCountThisSecond++;
+    } else {
+        stats.publishErrors++;
+    }
+    return success;
+}
+
 inline bool MQTTComponent::publishJSON(const String& topic, const JsonDocument& doc, uint8_t qos, bool retain) {
     String payload;
     serializeJson(doc, payload);

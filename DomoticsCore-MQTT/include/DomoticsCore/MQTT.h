@@ -254,6 +254,14 @@ public:
      * @return true if published successfully
      */
     bool publish(const String& topic, const String& payload, uint8_t qos = 0, bool retain = false);
+
+    /**
+     * @brief Publish without queueing and without allocating (OBS-5).
+     * Offline, over the rate limit, or refused by the client it returns false and
+     * the message is gone: for a periodic sample that would be stale on delivery.
+     * QoS is 0, which is all the client sends.
+     */
+    bool publishNow(const char* topic, const char* payload, size_t len, bool retain = false);
     
     /**
      * @brief Publish JSON document to topic
@@ -350,6 +358,8 @@ public:
      * @return Queue size
      */
     size_t getQueuedMessageCount() const { return messageQueue.size(); }
+    /** @brief The HAL client, for a native test to read what the stub was handed. */
+    HAL::MQTT::MQTTClientImpl* getClientForTest() { return mqttClient; }
     
     /**
      * @brief Get last error message

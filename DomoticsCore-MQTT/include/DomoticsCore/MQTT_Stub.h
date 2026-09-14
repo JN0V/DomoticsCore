@@ -98,18 +98,18 @@ public:
                 const uint8_t* payload,
                 unsigned int length,
                 bool retained = false) override {
-        (void)topic;
-        (void)payload;
-        (void)length;
-        (void)retained;
-
         if (!isConnected) {
             return false;
         }
-
+        // What the last publish handed over, for tests that must see it reach the client.
+        lastTopic = topic ? topic : "";
+        lastPayload.assign(reinterpret_cast<const char*>(payload), length);
+        lastRetained = retained;
         publishCount++;
         return true;
     }
+    std::string lastTopic, lastPayload;
+    bool lastRetained = false;
 
     bool subscribe(const char* topic, uint8_t qos = 0) override {
         (void)topic;

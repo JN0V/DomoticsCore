@@ -1263,6 +1263,140 @@ void test_the_thirtieth_sensor_costs_a_dropped_event_at_connect() {
 }
 
 
+void test_discovery_config_with_the_diagnostic_fields_emits_exactly_them() {
+    // OBS-5: the fields a system diagnostic entity needs — a category, a shared
+    // state topic with a template, an attributes topic — and, for the entity
+    // that must stay readable while the device is down, no availability block.
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+    HA::setField(config.deviceName, "Test Device", sizeof(config.deviceName));
+    HA::setField(config.manufacturer, "TestMfg", sizeof(config.manufacturer));
+    HA::setField(config.model, "TestModel", sizeof(config.model));
+    HA::setField(config.swVersion, "2.0.0", sizeof(config.swVersion));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSensor("sys_last_death", "Last Death");
+    HAEntity* e = ha->entity("sys_last_death");
+    TEST_ASSERT_NOT_NULL(e);
+    e->entityCategory = "diagnostic";
+    e->stateTopicOverride = "dev/crash";
+    e->valueTemplate = "{{ value_json.promotion }}";
+    e->jsonAttributesTopic = "dev/crash";
+    e->useAvailability = false;
+    TEST_ASSERT_NULL(ha->entity("nobody"));
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    String payload;
+    captureDiscoveryConfig(core, "homeassistant/sensor/test_node/sys_last_death/config", payload);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"name\":\"Last Death\",\"unique_id\":\"test_node_sys_last_death\","
+        "\"state_topic\":\"dev/crash\","
+        "\"device\":{\"identifiers\":[\"test_node\"],\"name\":\"Test Device\","
+        "\"model\":\"TestModel\",\"manufacturer\":\"TestMfg\",\"sw_version\":\"2.0.0\"},"
+        "\"entity_category\":\"diagnostic\","
+        "\"value_template\":\"{{ value_json.promotion }}\","
+        "\"json_attributes_topic\":\"dev/crash\"}",
+        payload.c_str());
+    core.shutdown();
+}
+
+void test_a_duplicate_entity_id_warns_and_registers_both() {
+    // Nothing refuses the second registration — that is the behaviour being
+    // pinned, not endorsed — but it is no longer silent, through every add*().
+    static int warns; warns = 0;
+    auto cb = LoggerCallbacks::addCallback([](LogLevel level, const char*, const char* msg) {
+        if (level == LOG_LEVEL_WARN && strstr(msg, "already registered")) warns++;
+    });
+    HomeAssistantComponent ha;
+    ha.addSensor("uptime", "Uptime");
+    TEST_ASSERT_EQUAL_INT(0, warns);
+    ha.addSensor("uptime", "Uptime again");
+    TEST_ASSERT_EQUAL_INT(1, warns);
+    ha.addSwitch("uptime", "As a switch");
+    ha.addButton("uptime", "As a button");
+    ha.addBinarySensor("uptime", "As a binary sensor");
+    ha.addLight("uptime", "As a light");
+    TEST_ASSERT_EQUAL_INT(5, warns);
+    TEST_ASSERT_EQUAL_UINT32(6, ha.getStatistics().entityCount);
+    LoggerCallbacks::removeCallback(cb);
+}
+
+void test_a_state_published_through_the_component_lands_on_the_overridden_topic() {
+    // Discovery told Home Assistant to read the override; publishState must
+    // write there too, or the entity never updates, silently.
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addSensor("free_heap", "Free Heap", "B");
+    ha->entity("free_heap")->stateTopicOverride = "dev/telemetry";
+    ha->entity("free_heap")->jsonAttributesTopic = "dev/attrs";
+    core.addComponent(std::move(ha));
+    core.begin();
+    String stateTopic, attrTopic;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            if (strcmp(ev.payload, "42") == 0) stateTopic = ev.topic;
+            if (strstr(ev.payload, "\"k\":1")) attrTopic = ev.topic;
+        });
+    simulateMqttConnect(core);
+    haPtr->publishState("free_heap", "42");
+    JsonDocument attrs; attrs["k"] = 1;
+    haPtr->publishAttributes("free_heap", attrs);
+    for (int i = 0; i < 5; i++) core.loop();
+    TEST_ASSERT_EQUAL_STRING("dev/telemetry", stateTopic.c_str());
+    TEST_ASSERT_EQUAL_STRING("dev/attrs", attrTopic.c_str());
+    core.shutdown();
+}
+
+void test_a_discovery_config_over_the_event_field_is_refused_aloud() {
+    // 700 bytes and up would be cut mid-JSON and sit retained on the broker,
+    // rejected by Home Assistant at every restart: refused instead, with a WARN.
+    static int warns; warns = 0;
+    auto cb = LoggerCallbacks::addCallback([](LogLevel level, const char*, const char* msg) {
+        if (level == LOG_LEVEL_WARN && strstr(msg, "not published")) warns++;
+    });
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    String longName;
+    for (int i = 0; i < 40; i++) longName += "0123456789";   // 400 chars of name
+    ha->addSensor("big", longName, "B");
+    ha->entity("big")->valueTemplate = "{{ value_json.a_rather_long_key_name_to_push_the_document_past_the_cap }}";
+    core.addComponent(std::move(ha));
+    core.begin();
+    String payload;
+    captureDiscoveryConfig(core, "homeassistant/sensor/test_node/big/config", payload);
+    TEST_ASSERT_EQUAL_INT(1, warns);
+    TEST_ASSERT_EQUAL_STRING("", payload.c_str());
+    LoggerCallbacks::removeCallback(cb);
+    core.shutdown();
+}
+
+void test_an_invalid_entity_category_is_left_out_and_warned() {
+    static int warns; warns = 0;
+    auto cb = LoggerCallbacks::addCallback([](LogLevel level, const char*, const char* msg) {
+        if (level == LOG_LEVEL_WARN && strstr(msg, "entity_category")) warns++;
+    });
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSensor("s", "S");
+    ha->entity("s")->entityCategory = "diagnostics";   // the plural is not a category
+    core.addComponent(std::move(ha));
+    core.begin();
+    String payload;
+    captureDiscoveryConfig(core, "homeassistant/sensor/test_node/s/config", payload);
+    TEST_ASSERT_EQUAL_INT(1, warns);
+    TEST_ASSERT_TRUE(payload.indexOf("entity_category") < 0);
+    LoggerCallbacks::removeCallback(cb);
+    core.shutdown();
+}
 int runAllTests() {
     UNITY_BEGIN();
 
@@ -1349,6 +1483,13 @@ int runAllTests() {
     RUN_TEST(test_discovery_config_for_a_sensor_is_this_exact_document);
     RUN_TEST(test_twenty_nine_sensors_reach_the_bus_at_connect_without_a_drop);
     RUN_TEST(test_the_thirtieth_sensor_costs_a_dropped_event_at_connect);
+
+    // OBS-5 — the discovery fields and the duplicate-id warning
+    RUN_TEST(test_discovery_config_with_the_diagnostic_fields_emits_exactly_them);
+    RUN_TEST(test_a_duplicate_entity_id_warns_and_registers_both);
+    RUN_TEST(test_a_state_published_through_the_component_lands_on_the_overridden_topic);
+    RUN_TEST(test_a_discovery_config_over_the_event_field_is_refused_aloud);
+    RUN_TEST(test_an_invalid_entity_category_is_left_out_and_warned);
     RUN_TEST(test_publish_state_string_still_works);
     RUN_TEST(test_publish_state_string_literal);
 
@@ -1372,5 +1513,6 @@ int runAllTests() {
 void setup() { runAllTests(); }
 void loop() {}
 #else
+
 int main(int argc, char** argv) { return runAllTests(); }
 #endif

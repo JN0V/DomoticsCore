@@ -182,7 +182,13 @@ public:
     }
     
     // ========== Entity Management ==========
-    
+
+    /**
+     * @brief The registered entity with this id, to set its discovery fields after add*(); nullptr if none.
+     * Set them before the connect that publishes discovery; after it, call republishEntity(id).
+     */
+    HAEntity* entity(const String& id) { return findEntity(id); }
+
     /**
      * @brief Add a sensor entity
      */
@@ -192,6 +198,7 @@ public:
         if (!stateClass.isEmpty()) {
             sensor->stateClass = stateClass;
         }
+        warnIfDuplicateId(id);
         entities.push_back(std::move(sensor));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added sensor: %s", id.c_str());
@@ -212,6 +219,7 @@ public:
     void addBinarySensor(const String& id, const String& name,
                          const String& deviceClass = "", const String& icon = "") {
         auto sensor = std::make_unique<HABinarySensor>(id, name, deviceClass, icon);
+        warnIfDuplicateId(id);
         entities.push_back(std::move(sensor));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added binary sensor: %s", id.c_str());
@@ -234,6 +242,7 @@ public:
         auto sw = std::make_unique<HASwitch>(id, name, icon);
         sw->autoPublishState = autoPublishState;
         sw->optimistic = optimistic;
+        warnIfDuplicateId(id);
         entities.push_back(std::move(sw));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added switch: %s", id.c_str());
@@ -253,6 +262,7 @@ public:
      */
     void addLight(const String& id, const String& name) {
         auto light = std::make_unique<HALight>(id, name);
+        warnIfDuplicateId(id);
         entities.push_back(std::move(light));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added light: %s", id.c_str());
@@ -272,6 +282,7 @@ public:
      */
     void addButton(const String& id, const String& name, const String& icon = "") {
         auto button = std::make_unique<HAButton>(id, name, icon);
+        warnIfDuplicateId(id);
         entities.push_back(std::move(button));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added button: %s", id.c_str());
@@ -303,6 +314,7 @@ public:
         panel->codeArmRequired = codeArmRequired;
         panel->codeDisarmRequired = codeDisarmRequired;
         panel->codeTriggerRequired = codeTriggerRequired;
+        warnIfDuplicateId(id);
         entities.push_back(std::move(panel));
         stats.entityCount++;
         DLOG_I(LOG_HA, "Added alarm_control_panel: %s", id.c_str());
@@ -546,12 +558,28 @@ private:
         return nullptr;
     }
     
+    // OBS-5: two entities with one id publish two configs for one unique_id, and
+    // Home Assistant keeps whichever arrived first.
+    void warnIfDuplicateId(const String& id) {
+        if (findEntity(id)) {
+            DLOG_W(LOG_HA, "Entity id '%s' already registered; Home Assistant keeps the first config", id.c_str());
+        }
+    }
+
     /**
      * @brief Publish MQTT message via EventBus
      */
     void mqttPublish(const char* topic, const String& payload, uint8_t qos = 0, bool retain = false) {
         using namespace DomoticsCore::Components;
         MQTTPublishEvent ev{};
+        // OBS-5: the event's payload field is the cap. A cut JSON would sit
+        // retained on the broker and be rejected by Home Assistant silently
+        // at every restart, so it is refused here, aloud.
+        if (payload.length() >= MQTT_EVENT_PAYLOAD_SIZE) {
+            DLOG_W(LOG_HA, "Payload for '%s' is %u bytes, over the %u-byte event field: not published", topic,
+                   (unsigned)payload.length(), (unsigned)(MQTT_EVENT_PAYLOAD_SIZE - 1));
+            return;
+        }
 
         // Copy strings into fixed-size buffers
         strncpy(ev.topic, topic, MQTT_EVENT_TOPIC_SIZE - 1);
@@ -589,6 +617,10 @@ private:
      * @brief Publish discovery message for a single entity
      */
     void publishEntityDiscovery(HAEntity* entity, const JsonObject& device) {
+        if (!entity->entityCategoryIsValid()) {
+            DLOG_W(LOG_HA, "Entity '%s': entity_category '%s' is not one Home Assistant accepts; left out",
+                   entity->id.c_str(), entity->entityCategory.c_str());
+        }
         JsonDocument doc;
         entity->buildDiscoveryPayload(doc, config.nodeId, config.discoveryPrefix, 
                                      device, config.availabilityTopic);

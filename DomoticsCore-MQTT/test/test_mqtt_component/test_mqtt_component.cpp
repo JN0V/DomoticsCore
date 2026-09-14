@@ -17,6 +17,7 @@
  */
 
 #include <unity.h>
+#include <string>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/MQTT.h>
 #include <DomoticsCore/MQTTEvents.h>
@@ -949,6 +950,97 @@ void test_mqtt_rate_limit_unlimited_when_zero() {
     mqtt.shutdown();
 }
 
+
+// ============================================================================
+// publishNow — no queue, no String (OBS-5)
+// ============================================================================
+
+void test_publish_now_offline_returns_false_and_queues_nothing() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    TEST_ASSERT_FALSE(mqtt.isConnected());
+
+    static const char payload[] = "{\"heap\":1}";
+    TEST_ASSERT_FALSE(mqtt.publishNow("dev/telemetry", payload, sizeof(payload) - 1));
+    // The mutation this pins: route publishNow through enqueueMessage and the
+    // sample sits in the queue, allocated, to be delivered stale.
+    TEST_ASSERT_EQUAL_UINT32(0, mqtt.getQueuedMessageCount());
+    TEST_ASSERT_EQUAL_UINT32(0, mqtt.getStatistics().publishCount);
+    mqtt.shutdown();
+}
+
+void test_publish_now_over_the_rate_limit_returns_false_and_queues_nothing() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.publishRateLimit = 2;
+    cfg.maxQueueSize = 0;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+    TEST_ASSERT_TRUE(mqtt.isConnected());
+
+    static const char payload[] = "{\"heap\":1}";
+    TEST_ASSERT_TRUE(mqtt.publishNow("dev/telemetry", payload, sizeof(payload) - 1));
+    TEST_ASSERT_TRUE(mqtt.publishNow("dev/telemetry", payload, sizeof(payload) - 1));
+    TEST_ASSERT_FALSE(mqtt.publishNow("dev/telemetry", payload, sizeof(payload) - 1));
+    TEST_ASSERT_EQUAL_UINT32(0, mqtt.getQueuedMessageCount());
+    TEST_ASSERT_EQUAL_UINT32(2, mqtt.getStatistics().publishCount);
+
+    mqtt.shutdown();
+    HAL::WiFiImpl::setConnectedForTest(false);
+}
+
+void test_publish_now_refuses_a_packet_larger_than_the_client_buffer() {
+    // PubSubClient answers a bare false; the component says why and counts it.
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+    std::string big(4000, 'x');
+    TEST_ASSERT_FALSE(mqtt.publishNow("dev/telemetry", big.c_str(), big.size()));
+    TEST_ASSERT_EQUAL_UINT32(1, mqtt.getStatistics().publishErrors);
+    TEST_ASSERT_EQUAL_UINT32(0, mqtt.getStatistics().publishCount);
+    mqtt.shutdown();
+    HAL::WiFiImpl::setConnectedForTest(false);
+}
+
+void test_publish_now_connected_reaches_the_client_and_shares_the_window() {
+    // The two counters publish() keeps are kept here too, so a tick at second 0
+    // counts against the same window as the application's own publishes.
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.publishRateLimit = 3;
+    cfg.maxQueueSize = 0;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    HAL::WiFiImpl::setConnectedForTest(true);
+    mqtt.connect();
+
+    static const char payload[] = "{\"heap\":1}";
+    TEST_ASSERT_TRUE(mqtt.publishNow("dev/telemetry", payload, sizeof(payload) - 1, true));
+    TEST_ASSERT_EQUAL_UINT32(1, mqtt.getStatistics().publishCount);
+    // What the client was handed, not only that it was called: topic, the
+    // exact bytes, the retain flag.
+    auto* stub = static_cast<HAL::MQTT::MQTTClientImpl*>(mqtt.getClientForTest());
+    TEST_ASSERT_NOT_NULL(stub);
+    TEST_ASSERT_EQUAL_STRING("dev/telemetry", stub->lastTopic.c_str());
+    TEST_ASSERT_EQUAL_STRING("{\"heap\":1}", stub->lastPayload.c_str());
+    TEST_ASSERT_TRUE(stub->lastRetained);
+    TEST_ASSERT_TRUE(mqtt.publish("topic", "a"));
+    TEST_ASSERT_TRUE(mqtt.publish("topic", "b"));
+    TEST_ASSERT_TRUE(mqtt.publish("topic", "c"));   // queued: the window is spent
+    TEST_ASSERT_EQUAL_UINT32(3, mqtt.getStatistics().publishCount);
+    TEST_ASSERT_EQUAL_UINT32(1, mqtt.getQueuedMessageCount());
+
+    mqtt.shutdown();
+    HAL::WiFiImpl::setConnectedForTest(false);
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -1029,6 +1121,12 @@ int main() {
 
     // BUG-29 — rate-limited messages are deferred, not discarded
     RUN_TEST(test_mqtt_rate_limited_messages_drain_next_window);
+
+    // publishNow (OBS-5)
+    RUN_TEST(test_publish_now_offline_returns_false_and_queues_nothing);
+    RUN_TEST(test_publish_now_over_the_rate_limit_returns_false_and_queues_nothing);
+    RUN_TEST(test_publish_now_connected_reaches_the_client_and_shares_the_window);
+    RUN_TEST(test_publish_now_refuses_a_packet_larger_than_the_client_buffer);
     RUN_TEST(test_mqtt_rate_limited_queue_still_bounded);
 
     return UNITY_END();
