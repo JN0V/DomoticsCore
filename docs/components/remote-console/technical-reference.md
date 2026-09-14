@@ -60,11 +60,12 @@ struct RemoteConsoleConfig {
 | `enabled`        | `bool`                        | `true`                       | Enable or disable the Telnet server entirely.                     |
 | `port`           | `uint16_t`                    | `23`                         | TCP port for the Telnet server.                                   |
 | `requireAuth`    | `bool`                        | `false`                      | When `true`, new clients must authenticate with `auth <password>` before executing commands (except `help` and `quit`). Unauthenticated clients do not receive log output. |
-| `password`       | `String`                      | `""`                         | The password required for authentication when `requireAuth` is `true`. |
+| `password`       | `String`                      | `""`                         | The password required for authentication when `requireAuth` is `true`. Must be non-empty: `begin()` clears `requireAuth` and warns otherwise, and an empty `auth` line never authenticates. |
 | `bufferSize`     | `uint32_t`                    | `DOMOTICS_LOG_BUFFER_SIZE`   | Maximum number of log entries in the circular buffer. Platform-specific: ESP32 = 100, ESP8266 = 5. |
 | `allowCommands`  | `bool`                        | `true`                       | When `false`, all commands except `help` and `quit` are blocked with a "Commands are disabled" message. Useful for log-only monitoring sessions. |
 | `authTimeoutMs`  | `uint32_t`                    | `10000`                      | Time in milliseconds an unauthenticated client has to authenticate before being disconnected. Only applies when `requireAuth` is `true`. Set to `0` to disable the timeout. |
 | `allowedIPs`     | `std::vector<HAL::IPAddress>` | `{}` (empty = all allowed)   | IP whitelist. An empty vector permits all IPs.                    |
+| `authDelayMaxMs` | `uint32_t`                    | `8000`                       | Cap of the wait a failed `auth` puts before the next attempt from the same address is read: 1 s after the first failure, doubling per consecutive failure up to this cap; one success or a minute without failures clears it. The attempt is held, never refused, and the client is never disconnected for failing. `0` disables the wait. |
 | `colorOutput`    | `bool`                        | `true`                       | Emit ANSI escape codes for colored log output.                    |
 | `maxClients`     | `uint32_t`                    | `3`                          | Maximum number of concurrent Telnet connections.                  |
 | `defaultLogLevel`| `LogLevel`                    | `LOG_LEVEL_INFO`             | Initial log level for the console session.                        |
@@ -205,7 +206,7 @@ When `requireAuth` is `true`, the following authentication flow applies:
 2. **Welcome message**: The client sees "Authentication required. Use: auth <password>" instead of the standard welcome with recent logs.
 3. **Command blocking**: All commands except `help`, `quit`, and `auth` are blocked with an "Authentication required" message.
 4. **Log blocking**: Unauthenticated clients do not receive real-time log output.
-5. **Authentication**: The client sends `auth <password>`. If the password matches `config.password`, the client's auth state is set to `true` and the client receives "Authentication successful!".
+5. **Authentication**: The client sends `auth <password>`. If the password matches `config.password`, the client's auth state is set to `true` and the client receives "Authentication successful!". Otherwise "Authentication failed.", and the address's wait starts: the next `auth` line from that address — on this connection or a new one — is held, unread, until 1 s has passed since the failure, 2 s after the second consecutive failure, 4, 8 … up to `authDelayMaxMs`; nothing else is read from a client while its attempt is held. A success, or a minute without failures, clears the address. The wait is remembered for at most four addresses at a time. The serial log names each failure and its client id.
 6. **Auth timeout**: On each `loop()` iteration, any unauthenticated client whose connection age exceeds `authTimeoutMs` is sent "Authentication timeout. Disconnecting." and disconnected. Set `authTimeoutMs = 0` to disable this timeout.
 
 When `requireAuth` is `false` (default), all clients are automatically marked as authenticated on connect and receive the full welcome message including recent log history.

@@ -214,12 +214,14 @@ All errors return JSON with error message and HTTP status code:
 
 ## CORS Support
 
-CORS is enabled by default for cross-origin requests.
-
-**Headers:**
-- `Access-Control-Allow-Origin: *`
-- `Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS`
-- `Access-Control-Allow-Headers: Content-Type, X-API-Key`
+`config.enableCORS = true` makes the WebUI component send
+`Access-Control-Allow-Origin: *` (with `-Methods` and `-Headers`) on its own
+JSON routes (`/api/ui/*`, `/api/components`, `/api/system/info`). The routes
+this example registers itself (`/api/sensors`, …) answer through
+`request->send()` and carry no CORS header unless the handler adds one. No
+route answers `OPTIONS`, so a browser can only make simple cross-origin
+requests — a custom header such as `X-API-Key` fails its preflight. With
+`enableAuth` on, no CORS header is sent at all.
 
 ---
 

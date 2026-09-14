@@ -55,6 +55,7 @@ goes to `docs/decisions/`; the deferred items to `docs/deferred-work.md`.
 | System (docs only) | ARCH-1 | 2026-08-31 — **re-argued HIGH → MEDIUM, open, dual trigger**: SYS-F6 unreadable (the HIGH was inherited, never argued); one XIII indicator exceeded (`begin()` 62, stable since filing) against a file inside every other measurement; the fork rewrites two of three prescribed extraction zones, the third declined as YAGNI. **Open HIGH reaches zero — by reclassification, stated in those words.** marianorenzi notification drafted for the maintainer |
 | Tooling, harness | CI-13, CI-15, BUG-35 (filed) | 2026-09-01 — the second real-conditions campaign's lot: `clean_examples.py` learns `test/*/.pio` after a 19 GB recursion (**CI-13 closed**), the harness learns the SEC-10 token, **CI-15 filed** (no `export.exclude` anywhere — root cause, release-aware), **BUG-35 filed** from the disconnect accident (open HIGH 0 → 1 — the campaign doing its job) |
 | Core, SystemInfo, System | OBS-2, OBS-6, OBS-7, OBS-1 (boot check) | PR #60 — 2026-09-05, **Lot A** (opened as #59, stacked on #57, auto-closed when #57's branch was deleted at merge, reopened as #60): the reset registers the ESP8266 kept, the ESP32 core dump nobody read, the heap keys that lied about which boot they described, and a loop watchdog on ESP32 (default 30 s, a behaviour change for the next release to announce). Measured on three boards from the branch (the C3's first run ever); two mutations caught natively; FullStack green on all three targets. **Adversarial review run after opening** (13 findings): the watchdog armed one task and fed another — fixed and re-measured on both ESP32s; the maintainer's own review had already caught the one Constitution IX `#if` outside the HAL. Native 819 → 851 |
+| WebUI, RemoteConsole, System | SEC-4, SEC-6, SEC-14 | **branch `sec/webui-console`, PR to open** — 2026-09-14, the afternoon after Lot D: the plan went through the adversarial lens before any code (20 findings: three guard sites where the plan had assumed one, the same empty-password defect in the console, no `OPTIONS` handler so the preflight headers are dead letters, a global lockout as a denial-of-service lever), and the maintainer ruled the brute-force defence **delay-only, never block, never disconnect**. The console's `auth` wait (1, 2, 4, 8 s, per address, held not refused), the CORS header withheld under auth with the entry's premise corrected, the empty password refused on the WebUI and the console with `SystemConfig::consolePassword` new. Native: removal checks passed all four on a stale libdeps copy, then went red from a fresh `.pio`. Boards: red-then-green SEC-14 on the WROOM-32D (200 with an empty password before, refused after), the console wait timed from the outside on the nodemcuv2, CORS with and without auth in curl and Chromium |
 | System, MQTT, HomeAssistant, WebUI, OTA, Core (HAL), SystemInfo, the bench tools | OBS-5, OBS-1 (transport), SEC-13 | **PR #67** — 2026-09-14, **Lot D**: what leaves the device — `{clientId}/telemetry` once a minute and `{clientId}/crash` retained at connect, allocation-free on the device's side through the new `publishNow()`; Home Assistant discovers both as eight diagnostic entities through `value_template` (five discovery fields new on `HAEntity`); the core dump streamed, decoded against its ELF and erased through the WebUI; SEC-13's two routes gated, and `/` freed of a stale copy of `enableAuth`. Planned locally (24 review findings folded before S0; the plan and the review stay out of the tree by the 2026-09-14 rule), six slices, every mechanism reachable natively proven with a scripted sink and three mutation checks. Both boards plus a Home Assistant container on the host, onboarded through its API. **The four-layer code review before the PR** (Blind Hunter 21, Edge Case Hunter 18, Verification Gap 9 with two surviving mutations measured, Acceptance Auditor 20 plus the 24 plan-review folds checked one by one): ~68 raw findings, 46 patched — among them `publishState()` writing to the generated topic while discovery advertised the override, the crash record announcing an erased dump until reboot, a 49.7-day `uptime` wrap into a `total_increasing` sensor, `rssi` 0 dBm without a link — 4 deferred, the rest dismissed; the review also filed BUG-38 (the alarm panel's document over the event field, cut for months) and DC-16, and measured two of the plan review's findings the campaign had skipped. **All three fixed on the branch before the PR, the same day**, BUG-38 after its decision memo went through the adversarial review — which refuted the wider field on ESP8266 and filed BUG-39, fixed with it. Native **934 → 972**, both ends read from the CI runs of `main` and of PR #67 — the handoff's 936 → 972 was a projection, off at both ends |
 | Core, System, the bench tools | OBS-4 | **PR #66** — 2026-09-07, **Lot C**: the failed-allocation group in the flight record (layout 2, outside the CRC, stored straight to RTC from the ESP32 heap hook or the ESP8266 latch-and-clear of the core's globals), the ESP8266 diagnostic profile measured, the survived crash kinds. Planned in `spec-obs-lot-c-oom-moment.md` v2 (19 review findings folded before S1), five slices in three commits, the four-layer review of the diff before the PR (`review-obs-lot-c-code.md`: 41 raw, 24 patched — a survived failure meeting an exception was reported as the death's cause). Both boards: a healthy WROOM never fires, squeezed to 12 KB it dies of the task watchdog after 168 survived failures; the ESP8266 per-loop cost turned out link-layout-bound. Native 913 → 936 |
 | Core, System, SystemInfo, Storage (stub) | OBS-3, BUG-36, ARCH-1's residue | **PR #65** — 2026-09-06, **Lot B**: the flight recorder in RTC memory (Core-owned, promotion first, the record held until persisted), the `bootdiag` blob, the crash commands, ARCH-1's boot-diagnostics formatter out of `System.h`. Planned in `spec-obs-lot-b-flight-recorder.md` v2 (22 review findings folded before S1), five slices, three-layer review of the diff before the PR (the hold blocked a fresh record during bring-up; the ring printed in slot order after a wrap; the loop wiring unobserved — all fixed with tests). Both boards' death sequences read back; four defects the boards found that 115 native tests had not. Native 851 → 913 |
@@ -220,11 +221,47 @@ Unenforced security configurations are the most dangerous class of defect — us
 - **Problem**: Any network client can POST firmware to the upload endpoint with zero authentication.
 - **Fix**: Gate the upload handler behind the WebUI authentication system, or add a dedicated OTA token check.
 
-### SEC-4 — RemoteConsole: no brute-force protection on auth [MEDIUM]
+### SEC-4 — RemoteConsole: no brute-force protection on auth [MEDIUM] — **DONE (2026-09-14)**
 
 - **Ref**: RC-F5
 - **Problem**: Plain-text password comparison with no rate-limiting. Attackable via rapid telnet reconnections.
-- **Fix**: Add exponential backoff after N failed attempts, or IP-based lockout.
+- **Fix, as filed**: Add exponential backoff after N failed attempts, or IP-based lockout.
+- **Fixed 2026-09-14 — delay only, by the maintainer's rule: never block,
+  never disconnect for failing.** The plan's first draft had a lockout and
+  a disconnect on the third failure; its adversarial review showed a
+  global lockout to be a denial-of-service lever any LAN host can hold
+  with one wrong password a minute, and the maintainer ruled both out
+  ("on doit jamais bloquer et juste ajouter du délai"). What ships: a
+  failed `auth` sets a wait — 1 s, doubling per consecutive failure, capped
+  by `authDelayMaxMs` (8 s; `0` disables) — before the next attempt from
+  that **address** is *read*: the line is held in the client's state, not
+  refused, and nothing else is read from that client until it has been
+  evaluated. The wait is the address's, remembered in a table of four
+  entries (LRU-evicted), so a reconnection inherits it and a second
+  address is unaffected; one success or a minute of quiet clears it. With
+  the 10 s `authTimeoutMs`, one connection gets about three attempts
+  (0, 1, 3 s) before the existing timeout closes it — the rate limit the
+  entry asked for, without a mechanism that can lock the owner out. The
+  four per-client maps became one `ClientState` map on the way, so every
+  erase site is one line (MEM-1's row for this file moves with it).
+- **Verification, native**: the wait holds the next attempt for exactly
+  one second, doubles and caps (1, 2, 4, 8, 8), survives a reconnection
+  from the same address and not from another, is forgotten after a minute,
+  is off at `0`, and the state map is empty after disconnects; the
+  existing flow test now waits its second. Removal checks from a fresh
+  `.pio`: the hold removed → the one-second test fails; the per-address
+  carry removed → the reconnection test fails. The console suite gained
+  the millis override (`setMillisForTest` in `setUp`). **The first run of
+  the removal checks passed all four**: it compiled the stale libdeps
+  copy of the header, the trap CLAUDE.md records; redone from a fresh
+  `.pio`, each check went red as it should.
+- **Measured, nodemcuv2** (`obs-lotb-probe` built with
+  `-DDC_CONSOLE_PASSWORD`, `tools/on-device/console_auth_check.py`): on
+  one connection three wrong passwords answered after **0.02 s, 1.03 s,
+  2.00 s**, the connection still open; a fresh connection from the same
+  address with the right password answered after **3.92 s** — the 4 s the
+  third failure set, inherited; another fresh connection after that
+  success answered in 0.02 s. Nothing refused, nothing cut.
 
 ### SEC-5 — WebUI: GET for state-changing operations [MEDIUM]
 
@@ -241,12 +278,48 @@ Unenforced security configurations are the most dangerous class of defect — us
   original point — `Cache-Control` on responses that echo secrets — kept MEDIUM
   and open, so the history-leak observation is not lost inside the CSRF fix.
 
-### SEC-6 — WebUI: CORS `Access-Control-Allow-Origin: *` with auth enabled [MEDIUM]
+### SEC-6 — WebUI: CORS `Access-Control-Allow-Origin: *` with auth enabled [MEDIUM] — **DONE (2026-09-14), the premise corrected**
+
+> **The problem as filed is wrong on its mechanism, and the fix below is
+> defence in depth, not the closing of an open door.** A browser never
+> attaches automatic credentials (Basic/Digest, cookies) to a response
+> whose origin is `*` — that needs `Access-Control-Allow-Credentials:
+> true`, which nothing sends — and no route in the WebUI answers
+> `OPTIONS`, so any non-simple cross-origin request (a hand-set
+> `Authorization`, `X-DC-Token`, `X-API-Key`) fails its preflight with a
+> `404` before it reaches a handler. What `*` exposes is what the owner
+> asked for by setting `enableCORS`: unauthenticated reads of the WebUI's
+> ten JSON routes, and nothing else — the flag never applied to `/`, the
+> token route, the stream or routes other components register, so the
+> reference row "on all responses" was wrong too, and the HeadlessAPI
+> example promised a header its own routes do not send.
 
 - **Ref**: WEB-F10
-- **File**: `WebUI.h:429`
-- **Problem**: Any website can make authenticated API requests to the device (CSRF/data exfiltration). Especially dangerous when `enableAuth` is true.
-- **Fix**: Restrict CORS origin when auth is enabled, or disable wildcard CORS entirely.
+- **File**: `WebUI.h:437-443` (`addCorsHeaders`), `WebUIConfig.h:34`
+- **Problem, as filed**: Any website can make authenticated API requests to the device (CSRF/data exfiltration). Especially dangerous when `enableAuth` is true.
+- **Fix (2026-09-14)**: `addCorsHeaders()` emits nothing while
+  `enableAuth` is on — the headers never enabled anything a browser would
+  honour with credentials, and a protected device should not advertise
+  `*` to a scanner or to the next reader of the code — with a WARN at the
+  three places the pair can be set (`begin()`, `setConfig()`, the
+  settings card's `enable_auth`). Both reference rows say the precedence;
+  the HeadlessAPI README says which routes carry the header and that a
+  custom header fails the preflight. The two dead headers (`-Methods`,
+  `-Headers`) stay: removing them changes nothing a browser sees. An
+  `allowedOrigin` with credentials, for a cross-origin dashboard against
+  an authenticated device, is recorded in deferred-work, not built.
+- **Measured, WROOM-32D** (FullStack built with `-DDC_WEBUI_CORS=1`;
+  `curl -i`, and Chromium through Playwright from a page on another
+  origin): **auth on** — no `Access-Control-Allow-Origin` on
+  `/api/system/info`, and the browser's three fetches (simple,
+  `credentials: 'include'`, a hand-set `Authorization`) all fail; **auth
+  off** — `Access-Control-Allow-Origin: *` on `/api/system/info`, none on
+  `/api/ntp/timezones` (a `registerApiRoute()` route) nor on
+  `/api/ui/token`, the browser's simple fetch reads the JSON, and
+  **`credentials: 'include'` still fails against `*`** — the premise the
+  entry was filed on, refuted on silicon — as does the hand-set
+  `Authorization` (no `OPTIONS` handler, so the preflight is a `404`).
+  Removal check: with the `if` removed, the header is back under auth.
 
 ### SEC-7 — OTA: the upload path has no integrity check at all [MEDIUM] — **DONE (2026-08-26)**
 
@@ -642,7 +715,7 @@ Unenforced security configurations are the most dangerous class of defect — us
   from this sweep. `WebSocketHandler` and `WebServerManager` still hold config
   copies for the fields other than `enableAuth`.
 
-### SEC-14 — WebUI: authentication can be enabled with an empty password [MEDIUM]
+### SEC-14 — WebUI: authentication can be enabled with an empty password [MEDIUM] — **DONE (2026-09-14)**
 
 - **File**: `WebUI.h:374` — `handleWebUIRequest`, `webui_settings`
 - **Problem**: the password setter skips an empty value (`if (value.length() > 0)`),
@@ -651,6 +724,52 @@ Unenforced security configurations are the most dangerous class of defect — us
   then enable auth (pre-SEC-10) could lock the owner out.
 - **Filed, not fixed** — SEC-10 closes the unauthenticated route to it; the
   empty-password guard itself is a separate one-line refusal, deferred.
+- **Fixed 2026-09-14, in a lot with SEC-4 and SEC-6, after the plan's
+  adversarial review found three sites where the plan had assumed one.**
+  `handleWebUIRequest` writes `config` directly and never goes through
+  `setConfig()`; the persistence load path reaches `setConfig()` *after*
+  `core.begin()`; and the console had the same defect — with `requireAuth`
+  and an empty password a bare `auth` line matched, `"" == ""`. So the rule
+  lives on `WebUIConfig`, where the native suite reaches it:
+  `applySetting(field, value, error)` is the settings card's field switch,
+  and it refuses `enable_auth` before a password is set, an empty password
+  while auth is on, and no longer answers `success:true` to an empty
+  password while auth is off; `normalizeAuth()` clears `enableAuth` when
+  the password is empty and is called by `setConfig()` and `begin()` with
+  a WARN — the stored field is written, not a derived predicate, so
+  OTAWebUI's three inlined checks, the settings card and the persistence
+  callback all read the same answer. The decision on the load path:
+  **disable and warn**, once per boot; "refuse the config" is the same
+  thing there (the previous config is the constructor default), and
+  "fail closed" bricks a device with no other way to set a password. The
+  next settings save then persists the cleared flag — the reference says
+  so. The page reverts a toggle the device refused (`app.js` left it drawn
+  as accepted, with an `alert`). The console: `begin()` clears
+  `requireAuth` with a WARN when the password is empty, and an empty
+  `auth` line never authenticates; `SystemConfig::consolePassword` is new,
+  so a System user can turn console authentication on at all.
+- **Verification, native**: `test_webui_component` — the four refusals
+  and their strings, the other fields applied, `normalizeAuth()`;
+  `test_remoteconsole_empty_password` rewritten from "constructs" to the
+  protocol: the WARN at `begin()`, `auth` answered "not required", `heap`
+  open. Removal checks from a fresh `.pio` (the first run of them
+  compiled a stale libdeps copy and passed all four — the trap CLAUDE.md
+  records, met again): the WebUI refusal removed → `enable_auth` test
+  fails; the console guards removed → the empty-password test fails.
+- **Measured, WROOM-32D (FullStack)**, red then green. The NVS erased
+  for an empty stored password (which also erased the LAN credentials the
+  board had lived on — FullStack reads `secrets.h` only with the
+  repository root on the include path, recorded in `tools/on-device`).
+  **Unfixed** (`main`): `enable_auth=true` with no password →
+  `{"success":true}`; `/api/system/info` **401** without credentials and
+  **200 with `admin` and an empty password**; `webui_auth = true` stored,
+  no `webui_pass`. **Fixed**, same NVS: boot line `enableAuth with an
+  empty password: authentication disabled` from the load path, `200`
+  without credentials; then `enable_auth=true` → `Set a password before
+  enabling authentication`, `password=…` then `enable_auth=true` →
+  `401`/`200`, `password=""` while enabled → `Authentication is enabled;
+  the password cannot be empty` and still `401`, `enable_auth=false` →
+  `200`. The page reverts a refused toggle (`app.js`).
 
 ---
 
@@ -668,7 +787,7 @@ Multiple `clear()`/`erase()` operations without `shrink_to_fit()`, violating Con
 | `EventBus.h:146` | `lastByTopic[topic]` | `clear()` in `publishSticky` |
 | `EventBus.h` (reset) | all subscription maps | `clear()` in `reset()` |
 | `IWebUIProvider.h:632` | `cachedContexts_` | `clear()` in `invalidateContextCache()` |
-| `RemoteConsole.h` | `clients`, `clientBuffers`, `clientAuthenticated`, `clientConnectTime` maps | `erase()` on disconnect |
+| `RemoteConsole.h` | `clients` vector and the `clientState` map (one record per client since SEC-4's lot; it was four maps) | `erase()` on disconnect |
 | `Wifi.h` | `scanNetworks` result vector | never shrunk |
 | `System.h:99` | `stateCallbacks` | unbounded `push_back()`, no size limit |
 
@@ -4001,7 +4120,7 @@ not.
 
 | Priority | Items | Constitution | Remaining |
 |----------|-------|-------------|-----------|
-| 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 5M (**SEC-13 done 2026-09-14 in OBS Lot D** — the SSE stream behind a live middleware, `/api/system/info` gated, and `/` no longer reading a stale copy of `enableAuth`; **SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
+| 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 2M (**SEC-4, SEC-6 and SEC-14 done 2026-09-14 in one lot, after its plan's adversarial review and the maintainer's rule that a brute-force defence delays and never blocks** — the console's `auth` wait, the CORS header withheld under auth with the entry's premise corrected, the empty password refused on both the WebUI and the console; **SEC-13 done 2026-09-14 in OBS Lot D** — the SSE stream behind a live middleware, `/api/system/info` gated, and `/` no longer reading a stale copy of `enableAuth`; **SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
 | 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-39 | Multiple | 0C, **0H**, 6M (**31 done**; **BUG-39 filed and fixed 2026-09-14** — filed by the adversarial review of BUG-38's decision memo: a queued message over PubSubClient's 768-byte ESP8266 buffer was retried forever and everything behind it waited; now dropped, named and counted; **BUG-38 filed and fixed 2026-09-14** — every discovery key abbreviated the way Home Assistant documents, the panel 774 → 638, the refusal counted; by OBS Lot D's review — the alarm control panel's discovery document is 774 characters against a 699-character event field and was published cut, so Home Assistant never created the panel; now refused aloud, the fix is a decision between abbreviating the documents and widening the field; **BUG-36 fixed 2026-09-06 in OBS Lot B** — released before the pop, per-bus drop counter in the flight record, "Expected 7 Was 0" on unfixed code; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, fixed with OBS-3's lot the next day; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
@@ -4012,7 +4131,7 @@ not.
 | 9. Dead Code | DC-1 to DC-16, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M, 0L (**DC-16 filed and fixed 2026-09-14**, LOW — `/api/ntp/timezones` was registered twice, the System's copy removed and the provider's `init()` finally called; **DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
 | 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 0M, 0L — **all seven closed** (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-5 and OBS-1's transport closed by Lot D on 2026-09-14** — telemetry and the retained crash record on MQTT, discovered by Home Assistant through one topic scheme, the core dump downloaded, decoded against its ELF and erased through the WebUI, a Home Assistant container reading the entities; **OBS-4 closed by Lot C on 2026-09-06** — the failed-allocation group in the record, the ESP32 heap hook, the ESP8266 latch-and-clear, the diagnostic profile measured; **OBS-3 closed by Lot B on 2026-09-06** — the recorder in Core, promotion first, the record held until persisted, both boards' death sequences read back, three removal checks; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
-| **Total** | **144 items** | | **0C, 0H, 38M, 34L** (85 resolved) |
+| **Total** | **144 items** | | **0C, 0H, 35M, 34L** (88 resolved) |
 
 The severity columns sum across the rows: **zero open HIGH again — and
 this time the last one left by a fix.** BUG-35 was filed by the 2026-09-01
@@ -4022,8 +4141,9 @@ board-measured red-then-green on both platforms. The sequence is the
 system working: the campaign refilled the column, the fix emptied it. The
 rows were checked against the section headings rather than only re-summed
 — the sweep below, re-run for the BUG-35 lot, reports **35 `[HIGH]`
-headings, 35 with evidence, 0 open**. The MEDIUM column sums to 38:
-5 + 4 + 6 + 4 + 3 + 1 + 5 + 10 + 0 + 0 — BUG-39 was filed on 2026-09-14 by
+headings, 35 with evidence, 0 open**. The MEDIUM column sums to 35:
+2 + 4 + 6 + 4 + 3 + 1 + 5 + 10 + 0 + 0 — the SEC-4/SEC-6/SEC-14 lot closed three on
+2026-09-14 (38 → 35, resolved 85 → 88); BUG-39 was filed on 2026-09-14 by
 the adversarial review of BUG-38's decision memo (39 → 40, total 143 → 144),
 and both were fixed the same day on Lot D's branch before its PR (40 → 38,
 resolved 83 → 85); Lot D closed SEC-13, OBS-1 and

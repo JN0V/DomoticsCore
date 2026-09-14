@@ -525,14 +525,14 @@ Configuration struct using fixed-size `char[]` arrays to avoid heap fragmentatio
 | `useFileSystem` | `bool` | `false` | Serve assets from filesystem instead of PROGMEM. |
 | `staticPath` | `char[16]` | `"/webui"` | Filesystem path prefix. |
 | `primaryColor` | `char[8]` | `"#007acc"` | UI accent color. |
-| `enableAuth` | `bool` | `false` | Enable HTTP basic authentication. |
+| `enableAuth` | `bool` | `false` | Enable HTTP basic authentication. A non-empty `password` is required: a config that enables authentication with an empty password is applied with `enableAuth` cleared and a warning (`setConfig()`, `begin()`), and the settings card refuses to enable it before a password is set, or to empty the password while it is on. The next settings save then persists the cleared flag. |
 | `username` | `char[32]` | `"admin"` | Auth username. |
 | `password` | `char[48]` | `""` | Auth password. |
 | `maxWebSocketClients` | `int` | `3` | Maximum simultaneous clients (adapted at runtime by MemoryManager). |
 | `apiTimeout` | `int` | `5000` | API request timeout in ms. |
 | `enableCompression` | `bool` | `true` | Enable gzip content encoding. |
 | `enableCaching` | `bool` | `true` | Enable HTTP cache headers. |
-| `enableCORS` | `bool` | `false` | Enable CORS headers on all responses. |
+| `enableCORS` | `bool` | `false` | Send `Access-Control-Allow-Origin: *` (with `-Methods` and `-Headers`) on the WebUI's own JSON routes — not on `/`, the token route, the stream or routes other components register. Never while `enableAuth` is on: authentication wins over the flag, and a warning says so when both are set. No route answers `OPTIONS`, so only simple cross-origin requests (no custom header) go through. |
 
 ### Setters
 
