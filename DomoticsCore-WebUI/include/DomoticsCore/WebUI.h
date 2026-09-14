@@ -419,16 +419,19 @@ private:
         return written;
     }
 
-    /** SEC-14: a config that enables authentication with an empty password is applied without it, and says so. */
+    /** SEC-14 / SEC-6: the two auth rules a config must satisfy, said once per change. */
     void checkAuthConfig() {
         if (config.normalizeAuth()) DLOG_W(LOG_WEB, "enableAuth with an empty password: authentication disabled");
+        if (config.enableAuth && config.enableCORS) DLOG_W(LOG_WEB, "CORS headers are not sent while authentication is enabled");
     }
 
     /**
-     * @brief Add CORS headers to response if enabled in config
+     * @brief Add CORS headers to response if enabled in config.
+     * SEC-6: never with authentication on — a browser would not honour `*`
+     * with credentials anyway, and a protected device should not advertise it.
      */
     void addCorsHeaders(AsyncWebServerResponse* response) {
-        if (config.enableCORS) {
+        if (config.enableCORS && !config.enableAuth) {
             response->addHeader("Access-Control-Allow-Origin", "*");
             response->addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
             response->addHeader("Access-Control-Allow-Headers", "Content-Type, X-API-Key, Authorization");
