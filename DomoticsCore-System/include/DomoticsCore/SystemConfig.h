@@ -121,6 +121,14 @@ struct SystemConfig {
     // 8.1 s. Thirty seconds is 37x the longest loop-side figure and 3.7x the
     // blocking call a sketch is most likely to make.
     uint32_t loopWatchdogSeconds = 30;
+
+    // Telemetry (OBS-5). With MQTT enabled: `{clientId}/telemetry` every
+    // telemetryIntervalSec (0 disables everything below) and `{clientId}/crash`
+    // retained at each connect; Home Assistant discovers both as diagnostic
+    // entities when its component is present. A tick that finds less than
+    // telemetryHeapFloor bytes of allocatable heap is skipped and counted.
+    uint16_t telemetryIntervalSec = 60;
+    uint32_t telemetryHeapFloor = 4096;
     
     // Logging
     LogLevel defaultLogLevel = LOG_LEVEL_INFO;

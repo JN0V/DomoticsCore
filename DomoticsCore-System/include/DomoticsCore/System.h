@@ -28,6 +28,8 @@
 #include "SystemConfig.h"
 #include "SystemPersistence.h"
 #include "SystemWebUISetup.h"
+#include "SystemTelemetry.h"
+#include "SystemTelemetrySetup.h"
 
 // Intentional deviation from Constitution IX (no #ifdef outside HAL):
 // __has_include() enables the zero-config "just add components" developer experience.
@@ -56,6 +58,7 @@
 
 #if __has_include(<DomoticsCore/MQTT.h>)
 #include <DomoticsCore/MQTT.h>
+#include <DomoticsCore/MQTTEvents.h>
 #endif
 
 #if __has_include(<DomoticsCore/OTA.h>)
@@ -105,6 +108,12 @@ private:
     SystemState state = SystemState::BOOTING;
     std::vector<std::function<void(SystemState, SystemState)>> stateCallbacks;
     bool initialized = false;
+
+    // OBS-5: the publisher, its sink wired when MQTT is present; the last death
+    // as the crash topic says it; the boot count the persistence step produced.
+    SystemHelpers::SystemTelemetry telemetry_;
+    SystemHelpers::CrashSummary lastDeath_;
+    uint32_t bootCount_ = 0;
     
 public:
     System(const SystemConfig& cfg = SystemConfig()) : config(cfg) {}
@@ -174,6 +183,9 @@ public:
         } else {
             DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping boot diagnostics", (unsigned)HAL::getFreeHeap());
         }
+        // OBS-5: what the crash topic will say, read while the promoted record
+        // is still the one on record; bootCount_ says whether step 6 ran.
+        SystemHelpers::captureLastDeath(core, config, bootCount_ != 0, lastDeath_);
         // Persisted or not, the promoted record has had its chance: the fresh
         // one takes RTC now (OBS-3).
         FlightRecorder::instance().acknowledge();
@@ -203,6 +215,7 @@ public:
     void loop() {
         core.loop();
         HAL::Platform::feedLoopWatchdog();   // OBS-7: a loop that stops reaching here is the hang
+        telemetryTick();                     // OBS-5: one sample per interval, when MQTT is up
     }
     
     // ========== Accessors ==========
@@ -211,6 +224,9 @@ public:
     SystemState getState() const { return state; }
     Components::RemoteConsoleComponent* getConsole() { return console; }
     Components::WifiComponent* getWiFi() { return wifi; }
+    /** @brief The last death as the crash topic says it (OBS-5); filled by begin(). */
+    const SystemHelpers::CrashSummary& lastDeath() const { return lastDeath_; }
+    const SystemHelpers::SystemTelemetry& telemetry() const { return telemetry_; }
     
     void onStateChange(std::function<void(SystemState, SystemState)> callback) {
         if (stateCallbacks.size() >= 8) {
@@ -450,6 +466,7 @@ private:
         }
         
         uint32_t bootCount = SystemHelpers::persistBootDiagnostics(*storage, *sysInfo);
+        bootCount_ = bootCount;
         DLOG_I(LOG_SYSTEM, "Boot #%u persisted (Reset: %s)",
                bootCount, sysInfo->getBootDiagnostics().getResetReasonString().c_str());
 #endif
@@ -477,6 +494,7 @@ private:
                 mqttComp->connect();
             }
         }
+        if (mqttComp) SystemHelpers::setupTelemetry(core, config, telemetry_, lastDeath_, mqttComp);
 #endif
         
         // NTP event logging
@@ -499,7 +517,16 @@ private:
                 DLOG_I(LOG_SYSTEM, "Home Assistant discovery published (%d entities)", count);
             });
             DLOG_I(LOG_SYSTEM, "MQTT -> HomeAssistant orchestration configured");
+            if (telemetry_.enabled()) SystemHelpers::registerTelemetryEntities(haComp, telemetry_);
         }
+#endif
+    }
+
+    // ========== Telemetry (OBS-5) ==========
+
+    void telemetryTick() {
+#if __has_include(<DomoticsCore/MQTT.h>)
+        SystemHelpers::telemetryTick(telemetry_, wifi, bootCount_);
 #endif
     }
     

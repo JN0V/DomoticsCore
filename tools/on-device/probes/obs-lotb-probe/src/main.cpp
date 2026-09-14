@@ -16,6 +16,9 @@ using namespace DomoticsCore;
 #ifndef DC_WIFI_PASSWORD
 #  define DC_WIFI_PASSWORD ""
 #endif
+#ifndef DC_MQTT_BROKER
+#  define DC_MQTT_BROKER ""
+#endif
 
 static System* sys = nullptr;
 static uint32_t iters = 0, maxUs = 0, lastReport = 0;
@@ -33,6 +36,8 @@ void setup() {
     cfg.wifiSSID = DC_WIFI_SSID;
     cfg.wifiPassword = DC_WIFI_PASSWORD;
     cfg.wifiAutoConfig = false;
+    cfg.enableMQTT = DC_MQTT_BROKER[0] != '\0';   // Lot D: the raw topics, no HA on this board
+    cfg.mqttBroker = DC_MQTT_BROKER;
     sys = new System(cfg);
     sys->begin();
 #ifdef DEBUG_ESP_OOM
