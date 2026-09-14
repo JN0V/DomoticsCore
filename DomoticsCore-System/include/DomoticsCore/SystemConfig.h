@@ -74,6 +74,7 @@ struct SystemConfig {
     bool enableConsole = true;
     uint16_t consolePort = 23;
     uint8_t consoleMaxClients = 3;
+    String consolePassword = "";       // Non-empty: the console requires `auth <password>`
     
     // WebUI (optional)
     bool enableWebUI = false;

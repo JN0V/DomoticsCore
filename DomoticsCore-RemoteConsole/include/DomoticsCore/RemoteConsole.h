@@ -39,6 +39,7 @@ struct RemoteConsoleConfig {
     uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;  // Platform-specific (ESP8266=5, ESP32=100)
     bool allowCommands = true;             // Enable command execution
     uint32_t authTimeoutMs = 10000;        // Auth timeout (10s default, 0 = no timeout)
+    uint32_t authDelayMaxMs = 8000;        // SEC-4: cap of the doubling wait before the next auth attempt is read (0 = none)
     std::vector<HAL::IPAddress> allowedIPs;     // IP whitelist (empty = all allowed)
     bool colorOutput = true;               // ANSI color codes
     uint32_t maxClients = 3;               // Max concurrent connections
@@ -75,9 +76,23 @@ private:
     size_t logBufferCount = 0;   // Current number of entries
     
     std::map<String, CommandHandler> commands;
-    std::map<uint32_t, String> clientBuffers;  // Per-client command buffers (key = client ID)
-    std::map<uint32_t, bool> clientAuthenticated;
-    std::map<uint32_t, unsigned long> clientConnectTime;
+    // One record per connected client (key = client ID). One map, so every
+    // erase site is one line and a per-client field cannot be left behind (MEM-1).
+    struct ClientState {
+        bool authenticated = false;
+        unsigned long connectedAt = 0;
+        String buffer;                     // command bytes received so far
+        unsigned long authNotBefore = 0;   // SEC-4: an auth line is held until this
+        bool authPending = false;
+        String authPendingArgs;
+    };
+    std::map<uint32_t, ClientState> clientState;
+    // SEC-4: per-address failure memory, so a reconnection keeps its wait. Never
+    // refuses anything: it only decides when the next attempt is read.
+    struct AuthDelayEntry { uint32_t ip = 0; uint8_t failures = 0; unsigned long lastFailureAt = 0; };
+    static constexpr size_t AUTH_DELAY_ENTRIES = 4;
+    static constexpr unsigned long AUTH_DELAY_FORGET_MS = 60000;
+    AuthDelayEntry authDelays[AUTH_DELAY_ENTRIES];
     LogLevel currentLogLevel;
     std::vector<String> tagFilter;  // Empty = show all
     bool connectionInfoDisplayed = false;  // Track if we've shown connection info
@@ -101,6 +116,7 @@ public:
 
     uint16_t getPort() const { return config.port; }
     HAL::WiFiServer* getServer() const { return telnetServer; }
+    size_t clientStateEntriesForTest() const { return clientState.size(); }
 
     LogLevel getLogLevel() const { return currentLogLevel; }
 
@@ -125,9 +141,7 @@ public:
             }
         }
         clients.clear();
-        clientBuffers.clear();
-        clientAuthenticated.clear();
-        clientConnectTime.clear();
+        clientState.clear();
         clients.shrink_to_fit();
 
         telnetServer->stop();
@@ -211,9 +225,11 @@ public:
                 } else {
                     uint32_t clientId = nextClientId++;
                     clients.push_back({clientId, newClient});
-                    clientAuthenticated[clientId] = !config.requireAuth;
-                    clientConnectTime[clientId] = HAL::Platform::getMillis();
-                    clientBuffers[clientId] = "";
+                    const unsigned long now = HAL::Platform::getMillis();
+                    ClientState& st = clientState[clientId];
+                    st.authenticated = !config.requireAuth;
+                    st.connectedAt = now;
+                    st.authNotBefore = authNotBeforeFor((uint32_t)clients.back().second.remoteIP(), now);
 
                     DLOG_I(LOG_CONSOLE, "Client connected: #%u", clientId);
 
@@ -228,12 +244,11 @@ public:
             for (auto it = clients.begin(); it != clients.end(); ) {
                 uint32_t cid = it->first;
                 HAL::WiFiClient& client = it->second;
-                if (!clientAuthenticated[cid] && (now - clientConnectTime[cid]) >= config.authTimeoutMs) {
+                const ClientState& st = clientState[cid];
+                if (!st.authenticated && (now - st.connectedAt) >= config.authTimeoutMs) {
                     client.println("Authentication timeout. Disconnecting.");
                     client.stop();
-                    clientAuthenticated.erase(cid);
-                    clientConnectTime.erase(cid);
-                    clientBuffers.erase(cid);
+                    clientState.erase(cid);
                     it = clients.erase(it);
                 } else {
                     ++it;
@@ -247,10 +262,7 @@ public:
             uint32_t cid = it->first;
             HAL::WiFiClient& client = it->second;
             if (!client.connected()) {
-                // Clean up all client state (Task 29)
-                clientBuffers.erase(cid);
-                clientAuthenticated.erase(cid);
-                clientConnectTime.erase(cid);
+                clientState.erase(cid);
 
                 DLOG_I(LOG_CONSOLE, "Client disconnected: #%u", cid);
                 it = clients.erase(it);
@@ -272,9 +284,7 @@ public:
                 client.stop();
             }
             clients.clear();
-            clientBuffers.clear();
-            clientAuthenticated.clear();
-            clientConnectTime.clear();
+            clientState.clear();
             clients.shrink_to_fit();
 
             telnetServer->stop();
@@ -325,7 +335,8 @@ public:
         if (!clients.empty()) {
             String formatted = formatLogEntry(entry);
             for (auto& [cid, client] : clients) {
-                if (client.connected() && clientAuthenticated.count(cid) && clientAuthenticated[cid]) {
+                auto st = clientState.find(cid);
+                if (client.connected() && st != clientState.end() && st->second.authenticated) {
                     client.print(formatted);
                 }
             }
@@ -530,6 +541,64 @@ private:
         return false;
     }
     
+    /** SEC-4 / SEC-14: one auth attempt, evaluated now. Failure sets the wait before the next one. */
+    void evaluateAuth(uint32_t clientId, HAL::WiFiClient& client, const String& args) {
+        ClientState& st = clientState[clientId];
+        const unsigned long now = HAL::Platform::getMillis();
+        const uint32_t ip = (uint32_t)client.remoteIP();
+        if (!args.isEmpty() && !config.password.isEmpty() && config.password == args) {
+            st.authenticated = true;
+            forgetAuthFailures(ip);
+            client.println("Authentication successful!");
+            return;
+        }
+        const uint8_t failures = noteAuthFailure(ip, now);
+        const unsigned long wait = authDelayMs(failures);
+        st.authNotBefore = now + wait;
+        DLOG_W(LOG_CONSOLE, "Auth failure #%u from client #%u; next attempt read in %lu ms", failures, clientId, wait);
+        client.println("Authentication failed.");
+    }
+
+    unsigned long authDelayMs(uint8_t failures) const {
+        if (failures == 0 || config.authDelayMaxMs == 0) return 0;
+        const unsigned shift = failures > 16 ? 16 : failures - 1;
+        const unsigned long wait = 1000UL << shift;
+        return wait < config.authDelayMaxMs ? wait : config.authDelayMaxMs;
+    }
+
+    AuthDelayEntry* findAuthDelay(uint32_t ip) {
+        for (auto& e : authDelays) if (e.failures != 0 && e.ip == ip) return &e;
+        return nullptr;
+    }
+
+    /** When the next attempt from this address may be read: after the wait its last failure set. */
+    unsigned long authNotBeforeFor(uint32_t ip, unsigned long now) {
+        AuthDelayEntry* e = findAuthDelay(ip);
+        if (!e || now - e->lastFailureAt >= AUTH_DELAY_FORGET_MS) return now;
+        return e->lastFailureAt + authDelayMs(e->failures);
+    }
+
+    uint8_t noteAuthFailure(uint32_t ip, unsigned long now) {
+        AuthDelayEntry* e = findAuthDelay(ip);
+        if (e && now - e->lastFailureAt >= AUTH_DELAY_FORGET_MS) e->failures = 0;
+        if (!e) {
+            e = &authDelays[0];   // a free slot, else the one that failed longest ago
+            for (auto& c : authDelays) {
+                if (c.failures == 0) { e = &c; break; }
+                if (c.lastFailureAt < e->lastFailureAt) e = &c;
+            }
+            e->ip = ip;
+            e->failures = 0;
+        }
+        if (e->failures < 255) e->failures++;
+        e->lastFailureAt = now;
+        return e->failures;
+    }
+
+    void forgetAuthFailures(uint32_t ip) {
+        if (AuthDelayEntry* e = findAuthDelay(ip)) e->failures = 0;
+    }
+
     void sendWelcome(HAL::WiFiClient& client) {
         client.println("\n========================================");
         client.println("  DomoticsCore Remote Console");
@@ -555,6 +624,19 @@ private:
     }
     
     void handleClient(uint32_t clientId, HAL::WiFiClient& client) {
+        {
+            // SEC-4: an auth attempt made too soon after a failure waits here, and
+            // nothing else is read from this client until it has been evaluated.
+            ClientState& st = clientState[clientId];
+            if (st.authPending) {
+                if ((long)(HAL::Platform::getMillis() - st.authNotBefore) < 0) return;
+                st.authPending = false;
+                String args = st.authPendingArgs;
+                st.authPendingArgs = "";
+                evaluateAuth(clientId, client, args);
+                client.print("> ");
+            }
+        }
         // BUG-22, first half: bounded read, so a client streaming bytes without
         // pause cannot keep this loop from returning. At most MAX_BYTES_PER_LOOP
         // bytes per loop() call; the rest waits for the next iteration.
@@ -575,7 +657,7 @@ private:
             bytesRead++;
 
             // Get or create command buffer for this client
-            String& commandBuffer = clientBuffers[clientId];
+            String& commandBuffer = clientState[clientId].buffer;
 
             // Handle newline (command complete)
             if (c == '\n' || c == '\r') {
@@ -626,13 +708,15 @@ private:
 
                 // Handle auth command specially (needs client context)
                 if (cmd == "auth") {
+                    ClientState& st = clientState[clientId];
                     if (!config.requireAuth) {
                         client.println("Authentication not required.");
-                    } else if (!args.isEmpty() && !config.password.isEmpty() && config.password == args) {  // SEC-14
-                        clientAuthenticated[clientId] = true;
-                        client.println("Authentication successful!");
+                    } else if ((long)(HAL::Platform::getMillis() - st.authNotBefore) < 0) {
+                        st.authPending = true;   // SEC-4: held, evaluated when the wait has passed
+                        st.authPendingArgs = args;
+                        return;
                     } else {
-                        client.println("Authentication failed.");
+                        evaluateAuth(clientId, client, args);
                     }
                     client.print("> ");
                     continue;
@@ -640,7 +724,7 @@ private:
 
                 // Block commands if not authenticated (allow help + quit for discoverability)
                 if (config.requireAuth
-                    && (!clientAuthenticated.count(clientId) || !clientAuthenticated[clientId])
+                    && !clientState[clientId].authenticated
                     && cmd != "help" && cmd != "quit") {
                     client.println("Authentication required. Use: auth <password>");
                     client.print("> ");

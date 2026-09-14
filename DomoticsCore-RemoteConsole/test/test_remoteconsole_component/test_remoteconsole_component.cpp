@@ -14,10 +14,12 @@ using namespace DomoticsCore::Components;
 static Core* testCore = nullptr;
 
 void setUp(void) {
+    HAL::Platform::setMillisForTest(1000);   // SEC-4: the auth wait is measured, not slept
     testCore = new Core();
 }
 
 void tearDown(void) {
+    HAL::Platform::resetMillisForTest();
     if (testCore) {
         testCore->shutdown();
         delete testCore;
@@ -300,6 +302,154 @@ void test_remoteconsole_empty_password(void) {
     TEST_ASSERT_TRUE_MESSAGE(output.find("Free Heap") != std::string::npos, "the console is open, and said so");
 }
 
+// ============================================================================
+// SEC-4: a failed auth delays the next attempt — it never refuses, never disconnects
+// ============================================================================
+
+static RemoteConsoleComponent* startAuthConsole(uint32_t delayMaxMs = 8000) {
+    RemoteConsoleConfig config;
+    config.enabled = true;
+    config.requireAuth = true;
+    config.password = "s3cret";
+    config.authTimeoutMs = 0;
+    config.authDelayMaxMs = delayMaxMs;
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* ptr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+    return ptr;
+}
+
+static bool sawSuccess(HAL::WiFiClient& c) { return c.getWriteBufferAsString().find("Authentication successful") != std::string::npos; }
+static bool sawFailure(HAL::WiFiClient& c) { return c.getWriteBufferAsString().find("Authentication failed") != std::string::npos; }
+
+void test_remoteconsole_auth_failure_holds_the_next_attempt_for_one_second(void) {
+    RemoteConsoleComponent* console = startAuthConsole();
+    HAL::WiFiClient client = console->getServer()->simulateClient(true, 42);
+    testCore->loop();
+    client.clearWriteBuffer();
+    client.simulateIncomingData("auth wrong\n");
+    testCore->loop();
+    TEST_ASSERT_TRUE(sawFailure(client));
+    client.clearWriteBuffer();
+    // The right password, sent at once: held, not refused
+    client.simulateIncomingData("auth s3cret\n");
+    testCore->loop();
+    TEST_ASSERT_FALSE_MESSAGE(sawSuccess(client), "an attempt inside the wait is not read yet");
+    TEST_ASSERT_FALSE_MESSAGE(sawFailure(client), "and it is not refused either");
+    HAL::Platform::advanceMillisForTest(999);
+    testCore->loop();
+    TEST_ASSERT_FALSE(sawSuccess(client));
+    HAL::Platform::advanceMillisForTest(1);
+    testCore->loop();
+    TEST_ASSERT_TRUE_MESSAGE(sawSuccess(client), "evaluated once the wait has passed");
+    client.clearWriteBuffer();
+    client.simulateIncomingData("heap\n");
+    testCore->loop();
+    TEST_ASSERT_TRUE(client.getWriteBufferAsString().find("Free Heap") != std::string::npos);
+    TEST_ASSERT_TRUE(client.connected());
+}
+
+// Each consecutive failure doubles the wait: 1, 2, 4, 8 s, then the cap.
+void test_remoteconsole_auth_wait_doubles_and_caps(void) {
+    RemoteConsoleComponent* console = startAuthConsole(8000);
+    HAL::WiFiClient client = console->getServer()->simulateClient(true, 42);
+    testCore->loop();
+    // The first attempt is read at once; each failure sets the wait before the next.
+    client.clearWriteBuffer();
+    client.simulateIncomingData("auth wrong\n");
+    testCore->loop();
+    TEST_ASSERT_TRUE(sawFailure(client));
+    const unsigned long expected[] = {1000, 2000, 4000, 8000, 8000};
+    for (unsigned long wait : expected) {
+        client.clearWriteBuffer();
+        client.simulateIncomingData("auth wrong\n");   // sent at once: held
+        testCore->loop();
+        TEST_ASSERT_FALSE(sawFailure(client));
+        HAL::Platform::advanceMillisForTest(wait - 1);
+        testCore->loop();
+        TEST_ASSERT_FALSE_MESSAGE(sawFailure(client), "not read one millisecond early");
+        HAL::Platform::advanceMillisForTest(1);
+        testCore->loop();
+        TEST_ASSERT_TRUE_MESSAGE(sawFailure(client), "read exactly when the wait has passed");
+    }
+    TEST_ASSERT_TRUE_MESSAGE(client.connected(), "never disconnected for failing");
+}
+
+// The wait is the address's, so a reconnection does not reset it; another address is unaffected.
+void test_remoteconsole_auth_wait_survives_a_reconnection(void) {
+    RemoteConsoleComponent* console = startAuthConsole();
+    HAL::WiFiClient first = console->getServer()->simulateClient(true, 42);
+    testCore->loop();
+    first.simulateIncomingData("auth wrong\n");
+    testCore->loop();
+    first.simulateIncomingData("auth wrong\n");   // held...
+    HAL::Platform::advanceMillisForTest(1000);
+    testCore->loop();                               // ...read: second failure, wait 2 s
+    first.stop();
+    testCore->loop();
+    TEST_ASSERT_EQUAL_size_t(0, console->clientStateEntriesForTest());
+
+    HAL::WiFiClient again = console->getServer()->simulateClient(true, 42);   // same address
+    testCore->loop();
+    HAL::WiFiClient other = console->getServer()->simulateClient(true, 43);   // another one
+    testCore->loop();
+    again.clearWriteBuffer(); other.clearWriteBuffer();
+    again.simulateIncomingData("auth s3cret\n");
+    other.simulateIncomingData("auth s3cret\n");
+    testCore->loop();
+    TEST_ASSERT_TRUE_MESSAGE(sawSuccess(other), "the other address is not waiting");
+    TEST_ASSERT_FALSE_MESSAGE(sawSuccess(again), "the reconnection inherits the 2 s wait");
+    HAL::Platform::advanceMillisForTest(1999);
+    testCore->loop();
+    TEST_ASSERT_FALSE(sawSuccess(again));
+    HAL::Platform::advanceMillisForTest(1);
+    testCore->loop();
+    TEST_ASSERT_TRUE(sawSuccess(again));
+}
+
+void test_remoteconsole_auth_failures_are_forgotten_after_a_minute(void) {
+    RemoteConsoleComponent* console = startAuthConsole();
+    HAL::WiFiClient first = console->getServer()->simulateClient(true, 42);
+    testCore->loop();
+    first.simulateIncomingData("auth wrong\n");
+    testCore->loop();
+    first.stop();
+    testCore->loop();
+    HAL::Platform::advanceMillisForTest(60000);
+    HAL::WiFiClient again = console->getServer()->simulateClient(true, 42);
+    testCore->loop();
+    again.clearWriteBuffer();
+    again.simulateIncomingData("auth s3cret\n");
+    testCore->loop();
+    TEST_ASSERT_TRUE_MESSAGE(sawSuccess(again), "a minute of quiet clears the address");
+}
+
+void test_remoteconsole_auth_wait_zero_restores_the_old_behaviour(void) {
+    RemoteConsoleComponent* console = startAuthConsole(0);
+    HAL::WiFiClient client = console->getServer()->simulateClient(true, 42);
+    testCore->loop();
+    client.simulateIncomingData("auth wrong\n");
+    testCore->loop();
+    client.clearWriteBuffer();
+    client.simulateIncomingData("auth s3cret\n");
+    testCore->loop();
+    TEST_ASSERT_TRUE_MESSAGE(sawSuccess(client), "authDelayMaxMs = 0: read at once");
+}
+
+void test_remoteconsole_client_state_is_released_on_disconnect(void) {
+    RemoteConsoleComponent* console = startAuthConsole();
+    HAL::WiFiClient a = console->getServer()->simulateClient(true, 42);
+    testCore->loop();
+    HAL::WiFiClient b = console->getServer()->simulateClient(true, 43);
+    testCore->loop();
+    TEST_ASSERT_EQUAL_size_t(2, console->clientStateEntriesForTest());
+    a.simulateIncomingData("auth wrong\n");
+    testCore->loop();
+    a.stop(); b.stop();
+    testCore->loop();
+    TEST_ASSERT_EQUAL_size_t(0, console->clientStateEntriesForTest());
+}
 
 void test_remoteconsole_color_output_disabled(void) {
     RemoteConsoleConfig config;
@@ -457,7 +607,8 @@ void test_remoteconsole_auth_protocol_flow(void) {
         "Wrong password should fail");
     clientHandle.clearWriteBuffer();
 
-    // Correct password
+    // Correct password — read once the one-second wait the failure set has passed (SEC-4)
+    HAL::Platform::advanceMillisForTest(1000);
     clientHandle.simulateIncomingData("auth s3cret\n");
     testCore->loop();
 
@@ -737,6 +888,12 @@ int main(int argc, char **argv) {
     RUN_TEST(test_remoteconsole_allow_commands_false_lifecycle);
     RUN_TEST(test_remoteconsole_auth_and_commands_disabled);
     RUN_TEST(test_remoteconsole_auth_protocol_flow);
+    RUN_TEST(test_remoteconsole_auth_failure_holds_the_next_attempt_for_one_second);
+    RUN_TEST(test_remoteconsole_auth_wait_doubles_and_caps);
+    RUN_TEST(test_remoteconsole_auth_wait_survives_a_reconnection);
+    RUN_TEST(test_remoteconsole_auth_failures_are_forgotten_after_a_minute);
+    RUN_TEST(test_remoteconsole_auth_wait_zero_restores_the_old_behaviour);
+    RUN_TEST(test_remoteconsole_client_state_is_released_on_disconnect);
 
     // Byte limit tests (BUG-22)
     RUN_TEST(test_remoteconsole_loop_bounded_read);

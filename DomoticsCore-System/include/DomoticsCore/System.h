@@ -327,6 +327,10 @@ private:
         consoleConfig.port = config.consolePort;
         consoleConfig.maxClients = config.consoleMaxClients;
         consoleConfig.defaultLogLevel = config.defaultLogLevel;
+        if (!config.consolePassword.isEmpty()) {
+            consoleConfig.requireAuth = true;
+            consoleConfig.password = config.consolePassword;
+        }
         
         auto consolePtr = std::make_unique<Components::RemoteConsoleComponent>(consoleConfig);
         console = consolePtr.get();
