@@ -18,6 +18,12 @@ No version bumps inside the lots — `library.json` versions and the CHANGELOG
 move once, at the end, when the series is complete. That is why component
 versions may sit still while fixes land.
 
+The specifications, plans and reviews that entries below name (`spec-*.md`,
+`review-*.md`, `tech-spec-*.md`) are working documents: since 2026-09-14
+they stay out of the tree, and the ones committed before that are in the
+history (`git log --all -- _bmad-output/`). A decision that outlives its lot
+goes to `docs/decisions/`; the deferred items to `docs/deferred-work.md`.
+
 | Lot | Items | State |
 |---|---|---|
 | **CI** | CI-1, CI-2 | **Merged** — PR #2, 2026-08-22 |
@@ -659,7 +665,7 @@ Multiple `clear()`/`erase()` operations without `shrink_to_fit()`, violating Con
 - **Left open behind it**: `EventBus::enqueue` never decrements `pendingByTopic`
   for the event it drops on overflow, and `HeapTracker` charges its own
   checkpoint node to the window that follows it. Both are recorded in
-  `_bmad-output/implementation-artifacts/deferred-work.md`.
+  `docs/deferred-work.md`.
 
 ### MEM-2 — String concatenation in hot paths across 10 components [HIGH] — **DONE (2026-08-29)**
 
@@ -1765,7 +1771,7 @@ one worth a one-line change, and six rows that are not defects.
   Arduino core's default is `WIFI_PS_MIN_MODEM`; nothing in `Wifi_ESP32.h`
   sets it either way. **Unmeasured**: one build with `WiFi.setSleep(false)`
   would say whether that is the RTT, the loss, both, or neither. Recorded
-  in `_bmad-output/implementation-artifacts/deferred-work.md` with these
+  in `docs/deferred-work.md` with these
   figures rather than filed, so a sweep of that file finds it; it becomes
   an item when the measurement exists.
 - **The release that ships this must say**: `OTAConfig::uploadIdleTimeoutSec`
@@ -1777,7 +1783,7 @@ one worth a one-line change, and six rows that are not defects.
 
 - **Opened by**: the observability prioritisation of 2026-09-05, from a
   finding STOR-ESP-1's withdrawal had left in
-  `_bmad-output/implementation-artifacts/deferred-work.md` with no roadmap
+  `docs/deferred-work.md` with no roadmap
   identifier. **Filed, not fixed** — it belongs with OBS-3's lot, whose
   recorder wants the drop counter this fix has to add.
 - **File**: `DomoticsCore-Core/include/DomoticsCore/EventBus.h`,

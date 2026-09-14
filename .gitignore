@@ -67,11 +67,16 @@ Roadmap.md
 # Release archives
 *.tar.gz
 
-# BMAD framework — reinstall it, don't track it. Only _bmad-output/ is tracked.
-# Everything below is written by the BMAD installer or its builder, and is
-# reproduced by `npx bmad-method install`. Reinstall command of record:
+# BMAD framework — reinstall it, don't track it. Everything below is written
+# by the BMAD installer or its builder, and is reproduced by
+# `npx bmad-method install`. Reinstall command of record:
 #   npx bmad-method@6 install --modules bmm,tea,bmb --tools claude-code
 _bmad/
+# Working documents — specs, plans, reviews, handoffs — are scaffolding for a
+# pull request and end with it. What survives is the reference, the roadmap
+# entry, the commit message and, when warranted, docs/decisions/. The ones
+# committed before this rule are in the history: git log --all -- _bmad-output/
+_bmad-output/
 # Agent-facing skills the installer generates for Claude Code (64 files today).
 .claude/skills/
 # Where BMad Builder writes generated skills (_bmad/config.toml:40).
@@ -91,7 +96,3 @@ secrets.h
 
 # Logs produced by the on-device harness
 tools/on-device/log-*.txt
-
-# Drafts of outbound communication stay local — they are the maintainer's to send,
-# and a public repository is not the place for them before that decision.
-_bmad-output/implementation-artifacts/draft-*.md

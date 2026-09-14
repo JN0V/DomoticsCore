@@ -169,7 +169,7 @@ static void onLog(LogLevel level, const char* tag, const char* message) {
 // would spin for its full timeout and die with "never completed" having
 // executed none of the code under test. That early return is also a live
 // product defect in its own right, recorded in
-// `_bmad-output/implementation-artifacts/deferred-work.md`: the WebUI scan
+// `docs/deferred-work.md`: the WebUI scan
 // button is pressed during AP provisioning, which is exactly when no SSID is
 // configured.
 //

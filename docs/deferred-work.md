@@ -1,3 +1,11 @@
+# Deferred work
+
+Defects and observations found by a lot and deliberately not fixed in it,
+each with its evidence, until a roadmap item picks it up or a lot closes it.
+The `source_spec` names refer to working documents that are no longer in
+the tree (`git log --all -- _bmad-output/`); the evidence lines stand on
+their own.
+
 - source_spec: `spec-stor-esp-1-esp8266-storage-write-leak.md` — **DONE 2026-09-06 as BUG-36 (OBS Lot B)**
   summary: `EventBus::enqueue` never decrements `pendingByTopic` for the event it drops on overflow, so the counter drifts up permanently and sticky replay is inhibited for any topic that has ever overflowed.
   evidence: `EventBus.h:236-252` increments on every push including the overflow path; `poll()` decrements only for events it dispatches (`:203-207`); the `queue.pop()` in the overflow branch decrements nothing. The plateau test drives 80 undrained writes on one topic, of which at most 32 can ever be dispatched.
@@ -34,35 +42,35 @@
   summary: The roadmap's tracking summary cannot reconcile its own item count, and could not before this change. 49 resolved + 70 remaining is 119; the stated total is 109; counting the ID ranges in the Items column gives 113. The per-severity columns do sum correctly across the rows — it is the item count alone that is adrift.
   evidence: `docs/CODE-ROADMAP.md`, Tracking Summary table. Left as found; corrections need a decision about what the column counts.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-sec-9-multipart-envelope-sizing.md`
+- source_spec: `spec-sec-9-multipart-envelope-sizing.md`
   summary: On the browser path, SEC-8's streaming refusal never reaches the operator. A failing `acceptUploadChunk()` sets `uploadState.error = "Firmware too large"` but leaves `uploadState.rejected` false, so every following chunk re-enters `acceptUploadChunk()` on a closed session and overwrites the message with `"Upload not active"` — as does the `final` call to `finalizeUpload()`. The JSON response therefore reports `"Upload not active"` for a cap violation, which says nothing about why. Same shape as the defect SEC-7 fixed for `beginUpload()`, on the sibling call.
   evidence: `OTAWebUI.h:426-450` — `if (uploadState.rejected) return;` guards the begin-time refusal only; the chunk-time failure sets no such flag. `OTA.cpp:262-264` closes the session, and `OTA.cpp:363-365`/`OTA.cpp:253-255` then answer `"Upload not active"`. Surfaced by the SEC-9 adversarial review; not caused by it, and not reachable from any suite — it is the handler TEST-8 says nothing traverses.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-ha-message-strings.md`
+- source_spec: `spec-mem-2-ha-message-strings.md`
   summary: `pio test -e esp32dev` in `DomoticsCore-HomeAssistant` does not build: `test_ha_events` and `test_ha_entity` include `Platform_Stub.h`, which collides with the real Arduino core, and the run dies with 41 errors. Pre-existing — reproduced at `bea43842` with the MEM-2 changes stashed. It is CI-11's defect mirrored on the ESP32 environment, and no workflow runs that command, so nothing reports it.
   evidence: the environment declares `test_framework`, `test_build_src` and a `test/` directory, which is all `pio test` needs to try; the MEM-2 lot added a `test_ignore` for its own device suite there, which excludes one suite and leaves the two colliding ones untouched.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-ha-message-strings.md`
+- source_spec: `spec-mem-2-ha-message-strings.md`
   summary: `HomeAssistantComponent::handleCommand` opens with an unconditional `DLOG_I` of the topic and the payload, before any parsing or filtering. `DLOG_I` has no level gate, so every message on the shared MQTT client — including every message that belongs to another component — costs a 128-byte stack buffer, an `snprintf` over a payload of up to 699 bytes and a walk of the `LoggerCallbacks` vector. The MEM-2 lot's own argument for removing allocations from that path applies to this line verbatim, and the lot did not touch it.
   evidence: `HomeAssistant.h:648`; `Logger.h:87` broadcasts unconditionally; `DOMOTICS_DLOG_BUF_SIZE` is 128 on ESP8266 (`Platform_ESP8266.h:49`). Surfaced by the MEM-2 review, not caused by it.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-ha-message-strings.md`
+- source_spec: `spec-mem-2-ha-message-strings.md`
   summary: The switch auto-publish re-enters the entity lookup it already performed. `publishState(id, state)` calls `findEntity(id)` a second time — a second linear scan by `String` — on a path that is already holding the `HAEntity*`. Pre-existing on both sides of the MEM-2 conversion; the lot removed the parse allocations and left this one, which is the larger of the two on the accepted path.
   evidence: `HomeAssistant.h:735` calls into the `(const String&, const char*)` overload at `:359`, which delegates to `publishState(id, String(state))` at `:324` and looks the entity up again.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-ha-message-strings.md`
+- source_spec: `spec-mem-2-ha-message-strings.md`
   summary: A topic with two adjacent slashes (`homeassistant/switch/node//set`) yields an empty entity id, and the lookup matches any entity whose id is empty rather than refusing the message. Identical in both versions of the parse — `strncmp` with `n == 0` returns 0, exactly as the `String` comparison against `""` did — so it is neither caused nor worsened by MEM-2, and no entity in the shipped code can have an empty id. Recorded because the lot added the malformed-topic tests and covered neither this shape nor a trailing-slash topic.
   evidence: `HomeAssistant.h:540` (`findEntity(const char*, size_t)`) and the pre-change `findEntity(const String&)`; surfaced by two independent reviewers of the MEM-2 diff.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-close-scan-and-rows.md`
+- source_spec: `spec-mem-2-close-scan-and-rows.md`
   summary: The WebUI scan button cannot complete a scan in the state a user presses it. `scan_networks` is what an operator clicks during AP provisioning — when no SSID is configured — and `WifiComponent::loop()` returns at `Wifi.h:251-254` whenever `ssid.isEmpty()`, forty lines before the `if (scanInProgress)` poll that reads the results and builds the summary. In that state the scan is started and never harvested, so the UI sits at "Scanning..." indefinitely.
   evidence: `WifiWebUI.h:176` starts the scan; `Wifi.h:251-254` is the early return; `Wifi.h:296-343` is the poll it never reaches. Pre-existing on both sides of the MEM-2 rewrite — surfaced because the new device suite's fixture hit the same early return and could not reach the loop it was written to measure.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-close-scan-and-rows.md`
+- source_spec: `spec-mem-2-close-scan-and-rows.md`
   summary: Nothing displays the async scan summary. `WifiWebUI` declares its own `String lastScanSummary` (`WifiWebUI.h:24`), sets it to "Scanning..." when the scan is requested (`:176-177`), and never reads `WifiComponent::getLastScanSummary()` back. Outside `test_wifi_component.cpp:231` and the new device suite, that getter has no caller, so the summary the component builds reaches no user.
   evidence: repository-wide search for `getLastScanSummary`. This bears on the MEM-2 lot's own justification for fixing that site first, and is recorded rather than quietly relied upon.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-mem-2-close-scan-and-rows.md`
+- source_spec: `spec-mem-2-close-scan-and-rows.md`
   summary: RemoteConsole's help text is 427 bytes of ESP8266 DRAM. The MEM-2 lot turned ten run-time appends into one stored literal, but a non-`PROGMEM` literal links into `.rodata`, which the ESP8266 places in DRAM — which is what `F()`/`FPSTR` exist to avoid. Moving it off DRAM was neither done nor argued; the portability of `FPSTR` across the ESP32 core is the question that decides it.
   evidence: `RemoteConsole.h`, the help handler's constant part; the lot reports "RAM unchanged at 50,808" without touching this.
 
