@@ -435,6 +435,14 @@ private:
      * on the wire yet, and counting here would count the message twice.
      */
     bool enqueueMessage(const String& topic, const String& payload, uint8_t qos, bool retain);
+    /**
+     * @brief PubSubClient's own size test, made before it answers a bare false.
+     *
+     * A packet is MQTT_MAX_HEADER_SIZE (5) + the 2-byte topic length + topic +
+     * payload, against getBufferSize(). Logs the topic and counts the refusal
+     * (BUG-39): a queued message that never fits must be dropped, not retried.
+     */
+    bool packetFits(const char* topic, size_t payloadLen);
     void handleIncomingMessage(char* topic, byte* payload, unsigned int length);
     void updateStatistics();
     String generateClientId();

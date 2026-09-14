@@ -35,14 +35,14 @@ public:
         // Add switch-specific fields
         char buf[HA_TOPIC_BUF_SIZE];
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
-        doc["command_topic"] = buf;
-        doc["payload_on"] = payloadOn;
-        doc["payload_off"] = payloadOff;
-        doc["state_on"] = payloadOn;
-        doc["state_off"] = payloadOff;
+        doc["cmd_t"] = buf;
+        doc["pl_on"] = payloadOn;
+        doc["pl_off"] = payloadOff;
+        doc["stat_on"] = payloadOn;
+        doc["stat_off"] = payloadOff;
         
         if (optimistic) {
-            doc["optimistic"] = true;
+            doc["opt"] = true;
         }
     }
     

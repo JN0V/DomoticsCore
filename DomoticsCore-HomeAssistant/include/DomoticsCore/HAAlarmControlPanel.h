@@ -95,7 +95,7 @@ public:
         // Add command topic
         char buf[HA_TOPIC_BUF_SIZE];
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
-        doc["command_topic"] = buf;
+        doc["cmd_t"] = buf;
 
         // Code configuration (only when code support is active)
         bool hasCodeConfig = !code.isEmpty() || codeArmRequired || codeDisarmRequired || codeTriggerRequired;
@@ -103,23 +103,23 @@ public:
             if (!code.isEmpty()) {
                 doc["code"] = code;
             }
-            doc["code_arm_required"] = codeArmRequired;
-            doc["code_disarm_required"] = codeDisarmRequired;
-            doc["code_trigger_required"] = codeTriggerRequired;
-            doc["command_template"] = "{{ action }}{% if code %} {{ code }}{% endif %}";
+            doc["cod_arm_req"] = codeArmRequired;
+            doc["cod_dis_req"] = codeDisarmRequired;
+            doc["cod_trig_req"] = codeTriggerRequired;
+            doc["cmd_tpl"] = "{{ action }}{% if code %} {{ code }}{% endif %}";
         }
 
         // Command payload constants (only for supported features + always disarm)
-        if (supportedFeatures & AlarmFeature::ArmHome)         doc["payload_arm_home"] = AlarmPanelCommand::ARM_HOME;
-        if (supportedFeatures & AlarmFeature::ArmAway)         doc["payload_arm_away"] = AlarmPanelCommand::ARM_AWAY;
-        if (supportedFeatures & AlarmFeature::ArmNight)        doc["payload_arm_night"] = AlarmPanelCommand::ARM_NIGHT;
-        if (supportedFeatures & AlarmFeature::ArmVacation)     doc["payload_arm_vacation"] = AlarmPanelCommand::ARM_VACATION;
-        if (supportedFeatures & AlarmFeature::ArmCustomBypass) doc["payload_arm_custom_bypass"] = AlarmPanelCommand::ARM_CUSTOM_BYPASS;
-        doc["payload_disarm"] = AlarmPanelCommand::DISARM;  // Always available
-        if (supportedFeatures & AlarmFeature::Trigger)         doc["payload_trigger"] = AlarmPanelCommand::TRIGGER;
+        if (supportedFeatures & AlarmFeature::ArmHome)         doc["pl_arm_home"] = AlarmPanelCommand::ARM_HOME;
+        if (supportedFeatures & AlarmFeature::ArmAway)         doc["pl_arm_away"] = AlarmPanelCommand::ARM_AWAY;
+        if (supportedFeatures & AlarmFeature::ArmNight)        doc["pl_arm_nite"] = AlarmPanelCommand::ARM_NIGHT;
+        if (supportedFeatures & AlarmFeature::ArmVacation)     doc["pl_arm_vacation"] = AlarmPanelCommand::ARM_VACATION;
+        if (supportedFeatures & AlarmFeature::ArmCustomBypass) doc["pl_arm_custom_b"] = AlarmPanelCommand::ARM_CUSTOM_BYPASS;
+        doc["pl_disarm"] = AlarmPanelCommand::DISARM;  // Always available
+        if (supportedFeatures & AlarmFeature::Trigger)         doc["pl_trig"] = AlarmPanelCommand::TRIGGER;
 
         // Supported features array (built from bitmask)
-        JsonArray features = doc["supported_features"].to<JsonArray>();
+        JsonArray features = doc["sup_feat"].to<JsonArray>();
         if (supportedFeatures & AlarmFeature::ArmHome)         features.add("arm_home");
         if (supportedFeatures & AlarmFeature::ArmAway)         features.add("arm_away");
         if (supportedFeatures & AlarmFeature::ArmNight)        features.add("arm_night");

@@ -72,7 +72,10 @@ public:
         snprintf(buf, len, "%s_%s", nodeId, id.c_str());
     }
     
-    // Discovery payload - to be implemented by derived classes
+    // Discovery payload - to be implemented by derived classes.
+    // Keys are Home Assistant's documented abbreviations (BUG-38): a config crosses
+    // the EventBus in a 699-character field and PubSubClient's 768-byte buffer on
+    // ESP8266, and the long spellings put an alarm control panel over both.
     virtual void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
                                       const String& discoveryPrefix,
                                       const JsonObject& device,
@@ -80,31 +83,31 @@ public:
         char buf[HA_TOPIC_BUF_SIZE];
         doc["name"] = name;
         getUniqueId(buf, sizeof(buf), nodeId.c_str());
-        doc["unique_id"] = buf;
+        doc["uniq_id"] = buf;
         getStateTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());   // the override, when set
-        doc["state_topic"] = buf;
+        doc["stat_t"] = buf;
         
         if (!icon.isEmpty()) {
-            doc["icon"] = icon;
+            doc["ic"] = icon;
         }
         
         if (!deviceClass.isEmpty()) {
-            doc["device_class"] = deviceClass;
+            doc["dev_cla"] = deviceClass;
         }
         
         // Add device info
-        doc["device"] = device;
+        doc["dev"] = device;
         
         // Add availability
         if (useAvailability && !availabilityTopic.isEmpty()) {
-            doc["availability_topic"] = availabilityTopic;
-            doc["payload_available"] = "online";
-            doc["payload_not_available"] = "offline";
+            doc["avty_t"] = availabilityTopic;
+            doc["pl_avail"] = "online";
+            doc["pl_not_avail"] = "offline";
         }
 
-        if (!entityCategory.isEmpty() && entityCategoryIsValid()) doc["entity_category"] = entityCategory;
-        if (!valueTemplate.isEmpty()) doc["value_template"] = valueTemplate;
-        if (!jsonAttributesTopic.isEmpty()) doc["json_attributes_topic"] = jsonAttributesTopic;
+        if (!entityCategory.isEmpty() && entityCategoryIsValid()) doc["ent_cat"] = entityCategory;
+        if (!valueTemplate.isEmpty()) doc["val_tpl"] = valueTemplate;
+        if (!jsonAttributesTopic.isEmpty()) doc["json_attr_t"] = jsonAttributesTopic;
     }
 
     /**

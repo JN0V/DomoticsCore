@@ -275,6 +275,7 @@ inline bool MQTTComponent::publish(const String& topic, const String& payload, u
     DLOG_D(LOG_MQTT, "Publishing to topic '%s' (QoS %d, retain %s), size: %d bytes", 
            topic.c_str(), qos, retain ? "true" : "false", payload.length());
     
+    if (!packetFits(topic.c_str(), payload.length())) return false;
     bool success = mqttClient->publish(topic.c_str(), (const uint8_t*)payload.c_str(), payload.length(), retain);
 
     if (success) {
@@ -293,15 +294,7 @@ inline bool MQTTComponent::publish(const String& topic, const String& payload, u
 inline bool MQTTComponent::publishNow(const char* topic, const char* payload, size_t len, bool retain) {
     if (!topic || !payload || !mqttClient) return false;
     if (!isConnected() || !rateLimitAllowsPublish()) return false;
-    // PubSubClient refuses a packet larger than its buffer with a bare false;
-    // say why once per attempt, since the caller can only count it.
-    const size_t packet = strlen(topic) + len + 5;
-    if (packet > mqttClient->getBufferSize()) {
-        DLOG_W(LOG_MQTT, "publishNow: %u-byte packet exceeds the %u-byte client buffer", (unsigned)packet,
-               (unsigned)mqttClient->getBufferSize());
-        stats.publishErrors++;
-        return false;
-    }
+    if (!packetFits(topic, len)) return false;
     bool success = mqttClient->publish(topic, reinterpret_cast<const uint8_t*>(payload), len, retain);
     if (success) {
         stats.publishCount++;
@@ -546,6 +539,13 @@ inline void MQTTComponent::processMessageQueue() {
         // instead; the next loop() runs in a fresh window.
         if (!rateLimitAllowsPublish()) break;
 
+        // BUG-39: a packet over the client buffer fails on every loop() and
+        // would hold everything behind it forever. Drop it, counted and named.
+        if (!packetFits(it->topic.c_str(), it->payload.length())) {
+            it = messageQueue.erase(it);
+            erased = true;
+            continue;
+        }
         if (publish(it->topic, it->payload, it->qos, it->retain)) {
             it = messageQueue.erase(it);
             erased = true;
@@ -554,6 +554,15 @@ inline void MQTTComponent::processMessageQueue() {
         }
     }
     if (erased) messageQueue.shrink_to_fit();
+}
+
+inline bool MQTTComponent::packetFits(const char* topic, size_t payloadLen) {
+    const size_t packet = strlen(topic) + payloadLen + 7;
+    if (packet <= mqttClient->getBufferSize()) return true;
+    DLOG_W(LOG_MQTT, "'%s': %u-byte packet exceeds the %u-byte client buffer, dropped", topic,
+           (unsigned)packet, (unsigned)mqttClient->getBufferSize());
+    stats.publishErrors++;
+    return false;
 }
 
 inline void MQTTComponent::handleIncomingMessage(char* topic, byte* payload, unsigned int length) {

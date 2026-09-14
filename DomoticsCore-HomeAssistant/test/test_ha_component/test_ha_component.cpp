@@ -1197,6 +1197,7 @@ void test_discovery_config_for_a_sensor_is_this_exact_document() {
     // OBS-5 fields (entity_category, value_template, json_attributes_topic, a
     // state_topic override, the availability opt-out) must be appended after
     // these keys and emitted only when set, so this string does not move.
+    // Keys are Home Assistant's abbreviations since BUG-38; the pin is the same.
     Core core;
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
@@ -1213,14 +1214,14 @@ void test_discovery_config_for_a_sensor_is_this_exact_document() {
     String payload;
     captureDiscoveryConfig(core, "homeassistant/sensor/test_node/free_heap/config", payload);
     TEST_ASSERT_EQUAL_STRING(
-        "{\"name\":\"Free Heap\",\"unique_id\":\"test_node_free_heap\","
-        "\"state_topic\":\"homeassistant/sensor/test_node/free_heap/state\","
-        "\"icon\":\"mdi:memory\","
-        "\"device\":{\"identifiers\":[\"test_node\"],\"name\":\"Test Device\","
-        "\"model\":\"TestModel\",\"manufacturer\":\"TestMfg\",\"sw_version\":\"2.0.0\"},"
-        "\"availability_topic\":\"homeassistant/test_node/availability\","
-        "\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
-        "\"unit_of_measurement\":\"bytes\",\"state_class\":\"measurement\"}",
+        "{\"name\":\"Free Heap\",\"uniq_id\":\"test_node_free_heap\","
+        "\"stat_t\":\"homeassistant/sensor/test_node/free_heap/state\","
+        "\"ic\":\"mdi:memory\","
+        "\"dev\":{\"ids\":[\"test_node\"],\"name\":\"Test Device\","
+        "\"mdl\":\"TestModel\",\"mf\":\"TestMfg\",\"sw\":\"2.0.0\"},"
+        "\"avty_t\":\"homeassistant/test_node/availability\","
+        "\"pl_avail\":\"online\",\"pl_not_avail\":\"offline\","
+        "\"unit_of_meas\":\"bytes\",\"stat_cla\":\"measurement\"}",
         payload.c_str());
     core.shutdown();
 }
@@ -1291,13 +1292,13 @@ void test_discovery_config_with_the_diagnostic_fields_emits_exactly_them() {
     String payload;
     captureDiscoveryConfig(core, "homeassistant/sensor/test_node/sys_last_death/config", payload);
     TEST_ASSERT_EQUAL_STRING(
-        "{\"name\":\"Last Death\",\"unique_id\":\"test_node_sys_last_death\","
-        "\"state_topic\":\"dev/crash\","
-        "\"device\":{\"identifiers\":[\"test_node\"],\"name\":\"Test Device\","
-        "\"model\":\"TestModel\",\"manufacturer\":\"TestMfg\",\"sw_version\":\"2.0.0\"},"
-        "\"entity_category\":\"diagnostic\","
-        "\"value_template\":\"{{ value_json.promotion }}\","
-        "\"json_attributes_topic\":\"dev/crash\"}",
+        "{\"name\":\"Last Death\",\"uniq_id\":\"test_node_sys_last_death\","
+        "\"stat_t\":\"dev/crash\","
+        "\"dev\":{\"ids\":[\"test_node\"],\"name\":\"Test Device\","
+        "\"mdl\":\"TestModel\",\"mf\":\"TestMfg\",\"sw\":\"2.0.0\"},"
+        "\"ent_cat\":\"diagnostic\","
+        "\"val_tpl\":\"{{ value_json.promotion }}\","
+        "\"json_attr_t\":\"dev/crash\"}",
         payload.c_str());
     core.shutdown();
 }
