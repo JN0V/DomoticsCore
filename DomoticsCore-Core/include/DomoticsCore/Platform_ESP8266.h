@@ -326,6 +326,8 @@ inline String getResetReasonCaveat(ResetReason reason) {
 inline constexpr bool tracksMinFreeHeap() { return false; }
 
 inline CoreDumpStatus getCoreDumpStatus() { return CoreDumpStatus{}; }
+inline size_t coreDumpRead(uint32_t, uint8_t*, size_t) { return 0; }   // no core dump on this platform (OBS-1)
+inline bool coreDumpErase() { return false; }
 
 // =============================================================================
 // Flight recorder primitives (OBS-3)

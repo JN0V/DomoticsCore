@@ -381,6 +381,31 @@ inline CoreDumpStatus getCoreDumpStatus() {
     return s;
 }
 
+/**
+ * @brief Bytes of the waiting core dump image from `offset`; 0 past its end or on error (OBS-1).
+ * The image starts at the partition's first byte: its length word, version, task
+ * count, the ELF, a CRC32 — what `esp-coredump --core-format raw` reads.
+ */
+inline size_t coreDumpRead(uint32_t offset, uint8_t* buf, size_t len) {
+    if (!buf || len == 0) return 0;
+    static const esp_partition_t* part = nullptr;   // the table does not change while running
+    if (!part) part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, nullptr);
+    if (!part) return 0;
+    size_t addr = 0, size = 0;
+    if (esp_core_dump_image_get(&addr, &size) != ESP_OK || size == 0) return 0;
+    if (addr != part->address) return 0;   // not the layout this reads: the image starts the partition
+    if (offset >= size) return 0;
+    if (len > size - offset) len = size - offset;
+    return esp_partition_read(part, offset, buf, len) == ESP_OK ? len : 0;
+}
+
+/** @brief Erase the waiting image; false when there is none or the erase failed (OBS-1). */
+inline bool coreDumpErase() {
+    size_t addr = 0, size = 0;
+    if (esp_core_dump_image_get(&addr, &size) != ESP_OK || size == 0) return false;
+    return esp_core_dump_image_erase() == ESP_OK;
+}
+
 /** @brief This platform can put the task that drives System::loop() on a watchdog. */
 inline constexpr bool supportsLoopWatchdog() { return true; }
 

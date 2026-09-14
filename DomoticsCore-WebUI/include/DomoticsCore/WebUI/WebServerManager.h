@@ -78,7 +78,9 @@ public:
         // exhaust heap on memory-constrained devices (e.g. AP+STA ~3KB free).
         // Uses chunked response to stream the PROGMEM payload safely.
         server->on("/", HTTP_GET, [this](AsyncWebServerRequest* request) {
-            if (config.enableAuth && authHandler && !authHandler(request)) {
+            // SEC-13: the handler reads enableAuth live; this copy of the config
+            // does not, and a runtime flip left "/" on the old value.
+            if (authHandler && !authHandler(request)) {
                 return request->requestAuthentication();
             }
 

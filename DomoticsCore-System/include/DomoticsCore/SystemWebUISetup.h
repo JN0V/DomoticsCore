@@ -188,6 +188,69 @@ inline void setupWebUIProviders(
         DLOG_E(LOG_WEBUI_SETUP, "WebUI component NOT found!");
         return;
     }
+
+    // OBS-1: the core dump off the device. Auth as the siblings; the erase takes
+    // SEC-10's token first and refuses while a download is in flight, or the
+    // reader would stream a partition being erased under it.
+    static volatile int coreDumpDownloads = 0;
+    Core* corePtr = &core;
+    webuiComponent->registerApiRoute("/api/system/coredump", HTTP_GET, [webuiComponent](AsyncWebServerRequest* request) {
+        if (!webuiComponent->authorize(request)) return request->requestAuthentication();
+        const HAL::Platform::CoreDumpStatus st = HAL::Platform::getCoreDumpStatus();
+        if (!st.supported || !st.dumpPresent || st.size == 0) {
+            request->send(404, "application/json", "{\"error\":\"no core dump\"}");
+            return;
+        }
+        // A layout the reader does not understand shows on the first byte:
+        // answer 500 rather than a full-length body of nothing.
+        uint8_t probe[4];
+        if (HAL::Platform::coreDumpRead(0, probe, sizeof(probe)) == 0) {
+            request->send(500, "application/json", "{\"error\":\"core dump unreadable\"}");
+            return;
+        }
+        ++coreDumpDownloads;
+        request->onDisconnect([]() { if (coreDumpDownloads > 0) --coreDumpDownloads; });
+        AsyncWebServerResponse* response = request->beginResponse("application/octet-stream", st.size,
+            [size = st.size](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+                const size_t n = HAL::Platform::coreDumpRead(static_cast<uint32_t>(index), buffer, maxLen);
+                if (n == 0 && index < size) {
+                    DLOG_E(LOG_WEBUI_SETUP, "core dump read failed at %u of %u: the download is short", (unsigned)index, (unsigned)size);
+                }
+                return n;
+            });
+        // No build id in the name: the image belongs to the build that panicked,
+        // which an OTA may have replaced since. The header carries that build's
+        // SHA-256 and the decoder checks it against the ELF.
+        response->addHeader("Content-Disposition", "attachment; filename=\"coredump.bin\"");
+        request->send(response);
+    });
+    webuiComponent->registerApiRoute("/api/system/coredump/erase", HTTP_POST, [webuiComponent, corePtr](AsyncWebServerRequest* request) {
+        if (!webuiComponent->checkCsrf(request)) {
+            request->send(403, "application/json", "{\"success\":false,\"error\":\"Bad or missing CSRF token\"}");
+            return;
+        }
+        if (!webuiComponent->authorize(request)) return request->requestAuthentication();
+        if (coreDumpDownloads > 0) {
+            request->send(409, "application/json", "{\"success\":false,\"error\":\"download in flight\"}");
+            return;
+        }
+        const bool erased = HAL::Platform::coreDumpErase();
+        const HAL::Platform::CoreDumpStatus after = HAL::Platform::getCoreDumpStatus();
+#if __has_include(<DomoticsCore/SystemInfo.h>)
+        if (auto* sysInfo = corePtr->getComponent<Components::SystemInfoComponent>("System Info")) {
+            sysInfo->refreshCoreDumpStatus();
+        }
+#else
+        (void)corePtr;
+#endif
+        if (erased) {
+            request->send(200, "application/json", "{\"success\":true}");
+        } else if (after.dumpPresent) {
+            request->send(500, "application/json", "{\"success\":false,\"error\":\"erase failed\"}");
+        } else {
+            request->send(404, "application/json", "{\"success\":false,\"error\":\"no core dump\"}");
+        }
+    });
     
     DLOG_I(LOG_WEBUI_SETUP, "Registering WebUI providers... (heap: %u)", HAL::getFreeHeap());
     

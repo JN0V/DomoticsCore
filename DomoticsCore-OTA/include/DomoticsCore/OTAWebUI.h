@@ -377,9 +377,8 @@ private:
                         return;
                     }
                     // SEC-3: Check authentication before processing upload result.
-                    // NOTE: WebUIComponent::authenticate() is private, so we inline the
-                    // auth check using getConfig() fields directly. This mirrors the same
-                    // logic authenticate() uses internally.
+                    // WebUIComponent::authorize() is the shared gate since SEC-13; this
+                    // inline copy is kept so OTA does not require that WebUI version.
                     // NOTE: WebUIConfig.username is char[32] and .password is char[48] (not String)
                     if (webui && webui->getConfig().enableAuth) {
                         if (!request->authenticate(

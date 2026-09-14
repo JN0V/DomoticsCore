@@ -262,6 +262,11 @@ public:
     void setBootCount(uint32_t count) {
         bootDiag.bootCount = count;
     }
+
+    /** @brief Re-read the core dump partition's state, after an erase (OBS-1). */
+    void refreshCoreDumpStatus() {
+        bootDiag.coreDump = HAL::Platform::getCoreDumpStatus();
+    }
     
     // Standard config accessors (matching other components)
     const SystemInfoConfig& getConfig() const { return config; }
