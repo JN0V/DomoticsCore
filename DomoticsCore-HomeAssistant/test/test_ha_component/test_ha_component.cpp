@@ -1177,6 +1177,92 @@ void tearDown() {
     stopLogCapture();
 }
 
+// ============================================================================
+// Baselines pinned before the discovery payload gains fields (OBS-5)
+// ============================================================================
+
+// Captures the config document HomeAssistant publishes for one entity id.
+// The caller owns `captured`: the subscription outlives this call (shutdown()
+// publishes to the same topic), so the referent must outlive the core.
+static void captureDiscoveryConfig(Core& core, const char* configTopic, String& captured) {
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&captured, configTopic](const MQTTPublishEvent& ev) {
+            if (strcmp(ev.topic, configTopic) == 0) captured = ev.payload;
+        });
+    simulateMqttConnect(core);
+}
+
+void test_discovery_config_for_a_sensor_is_this_exact_document() {
+    // The bytes today's code sends for a sensor with a unit and an icon. The
+    // OBS-5 fields (entity_category, value_template, json_attributes_topic, a
+    // state_topic override, the availability opt-out) must be appended after
+    // these keys and emitted only when set, so this string does not move.
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+    HA::setField(config.deviceName, "Test Device", sizeof(config.deviceName));
+    HA::setField(config.manufacturer, "TestMfg", sizeof(config.manufacturer));
+    HA::setField(config.model, "TestModel", sizeof(config.model));
+    HA::setField(config.swVersion, "2.0.0", sizeof(config.swVersion));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSensor("free_heap", "Free Heap", "bytes", "", "mdi:memory");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    String payload;
+    captureDiscoveryConfig(core, "homeassistant/sensor/test_node/free_heap/config", payload);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"name\":\"Free Heap\",\"unique_id\":\"test_node_free_heap\","
+        "\"state_topic\":\"homeassistant/sensor/test_node/free_heap/state\","
+        "\"icon\":\"mdi:memory\","
+        "\"device\":{\"identifiers\":[\"test_node\"],\"name\":\"Test Device\","
+        "\"model\":\"TestModel\",\"manufacturer\":\"TestMfg\",\"sw_version\":\"2.0.0\"},"
+        "\"availability_topic\":\"homeassistant/test_node/availability\","
+        "\"payload_available\":\"online\",\"payload_not_available\":\"offline\","
+        "\"unit_of_measurement\":\"bytes\",\"state_class\":\"measurement\"}",
+        payload.c_str());
+    core.shutdown();
+}
+
+// How many sensors a device can declare before the connect burst overflows
+// the EventBus: the connect handler's own events plus N configs against the
+// 32-entry cap. Twenty-nine fit today; the eight system entities OBS-5 adds
+// come out of this budget, and the number is recorded in the roadmap.
+static void connectWithSensors(Core& core, int n, int& configs) {
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    for (int i = 0; i < n; i++) ha->addSensor(String("s") + i, String("Sensor ") + i);
+    core.addComponent(std::move(ha));
+    core.begin();
+    configs = 0;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            if (strstr(ev.topic, "/config") != nullptr) configs++;
+        });
+    simulateMqttConnect(core);
+    for (int i = 0; i < 10; i++) core.loop();
+}
+
+void test_twenty_nine_sensors_reach_the_bus_at_connect_without_a_drop() {
+    Core core;
+    int configs = 0;
+    connectWithSensors(core, 29, configs);
+    TEST_ASSERT_EQUAL_INT(29, configs);
+    TEST_ASSERT_EQUAL_UINT32(0, core.getEventBus().getDroppedCount());
+    core.shutdown();
+}
+
+void test_the_thirtieth_sensor_costs_a_dropped_event_at_connect() {
+    Core core;
+    int configs = 0;
+    connectWithSensors(core, 30, configs);
+    TEST_ASSERT_EQUAL_UINT32(1, core.getEventBus().getDroppedCount());
+    core.shutdown();
+}
+
+
 int runAllTests() {
     UNITY_BEGIN();
 
@@ -1258,6 +1344,11 @@ int runAllTests() {
     RUN_TEST(test_publish_state_const_char_ptr);
     RUN_TEST(test_publish_state_constexpr_char_ptr);
     RUN_TEST(test_publish_state_bool_still_works);
+
+    // Baselines pinned before OBS-5 changes the discovery payload
+    RUN_TEST(test_discovery_config_for_a_sensor_is_this_exact_document);
+    RUN_TEST(test_twenty_nine_sensors_reach_the_bus_at_connect_without_a_drop);
+    RUN_TEST(test_the_thirtieth_sensor_costs_a_dropped_event_at_connect);
     RUN_TEST(test_publish_state_string_still_works);
     RUN_TEST(test_publish_state_string_literal);
 
