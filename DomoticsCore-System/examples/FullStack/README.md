@@ -141,11 +141,9 @@ FullStackDevice/command/relay   ← ON/OFF
 
 **Discovered Entities:**
 - `sensor.fullstackdevice_temperature` - Simulated temperature sensor (°C)
-- `sensor.fullstackdevice_uptime` - Device uptime (seconds)
-- `sensor.fullstackdevice_free_heap` - Available memory (bytes)
-- `sensor.fullstackdevice_wifi_signal` - WiFi signal strength (dBm)
 - `switch.fullstackdevice_relay` - Cooling relay control
 - `button.fullstackdevice_restart` - Device restart button
+- Eight diagnostic sensors the System component registers and publishes once a minute, with no code in this example: `free_heap`, `largest_free_block`, `minimum_free_heap`, `uptime`, `boot_count`, `wifi_signal`, `allocation_failures`, and `last_death` (the last crash record as attributes). `SystemConfig::telemetryIntervalSec = 0` removes them.
 
 **Configuration:**
 ```yaml
@@ -246,14 +244,14 @@ homeassistant/switch/FullStackDevice/relay/config
 ```json
 {
   "name": "Temperature",
-  "device_class": "temperature",
-  "state_topic": "FullStackDevice/sensor/temperature",
-  "unit_of_measurement": "°C",
-  "device": {
-    "identifiers": ["FullStackDevice"],
+  "dev_cla": "temperature",
+  "stat_t": "FullStackDevice/sensor/temperature",
+  "unit_of_meas": "°C",
+  "dev": {
+    "ids": ["FullStackDevice"],
     "name": "Full Stack Device",
-    "model": "ESP32",
-    "manufacturer": "DomoticsCore"
+    "mdl": "ESP32",
+    "mf": "DomoticsCore"
   }
 }
 ```
@@ -313,24 +311,13 @@ The FullStack example automatically publishes sensor data to Home Assistant ever
 void loop() {
     domotics->loop();
     
-    // Automatic MQTT publishing to Home Assistant (every 5 seconds)
+    // Automatic MQTT publishing to Home Assistant (every 5 seconds). Uptime,
+    // heap and WiFi signal are the System component's: it publishes them
+    // itself, once a minute, on {clientId}/telemetry.
     if (mqttPublishTimer.isReady() && haPtr && haPtr->isMQTTConnected()) {
         float temp = readTemperature();
-        uint32_t uptime = millis() / 1000;
-        uint32_t freeHeap = ESP.getFreeHeap();
-        
-        // Publish sensor states (automatically routed to HA)
         haPtr->publishState("temperature", temp);
-        haPtr->publishState("uptime", (float)uptime);
-        haPtr->publishState("free_heap", (float)freeHeap);
-        
-        // Get WiFi signal from WifiComponent
-        auto* wifiComp = domotics->getWiFi();
-        if (wifiComp && wifiComp->isSTAConnected()) {
-            haPtr->publishState("wifi_signal", (float)wifiComp->getRSSI());
-        }
-        
-        DLOG_D(LOG_APP, "📡 Published to HA: Temp=%.1f°C, Uptime=%ds", temp, uptime);
+        DLOG_D(LOG_APP, "📡 Published to HA: Temp=%.1f°C", temp);
     }
     
     // Automatic relay control based on temperature

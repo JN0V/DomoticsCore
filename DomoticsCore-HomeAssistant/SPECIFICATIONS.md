@@ -299,22 +299,22 @@ haPtr->addLight("led_strip", "LED Strip", [](bool state, uint8_t brightness) {
 ```json
 {
   "name": "Temperature",
-  "unique_id": "esp32-sensor_temperature",
-  "state_topic": "homeassistant/sensor/esp32-sensor/temperature/state",
-  "unit_of_measurement": "°C",
-  "device_class": "temperature",
-  "state_class": "measurement",
-  "icon": "mdi:thermometer",
-  "device": {
-    "identifiers": ["esp32-sensor"],
+  "uniq_id": "esp32-sensor_temperature",
+  "stat_t": "homeassistant/sensor/esp32-sensor/temperature/state",
+  "unit_of_meas": "°C",
+  "dev_cla": "temperature",
+  "stat_cla": "measurement",
+  "ic": "mdi:thermometer",
+  "dev": {
+    "ids": ["esp32-sensor"],
     "name": "Living Room Sensor",
-    "model": "ESP32",
-    "manufacturer": "DomoticsCore",
-    "sw_version": "1.0.0"
+    "mdl": "ESP32",
+    "mf": "DomoticsCore",
+    "sw": "1.0.0"
   },
-  "availability_topic": "homeassistant/esp32-sensor/availability",
-  "payload_available": "online",
-  "payload_not_available": "offline"
+  "avty_t": "homeassistant/esp32-sensor/availability",
+  "pl_avail": "online",
+  "pl_not_avail": "offline"
 }
 ```
 
@@ -323,16 +323,16 @@ haPtr->addLight("led_strip", "LED Strip", [](bool state, uint8_t brightness) {
 ```json
 {
   "name": "Relay 1",
-  "unique_id": "esp32-sensor_relay1",
-  "state_topic": "homeassistant/switch/esp32-sensor/relay1/state",
-  "command_topic": "homeassistant/switch/esp32-sensor/relay1/set",
-  "payload_on": "ON",
-  "payload_off": "OFF",
-  "state_on": "ON",
-  "state_off": "OFF",
-  "icon": "mdi:electric-switch",
-  "device": { ... },
-  "availability_topic": "homeassistant/esp32-sensor/availability"
+  "uniq_id": "esp32-sensor_relay1",
+  "stat_t": "homeassistant/switch/esp32-sensor/relay1/state",
+  "cmd_t": "homeassistant/switch/esp32-sensor/relay1/set",
+  "pl_on": "ON",
+  "pl_off": "OFF",
+  "stat_on": "ON",
+  "stat_off": "OFF",
+  "ic": "mdi:electric-switch",
+  "dev": { ... },
+  "avty_t": "homeassistant/esp32-sensor/availability"
 }
 ```
 

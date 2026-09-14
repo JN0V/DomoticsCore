@@ -149,6 +149,16 @@ void addSensor(const String& id, const String& name,
 
 Registers a read-only sensor entity. If `stateClass` is empty and `unit` is non-empty, `stateClass` defaults to `"measurement"` in the discovery payload. Emits `ha/entity_added` with `HAEntityAddedEvent{id, "sensor"}`.
 
+#### entity
+
+```cpp
+HAEntity* entity(const String& id);
+```
+
+The registered entity with this id, or `nullptr`: the way to set the discovery fields `add*()` does not take (`entityCategory`, `stateTopicOverride`, `valueTemplate`, `jsonAttributesTopic`, `useAvailability`) before the connect that publishes discovery.
+
+Registering an id twice is not refused: both entities publish a config for the same `uniq_id` and Home Assistant keeps the first. The component logs a warning at the second registration.
+
 #### addBinarySensor
 
 ```cpp
@@ -291,6 +301,8 @@ void republishEntity(const String& id);  // Republish discovery for a single ent
 - `removeDiscovery()` publishes empty payloads to each entity's config topic, causing HA to remove them.
 - `republishEntity()` publishes discovery for a single entity. Called automatically when an entity is added while MQTT is already connected.
 
+Every message this component sends crosses the EventBus as an `MQTTPublishEvent`, whose payload field holds 699 characters; on ESP8266 the MQTT client's packet buffer is 768 bytes, 7 of them header, the topic included. A discovery document longer than the field is not published — it would be cut mid-JSON, sit retained on the broker and be discarded by Home Assistant at every restart — and the component logs a warning naming the topic and the size, counts it in `discoveryRefused`, and does not announce it as queued. The keys are abbreviated so that ordinary configs stay well under: an alarm control panel with two arm modes, a code and the default device block is 638 characters (774 with the long spellings). The device block (name, model, manufacturer, version, configuration URL, area) and the node id, which appears six times, are what make a config long; a panel with all six arm modes, a 32-character node id, a configuration URL and an area is 974 characters and is refused.
+
 ### Configuration
 
 ```cpp
@@ -335,6 +347,13 @@ static constexpr size_t HA_TOPIC_BUF_SIZE = 128;
 | `icon` | `String` | `""` | MDI icon name (e.g., `"mdi:thermometer"`) |
 | `deviceClass` | `String` | `""` | HA device class (e.g., `"temperature"`, `"motion"`) |
 | `retained` | `bool` | `true` | Whether state messages are retained on the broker |
+| `entityCategory` | `String` | `""` | `"diagnostic"` or `"config"`; emitted as `ent_cat` when set |
+| `stateTopicOverride` | `String` | `""` | Replaces the generated state topic when set: several entities can read one JSON payload |
+| `valueTemplate` | `String` | `""` | Emitted as `val_tpl`; the expression Home Assistant applies to the state topic's payload |
+| `jsonAttributesTopic` | `String` | `""` | Emitted as `json_attr_t`; a JSON payload there becomes the entity's attributes |
+| `useAvailability` | `bool` | `true` | `false` leaves the availability block out, so the entity stays readable while the device is offline |
+
+The five discovery fields above are emitted only when set; an entity that sets none of them produces the same document as before they existed. `stateTopicOverride` and `jsonAttributesTopic` also redirect `getStateTopic()` and `getAttributesTopic()`, so `publishState()`, `publishStateJson()` and `publishAttributes()` land where the discovery config told Home Assistant to read. `entityCategory` accepts `"diagnostic"` and `"config"`; any other value is left out of the document with a warning, since Home Assistant would reject the whole config. Set the fields through `HomeAssistantComponent::entity(id)` after `add*()` and before the connect that publishes discovery; after it, `republishEntity(id)`.
 
 ### Topic Generation Methods (zero-heap)
 
@@ -372,7 +391,9 @@ virtual void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
                                    const String& availabilityTopic) const;
 ```
 
-The base implementation adds: `name`, `unique_id`, `state_topic`, `icon` (if set), `device_class` (if set), `device` (device registry object), and `availability_topic` with `payload_available`/`payload_not_available`.
+The base implementation adds: `name`, `uniq_id`, `stat_t`, `ic` (if set), `dev_cla` (if set), `dev` (device registry object), and `avty_t` with `pl_avail`/`pl_not_avail`; then, only when set, `ent_cat`, `val_tpl` and `json_attr_t`.
+
+Every key is written in the short form Home Assistant documents for MQTT discovery and expands on receipt (`stat_t` is `state_topic`, `cmd_t` is `command_topic`, `uniq_id` is `unique_id`, `dev` is `device` with `ids`, `mf`, `mdl`, `sw`, `cu`, `sa`; `pl_` is `payload_`, `_tpl` is `_template`, `avty` is `availability`, `cod_arm_req` is `code_arm_required`, `sup_feat` is `supported_features`). A config crosses the EventBus in a 699-character field and, on ESP8266, PubSubClient's 768-byte packet buffer; the long spellings put an alarm control panel over both. The full list is in Home Assistant's MQTT discovery documentation.
 
 Derived classes call the base implementation and then add type-specific fields.
 
@@ -407,9 +428,9 @@ Read-only numeric or text sensor.
 
 ### Discovery Fields Added
 
-- `unit_of_measurement` -- if `unit` is non-empty.
-- `state_class` -- if explicitly set; otherwise defaults to `"measurement"` when `unit` is non-empty.
-- `expire_after` -- if `expireAfter > 0`.
+- `unit_of_meas` -- if `unit` is non-empty.
+- `stat_cla` -- if explicitly set; otherwise defaults to `"measurement"` when `unit` is non-empty.
+- `exp_aft` -- if `expireAfter > 0`.
 
 ---
 
@@ -429,8 +450,8 @@ Read-only on/off sensor (motion, door, etc.).
 
 ### Discovery Fields Added
 
-- `payload_on`
-- `payload_off`
+- `pl_on`
+- `pl_off`
 
 ---
 
@@ -453,9 +474,9 @@ Controllable on/off device (relay, socket).
 
 ### Discovery Fields Added
 
-- `command_topic`
-- `payload_on`, `payload_off`
-- `state_on`, `state_off`
+- `cmd_t`
+- `pl_on`, `pl_off`
+- `stat_on`, `stat_off`
 - `optimistic` (only if `true`)
 
 ### Command Handling
@@ -488,16 +509,16 @@ Controllable light with optional brightness.
 
 ### Discovery Fields Added
 
-- `command_topic`
-- `payload_on`, `payload_off`
-- `state_value_template`: `{{ value_json.state }}`
+- `cmd_t`
+- `pl_on`, `pl_off`
+- `stat_val_tpl`: `{{ value_json.state }}`
 - When `supportsBrightness` is true:
   - `brightness`: `true`
-  - `brightness_scale`: `255`
-  - `brightness_state_topic` (same as state topic)
-  - `brightness_command_topic` (same as command topic)
-  - `brightness_value_template`: `{{ value_json.brightness }}`
-  - `on_command_type`: `"brightness"`
+  - `bri_scl`: `255`
+  - `bri_stat_t` (same as state topic)
+  - `bri_cmd_t` (same as command topic)
+  - `bri_val_tpl`: `{{ value_json.brightness }}`
+  - `on_cmd_type`: `"brightness"`
 - `optimistic` (only if `true`)
 
 ### Command Handling
@@ -538,11 +559,11 @@ Trigger-only action (restart, calibrate, etc.).
 
 ### Discovery Fields Added
 
-Buttons override the base `buildDiscoveryPayload()` completely (no `state_topic` is added):
+Buttons override the base `buildDiscoveryPayload()` completely (no `stat_t` is added):
 
-- `name`, `unique_id`, `icon`, `device_class`, `device`, `availability_topic`
-- `command_topic`
-- `payload_press`
+- `name`, `uniq_id`, `icon`, `device_class`, `device`, `avty_t`
+- `cmd_t`
+- `pl_prs`
 
 ### Command Handling
 
@@ -617,14 +638,14 @@ Combine with bitwise OR: `AlarmFeature::ArmAway | AlarmFeature::ArmHome | AlarmF
 
 ### Discovery Fields Added
 
-- `command_topic`
+- `cmd_t`
 - When code configuration is active (any of `code`, `codeArmRequired`, `codeDisarmRequired`, `codeTriggerRequired` is set):
   - `code` (if non-empty)
-  - `code_arm_required`, `code_disarm_required`, `code_trigger_required`
-  - `command_template`: `{{ action }}{% if code %} {{ code }}{% endif %}`
-- Payload constants per supported feature: `payload_arm_home`, `payload_arm_away`, `payload_arm_night`, `payload_arm_vacation`, `payload_arm_custom_bypass`, `payload_trigger`
-- `payload_disarm` (always present)
-- `supported_features` JSON array built from bitmask
+  - `cod_arm_req`, `cod_dis_req`, `cod_trig_req`
+  - `cmd_tpl`: `{{ action }}{% if code %} {{ code }}{% endif %}`
+- Payload constants per supported feature: `pl_arm_home`, `pl_arm_away`, `pl_arm_nite`, `pl_arm_vacation`, `pl_arm_custom_b`, `pl_trig`
+- `pl_disarm` (always present)
+- `sup_feat` JSON array built from bitmask
 
 ### Command Handling
 
@@ -714,6 +735,7 @@ Runtime statistics counters.
 struct HAStatistics {
     uint32_t entityCount = 0;       // Total registered entities
     uint32_t discoveryCount = 0;    // Number of full discovery publishes
+    uint32_t discoveryRefused = 0;  // Configs never handed to MQTT: over the event field
     uint32_t stateUpdates = 0;      // Total state messages sent
     uint32_t commandsReceived = 0;  // Total commands received from HA
 };
@@ -821,22 +843,22 @@ Topic: `homeassistant/sensor/esp32-demo/temperature/config`
 ```json
 {
   "name": "Temperature",
-  "unique_id": "esp32-demo_temperature",
-  "state_topic": "homeassistant/sensor/esp32-demo/temperature/state",
-  "unit_of_measurement": "C",
-  "device_class": "temperature",
-  "state_class": "measurement",
-  "icon": "mdi:thermometer",
-  "device": {
-    "identifiers": ["esp32-demo"],
+  "uniq_id": "esp32-demo_temperature",
+  "stat_t": "homeassistant/sensor/esp32-demo/temperature/state",
+  "unit_of_meas": "C",
+  "dev_cla": "temperature",
+  "stat_cla": "measurement",
+  "ic": "mdi:thermometer",
+  "dev": {
+    "ids": ["esp32-demo"],
     "name": "ESP32 Demo Device",
-    "model": "ESP32",
-    "manufacturer": "DomoticsCore",
-    "sw_version": "1.0.0"
+    "mdl": "ESP32",
+    "mf": "DomoticsCore",
+    "sw": "1.0.0"
   },
-  "availability_topic": "homeassistant/esp32-demo/availability",
-  "payload_available": "online",
-  "payload_not_available": "offline"
+  "avty_t": "homeassistant/esp32-demo/availability",
+  "pl_avail": "online",
+  "pl_not_avail": "offline"
 }
 ```
 
@@ -847,17 +869,17 @@ Topic: `homeassistant/switch/esp32-demo/relay/config`
 ```json
 {
   "name": "Relay",
-  "unique_id": "esp32-demo_relay",
-  "state_topic": "homeassistant/switch/esp32-demo/relay/state",
-  "command_topic": "homeassistant/switch/esp32-demo/relay/set",
-  "payload_on": "ON",
-  "payload_off": "OFF",
-  "state_on": "ON",
-  "state_off": "OFF",
-  "device": { "..." : "..." },
-  "availability_topic": "homeassistant/esp32-demo/availability",
-  "payload_available": "online",
-  "payload_not_available": "offline"
+  "uniq_id": "esp32-demo_relay",
+  "stat_t": "homeassistant/switch/esp32-demo/relay/state",
+  "cmd_t": "homeassistant/switch/esp32-demo/relay/set",
+  "pl_on": "ON",
+  "pl_off": "OFF",
+  "stat_on": "ON",
+  "stat_off": "OFF",
+  "dev": { "..." : "..." },
+  "avty_t": "homeassistant/esp32-demo/availability",
+  "pl_avail": "online",
+  "pl_not_avail": "offline"
 }
 ```
 
@@ -868,22 +890,22 @@ Topic: `homeassistant/light/esp32-demo/led/config`
 ```json
 {
   "name": "LED Strip",
-  "unique_id": "esp32-demo_led",
-  "state_topic": "homeassistant/light/esp32-demo/led/state",
-  "command_topic": "homeassistant/light/esp32-demo/led/set",
-  "payload_on": "ON",
-  "payload_off": "OFF",
-  "state_value_template": "{{ value_json.state }}",
+  "uniq_id": "esp32-demo_led",
+  "stat_t": "homeassistant/light/esp32-demo/led/state",
+  "cmd_t": "homeassistant/light/esp32-demo/led/set",
+  "pl_on": "ON",
+  "pl_off": "OFF",
+  "stat_val_tpl": "{{ value_json.state }}",
   "brightness": true,
-  "brightness_scale": 255,
-  "brightness_state_topic": "homeassistant/light/esp32-demo/led/state",
-  "brightness_command_topic": "homeassistant/light/esp32-demo/led/set",
-  "brightness_value_template": "{{ value_json.brightness }}",
-  "on_command_type": "brightness",
-  "device": { "..." : "..." },
-  "availability_topic": "homeassistant/esp32-demo/availability",
-  "payload_available": "online",
-  "payload_not_available": "offline"
+  "bri_scl": 255,
+  "bri_stat_t": "homeassistant/light/esp32-demo/led/state",
+  "bri_cmd_t": "homeassistant/light/esp32-demo/led/set",
+  "bri_val_tpl": "{{ value_json.brightness }}",
+  "on_cmd_type": "brightness",
+  "dev": { "..." : "..." },
+  "avty_t": "homeassistant/esp32-demo/availability",
+  "pl_avail": "online",
+  "pl_not_avail": "offline"
 }
 ```
 
@@ -894,18 +916,18 @@ Topic: `homeassistant/button/esp32-demo/restart/config`
 ```json
 {
   "name": "Restart",
-  "unique_id": "esp32-demo_restart",
-  "command_topic": "homeassistant/button/esp32-demo/restart/set",
-  "payload_press": "PRESS",
-  "icon": "mdi:restart",
-  "device": { "..." : "..." },
-  "availability_topic": "homeassistant/esp32-demo/availability",
-  "payload_available": "online",
-  "payload_not_available": "offline"
+  "uniq_id": "esp32-demo_restart",
+  "cmd_t": "homeassistant/button/esp32-demo/restart/set",
+  "pl_prs": "PRESS",
+  "ic": "mdi:restart",
+  "dev": { "..." : "..." },
+  "avty_t": "homeassistant/esp32-demo/availability",
+  "pl_avail": "online",
+  "pl_not_avail": "offline"
 }
 ```
 
-Note: Buttons do **not** include a `state_topic`.
+Note: Buttons do **not** include a `stat_t`.
 
 ### Alarm Control Panel Example
 
@@ -914,28 +936,28 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
 ```json
 {
   "name": "Home Alarm",
-  "unique_id": "esp32-demo_alarm",
-  "state_topic": "homeassistant/alarm_control_panel/esp32-demo/alarm/state",
-  "command_topic": "homeassistant/alarm_control_panel/esp32-demo/alarm/set",
-  "icon": "mdi:shield-home",
+  "uniq_id": "esp32-demo_alarm",
+  "stat_t": "homeassistant/alarm_control_panel/esp32-demo/alarm/state",
+  "cmd_t": "homeassistant/alarm_control_panel/esp32-demo/alarm/set",
+  "ic": "mdi:shield-home",
   "code": "1234",
-  "code_arm_required": false,
-  "code_disarm_required": true,
-  "code_trigger_required": false,
-  "command_template": "{{ action }}{% if code %} {{ code }}{% endif %}",
-  "payload_arm_home": "ARM_HOME",
-  "payload_arm_away": "ARM_AWAY",
-  "payload_disarm": "DISARM",
-  "payload_trigger": "TRIGGER",
-  "supported_features": ["arm_home", "arm_away", "trigger"],
-  "device": { "..." : "..." },
-  "availability_topic": "homeassistant/esp32-demo/availability",
-  "payload_available": "online",
-  "payload_not_available": "offline"
+  "cod_arm_req": false,
+  "cod_dis_req": true,
+  "cod_trig_req": false,
+  "cmd_tpl": "{{ action }}{% if code %} {{ code }}{% endif %}",
+  "pl_arm_home": "ARM_HOME",
+  "pl_arm_away": "ARM_AWAY",
+  "pl_disarm": "DISARM",
+  "pl_trig": "TRIGGER",
+  "sup_feat": ["arm_home", "arm_away", "trigger"],
+  "dev": { "..." : "..." },
+  "avty_t": "homeassistant/esp32-demo/availability",
+  "pl_avail": "online",
+  "pl_not_avail": "offline"
 }
 ```
 
-Note: `code`, `code_*_required`, and `command_template` fields are **only included** when code configuration is active. `payload_arm_*` and `payload_trigger` fields are only included for features present in the `supportedFeatures` bitmask. `payload_disarm` is always included.
+Note: `code`, `cod_*_req`, and `cmd_tpl` fields are **only included** when code configuration is active. `pl_arm_*` and `pl_trig` fields are only included for features present in the `supportedFeatures` bitmask. `pl_disarm` is always included.
 
 ---
 
@@ -945,17 +967,17 @@ All entities share a common `device` object in their discovery payloads, causing
 
 ```json
 {
-  "identifiers": ["{nodeId}"],
+  "ids": ["{nodeId}"],
   "name": "{deviceName}",
-  "model": "{model}",
-  "manufacturer": "{manufacturer}",
-  "sw_version": "{swVersion}",
-  "configuration_url": "{configUrl}",
-  "suggested_area": "{suggestedArea}"
+  "mdl": "{model}",
+  "mf": "{manufacturer}",
+  "sw": "{swVersion}",
+  "cu": "{configUrl}",
+  "sa": "{suggestedArea}"
 }
 ```
 
-`configuration_url` and `suggested_area` are only included when non-empty.
+`cu` and `sa` are only included when non-empty.
 
 ---
 

@@ -767,6 +767,9 @@ The following functions are available in the `DomoticsCore::HAL::Platform` names
 | **getResetReason** | `ResetReason getResetReason()` | Returns the platform-agnostic reset reason (see ResetReason enum below). |
 | **getResetReasonString** | `String getResetReasonString(ResetReason)` | Human-readable string for a reset reason value. |
 | **wasUnexpectedReset** | `bool wasUnexpectedReset(ResetReason)` | Returns `true` if the reset was caused by a crash (Panic, watchdog, brownout). |
+| **getCoreDumpStatus** | `CoreDumpStatus getCoreDumpStatus()` | Whether the platform can hold a core dump, whether a `coredump` partition exists, whether an image from a previous panic waits in it, and its size. ESP32 only; the ESP8266 answers "unsupported". |
+| **coreDumpRead** | `size_t coreDumpRead(uint32_t offset, uint8_t* buf, size_t len)` | Bytes of the waiting image from `offset`, `0` past its end or on error. The image is the partition's own bytes from offset 0: length word, version, task count, the ELF, a CRC32. |
+| **coreDumpErase** | `bool coreDumpErase()` | Erases the waiting image; `false` when none waits or the erase failed. |
 
 ### ResetReason Enum
 

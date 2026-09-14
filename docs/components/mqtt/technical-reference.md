@@ -125,6 +125,12 @@ bool publishBinary(const String& topic, const uint8_t* data, size_t length, uint
 
 Publishes raw binary data. Does NOT queue when offline -- returns `false` immediately if disconnected.
 
+```cpp
+bool publishNow(const char* topic, const char* payload, size_t len, bool retain = false);
+```
+
+Publishes without queueing and without allocating: the payload goes straight to the client's buffer. Offline, over the publish rate limit, larger than the client's buffer (`topic + payload + 7` bytes — PubSubClient's 5-byte header plus the topic length — against `getBufferSize()`, logged), or refused by the client it returns `false` and the message is gone — the shape a periodic sample wants, since one delivered late is wrong. Counts against the same per-second window and statistics as `publish()`, `publishErrors` included. QoS is 0, which is all the client sends.
+
 ### Subscribing
 
 ```cpp
@@ -303,11 +309,11 @@ struct QueuedMessage {
 };
 ```
 
-**Queue processing** happens in `loop()` when the connection is active. The component iterates through the queue, publishing each message. Successfully published messages are removed; if a publish fails, processing stops (preserving message order).
+**Queue processing** happens in `loop()` when the connection is active. The component iterates through the queue, publishing each message. Successfully published messages are removed; if a publish fails, processing stops (preserving message order) — except for a message that can never succeed: a packet larger than the client's buffer (`topic + payload + 7` against `getBufferSize()`, 768 bytes on ESP8266) is dropped with a warning naming the topic and counted in `publishErrors`, so the messages behind it still go out. `publish()` makes the same check before handing a message to the client, and says which topic it refused.
 
 **Limits**: The `config.maxQueueSize` field (default 100) bounds the queue size. When the queue reaches `maxQueueSize`, additional messages are dropped with a warning log and `publish()` returns `false`. Set `maxQueueSize` to `0` for unlimited queue growth. Monitor `getQueuedMessageCount()` to track current queue depth.
 
-**Important**: `publishBinary()` does NOT queue when offline -- it returns `false` immediately.
+**Important**: `publishBinary()` and `publishNow()` do NOT queue when offline -- they return `false` immediately.
 
 ---
 

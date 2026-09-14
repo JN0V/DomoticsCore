@@ -54,13 +54,15 @@ Calls `webUIProviders.cleanup()` to free all heap-allocated WebUI provider objec
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `begin` | `bool begin()` | Initializes the entire system. Registers components, initializes Core, loads persisted configs, sets up event orchestration, initializes boot diagnostics, and transitions to `READY`. Returns `false` on Core initialization failure. Calling `begin()` twice is safe (logs a warning and returns `true`). |
-| `loop` | `void loop()` | Delegates to `core.loop()`. Call this in the Arduino `loop()` function. |
+| `loop` | `void loop()` | Runs `core.loop()`, feeds the loop watchdog, and runs the telemetry tick when one is due. Call this in the Arduino `loop()` function. |
 | `getCore` | `Core& getCore()` | Returns a reference to the internal `Core` instance. Use this to add custom components or access the event bus. |
 | `getState` | `SystemState getState() const` | Returns the current `SystemState`. |
 | `getConsole` | `RemoteConsoleComponent* getConsole()` | Returns a pointer to the RemoteConsole component, or `nullptr` if console is disabled. |
 | `getWiFi` | `WifiComponent* getWiFi()` | Returns a pointer to the WiFi component. |
 | `onStateChange` | `void onStateChange(std::function<void(SystemState, SystemState)> callback)` | Registers a callback invoked on every state transition. Parameters are `(oldState, newState)`. Multiple callbacks are supported. |
 | `registerCommand` | `void registerCommand(const String& name, std::function<String(const String&)> handler)` | Registers a custom telnet command. Delegates to `RemoteConsoleComponent::registerCommand()`. No-op if console is disabled. |
+| `lastDeath` | `const SystemHelpers::CrashSummary& lastDeath() const` | The last death as the crash topic reports it, filled by `begin()` from the persisted `bootdiag` record when Storage holds one, from the flight recorder's RTC record otherwise. |
+| `telemetry` | `const SystemHelpers::SystemTelemetry& telemetry() const` | The publisher: its topics, whether it is enabled, and its sent/skipped/failed counters. |
 
 ### Initialization Sequence (`begin()`)
 
@@ -144,6 +146,15 @@ All fields have sensible defaults. Fields are grouped by functional area.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enableHomeAssistant` | `bool` | `false` | Enable HA auto-discovery (requires MQTT) |
+
+### Telemetry
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `telemetryIntervalSec` | `uint16_t` | `60` | With MQTT enabled, publish `{clientId}/telemetry` this often and `{clientId}/crash` at every connect. `0` disables both and registers no Home Assistant entities. |
+| `telemetryHeapFloor` | `uint32_t` | `4096` | A tick that finds less allocatable heap than this is skipped and counted, so the publisher is not what finishes a starving device. |
+
+See [Telemetry](#telemetry-1) for the payloads.
 
 ### NTP
 
@@ -290,6 +301,10 @@ When `NTPEvents::EVENT_SYNCED` fires, the System logs `"NTP time synchronized"`.
 ### MQTT -> Home Assistant
 
 When `HAEvents::EVENT_DISCOVERY_PUBLISHED` fires, the System logs the number of published HA entities.
+
+### MQTT -> Telemetry
+
+With MQTT present and `telemetryIntervalSec > 0`, the publisher is configured from the MQTT client id and given its sink; `MQTTEvents::EVENT_CONNECTED` publishes the crash record; when Home Assistant is present, the eight diagnostic entities are registered here, before any connection can happen. Home Assistant subscribed to the connect event earlier, in its own `begin()`, so its discovery burst runs first in the dispatch and the crash publish is the one the rate limit may queue.
 
 ---
 
@@ -458,17 +473,20 @@ For each optional WebUI provider library detected via `__has_include`:
 | `RemoteConsoleWebUI` | `WEBUI_SETUP_HAS_CONSOLE_WEBUI` | RemoteConsole |
 | `HomeAssistantWebUI` | `WEBUI_SETUP_HAS_HA_WEBUI` | HomeAssistant |
 
-### NTP Timezone API Endpoint
+### Core Dump API Endpoints
 
-When the NTP WebUI provider is registered, the System also registers a custom API route on the WebUI component:
+Registered whenever the WebUI component exists, whatever the platform:
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/api/ntp/timezones` | `GET` | Returns a JSON array of all supported timezone options. Each entry has `"value"` (POSIX timezone string) and `"label"` (human-friendly name). The response is streamed from flash via `TIMEZONE_LOOKUP` to avoid heap allocation. |
+| `/api/system/coredump` | `GET` | Streams the core dump image waiting in the ESP32's `coredump` partition as `application/octet-stream`, fixed length, `Content-Disposition: attachment; filename="coredump.bin"` — no build id in the name, since the image belongs to the build that panicked, which an OTA may have replaced; the image's header carries that build's SHA-256 and the decoder checks it against the ELF. `404 {"error":"no core dump"}` when none waits or the platform has no partition; `500 {"error":"core dump unreadable"}` when the first byte cannot be read. A read that fails mid-stream ends the body short and logs an error. Behind `enableAuth`. |
+| `/api/system/coredump/erase` | `POST` | Erases the image. Refuses `403` without this boot's CSRF token, then the authentication challenge, then `409` while a download is in flight; `200 {"success":true}` when erased, `500 {"success":false,"error":"erase failed"}` when the image is still there afterwards, `404` when there was none. SystemInfo's boot diagnostics are refreshed so `bootdiag` no longer announces the dump. |
+
+The image is the partition's own bytes from offset 0 — length word, version, task count, the ELF, a CRC32 — which `esp-coredump info_corefile --core <file> --core-format raw <firmware.elf>` decodes against the ELF of the build that panicked.
 
 ### Provider `.init()` Calls
 
-The **OTA** and **RemoteConsole** WebUI providers require an additional `.init(webuiComponent)` call after `registerProviderWithComponent()`. This call registers provider-specific API routes on the WebUI web server (e.g., `/api/console/loglevels` for RemoteConsole, OTA upload route for OTA). Other providers do not require this extra step.
+The **NTP**, **OTA** and **RemoteConsole** WebUI providers require an additional `.init(webuiComponent)` call after `registerProviderWithComponent()`. This call registers provider-specific API routes on the WebUI web server (`/api/ntp/timezones` for NTP, `/api/console/loglevels` for RemoteConsole, the upload route for OTA). The System makes these calls; the routes themselves are described in each component's reference. Other providers do not require this extra step.
 
 ### Home Assistant Save Callback Asymmetry
 
@@ -492,7 +510,41 @@ The first statement of `System::begin()` is `FlightRecorder::instance().begin(tr
 2. Writes the `bootdiag` blob (`SystemHelpers::persistBootDiagnostics()`): this boot's figures and the last death on record. An identical death — same build, reason and site — increments the blob's count instead of replacing the first occurrence; a clean boot carries the last death forward.
 3. Removes the keys the blob replaced, once.
 
-Whether that ran or not, `begin()` then acknowledges the recorder so the fresh record takes RTC. The `bootdiag` console command prints the recorder's promoted record (Core), the component behind its phase marker (this build's initialization order, decoded by `Core::componentNameAtInitIndex()`), this boot's diagnostics (SystemInfo's `formatBootDiagnostics()`) and the persisted blob; the output is cut at 1 KB with a `...` marker.
+Whether that ran or not, `begin()` then captures the last death for the telemetry publisher (`lastDeath()`) and acknowledges the recorder so the fresh record takes RTC. The `bootdiag` console command prints the recorder's promoted record (Core), the component behind its phase marker (this build's initialization order, decoded by `Core::componentNameAtInitIndex()`), this boot's diagnostics (SystemInfo's `formatBootDiagnostics()`) and the persisted blob; the output is cut at 1 KB with a `...` marker.
+
+---
+
+## Telemetry
+
+`SystemHelpers::SystemTelemetry` (`SystemTelemetry.h`) is a pure publisher: it knows nothing of MQTT, Home Assistant or the HAL. `System` hands it a sink and fills its samples; a test hands it a scripted sink. Both payloads are built with `snprintf` into stack buffers, so nothing allocates on the device's side of the MQTT client.
+
+| Topic | When | Retained | Payload |
+|---|---|---|---|
+| `{clientId}/telemetry` | every `telemetryIntervalSec`, while connected | no | `{"heap":N,"largest":N,"min":N,"trough":N,"uptime":N,"boot":N,"rssi":N|null,"fails":N,"fail_last":N,"skipped":N,"failed":N,"build":"xxxxxxxx"}` |
+| `{clientId}/crash` | at every MQTT connect | yes | the last death, below |
+
+Telemetry fields: `heap` is the allocatable free heap and `largest` the largest free block (the HAL's gauges, not `ESP.getFreeHeap()`); `trough` is the flight recorder's — the lowest allocatable heap seen inside its last 10-second sampling window, 16-byte granular, which catches a dip a once-a-minute sample would miss; `min` is the boot-long minimum, the lowest of every `heap` and every `trough` the publisher has seen, so it never rises; `uptime` counts through the 49.7-day `millis()` wrap; `boot` is the persisted boot count, `0` without Storage; `rssi` is `null` without a station link (Home Assistant then reads `unknown` rather than a perfect 0 dBm); `fails`/`fail_last` are this boot's survived allocation failures and the last one's size; `skipped` counts ticks refused by the heap floor and `failed` ticks the transport refused (offline, over the publish rate limit, a packet larger than the client's buffer, or a client error). Both counters are cumulative since boot; a rise between two payloads is what explains the gap between them. The tick goes through `MQTTComponent::publishNow()` and is never queued: a sample delivered late is a sample wrong. A skipped tick is also logged, at most once per interval.
+
+The crash payload names its source: `{"source":"persisted"|"rtc"|"none", "promotion":"crash callback"|"unexpected reset"|"software reset not requested by the firmware"|"none", "phase":N, "build":"xxxxxxxx", "uptime_ms":N, "reason":N, "epc1":"0x…", "fail_size":N, "fail_caller":"0x…", "min_free":N, "dedup":"xxxxxxxx"}` plus `"same_count":N` when persisted (how many boots recorded this same death), `"reset":"…"` when read from RTC (the reason the promotion saw), and `"coredump":{"waiting":bool,"size":N}` on a platform that has a partition. A torn record (its CRC failed) emits `source`, `promotion`, `phase` and `"torn":1` and nothing else, since the other fields are what the CRC could not vouch for. Without a death on record: `{"source":"none","promotion":"none"}`. The publish at connect goes through `publish()` and may be queued behind Home Assistant's discovery burst; it is retained, so a late arrival is harmless.
+
+An MQTT client id longer than 80 characters, or carrying an MQTT wildcard (`+`, `#`), disables telemetry with one warning, so the topics the publisher builds and the ones the Home Assistant discovery configs name can never differ. The core dump state in the crash payload is re-read at every connect, so an erase through the WebUI is reflected without a reboot. On the boot right after a death the persisted record carries `reset` too, since the flight recorder still knows the reason the promotion saw.
+
+### Home Assistant entities
+
+When the Home Assistant component is present, eight `diagnostic`-category sensors read the two topics through a value template (`val_tpl`), so one publish per tick feeds them all:
+
+| id | unit / device class | state class | reads |
+|---|---|---|---|
+| `free_heap` | B, `data_size` | `measurement` | `heap` |
+| `sys_heap_largest` | B, `data_size` | `measurement` | `largest` |
+| `sys_heap_min` | B, `data_size` | `measurement` | `min` |
+| `uptime` | s, `duration` | `total_increasing` | `uptime` |
+| `sys_boot_count` | — | `total_increasing` | `boot` |
+| `wifi_signal` | dBm, `signal_strength` | `measurement` | `rssi` |
+| `sys_alloc_failures` | — | `total_increasing` | `fails` |
+| `sys_last_death` | text | — | `promotion`; the whole crash payload as its attributes |
+
+`sys_last_death` carries no availability block: the device's LWT would mark it unavailable at the moment the device dies, which is the moment the retained record is wanted. The seven others do grey out with the device. An id the application has already declared when the system entities are registered is left to the application, with a warning; the definitions live in `SystemTelemetry::entityDefs()` beside the formatter that produces the keys they read.
 
 ---
 

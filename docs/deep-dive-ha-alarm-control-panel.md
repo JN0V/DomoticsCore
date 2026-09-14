@@ -28,7 +28,7 @@ The alarm panel entity is deliberately a **thin MQTT plumbing layer**. The libra
 | **Discovery payload** | Generates the JSON that tells Home Assistant the alarm panel exists, which arm modes are available, and whether a keypad should be shown. |
 | **Command parsing** | Receives `"COMMAND"` or `"COMMAND CODE"` payloads from MQTT, splits them, and forwards `(command, codeValue)` to the consumer callback. |
 | **Topic management** | Generates discovery, state, and command MQTT topics following the HA convention. |
-| **Feature bitmask** | Translates `supportedFeatures` into the `supported_features` JSON array and conditionally emits `payload_arm_*` constants. |
+| **Feature bitmask** | Translates `supportedFeatures` into the `sup_feat` JSON array and conditionally emits `pl_arm_*` constants. |
 
 ### What the library does NOT do
 
@@ -88,7 +88,7 @@ HA frontend (shows keypad because discovery has "code": "1234")
 
 **Methods:**
 
-- `buildDiscoveryPayload()` -- Calls base, adds `command_topic`, conditional code config (`code`, `code_arm_required`, `code_disarm_required`, `code_trigger_required`, `command_template`), payload constants per supported feature, and `supported_features` JSON array.
+- `buildDiscoveryPayload()` -- Calls base, adds `cmd_t`, conditional code config (`code`, `cod_arm_req`, `cod_dis_req`, `cod_trig_req`, `cmd_tpl`), payload constants per supported feature, and `sup_feat` JSON array.
 - `handleCommand(payload)` -- Parses `"COMMAND"` or `"COMMAND CODE"` format with whitespace trimming. Delegates to `commandCallback(command, codeValue)`. Empty/whitespace-only payloads are rejected with a warning log.
 
 **Side effects:** None. All state management is delegated to the consumer.
@@ -109,9 +109,9 @@ HA frontend (shows keypad because discovery has "code": "1234")
 
 | # | Test | Type | Coverage |
 |---|------|------|----------|
-| 1 | `test_alarm_panel_discovery_payload` | Unit | Full discovery JSON, command_topic, state_topic, code fields, command_template, payload constants, supported_features array |
+| 1 | `test_alarm_panel_discovery_payload` | Unit | Full discovery JSON, cmd_t, stat_t, code fields, cmd_tpl, payload constants, sup_feat array |
 | 2 | `test_alarm_panel_discovery_supported_features` | Unit | Bitmask-to-array conversion: single flag, multiple flags, all flags |
-| 3 | `test_alarm_panel_discovery_code_fields` | Unit | No code config = no fields; code set = command_template present |
+| 3 | `test_alarm_panel_discovery_code_fields` | Unit | No code config = no fields; code set = cmd_tpl present |
 | 4 | `test_alarm_panel_handle_command_basic` | Unit | Basic command parsing ("ARM_AWAY") |
 | 5 | `test_alarm_panel_handle_command_with_code` | Unit | Command with code ("DISARM 1234") |
 | 6 | `test_alarm_panel_handle_command_no_callback` | Unit | Null callback safety |
@@ -217,12 +217,12 @@ MQTT broker → mqtt/connected event
        └─> publishDiscovery()
             └─> For each entity:
                  └─> HAAlarmControlPanel::buildDiscoveryPayload()
-                      ├─> Base: name, unique_id, state_topic, icon, device, availability
-                      ├─> command_topic
-                      ├─> [if code config active] code, code_*_required, command_template
+                      ├─> Base: name, uniq_id, stat_t, icon, device, availability
+                      ├─> cmd_t
+                      ├─> [if code config active] code, cod_*_req, cmd_tpl
                       ├─> payload_arm_* (per supportedFeatures bitmask)
-                      ├─> payload_disarm (always)
-                      └─> supported_features[] array
+                      ├─> pl_disarm (always)
+                      └─> sup_feat[] array
 ```
 
 ### 3. Command Handling
@@ -274,30 +274,30 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
 ```json
 {
   "name": "Home Alarm",
-  "unique_id": "esp32-demo_alarm",
-  "state_topic": "homeassistant/alarm_control_panel/esp32-demo/alarm/state",
-  "command_topic": "homeassistant/alarm_control_panel/esp32-demo/alarm/set",
-  "icon": "mdi:shield-home",
-  "device": {
-    "identifiers": ["esp32-demo"],
+  "uniq_id": "esp32-demo_alarm",
+  "stat_t": "homeassistant/alarm_control_panel/esp32-demo/alarm/state",
+  "cmd_t": "homeassistant/alarm_control_panel/esp32-demo/alarm/set",
+  "ic": "mdi:shield-home",
+  "dev": {
+    "ids": ["esp32-demo"],
     "name": "ESP32 Demo Device",
-    "model": "ESP32",
-    "manufacturer": "DomoticsCore",
-    "sw_version": "1.6.0"
+    "mdl": "ESP32",
+    "mf": "DomoticsCore",
+    "sw": "1.6.0"
   },
-  "availability_topic": "homeassistant/esp32-demo/availability",
-  "payload_available": "online",
-  "payload_not_available": "offline",
+  "avty_t": "homeassistant/esp32-demo/availability",
+  "pl_avail": "online",
+  "pl_not_avail": "offline",
   "code": "1234",
-  "code_arm_required": false,
-  "code_disarm_required": true,
-  "code_trigger_required": false,
-  "command_template": "{{ action }}{% if code %} {{ code }}{% endif %}",
-  "payload_arm_home": "ARM_HOME",
-  "payload_arm_away": "ARM_AWAY",
-  "payload_disarm": "DISARM",
-  "payload_trigger": "TRIGGER",
-  "supported_features": ["arm_home", "arm_away", "trigger"]
+  "cod_arm_req": false,
+  "cod_dis_req": true,
+  "cod_trig_req": false,
+  "cmd_tpl": "{{ action }}{% if code %} {{ code }}{% endif %}",
+  "pl_arm_home": "ARM_HOME",
+  "pl_arm_away": "ARM_AWAY",
+  "pl_disarm": "DISARM",
+  "pl_trig": "TRIGGER",
+  "sup_feat": ["arm_home", "arm_away", "trigger"]
 }
 ```
 

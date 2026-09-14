@@ -153,7 +153,7 @@ All entity types follow the same pattern:
 4. **Controllable entities** (`HASwitch`, `HALight`, `HAButton`, `HAAlarmControlPanel`) have:
    - A `handleCommand(const String& payload) -> bool` override (virtual dispatch)
    - Internal state fields updated by `handleCommand()` (e.g., `HASwitch::state`, `HALight::brightness`)
-   - A `command_topic` in their discovery payload
+   - A command topic (`cmd_t`) in their discovery payload
 5. **Entity storage:** `std::vector<std::unique_ptr<HAEntity>>` in `HomeAssistantComponent`.
 6. **Entity lookup:** Linear scan by `id` string via `findEntity()`.
 

@@ -91,17 +91,21 @@ ptr->registerApiRoute("/api/sensor", HTTP_GET, [](AsyncWebServerRequest* req) {
 
 ## REST API Endpoints
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/ui/schema` | GET | Full UI schema (chunked streaming) |
-| `/api/ui/updates` | GET | Polling updates; add `?schema=1` for schema |
-| `/api/ui/token` | GET | Per-boot CSRF token for state-changing requests (SEC-10) |
-| `/api/ui/action` | POST | Client-to-server UI action (query params); requires CSRF token |
-| `/api/ui/context?id=X` | GET | Single context schema by ID |
-| `/api/ui/events` | SSE | Server-Sent Events stream (ESP32) |
-| `/api/components` | GET | List registered providers |
-| `/api/components/enable` | POST | Enable/disable a provider at runtime |
-| `/api/system/info` | GET | Uptime, heap, and client count |
+| Endpoint | Method | Auth | Description |
+|---|---|---|---|
+| `/` | GET | yes | The page |
+| `/api/ui/schema` | GET | yes | Full UI schema (chunked streaming) |
+| `/api/ui/updates` | GET | yes | Polling updates; add `?schema=1` for schema |
+| `/api/ui/token` | GET | yes | Per-boot CSRF token for state-changing requests |
+| `/api/ui/action` | POST | yes + token | Client-to-server UI action (query params) |
+| `/api/ui/context?id=X` | GET | yes | Single context schema by ID |
+| `/api/ui/events` | SSE | yes | Server-Sent Events stream; reached only with `Accept: text/event-stream` |
+| `/api/components` | GET | yes | List registered providers |
+| `/api/components/enable` | POST | yes + token | Enable/disable a provider at runtime |
+| `/api/system/info` | GET | yes | Uptime, heap, and client count |
+| `/style.css`, `/app.js` | GET | no | Static assets, served in multi-file mode only |
+
+**Auth** means: with `enableAuth` on, the route answers `401` with a challenge until the request carries the device's credentials; every gate reads the live configuration, so a runtime change applies to the page, the API and the stream alike. **Token** means the route also refuses `403` without this boot's CSRF token. Routes other components register through `registerApiRoute()` gate themselves; the System component's own route (`/api/system/coredump`) is described in its reference, and `/api/ntp/timezones` in the NTP component's.
 
 ## Known Issues
 

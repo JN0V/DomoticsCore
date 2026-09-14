@@ -268,10 +268,11 @@ first drop. A reset pulse on that port (`DTR=False; RTS=True; sleep; RTS=False`)
 works through the JTAG unit's emulation, reads as reason `Unknown`, and keeps
 `RTC_NOINIT_ATTR` — unlike the WROOM's EN reset.
 
-## `probes/obs-lotb-probe` — Lot B's vehicle
+## `probes/obs-lotb-probe` — Lot B's vehicle, Lot D's ESP8266 MQTT vehicle
 
-A `System` with console, Storage and SystemInfo joined to the LAN from
-`secrets.h`, the crash commands compiled in, and a stopwatch around
+A `System` with console, Storage, SystemInfo and — when `secrets.h` defines
+`DC_MQTT_BROKER` — MQTT, joined to the LAN from `secrets.h`, the crash
+commands compiled in, and a stopwatch around
 `System::loop()` printing `LOOPCOST` lines every 5 s (mean and maximum
 iteration, and whether the recorder's tick is compiled in). Built with and
 without `-DDOMOTICS_FLIGHT_RECORDER_TICK=0` it gives the sampler's cost;
@@ -289,6 +290,76 @@ the OBS-4 entry of `docs/CODE-ROADMAP.md`; the flags must be `build_flags`
 (they have to reach every library). Optionally add `-DDEBUG_ESP_HWDT` for a
 stack dump after a hardware watchdog; its greeting prints at the ROM's
 74 880 baud, so at 115 200 it is the noise on the first line.
+
+## `mqtt_watch.py`
+
+What a device publishes, as the broker serves it:
+
+```
+uv run tools/on-device/mqtt_watch.py 192.168.1.253 --topic 'FullStackDevice/#' \
+    --topic 'homeassistant/#' --for 660 --log campaign/wroom/mqtt.log
+```
+
+One line per message with the time since start, `R` when the broker served
+it retained, the payload size and the payload — the telemetry ticks, the
+retained crash record at each connect, the Home Assistant discovery configs.
+`--sizes` prints only the configs with their byte counts, the figures the
+699-byte EventBus field and the ESP8266's 768-byte MQTT packet are measured
+against. `--clear TOPIC` publishes an empty retained message: what a
+decommissioned device's `{clientId}/crash` needs. Needs `uv` (paho-mqtt is
+declared inline; nothing to install).
+
+## `webui_auth_check.py`
+
+Which routes an unauthenticated client can read:
+
+```
+python3 tools/on-device/webui_auth_check.py http://192.168.1.224 --user admin --password secret
+```
+
+Reads `/api/system/info`, the SSE stream and two already-gated siblings
+without credentials and with, and prints the codes beside the expected
+pair (`401` then `200` with `enableAuth` on; `--auth-off` expects `200` for
+both). The stream is read **with** `Accept: text/event-stream`, because
+without that header the handler never matches and the server answers 404
+whether or not a gate exists — the script prints that reading too, so it
+cannot be mistaken for a pass. `--clients` prints the SSE client count from
+`/api/system/info`: open the page in a browser first, and `1` means the
+stream is up while `0` means `app.js` fell back to polling without a word.
+The page itself (`/`) is in the route list: its gate reads the live
+configuration since SEC-13, so a runtime `enable_auth` flip is checked
+here too.
+
+## `coredump_check.py`
+
+An ESP32 core dump off the device and decoded:
+
+```
+python3 tools/on-device/coredump_check.py http://192.168.1.224 --user admin --password secret \
+    --elf .pio/build/esp32dev/firmware.elf --out campaign/wroom --erase
+```
+
+Downloads `/api/system/coredump`, compares the bytes received to the
+image's own length word, runs `esp-coredump info_corefile` on it against
+the ELF and keeps both beside each other; with
+`--erase` it mints a token, erases, and reads the route again to see the
+404. `--no-auth` and `--no-token` are the negatives (401 on the read, 403 on the
+erase — the token is checked first and cannot be minted without
+credentials); `--expect-none` is the check after an erase and a clean boot.
+`--console HOST` reads `bootdiag`'s `Core dump:` line over the telnet
+console before and after the erase, which is the reader the erase route
+refreshes. An image received short is reported against its own length word
+and never erased, since the device holds the only copy. **Keep the ELF of every build you flash on
+a device you cannot walk to**: a dump decodes only against its own.
+
+`esp-coredump` itself comes through `uvx`; the target GDB it drives does
+not. The script looks for PlatformIO's `tool-xtensa-esp-elf-gdb` package
+(`pio pkg install -g -t platformio/tool-xtensa-esp-elf-gdb`, once) before
+the older `toolchain-xtensa-esp32` one, whose GDB links against Python 2.7
+and does not start on a current host — the decode then prints the banner
+and exits 1 with nothing on stderr. A dump's header carries the app's
+SHA-256, and the tool checks it against the ELF: a mismatch is reported,
+not decoded.
 
 ## `probes/` — the OBS session's board probes
 
