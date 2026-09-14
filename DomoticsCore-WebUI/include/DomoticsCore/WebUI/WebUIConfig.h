@@ -108,6 +108,7 @@ struct WebUIConfig {
             const bool on = (value == "true" || value == "1");
             if (on && password[0] == '\0') { error = "Set a password before enabling authentication"; return false; }
             enableAuth = on;
+            if (on && enableCORS) DLOG_W("WebUI", "CORS headers are not sent while authentication is enabled");  // SEC-6
             return true;
         }
         if (field == "password") {

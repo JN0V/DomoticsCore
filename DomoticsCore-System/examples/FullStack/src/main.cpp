@@ -54,6 +54,9 @@ using namespace DomoticsCore::Components;
 #ifndef DC_WIFI_PASSWORD
 #  define DC_WIFI_PASSWORD ""
 #endif
+#ifndef DC_WEBUI_CORS
+#  define DC_WEBUI_CORS 0            // 1: enableCORS on the WebUI (the SEC-6 campaign)
+#endif
 #ifndef DC_MQTT_BROKER
 #  define DC_MQTT_BROKER ""
 #endif
@@ -179,6 +182,13 @@ void setup() {
     
     // Get component references
     mqttPtr = domotics->getCore().getComponent<MQTTComponent>("MQTT");
+#if DC_WEBUI_CORS
+    if (auto* webui = domotics->getCore().getComponent<WebUIComponent>("WebUI")) {
+        WebUIConfig cors = webui->getConfig();
+        cors.enableCORS = true;
+        webui->setConfig(cors);
+    }
+#endif
     haPtr = domotics->getCore().getComponent<HomeAssistant::HomeAssistantComponent>("HomeAssistant");
     
     if (haPtr && mqttPtr) {
