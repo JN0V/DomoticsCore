@@ -216,22 +216,22 @@ When you add a temperature sensor, this JSON is published to `homeassistant/sens
 ```json
 {
   "name": "Temperature",
-  "unique_id": "esp32-demo_temperature",
-  "state_topic": "homeassistant/sensor/esp32-demo/temperature/state",
-  "unit_of_measurement": "°C",
-  "device_class": "temperature",
-  "state_class": "measurement",
-  "icon": "mdi:thermometer",
-  "device": {
-    "identifiers": ["esp32-demo"],
+  "uniq_id": "esp32-demo_temperature",
+  "stat_t": "homeassistant/sensor/esp32-demo/temperature/state",
+  "unit_of_meas": "°C",
+  "dev_cla": "temperature",
+  "stat_cla": "measurement",
+  "ic": "mdi:thermometer",
+  "dev": {
+    "ids": ["esp32-demo"],
     "name": "ESP32 Demo Device",
-    "model": "ESP32",
-    "manufacturer": "DomoticsCore",
-    "sw_version": "1.0.0"
+    "mdl": "ESP32",
+    "mf": "DomoticsCore",
+    "sw": "1.0.0"
   },
-  "availability_topic": "homeassistant/esp32-demo/availability",
-  "payload_available": "online",
-  "payload_not_available": "offline"
+  "avty_t": "homeassistant/esp32-demo/availability",
+  "pl_avail": "online",
+  "pl_not_avail": "offline"
 }
 ```
 

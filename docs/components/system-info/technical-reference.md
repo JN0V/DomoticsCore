@@ -171,6 +171,10 @@ This boot's diagnostics as text, into the caller's buffer (the reset reason's na
 
 Sets the `bootDiag.bootCount` value. This method is intended to be called by the `System` component after loading the persisted boot count from `Storage`. The `SystemInfo` component does not persist this value itself.
 
+#### `void refreshCoreDumpStatus()`
+
+Re-reads the core dump partition's state into `bootDiag.coreDump`. The struct is captured once at `begin()`; after the partition is erased through the System component's erase route this is what makes `bootdiag` stop announcing a dump without a reboot.
+
 ### Configuration Access
 
 #### `const SystemInfoConfig& getConfig() const`

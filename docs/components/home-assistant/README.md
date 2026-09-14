@@ -19,6 +19,7 @@ The component is **header-only** and communicates with the MQTT component exclus
 | **Virtual Dispatch + EventBus Commands** | Entity commands are handled via virtual `handleCommand()` and emitted as `ha/command` EventBus events (v2.0.0) |
 | **Zero-Heap Configuration** | `HAConfig` uses fixed-size `char[]` arrays with `HA::setField()` helper -- no heap-allocated Strings |
 | **WebUI Integration** | Optional web interface for status, dashboard, settings, and statistics |
+- **Discovery fields for diagnostics** -- an entity category, a shared state topic with a value template, a JSON-attributes topic, and an availability opt-out, set per entity after `add*()` (see the [technical reference](technical-reference.md#haentity-base-class))
 
 ## Supported Entity Types
 

@@ -60,6 +60,7 @@ Constructs the component with the given configuration. Sets `metadata.name = "We
 | `unregisterProvider` | `void unregisterProvider(IWebUIProvider* provider)` | Remove all contexts contributed by a provider. |
 | `registerProviderFactory` | `void registerProviderFactory(const String& typeKey, std::function<IWebUIProvider*(IComponent*)> factory)` | Register a factory that creates providers for components matching a type key. |
 | `registerApiRoute` | `void registerApiRoute(const String& uri, WebRequestMethod method, ArRequestHandlerFunction handler)` | Register a custom REST endpoint on the web server. |
+| `authorize` | `bool authorize(AsyncWebServerRequest* request) const` | The auth gate every route shares: `true` when `enableAuth` is off or the request carries this device's credentials, read from the live configuration. A route registered through `registerApiRoute()` gates itself with `if (!webui->authorize(request)) return request->requestAuthentication();`. |
 | `registerApiUploadRoute` | `void registerApiUploadRoute(const String& uri, ArRequestHandlerFunction handler, ArUploadHandlerFunction uploadHandler)` | Register a file upload endpoint. |
 
 ### Configuration & State
@@ -463,6 +464,7 @@ Manages real-time server-to-client communication. Dual-mode, decided at runtime 
 | `shouldSendUpdates` | `bool shouldSendUpdates()` | Returns `true` when the configured interval has elapsed and clients are connected. |
 | `setUIActionCallback` | `void setUIActionCallback(UIActionCallback cb)` | Set the callback for client-to-server UI actions. |
 | `setForceUpdateCallback` | `void setForceUpdateCallback(std::function<void()> cb)` | Set the callback to force a full update. |
+| `setAuthGate` | `void setAuthGate(std::function<bool(AsyncWebServerRequest*)> gate)` | Set before `begin()`: the SSE handler runs the gate as a middleware on every connection and answers the same authentication challenge as the API routes when it refuses. `WebUIComponent` passes its `authorize()`. |
 
 ### Constants
 
@@ -624,7 +626,7 @@ Returns the full schema for a single context.
 
 ### `SSE /api/ui/events`
 
-Server-Sent Events stream. Events use type `"message"`. Special events: `schema_changed`, `wifi_network_changed`.
+Server-Sent Events stream. Events use type `"message"`. Special events: `schema_changed`, `wifi_network_changed`. The handler matches only a request carrying `Accept: text/event-stream`; anything else falls through to the 404 handler. Behind `enableAuth` like the API routes: an unauthenticated client gets the authentication challenge, and the browser reuses the credentials it holds for the page.
 
 ### `GET /api/components`
 
@@ -636,7 +638,7 @@ POST body: `name=ComponentName&enabled=true`. Triggers component lifecycle callb
 
 ### `GET /api/system/info`
 
-Lightweight JSON: `{ "uptime": ms, "heap": bytes, "clients": count }`.
+Lightweight JSON: `{ "uptime": ms, "heap": bytes, "clients": count }`. `clients` counts the SSE connections, which is how a browser's stream can be checked from outside: `1` with the page open means the stream is up, `0` means the page fell back to polling. Behind `enableAuth` like its siblings.
 
 ---
 
