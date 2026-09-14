@@ -82,6 +82,17 @@ EventBus payload guard, the loop watchdog armed by default on ESP32 with the
 `BootDiagnostics` rename) and the CHANGELOG says so at the top of the entry, as 2.1.0 and
 2.2.0 did.
 
+**The fourth ships as v2.4.0** (2026-09-14): BUG-37, the three OBS lots B, C
+and D (OBS-1, OBS-3, OBS-4, OBS-5), SEC-13, BUG-36, BUG-38, BUG-39 and DC-16
+— the observability series closed end to end. Seven components move: Core,
+System, HomeAssistant, MQTT, OTA, WebUI, SystemInfo; Storage and Wifi do
+not, having gained only a stub counter and a test comment. Five public
+contracts change (telemetry and the retained crash topic on by default with
+MQTT, the abbreviated discovery keys, the auth gate on the info route and the
+stream, `uploadIdleTimeoutSec`, the strong crash callback with the `bootdiag`
+blob) and the CHANGELOG says so at the top of the entry. Native 844 → 972,
+both read from CI runs rather than projected.
+
 `main` requires seven checks: `test-install`, `check-versions`,
 `Unit tests (native)`, `Build esp32dev`, `Build esp8266dev`, `Build esp32c3`,
 `Build on-device suites`, plus an up-to-date branch and resolved conversations.
