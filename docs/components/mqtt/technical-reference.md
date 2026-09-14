@@ -292,7 +292,7 @@ On successful connection, the delay resets to `reconnectDelay` (initial value) a
 | 1 | At least once | Broker acknowledges receipt; may deliver duplicates | Commands, state changes |
 | 2 | Exactly once | Four-step handshake ensures single delivery | Critical operations (rarely needed on ESP) |
 
-**Note**: The underlying PubSubClient library handles QoS 0 natively. QoS 1 and 2 behavior depends on broker support. The component passes the QoS parameter through to PubSubClient for both publish and subscribe operations.
+**Note**: on publish, QoS 0 is the only level the component delivers. The `qos` argument of `publish()` is validated and kept for the API's shape, but the client layer has no QoS parameter for publishing and PubSubClient sends every message at QoS 0; the only persistence available is the broker's retained message. On subscribe, the QoS is passed through and the client honours 0 and 1. See `docs/decisions/0001`.
 
 ---
 

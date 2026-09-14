@@ -56,4 +56,5 @@ were committed before this rule are in the history:
 
 ## Index
 
-*(none yet)*
+- [0001 — `publish()` defers, it never drops; and QoS 0 is the ceiling](0001-publish-queues-never-drops-and-qos-0-is-the-ceiling.md)
+- [0002 — The device keeps its own black box, in RTC memory, owned by Core](0002-the-device-keeps-its-own-black-box.md)
