@@ -2,7 +2,11 @@
 
 #include <vector>
 #include <map>
+#include <algorithm>
 #include <climits>
+#include <cstdlib>
+#include <cerrno>
+#include <cmath>
 #include "Platform_HAL.h"
 
 namespace DomoticsCore {
@@ -136,7 +140,14 @@ public:
      * Define a configuration parameter
      */
     void defineParameter(const ConfigParam& param) {
-        parameters.push_back(param);
+        // BUG-40: a name defined twice replaces the definition instead of adding a second one.
+        auto it = std::find_if(parameters.begin(), parameters.end(),
+                               [&](const ConfigParam& p) { return p.name == param.name; });
+        if (it != parameters.end()) {
+            *it = param;
+        } else {
+            parameters.push_back(param);
+        }
         if (!param.defaultValue.isEmpty()) {
             values[param.name] = param.defaultValue;
         }
@@ -247,9 +258,56 @@ private:
         return ValidationResult();
     }
     
+    // BUG-40: a number is digits only — an optional sign for Integer and Float, a
+    // point and a decimal exponent for Float — and must fit the type. toInt() and
+    // toFloat() are atol()/atof(): they read "4x" as 4 and "1.5" printed back as "1.50".
+    static bool digitsOnly(const String& s) {
+        const unsigned n = static_cast<unsigned>(s.length());
+        if (n == 0) return false;
+        for (unsigned i = 0; i < n; ++i) {
+            if (s[i] < '0' || s[i] > '9') return false;
+        }
+        return true;
+    }
+
+    static bool parsesAsInt32(const String& s, long& out) {
+        const unsigned n = static_cast<unsigned>(s.length());
+        unsigned i = (n > 0 && (s[0] == '+' || s[0] == '-')) ? 1 : 0;
+        if (i == n) return false;
+        for (unsigned k = i; k < n; ++k) {
+            if (s[k] < '0' || s[k] > '9') return false;
+        }
+        errno = 0;
+        out = strtol(s.c_str(), nullptr, 10);
+        return errno != ERANGE && out >= INT_MIN && out <= INT_MAX;
+    }
+
+    static bool parsesAsFloat(const String& s, float& out) {
+        const unsigned n = static_cast<unsigned>(s.length());
+        unsigned i = (n > 0 && (s[0] == '+' || s[0] == '-')) ? 1 : 0;
+        unsigned digits = 0;
+        while (i < n && s[i] >= '0' && s[i] <= '9') { ++i; ++digits; }
+        if (i < n && s[i] == '.') {
+            ++i;
+            while (i < n && s[i] >= '0' && s[i] <= '9') { ++i; ++digits; }
+        }
+        if (digits == 0) return false;
+        if (i < n && (s[i] == 'e' || s[i] == 'E')) {
+            ++i;
+            if (i < n && (s[i] == '+' || s[i] == '-')) ++i;
+            unsigned expDigits = 0;
+            while (i < n && s[i] >= '0' && s[i] <= '9') { ++i; ++expDigits; }
+            if (expDigits == 0) return false;
+        }
+        if (i != n) return false;
+        errno = 0;
+        out = strtof(s.c_str(), nullptr);
+        return errno != ERANGE && std::isfinite(out);
+    }
+
     ValidationResult validateInteger(const ConfigParam& param, const String& value) const {
-        int intVal = value.toInt();
-        if (value != String(intVal)) {
+        long intVal = 0;
+        if (!parsesAsInt32(value, intVal)) {
             return ValidationResult(ComponentStatus::ConfigError, 
                                   "Invalid integer format", param.name);
         }
@@ -261,8 +319,8 @@ private:
     }
     
     ValidationResult validateFloat(const ConfigParam& param, const String& value) const {
-        float floatVal = value.toFloat();
-        if (value != String(floatVal)) {
+        float floatVal = 0.0f;
+        if (!parsesAsFloat(value, floatVal)) {
             return ValidationResult(ComponentStatus::ConfigError, 
                                   "Invalid float format", param.name);
         }
@@ -312,8 +370,12 @@ private:
                                           "Invalid IP address format", param.name);
                 }
                 String part = HAL::substring(value, start, i);
-                int num = part.toInt();
-                if (num < 0 || num > 255) {
+                if (!digitsOnly(part)) {
+                    return ValidationResult(ComponentStatus::ConfigError, 
+                                          "Invalid IP address format", param.name);
+                }
+                long num = strtol(part.c_str(), nullptr, 10);
+                if (num > 255) {
                     return ValidationResult(ComponentStatus::ConfigError, 
                                           "Invalid IP address range", param.name);
                 }
@@ -329,7 +391,11 @@ private:
     }
     
     ValidationResult validatePort(const ConfigParam& param, const String& value) const {
-        int port = value.toInt();
+        if (!digitsOnly(value)) {
+            return ValidationResult(ComponentStatus::ConfigError, 
+                                  "Invalid port format", param.name);
+        }
+        long port = strtol(value.c_str(), nullptr, 10);
         if (port < 1 || port > 65535) {
             return ValidationResult(ComponentStatus::ConfigError, 
                                   "Port out of range (1-65535)", param.name);

@@ -202,6 +202,82 @@ void test_validation_result_to_string_three_shapes(void) {
                              ValidationResult(ComponentStatus::ConfigError, "bad", "name").toString().c_str());
 }
 
+// ---- BUG-40: the numeric validators take digits only; a redefinition replaces ----
+
+void test_a_float_is_a_signed_decimal_with_an_optional_point_and_exponent(void) {
+    ConfigParam p("f", ConfigType::Float);
+    // "1.50" first: on the unfixed round-trip it passes and "1.5" is the first to fail.
+    const char* ok[] = {"1.50", "1.5", "3", "+1.5", "-0.25", "1e3", "1.5E-2", ".5", "5."};
+    for (const char* v : ok) TEST_ASSERT_TRUE_MESSAGE(validateOne(p, v).isValid(), v);
+}
+
+void test_a_float_is_refused_with_blanks_trailing_text_hex_inf_nan_or_overflow(void) {
+    ConfigParam p("f", ConfigType::Float);
+    const char* bad[] = {" 5", "5 ", "5x", "1.5.2", "nan", "inf", "0x10", "1e50", "1e", "e3", ".", "+", "-"};
+    for (const char* v : bad) {
+        ValidationResult r = validateOne(p, v);
+        TEST_ASSERT_FALSE_MESSAGE(r.isValid(), v);
+        TEST_ASSERT_EQUAL_STRING("Invalid float format", r.errorMessage.c_str());
+    }
+}
+
+void test_an_integer_takes_a_sign_and_leading_zeros_and_must_fit_32_bits(void) {
+    ConfigParam p("i", ConfigType::Integer);
+    const char* ok[] = {"5", "+5", "05", "-0", "2147483647", "-2147483648"};
+    for (const char* v : ok) TEST_ASSERT_TRUE_MESSAGE(validateOne(p, v).isValid(), v);
+    const char* bad[] = {" 5", "5 ", "5x", "1e3", "1.0", "+", "-", "2147483648", "-2147483649", "99999999999999999999"};
+    for (const char* v : bad) {
+        ValidationResult r = validateOne(p, v);
+        TEST_ASSERT_FALSE_MESSAGE(r.isValid(), v);
+        TEST_ASSERT_EQUAL_STRING("Invalid integer format", r.errorMessage.c_str());
+    }
+}
+
+void test_an_ip_octet_is_decimal_digits_only(void) {
+    ConfigParam p("ip", ConfigType::IPAddress);
+    TEST_ASSERT_TRUE(validateOne(p, "1.2.3.04").isValid());
+    const char* bad[] = {"1.2.3.4x", "1.2.3.+4", "1.2.3.-0", " 1.2.3.4", "1.2.3.a", "a.b.c.d"};
+    for (const char* v : bad) {
+        ValidationResult r = validateOne(p, v);
+        TEST_ASSERT_FALSE_MESSAGE(r.isValid(), v);
+        TEST_ASSERT_EQUAL_STRING("Invalid IP address format", r.errorMessage.c_str());
+    }
+    assertRefused(validateOne(p, "1.2.3.99999999999"), "Invalid IP address range", "ip");
+}
+
+void test_a_port_is_decimal_digits_only(void) {
+    ConfigParam p("p", ConfigType::Port);
+    TEST_ASSERT_TRUE(validateOne(p, "0080").isValid());
+    const char* bad[] = {"80x", "+80", " 80", "80 ", "abc"};
+    for (const char* v : bad) {
+        ValidationResult r = validateOne(p, v);
+        TEST_ASSERT_FALSE_MESSAGE(r.isValid(), v);
+        TEST_ASSERT_EQUAL_STRING("Invalid port format", r.errorMessage.c_str());
+    }
+}
+
+void test_redefining_a_parameter_replaces_its_definition(void) {
+    ComponentConfig cfg;
+    ConfigParam first("k", ConfigType::Integer, false, "5"); first.min(1).max(9);
+    ConfigParam second("k", ConfigType::Integer, false, "15"); second.min(10).max(20);
+    cfg.defineParameter(first);
+    cfg.defineParameter(second);
+    TEST_ASSERT_EQUAL_size_t(1, cfg.getParameters().size());
+    TEST_ASSERT_EQUAL(10, cfg.getParameters()[0].minValue);
+    TEST_ASSERT_EQUAL(15, cfg.getInt("k"));
+    TEST_ASSERT_TRUE(cfg.validate().isValid());
+    cfg.setValue("k", "5");                       // fits the first definition only
+    assertRefused(cfg.validate(), "Value out of range", "k");
+}
+
+void test_redefining_without_a_default_keeps_the_stored_value(void) {
+    ComponentConfig cfg;
+    cfg.defineParameter(ConfigParam("k", ConfigType::String, false, "kept"));
+    cfg.defineParameter(ConfigParam("k", ConfigType::String));
+    TEST_ASSERT_EQUAL_size_t(1, cfg.getParameters().size());
+    TEST_ASSERT_EQUAL_STRING("kept", cfg.getValue("k").c_str());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_status_to_string_names_all_nine_and_the_unknown);
@@ -221,5 +297,13 @@ int main(int, char**) {
     RUN_TEST(test_validate_port_range_at_both_ends);
     RUN_TEST(test_validate_ip_address_shape_and_range);
     RUN_TEST(test_validation_result_to_string_three_shapes);
+    // BUG-40
+    RUN_TEST(test_a_float_is_a_signed_decimal_with_an_optional_point_and_exponent);
+    RUN_TEST(test_a_float_is_refused_with_blanks_trailing_text_hex_inf_nan_or_overflow);
+    RUN_TEST(test_an_integer_takes_a_sign_and_leading_zeros_and_must_fit_32_bits);
+    RUN_TEST(test_an_ip_octet_is_decimal_digits_only);
+    RUN_TEST(test_a_port_is_decimal_digits_only);
+    RUN_TEST(test_redefining_a_parameter_replaces_its_definition);
+    RUN_TEST(test_redefining_without_a_default_keeps_the_stored_value);
     return UNITY_END();
 }
