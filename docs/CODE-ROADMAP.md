@@ -3156,8 +3156,67 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   `_safe_to_clean` guard, no `rglob`). Measured after: the same build from
   the same purged tree lands at 30 MB, and a nested-`.pio` watch during it
   stayed quiet but for the bounded self-inclusion now filed as CI-15.
+  **The cleaner is retired by CI-15 (2026-09-15)**: with `symlink://`
+  dependencies nothing is copied, so there is no `.pio` to keep out of a copy.
 
-### CI-15 — no `library.json` declares `export.exclude`, so PlatformIO copies `.pio` with every `file://` component [MEDIUM]
+### CI-15 — no `library.json` declares `export.exclude`, so PlatformIO copies `.pio` with every `file://` component [MEDIUM] — **DONE (2026-09-15), on the re-pointed defect**
+
+- **The heading names the framing this entry refuted on 2026-09-05, kept
+  as filed.** The copy was the defect, and the fix is to stop copying:
+  every `file://../DomoticsCore-X` in the 49 tracked `platformio.ini`
+  (337 lines: 12 component roots, the 2 WebUI test projects, 29 examples,
+  3 under `tests/unit/`, 3 probes) is now `symlink://`. PlatformIO writes a
+  `<name>.pio-link` file into libdeps and compiles the component where it
+  lives — the warnings cite the working tree — so nothing is copied,
+  nothing goes stale, nothing nests, and `clean_examples.py` is retired
+  with the 33 `extra_scripts` lines that named it. Measured on
+  6.1.19 (CI's pin) and 6.2.0.
+- **Three things the migration had to learn, each by a build that failed.**
+  (1) A `symlink://` to the project's *own* directory breaks the test build
+  (`unity.h: No such file or directory`); the self line is gone from the
+  18 environments that had one, and the two OTA device environments take
+  `test_build_src = true` to compile `src/` instead. A project's own
+  `library.json` is never read, so the one dependency that had reached a
+  suite only through that self copy — `ESPAsyncWebServer` and `ESPAsyncTCP`
+  for WebUI's `esp8266dev` — is listed. (2) A symlinked component that
+  **contains** the project claims every include under it: the LDF maps an
+  include to the first library whose directory is a path prefix of the
+  header, in `sorted(listdir)` order, and for the 31 nested projects (29
+  examples, 2 WebUI test projects) the component's real directory contains
+  the project's `.pio/libdeps`. `DomoticsCore-*` sorts before
+  `ESPAsyncTCP`, so every ESP8266 build lost `ESPAsyncTCP.h`; ESP32 passed
+  only because `AsyncTCP` sorts first. Those 31 manifests carry
+  `[platformio] libdeps_dir` pointing at the repository root's `.pio/`, the
+  build directory stays where it was, and FullStack `esp8266dev` then
+  matches CI's build of `main` to the byte (RAM 54196, Flash 733983).
+  The ESP32 targets keep their RAM and gain 864 (`esp32dev`) and 880
+  (`esp32c3`) bytes of flash: the ESP32 core's log macros embed source
+  paths, and the image now carries 30 of the components' real paths in
+  place of `.pio/libdeps/...` ones — the same figure will move again on
+  the runner, whose checkout path differs (deferred-work names
+  `-ffile-prefix-map` as the way to make it path-independent).
+  (3) `embed_webui.py` created `DomoticsCore-WebUI` directories under
+  libdeps unconditionally — manifest-less libraries beside the link; it
+  now writes only into a package directory that exists.
+- **The trap, measured closed.** On `main`, `Platform_HAL.h` broken with an
+  `#error` and NTP's native suite re-run *without* clearing `.pio`: 37/37
+  green — the stale copy compiled. On this branch the same sequence goes
+  red, and green again once the header is restored. Two CI guards keep it
+  so: no `file://` in a tracked manifest, no `DomoticsCore-*` directory
+  under any libdeps after the builds, in all three jobs.
+- **Verification**: the 13 native projects from a fresh `.pio` (1070
+  `[PASSED]` lines, CI's own count on `main`), the seven on-device suites
+  and OTA `esp32cam` compiled, FullStack on the three targets with both
+  flag sets, every example and probe built once per declared environment,
+  the OTA device images' figures before and after `test_build_src`, and
+  one run of the OTA suite on the nodemcuv2 for the image whose recipe
+  changed.
+- **Owed to the next release entry**: the local-checkout recipe in four
+  READMEs changed from `file://` to `symlink://`, and `clean_examples.py`
+  is gone — one line under the tooling heading, with the three lines
+  PR #69 and PR #70 already owe (there is no `[Unreleased]` section yet;
+  the release lot opens it).
+
 
 - **Filed**: 2026-09-01, by the campaign that paid CI-13 twice. Verified:
   **zero of the twelve `library.json` files carry an `export` key.**
@@ -4281,11 +4340,11 @@ not.
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, **0H**, 1M (**ARCH-3 done**; **ARCH-2 done 2026-08-31 by measurement** — both halves of its prescribed remedy already existed, one false at filing, one delivered by PR #17; no code changed. **ARCH-1 re-argued HIGH → MEDIUM 2026-08-31, restated 2026-09-06 and open** — SYS-F6 unreadable so the HIGH was never argued, one XIII indicator exceeded against a file otherwise inside every measurement; the fork trigger fired with marianorenzi's reply of 2026-09-01 and the three extractions are declined on merit; the boot-diagnostics residue (~95 lines) rides OBS Lot B, which rewrites that path, and `begin()` is re-measured at Lot B's closure) |
-| 8. CI/Infrastructure | CI-1 to CI-15 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 open, **CI-13 done 2026-09-01** — paid a second time at 19 GB before the fix its entry prescribed was finally applied; **CI-14** — FullStack is green in CI and unusable on an ESP8266; **CI-15 new** — no `library.json` declares `export.exclude`, the family's root cause, deferred to a release-aware lot) |
+| 8. CI/Infrastructure | CI-1 to CI-15 | II, XII | 0C, 0H, 4M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 open, **CI-13 done 2026-09-01** — paid a second time at 19 GB before the fix its entry prescribed was finally applied; **CI-14** — FullStack is green in CI and unusable on an ESP8266; **CI-15 done 2026-09-15** — filed as a packaging item, re-pointed 2026-09-05 when `export.exclude` measured inert, closed by `symlink://` in all 49 manifests, the 31 nested projects' libdeps moved out of the component that contains them, `clean_examples.py` retired) |
 | 9. Dead Code | DC-1 to DC-17, PERSIST-1 | IV (YAGNI) | 0C, 0H, 11M, 0L (**DC-17 filed 2026-09-15** — `ComponentConfig` and eight `MemoryManager` queries: no caller in the tree, documented public API, DC-13's decision on a major boundary; **DC-16 filed and fixed 2026-09-14**, LOW — `/api/ntp/timezones` was registered twice, the System's copy removed and the provider's `init()` finally called; **DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
 | 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 0M, 0L — **all seven closed** (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-5 and OBS-1's transport closed by Lot D on 2026-09-14** — telemetry and the retained crash record on MQTT, discovered by Home Assistant through one topic scheme, the core dump downloaded, decoded against its ELF and erased through the WebUI, a Home Assistant container reading the entities; **OBS-4 closed by Lot C on 2026-09-06** — the failed-allocation group in the record, the ESP32 heap hook, the ESP8266 latch-and-clear, the diagnostic profile measured; **OBS-3 closed by Lot B on 2026-09-06** — the recorder in Core, promotion first, the record held until persisted, both boards' death sequences read back, three removal checks; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
-| **Total** | **146 items** | | **0C, 0H, 35M, 34L** (90 resolved) |
+| **Total** | **146 items** | | **0C, 0H, 34M, 34L** (91 resolved) |
 
 The severity columns sum across the rows: **zero open HIGH again — and
 this time the last one left by a fix.** BUG-35 was filed by the 2026-09-01
@@ -4295,8 +4354,9 @@ board-measured red-then-green on both platforms. The sequence is the
 system working: the campaign refilled the column, the fix emptied it. The
 rows were checked against the section headings rather than only re-summed
 — the sweep below, re-run for the BUG-35 lot, reports **35 `[HIGH]`
-headings, 35 with evidence, 0 open**. The MEDIUM column sums to 35:
-2 + 4 + 6 + 3 + 3 + 1 + 5 + 11 + 0 + 0 — TEST-7's lot on 2026-09-15 closed one
+headings, 35 with evidence, 0 open**. The MEDIUM column sums to 34:
+2 + 4 + 6 + 3 + 3 + 1 + 4 + 11 + 0 + 0 — the CI-15 lot on 2026-09-15 closed
+one (35 → 34, resolved 90 → 91); TEST-7's lot on 2026-09-15 closed one
 and filed one MEDIUM (DC-17) and one filed-and-fixed (BUG-40): 35 → 35,
 total 144 → 146, resolved 88 → 90; the SEC-4/SEC-6/SEC-14 lot closed three on
 2026-09-14 (38 → 35, resolved 85 → 88); BUG-39 was filed on 2026-09-14 by
