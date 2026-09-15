@@ -68,6 +68,7 @@
 
 ### Reliability
 
+- [Observing a device in production](./reliability/observing-a-device.md) -- build flags, configuration, where a reboot or a crash is explained, and the blind spots
 - [Storage & Boot Diagnostics](./reliability/storage-verbosity-and-boot-diagnostics.md) -- Persistent boot diagnostics
 
 ### Component Documentation

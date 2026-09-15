@@ -271,6 +271,7 @@ The bump script:
 - **WebUI Development**: [docs/guides/webui-developer.md](docs/guides/webui-developer.md)
 - **Custom Components**: [docs/guides/custom-components.md](docs/guides/custom-components.md)
 - **Storage API**: [DomoticsCore-Storage/README.md](DomoticsCore-Storage/README.md)
+- **Observing a device in production** (crashes, reboots, memory): [docs/reliability/observing-a-device.md](docs/reliability/observing-a-device.md)
 
 ## 📁 Project Structure
 

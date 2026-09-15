@@ -21,7 +21,7 @@ The component manages automatic WiFi connection (with AP fallback), LED status v
 - **Preset configurations** -- `minimal()`, `standard()`, and `fullStack()` factory methods
 - **Custom console commands** -- `registerCommand()` delegates to RemoteConsole
 - **Heap-guarded initialization** -- post-init steps are skipped when free heap falls below 3 KB
-- **Telemetry and the last death on MQTT** -- `{clientId}/telemetry` once a minute and `{clientId}/crash` retained at every connect, discovered by Home Assistant as eight diagnostic entities; the ESP32 core dump downloadable and erasable through the WebUI (see the [technical reference](technical-reference.md#telemetry-1))
+- **Telemetry and the last death on MQTT** -- `{clientId}/telemetry` once a minute and `{clientId}/crash` retained at every connect, discovered by Home Assistant as eight diagnostic entities; the ESP32 core dump downloadable and erasable through the WebUI (see the [technical reference](technical-reference.md#telemetry-1); for what to build in and where to look when a device dies, [Observing a device in production](../../reliability/observing-a-device.md))
 
 ## SystemState Lifecycle
 

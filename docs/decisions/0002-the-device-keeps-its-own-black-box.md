@@ -34,8 +34,9 @@ which cannot tell the deaths apart. Markers written outside the tick's
 flush — the phase marker, the failed-allocation group — sit **outside the
 CRC**, each self-validated by its complement. The hooks a published library
 must not seize (`custom_crash_callback`, the ESP32 failed-allocation slot)
-are behind `DOMOTICS_CRASH_HOOKS`, set by System, off for bare-Core users,
-and chain to a user hook. Everything reachable natively is driven through
+are behind `DOMOTICS_CRASH_HOOKS` — on by default for every build, `Core`
+alone included; `-DDOMOTICS_CRASH_HOOKS=0` removes them — and chain to a
+user hook. Everything reachable natively is driven through
 `Platform_Stub.h` seams; what is not is measured on a board and the figure
 recorded.
 

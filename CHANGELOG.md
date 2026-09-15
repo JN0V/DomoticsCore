@@ -72,8 +72,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > silence instead of 3; `0` disables the limit and restores the lock BUG-35
 > removed.
 >
-> **`DOMOTICS_CRASH_HOOKS`** (set by `System`, off for bare-`Core` users)
-> defines a **strong `custom_crash_callback`** on ESP8266 and takes the
+> **`DOMOTICS_CRASH_HOOKS`** (default `1` for every build, bare `Core`
+> included — this entry first said "set by `System`, off for bare-`Core`
+> users", which the header never did; corrected 2026-09-15) defines a **strong `custom_crash_callback`** on ESP8266 and takes the
 > ESP32 failed-allocation hook; a sketch that defined its own
 > `custom_crash_callback` gets a link error until it passes
 > `-DDOMOTICS_CRASH_HOOKS=0` or chains through the user hook the recorder

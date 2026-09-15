@@ -1,5 +1,7 @@
 # Storage Verbosity and Boot Diagnostics
 
+> The boot diagnostics described here are the v1.4 layer. Since v2.4.0 they sit under the flight recorder, the `bootdiag` blob and the MQTT crash topic; the operator's page is [Observing a device in production](observing-a-device.md), the mechanisms are in the Core and System references.
+
 ## Boot Diagnostics
 
 The System module implements boot count tracking and reset reason detection via the Storage component. Key capabilities:

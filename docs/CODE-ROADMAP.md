@@ -3482,7 +3482,9 @@ not.
   scripted); `GET /api/system/coredump` streams the image as a
   **fixed-length** response (`beginResponse(type, size, filler)`, not the
   chunked shape whose zero-return trap BUG-34 recorded) with
-  `Content-Disposition: attachment; filename="coredump-<build id>.bin"`;
+  `Content-Disposition: attachment; filename="coredump.bin"` (this entry
+  first said `coredump-<build id>.bin`; the route never named the build,
+  since the image belongs to whichever build panicked — corrected 2026-09-15);
   `POST /api/system/coredump/erase` checks SEC-10's token **first**, then
   auth (the OTA upload's order), refuses `409` while a download is in
   flight (an erase under the reader would stream `0xFF` into a full-length
