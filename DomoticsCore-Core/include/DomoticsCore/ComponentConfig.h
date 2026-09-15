@@ -3,6 +3,7 @@
 #include <vector>
 #include <map>
 #include <climits>
+#include "Platform_HAL.h"
 
 namespace DomoticsCore {
 namespace Components {
