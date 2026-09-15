@@ -268,7 +268,7 @@ struct ConfigParam {
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| **defineParameter** | `void defineParameter(const ConfigParam& param)` | Define a configuration parameter. Sets default value if provided. |
+| **defineParameter** | `void defineParameter(const ConfigParam& param)` | Define a configuration parameter. Sets the default value if provided. Defining a name again replaces its definition; a new default replaces the stored value, an empty one leaves it. |
 | **setValue** | `void setValue(const String& name, const String& value)` | Set a parameter value. |
 | **getValue** | `String getValue(const String& name, const String& defaultVal = "") const` | Get raw string value. |
 | **getInt** | `int getInt(const String& name, int defaultVal = 0) const` | Get integer value. |
@@ -276,7 +276,7 @@ struct ConfigParam {
 | **getBool** | `bool getBool(const String& name, bool defaultVal = false) const` | Get boolean value. Accepts `true/false/1/0/yes/no/on/off`. |
 | **validate** | `ValidationResult validate() const` | Validate all defined parameters against their constraints. |
 | **getParameters** | `const std::vector<ConfigParam>& getParameters() const` | Get all parameter definitions. |
-| **hasParameter** | `bool hasParameter(const String& name) const` | Check if a value is set. |
+| **hasParameter** | `bool hasParameter(const String& name) const` | Check if a value is set — a parameter defined without a default has none. |
 
 ### ValidationResult
 
@@ -291,7 +291,9 @@ struct ValidationResult {
 };
 ```
 
-Validation includes: required-field check, integer range, float format, boolean format, string length and allowed-values, IP address format (4 octets 0-255), and port range (1-65535).
+Validation includes: required-field check, integer format and range, float format, boolean format, string length and allowed-values, IP address format (4 octets 0-255), and port range (1-65535). An empty value passes unless the parameter is required; the first failing parameter, in definition order, is the one reported.
+
+The numeric rule: an integer is an optional sign then decimal digits, nothing else, and fits in 32 bits (`"+5"` and `"05"` are integers, `" 5"`, `"5x"` and `"2147483648"` are not). A float is an optional sign, decimal digits with an optional point, an optional decimal exponent, nothing else, and is finite (`"1.5"`, `".5"`, `"5."` and `"1e3"` are floats; `"nan"`, `"inf"`, `"0x10"` and `"1e50"` are not). An IP octet and a port are decimal digits only (`"1.2.3.4x"` and `"+80"` are refused). `Port` checks 1–65535 and ignores `min()`/`max()`.
 
 ---
 
