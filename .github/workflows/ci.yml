@@ -99,8 +99,15 @@ jobs:
           fi
       # CI-15: local components are symlink:// dependencies, so nothing is
       # copied into libdeps and nothing goes stale. A file:// line copies, and
-      # the copy of a component that contains the project nests the project's
-      # own .pio. Refuse the regression on the libdeps the builds produced.
+      # the copy of a component that contains the project (every example)
+      # nests the project's own .pio. Both checks refuse the regression: the
+      # manifests as tracked, and the libdeps the builds above produced.
+      - name: No file:// dependency in a tracked manifest
+        run: |
+          if git ls-files '*platformio.ini' | xargs grep -l 'file://'; then
+            echo "::error::a manifest regressed to file:// — use symlink://"
+            exit 1
+          fi
       - name: No local component copied into libdeps
         run: |
           if find . -path '*/libdeps/*/DomoticsCore-*' -type d | grep .; then
@@ -118,11 +125,6 @@ jobs:
   # HeapTracker, Wifi, WiFiServer, Storage, WebUI, MQTT, NTP, Update). Building
   # it for the three targets buys that coverage for three builds instead of
   # eighty-seven.
-  #
-  # Note for anyone extending this to several examples: clean_examples.py wipes
-  # .pio/ from the component source directories on every build, so concurrent
-  # builds sharing a checkout corrupt each other. Matrix legs run on separate
-  # runners, which is why this is safe as written.
   # ---------------------------------------------------------------------------
   build-targets:
     name: Build ${{ matrix.target }}
