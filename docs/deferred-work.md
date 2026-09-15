@@ -122,3 +122,14 @@ their own.
 - `MemoryManager`'s `maxProviders` and `heapCheckInterval` are tabulated in the Core reference and reachable through no public method (DC-17).
   source_spec: `spec-test-7-core-memory-config.md`
 
+
+## Deferred from: the CI-15 lot (2026-09-15)
+
+- `tests/unit/{01,02,05,06}` are `esp32dev` projects no workflow builds, and `tools/local_ci.sh:28` globs `tests/unit/test_*_isolated`, which matches nothing. `01`, `02` and `05` moved to `symlink://` with the rest; `06-webui-refactor` reaches the components through `lib_extra_dirs = ../../../../` with `deep+` and two `me-no-dev` git dependencies — a third in-place mechanism the CI guards do not see, and one that now meets the repository root's `.pio/` (the relocated libdeps) as a manifest-less directory. Whether the four should exist is a decision, not a fix.
+  source_spec: `spec-ci-15-symlink-deps.md`
+- The `-I../DomoticsCore-X/include` build flags in every native manifest are a second route to every header now that the LDF reads the components in place; kept because removing them is its own change with its own check (every include resolving through the LDF alone).
+  source_spec: `spec-ci-15-symlink-deps.md`
+- `embed_webui.py` writes the generated header into `DomoticsCore-WebUI/include/DomoticsCore/Generated/` (ignored by that package's `.gitignore`) on every example build, as before the lot; under `symlink://` it is the only copy the compiler reads, and a stale one from a previous example build is what the next one starts from until the script rewrites it.
+  source_spec: `spec-ci-15-symlink-deps.md`
+- An ESP32 image embeds the source paths the core's log macros expand from `__FILE__` (30 strings in FullStack esp32dev); with `symlink://` they are the components' real, absolute paths, so the image and its flash figure depend on where the checkout lives (+864 bytes locally against `main`'s `.pio/libdeps/...` paths). `-ffile-prefix-map=<repo root>=` in the build flags would make the image path-independent; not done here because it changes what a crash log names.
+  source_spec: `spec-ci-15-symlink-deps.md`

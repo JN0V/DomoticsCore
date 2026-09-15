@@ -17,10 +17,12 @@ Over-the-Air (OTA) firmware update component for ESP32 devices in the DomoticsCo
 Add to `platformio.ini`:
 ```ini
 lib_deps =
-    file://../DomoticsCore-Core
-    file://../DomoticsCore-WebUI
-    file://../DomoticsCore-OTA
+    symlink://../DomoticsCore-Core
+    symlink://../DomoticsCore-WebUI
+    symlink://../DomoticsCore-OTA
 ```
+
+`symlink://` (measured with PlatformIO 6.1.19, the version CI pins, and 6.2.0) makes PlatformIO build the component where it lives, so nothing is copied into `.pio/libdeps` and an edit is compiled on the next run. `file://` copies once and never refreshes.
 
 ## Usage
 

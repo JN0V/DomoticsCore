@@ -32,9 +32,11 @@ Add to your `platformio.ini`:
 
 ```ini
 lib_deps =
-    file://../DomoticsCore-Core
-    file://../DomoticsCore-MQTT
+    symlink://../DomoticsCore-Core
+    symlink://../DomoticsCore-MQTT
 ```
+
+`symlink://` (measured with PlatformIO 6.1.19, the version CI pins, and 6.2.0) makes PlatformIO build the component where it lives, so nothing is copied into `.pio/libdeps` and an edit is compiled on the next run. `file://` copies once and never refreshes.
 
 Or use library.json in your project.
 
