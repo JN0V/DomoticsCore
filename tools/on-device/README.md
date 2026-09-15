@@ -279,9 +279,10 @@ without `-DDOMOTICS_FLIGHT_RECORDER_TICK=0` it gives the sampler's cost;
 with `-DDOMOTICS_CRASH_HOOKS=0` the callback's removal check. The nodemcuv2
 needs it because FullStack never joins a network on an ESP8266 (CI-14);
 the WROOM-32D ran FullStack for the death sequence and this probe for the
-loop cost. Its `extra_scripts` runs `clean_examples.py` first: the copy of
-`DomoticsCore-System` into its libdeps would otherwise drag
-`examples/FullStack/.pio` along, recursively (3.8 GB in ten minutes, once).
+loop cost. Its components are `symlink://` dependencies, built where they
+live: nothing is copied into libdeps, so a component's own `.pio` cannot be
+dragged along (the `file://` copy of `DomoticsCore-System` once nested
+`examples/FullStack/.pio` recursively, 3.8 GB in ten minutes).
 
 `[env:nodemcuv2-diag]` is OBS-4's ESP8266 diagnostic profile —
 `-DDEBUG_ESP_OOM -g` with a fixed build id — the recipe for any example
@@ -380,7 +381,8 @@ not decoded.
 Not tests, not examples: throwaway sketches that produced the figures in the
 roadmap's Priority 11 entries and in `spec-obs-crash-observability.md`. Kept so
 the measurements can be repeated. Each has its own `platformio.ini` with
-`file://` paths relative to the repository root; `rm -rf .pio` before a run.
+`symlink://` paths relative to the repository root, so an edited component is
+compiled on the next run without clearing `.pio`.
 
 | probe | what it measures |
 |---|---|

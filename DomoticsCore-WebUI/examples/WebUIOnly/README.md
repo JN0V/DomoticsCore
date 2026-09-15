@@ -49,9 +49,8 @@ This demo intentionally uses **direct ESP32 WiFi** (`#include <WiFi.h>`) instead
 
 For production applications, you would typically use the DomoticsCore WiFi component, as demonstrated in other examples.
 
-### ❓ Do We Need the Refresh Script and PlatformIO Changes?
-- **Refresh script**: ✅ **YES** - Required for header-only library development to ensure library changes are picked up
-- **PlatformIO changes**: ✅ **YES** - The `file://../../` dependency and modern ESPAsync libraries are necessary
+### ❓ Do We Need the PlatformIO Changes?
+- **PlatformIO changes**: ✅ **YES** - The `symlink://../../` dependency and modern ESPAsync libraries are necessary; a `symlink://` dependency is built where it lives, so a header change is picked up on the next build without any refresh step
 - **Build flags**: ✅ **YES** - C++14 support and logging levels are required for DomoticsCore
 
 ## Features Demonstrated
