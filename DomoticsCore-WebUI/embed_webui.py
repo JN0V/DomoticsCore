@@ -1,4 +1,5 @@
 import os
+import json
 import gzip
 import re
 from pathlib import Path
@@ -182,7 +183,7 @@ def find_webui_sources(env):
     # Try to get libdeps directory from environment (PlatformIO installation)
     libdeps_dir = Path(env.get("PROJECT_LIBDEPS_DIR", ""))
     pioenv = env.get("PIOENV", "")
-    
+
     if libdeps_dir and pioenv:
         # Case 1: PlatformIO installation - look in libdeps
         candidates = [
@@ -193,7 +194,19 @@ def find_webui_sources(env):
             if candidate.exists():
                 print(f"[WebUI] Found PlatformIO sources: {candidate}")
                 return candidate
-    
+        # Case 1b: a symlink:// dependency is a .pio-link file naming the real
+        # directory (the meta package or the component); nothing is copied.
+        for link in sorted((libdeps_dir / pioenv).glob("DomoticsCore*.pio-link")):
+            try:
+                spec = json.loads(link.read_text())
+                target = (Path(spec["cwd"]) / spec["spec"]["uri"][len("symlink://"):]).resolve()
+            except Exception:
+                continue
+            for candidate in (target / "DomoticsCore-WebUI" / "webui_src", target / "webui_src"):
+                if candidate.exists():
+                    print(f"[WebUI] Found symlinked sources: {candidate}")
+                    return candidate
+
     # Case 2: Try using __file__ if available (local development)
     try:
         script_path = Path(__file__).resolve()
