@@ -11,6 +11,8 @@
 
 #include <string>
 #include <algorithm>
+#include <cstdlib>
+#include <climits>
 #include <cassert>  // advanceMillisForTest refuses to run without an installed override
 #include <cstdint>
 #include <cstring>
@@ -39,8 +41,9 @@ public:
     String(unsigned int value) : data(std::to_string(value)) {}
     String(long value) : data(std::to_string(value)) {}
     String(unsigned long value) : data(std::to_string(value)) {}
-    String(float value) : data(std::to_string(value)) {}
-    String(double value) : data(std::to_string(value)) {}
+    // TEST-7: both cores print two decimals by default; std::to_string printed six.
+    String(float value) : String(value, 2) {}
+    String(double value) : String(value, 2) {}
     String(float value, int precision) {
         char buf[32];
         snprintf(buf, sizeof(buf), "%.*f", precision, value);
@@ -72,8 +75,13 @@ public:
     void reserve(int size) { data.reserve(size); }
     void clear() { data.clear(); }
     
-    int toInt() const { return std::stoi(data); }
-    float toFloat() const { return std::stof(data); }
+    // TEST-7: Arduino's toInt()/toFloat() are atol()/atof() — a numeric prefix,
+    // 0 on garbage, no exception — and its long is 32-bit, so saturate there.
+    long toInt() const {
+        const long v = std::strtol(data.c_str(), nullptr, 10);
+        return v > INT32_MAX ? INT32_MAX : (v < INT32_MIN ? INT32_MIN : v);
+    }
+    float toFloat() const { return std::strtof(data.c_str(), nullptr); }
     void toLowerCase() {
         std::transform(data.begin(), data.end(), data.begin(), ::tolower);
     }
