@@ -97,6 +97,16 @@ jobs:
             echo "::error::native suites failed:${failed}"
             exit 1
           fi
+      # CI-15: local components are symlink:// dependencies, so nothing is
+      # copied into libdeps and nothing goes stale. A file:// line copies, and
+      # the copy of a component that contains the project nests the project's
+      # own .pio. Refuse the regression on the libdeps the builds produced.
+      - name: No local component copied into libdeps
+        run: |
+          if find . -path '*/libdeps/*/DomoticsCore-*' -type d | grep .; then
+            echo "::error::a local component was copied into libdeps"
+            exit 1
+          fi
 
   # ---------------------------------------------------------------------------
   # Cross-compilation for the three targets every example declares, and that
@@ -156,6 +166,12 @@ jobs:
         env:
           PLATFORMIO_BUILD_FLAGS: -DDOMOTICS_CRASH_HOOKS=0 -DDOMOTICS_FLIGHT_RECORDER_TICK=0 -DDOMOTICS_FLIGHT_RECORDER_PHASE=0
         run: pio run -e ${{ matrix.target }}
+      - name: No local component copied into libdeps
+        run: |
+          if find . -path '*/libdeps/*/DomoticsCore-*' -type d | grep .; then
+            echo "::error::a local component was copied into libdeps"
+            exit 1
+          fi
 
   # ---------------------------------------------------------------------------
   # The on-device suites, compiled but not run. No runner has an ESP8266 wired
@@ -259,5 +275,11 @@ jobs:
 
           if [ -n "$failed" ]; then
             echo "::error::on-device suites failed to build:${failed}"
+            exit 1
+          fi
+      - name: No local component copied into libdeps
+        run: |
+          if find . -path '*/libdeps/*/DomoticsCore-*' -type d | grep .; then
+            echo "::error::a local component was copied into libdeps"
             exit 1
           fi

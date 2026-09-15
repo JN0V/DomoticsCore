@@ -254,12 +254,19 @@ pioenv = env.get("PIOENV", "")
 out_header_paths = []
 
 if libdeps_dir and pioenv:
-    # PlatformIO installation: consider both the direct lib and nested under the meta DomoticsCore lib
+    # PlatformIO installation: the package is a real directory under libdeps
+    # (direct, or nested under the meta DomoticsCore package). Write only where
+    # that directory already exists — a symlink:// dependency is a .pio-link
+    # file, and creating the directory beside it would add a manifest-less
+    # library of the same name.
     pio_candidates = [
-        libdeps_dir / pioenv / "DomoticsCore-WebUI" / "include" / "DomoticsCore" / "Generated",
-        libdeps_dir / pioenv / "DomoticsCore" / "DomoticsCore-WebUI" / "include" / "DomoticsCore" / "Generated",
+        libdeps_dir / pioenv / "DomoticsCore-WebUI",
+        libdeps_dir / pioenv / "DomoticsCore" / "DomoticsCore-WebUI",
     ]
-    for out_dir in pio_candidates:
+    for package_dir in pio_candidates:
+        if not package_dir.is_dir():
+            continue
+        out_dir = package_dir / "include" / "DomoticsCore" / "Generated"
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
             out_header_paths.append(out_dir / "WebUIAssets.h")
