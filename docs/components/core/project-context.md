@@ -192,7 +192,7 @@ The following constitution principles are especially relevant to Core developmen
 - Hard limit: 800 lines.
 - `ComponentRegistry.h` is currently ~378 lines. Watch for growth.
 - `EventBus.h` is currently ~283 lines.
-- `ComponentConfig.h` is currently ~341 lines.
+- `ComponentConfig.h` is currently ~408 lines.
 - `MemoryManager.h` is currently ~347 lines.
 - `Platform_HAL.h` is currently ~368 lines.
 - `Platform_Stub.h` is currently ~630 lines (includes full `String` class stub). Watch the 800-line limit.

@@ -1838,6 +1838,46 @@ one worth a one-line change, and six rows that are not defects.
   ESP8266 HTTP-level proof this entry now carries, and the half-open
   residual).
 
+### BUG-40 — Core: `ComponentConfig`'s numeric validators refused most floats and accepted `"4x"`, and a redefined parameter was validated twice [MEDIUM] — **DONE (2026-09-15, filed the same day by TEST-7's reading)**
+
+- **File**: `ComponentConfig.h`, `validateInteger`, `validateFloat`,
+  `validateIPAddress`, `validatePort`, `defineParameter`.
+- **Problem**: `validateFloat()` accepted a value only if
+  `value == String(value.toFloat())`, and Arduino's `String(float)` prints
+  two decimals by default on both cores (esp32 `WString.h:76`, esp8266
+  `WString.h:105`), so `"1.5"` came back as `"1.50"` and was refused as
+  `Invalid float format` — `"1.50"` and `"3.00"` passed, `"3"` and `"1.5"`
+  did not; `"nan"` passed. `validateInteger()` used the same round-trip and
+  refused `"+5"` and `"05"`. `validateIPAddress()` and `validatePort()`
+  parsed with `toInt()`, which is `atol()` on both cores, so `"1.2.3.4x"`
+  (4) and `"80x"` (80) validated. `defineParameter()` with a name already
+  defined pushed a second entry and `validate()` checked both. Nothing in
+  the tree calls the class (DC-17); every sketch that follows the Core
+  reference's §4 does.
+- **Fix**: the rule, now stated in the reference — *an integer is an
+  optional sign then decimal digits, nothing else, and fits in 32 bits; a
+  float is an optional sign, decimal digits with an optional point, an
+  optional decimal exponent, nothing else, and is finite; an IP octet and
+  a port are decimal digits only* — implemented as three private helpers
+  (a character scan, then `strtol`/`strtof` with `ERANGE` and
+  `std::isfinite`) replacing the four round-trips; a port that is not
+  digits answers `Invalid port format`. `defineParameter()` replaces the
+  definition it finds by name and applies the new default the same way.
+  The header gains `<cstdlib>`, `<cerrno>`, `<cmath>` and `Platform_HAL.h`.
+  Compiled by CI's three board targets through `IComponent.h`, never
+  linked there: nothing in FullStack calls it.
+- **Verification**: seven cases in `test_component_config` — `"1.50"`,
+  `"1.5"`, `"3"`, `"+1.5"`, `"1e3"`, `".5"`, `"5."` accepted; `" 5"`,
+  `"5 "`, `"5x"`, `"nan"`, `"inf"`, `"0x10"`, `"1e50"` refused; `"+5"`,
+  `"05"`, both `int32` ends accepted and both overflows refused;
+  `"1.2.3.4x"`, `"1.2.3.+4"`, `"1.2.3.-0"`, `" 1.2.3.4"` refused as IPs
+  and `"1.2.3.04"` accepted; `"80x"`, `"+80"`, `" 80"` refused as ports;
+  a redefinition validated once under the new constraints, and one without
+  a default keeping the stored value. Removal checks from a fresh `.pio`:
+  the round-trip restored fails on `"1.5"` after `"1.50"` passed (and
+  accepts `"nan"`); `toInt()` restored in the octet fails on `"1.2.3.4x"`;
+  `push_back` restored fails both redefinition cases.
+
 ### BUG-38 — HomeAssistant: the alarm control panel's discovery document is longer than the event field, and was published cut [MEDIUM] — **DONE (2026-09-14, filed the same day by OBS Lot D's review)**
 
 - **File**: `HomeAssistant.h` (`mqttPublish()`, the `strncpy` into
@@ -2404,10 +2444,69 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   re-serialize every context on every tick. That is a cost claim, measurable only
   on hardware; recorded here rather than given a bookkeeping ID it cannot yet earn.
 
-### TEST-7 — Core: MemoryManager + ComponentConfig untested [MEDIUM]
+### TEST-7 — Core: MemoryManager + ComponentConfig untested [MEDIUM] — **DONE (2026-09-15)**
 
 - **Ref**: CORE-F17
-- **Problem**: Zero tests for MemoryManager singleton and ComponentConfig validation logic.
+- **Problem (as filed)**: Zero tests for MemoryManager singleton and ComponentConfig validation logic.
+- **What the reading found before any test was written.** `ComponentConfig`
+  — `defineParameter`, `setValue`, the typed getters, `validate()` — has
+  **no caller anywhere in the tree**: no component, no example (the Core
+  example's `TestComponentConfig` is an unrelated struct), no test. Only
+  `ComponentStatus`, `statusToString()` and `ComponentMetadata` are live.
+  It is documented public API with a validation contract (Core reference
+  §4, README), which is DC-13's shape; filed as **DC-17** together with
+  the eight `MemoryManager` queries nothing calls. And the validators were
+  wrong for any sketch that did call them — **BUG-40**, filed and fixed in
+  this lot, because pinning them as found would have made the defect the
+  contract (TEST-6's lesson).
+- **The header did not stand alone**: `ComponentConfig.h` used `String`
+  and `HAL::substring` without including `Platform_HAL.h`; it compiled only
+  behind `IComponent.h`. `g++ -fsyntax-only` with the header first failed
+  at `:59` (`'String' does not name a type`). It now includes the HAL, and
+  the new suite includes it first, so CI proves it on every run — a board
+  build never would, since no board translation unit includes it first.
+- **The native `String` stub was not Arduino where these tests needed it**:
+  `toInt()` was `std::stoi` returning `int` (throws on `"abc"` and on
+  overflow), `toFloat()` was `std::stof`, `String(float)` printed six
+  decimals where both cores print two. No native test had ever called
+  `toInt()`/`toFloat()`, so nothing had noticed; but a refusal path cannot
+  be tested against a stub that throws, and BUG-40's float defect cannot be
+  reproduced against one that prints six decimals. `Platform_Stub.h` now
+  parses with `strtol`/`strtof` (`0` on garbage, `long` saturated to the
+  boards' 32-bit range) and prints `String(value, 2)`; pinned by
+  `test_platform_stub` (5 cases). Every native project was re-run from a
+  fresh `.pio` after the change.
+- **Suites**: `test_memory_manager` (18 cases) — the lazy first
+  `getProfile()` as the first `RUN_TEST` of the process (the singleton has
+  no reset), the six threshold boundaries, the cache versus
+  `detectProfile()`, `getHeapAtBoot()` as the classified sample,
+  `isLowMemory()`/`isCriticalMemory()` live against the cached profile,
+  `setThresholds()` reclassifying only at the next detection, every public
+  table (`getMaxWsClients`, `getChartHistoryPoints`, `getWsUpdateInterval`,
+  `getBufferSize`, `shouldEnable`), and the three boots read from the bench
+  logs (a WROOM-32D FullStack boot 276220 → FULL; the nodemcuv2 probe
+  26064 → STANDARD; the nodemcuv2 FullStack 15088 → MINIMAL, the CI-14
+  boot where the WebUI cut its client limit 3 → 2). *Max Providers* and
+  *Heap Check Interval*, two columns of the reference's table, have no
+  public accessor and are not pinned — recorded in DC-17.
+  `test_component_config` (24 cases) — `statusToString` for all nine and
+  the unknown, `ComponentMetadata`, the fluent `ConfigParam`, the typed
+  getters with a non-zero default so "parsed to 0" and "fell back" are
+  distinguishable, `getBool`'s eight tokens, `validate()` per type with the
+  first failing parameter reported, `ValidationResult::toString()`,
+  `hasParameter()` as the reference documents it (about values), and
+  BUG-40's seven.
+- **Verification**: Core native from a fresh `.pio` 154 → **201 cases,
+  10 suites**. Six removal checks, each from a fresh `.pio`: `>=` → `>` at
+  `fullMin` fails the 30720 case; `getProfile()` detecting unconditionally
+  fails the cache case and two others; the `String(float)` round-trip
+  restored in `validateFloat` fails on `"1.5"` **after `"1.50"` passed** —
+  the defect as filed, reproducible only once the stub printed two decimals
+  — and accepts `"nan"`; `toInt()` restored in the octet fails on
+  `"1.2.3.4x"`; `push_back` restored in `defineParameter` fails both
+  redefinition cases; `std::to_string` restored in the stub fails the
+  two-decimal case. No board leg: the changes are host-visible, and the
+  board figures are read from existing logs, named as such.
 
 ### TEST-8 — OTA: nothing traverses `POST /api/ota/upload` [MEDIUM]
 
@@ -2543,6 +2642,22 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
 - **Bounded by**: whatever else each of the four actually uses from `WebUI.h`. The
   fix is per file, and each one needs its own compile to prove the include is
   redundant.
+- **Re-read and one quarter compiled, 2026-09-15 (TEST-7's lot, nothing
+  changed here)**: the hypothesis holds for one file and fails for three.
+  `NTPWebUI.h:95-99`, `OTAWebUI.h:36,235-368` and
+  `RemoteConsoleWebUI.h:38-41` call `webui->registerApiRoute(…,
+  [](AsyncWebServerRequest*) {…})` inside `init(WebUIComponent*)`, which
+  needs the complete `WebUIComponent` and the async request type — and
+  `WebUI.h` never compiles natively (`Platform_Stub.h:411-412` says so).
+  `HomeAssistantWebUI` has no `init()`, which is why BUG-31's one line was
+  enough there. `MQTTWebUI.h` names `WebUIComponent` only in a doc comment
+  (`:26-29`) and **compiles on the host with its `WebUI.h` line removed**
+  (`g++ -fsyntax-only` against Core, MQTT, WebUI, Wifi and ArduinoJson 7;
+  the unmodified header stops at `ESPAsyncWebServer.h: No such file or
+  directory`). So MQTTWebUI is a one-line change plus the suite that would
+  use it — an MQTT lot — and the other three need a host double of
+  `WebUIComponent::registerApiRoute` and `AsyncWebServerRequest`, which is
+  TEST-8's territory and a lot of its own.
 
 ---
 
@@ -3395,6 +3510,42 @@ not.
   check; `grep -rn 'api/ntp/timezones' --include=*.h` finds one
   `registerApiRoute` call.
 
+### DC-17 — Core: `ComponentConfig` and eight `MemoryManager` queries have no caller in the tree, and both are documented public API [MEDIUM] — **NEW (2026-09-15)**
+
+- **Opened by**: TEST-7's reading, before its tests were written.
+- **Files**: `DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h`
+  (the `ComponentConfig` class: `defineParameter`, `setValue`, `getValue`,
+  `getInt`, `getFloat`, `getBool`, `validate`, `getParameters`,
+  `hasParameter`); `DomoticsCore-Core/include/DomoticsCore/MemoryManager.h`
+  (`getBufferSize`, `shouldEnable`, `getWsUpdateInterval`,
+  `getChartHistoryPoints`, `getCurrentFreeHeap`, `isCriticalMemory`,
+  `setThresholds`, `getThresholds`).
+- **The claim is "no caller in the tree", DC-13's claim**: no component, no
+  example, no test called any of these before TEST-7 pinned them —
+  `ComponentStatus`, `statusToString()` and `ComponentMetadata` are live,
+  and `MemoryManager`'s other four queries are called from `Core.cpp:78-81`,
+  `WebUI.h:108-112`, `WebServerManager.h:92` and `SystemInfoWebUI.h:86`.
+  All of it is documented: the Core reference §4 states `ComponentConfig`'s
+  validation contract, §8 tabulates every `MemoryManager` query, and the
+  README hands users `getBufferSize()` as the example — so the callers are
+  other people's sketches, installed by version from the registry.
+- **Two columns of §8's limits table — *Max Providers* and *Heap Check
+  Interval* — have no public accessor at all**: `getLimits()` and
+  `getIntervals()` are private. Documented, unreachable, and therefore
+  unpinned by TEST-7.
+- **The profile, as observed**: a WROOM-32D running FullStack boots FULL
+  (276 200–276 220 bytes over four logged boots); a nodemcuv2 boots
+  STANDARD (26064) with the observability probe and MINIMAL (15088) with
+  FullStack, where the WebUI's client-limit reduction fires (CI-14's boot
+  log) — so the profile is sketch-dependent on an ESP8266 and the one
+  adaptive path with a caller is live there. The thresholds were "conservative
+  starting points" never measured for purpose (`MemoryManager.h:58-60`);
+  TEST-7 pins them as they are.
+- **The remedy is DC-13's, and constrained the same way**: keep and pin
+  (done), deprecate, or delete — and removing documented public methods
+  belongs on a major boundary. `ComponentConfig` has BUG-40's fix behind it
+  now, so keeping it is no longer keeping a defect.
+
 ## Priority 10: Minor Issues (LOW)
 
 | ID | Component | Issue |
@@ -4124,16 +4275,16 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 2M (**SEC-4, SEC-6 and SEC-14 done 2026-09-14 in one lot, after its plan's adversarial review and the maintainer's rule that a brute-force defence delays and never blocks** — the console's `auth` wait, the CORS header withheld under auth with the entry's premise corrected, the empty password refused on both the WebUI and the console; **SEC-13 done 2026-09-14 in OBS Lot D** — the SSE stream behind a live middleware, `/api/system/info` gated, and `/` no longer reading a stale copy of `enableAuth`; **SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-39 | Multiple | 0C, **0H**, 6M (**31 done**; **BUG-39 filed and fixed 2026-09-14** — filed by the adversarial review of BUG-38's decision memo: a queued message over PubSubClient's 768-byte ESP8266 buffer was retried forever and everything behind it waited; now dropped, named and counted; **BUG-38 filed and fixed 2026-09-14** — every discovery key abbreviated the way Home Assistant documents, the panel 774 → 638, the refusal counted; by OBS Lot D's review — the alarm control panel's discovery document is 774 characters against a 699-character event field and was published cut, so Home Assistant never created the panel; now refused aloud, the fix is a decision between abbreviating the documents and widening the field; **BUG-36 fixed 2026-09-06 in OBS Lot B** — released before the pop, per-bus drop counter in the flight record, "Expected 7 Was 0" on unfixed code; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, fixed with OBS-3's lot the next day; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
-| 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 4M (**TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 new and open** — four providers no native test can compile) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-40 | Multiple | 0C, **0H**, 6M (**32 done**; **BUG-40 filed and fixed 2026-09-15** — filed by TEST-7's reading: `ComponentConfig`'s float validator refused `"1.5"` and accepted `"1.50"` because it round-tripped through Arduino's two-decimal `String(float)`, octets and ports parsed `"4x"` as 4, a redefined parameter was validated twice; digits-only rule now stated in the reference, seven cases, three removal checks; **BUG-39 filed and fixed 2026-09-14** — filed by the adversarial review of BUG-38's decision memo: a queued message over PubSubClient's 768-byte ESP8266 buffer was retried forever and everything behind it waited; now dropped, named and counted; **BUG-38 filed and fixed 2026-09-14** — every discovery key abbreviated the way Home Assistant documents, the panel 774 → 638, the refusal counted; by OBS Lot D's review — the alarm control panel's discovery document is 774 characters against a 699-character event field and was published cut, so Home Assistant never created the panel; now refused aloud, the fix is a decision between abbreviating the documents and widening the field; **BUG-36 fixed 2026-09-06 in OBS Lot B** — released before the pop, per-bus drop counter in the flight record, "Expected 7 Was 0" on unfixed code; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, fixed with OBS-3's lot the next day; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
+| 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 3M (**TEST-7 done 2026-09-15** — 42 cases over `MemoryManager` and `ComponentConfig`, plus 5 pinning the native `String` stub, which had to be made Arduino-like first (`toInt()` threw on garbage, `String(float)` printed six decimals); the reading filed BUG-40 and DC-17, and compiled one quarter of TEST-9's hypothesis; **TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 open, re-read 2026-09-15** — MQTTWebUI compiles without `WebUI.h`, the other three need a host double of the WebUI component) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, **0H**, 1M (**ARCH-3 done**; **ARCH-2 done 2026-08-31 by measurement** — both halves of its prescribed remedy already existed, one false at filing, one delivered by PR #17; no code changed. **ARCH-1 re-argued HIGH → MEDIUM 2026-08-31, restated 2026-09-06 and open** — SYS-F6 unreadable so the HIGH was never argued, one XIII indicator exceeded against a file otherwise inside every measurement; the fork trigger fired with marianorenzi's reply of 2026-09-01 and the three extractions are declined on merit; the boot-diagnostics residue (~95 lines) rides OBS Lot B, which rewrites that path, and `begin()` is re-measured at Lot B's closure) |
 | 8. CI/Infrastructure | CI-1 to CI-15 | II, XII | 0C, 0H, 5M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 open, **CI-13 done 2026-09-01** — paid a second time at 19 GB before the fix its entry prescribed was finally applied; **CI-14** — FullStack is green in CI and unusable on an ESP8266; **CI-15 new** — no `library.json` declares `export.exclude`, the family's root cause, deferred to a release-aware lot) |
-| 9. Dead Code | DC-1 to DC-16, PERSIST-1 | IV (YAGNI) | 0C, 0H, 10M, 0L (**DC-16 filed and fixed 2026-09-14**, LOW — `/api/ntp/timezones` was registered twice, the System's copy removed and the provider's `init()` finally called; **DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
+| 9. Dead Code | DC-1 to DC-17, PERSIST-1 | IV (YAGNI) | 0C, 0H, 11M, 0L (**DC-17 filed 2026-09-15** — `ComponentConfig` and eight `MemoryManager` queries: no caller in the tree, documented public API, DC-13's decision on a major boundary; **DC-16 filed and fixed 2026-09-14**, LOW — `/api/ntp/timezones` was registered twice, the System's copy removed and the provider's `init()` finally called; **DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
 | 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 0M, 0L — **all seven closed** (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-5 and OBS-1's transport closed by Lot D on 2026-09-14** — telemetry and the retained crash record on MQTT, discovered by Home Assistant through one topic scheme, the core dump downloaded, decoded against its ELF and erased through the WebUI, a Home Assistant container reading the entities; **OBS-4 closed by Lot C on 2026-09-06** — the failed-allocation group in the record, the ESP32 heap hook, the ESP8266 latch-and-clear, the diagnostic profile measured; **OBS-3 closed by Lot B on 2026-09-06** — the recorder in Core, promotion first, the record held until persisted, both boards' death sequences read back, three removal checks; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
-| **Total** | **144 items** | | **0C, 0H, 35M, 34L** (88 resolved) |
+| **Total** | **146 items** | | **0C, 0H, 35M, 34L** (90 resolved) |
 
 The severity columns sum across the rows: **zero open HIGH again — and
 this time the last one left by a fix.** BUG-35 was filed by the 2026-09-01
@@ -4144,7 +4295,9 @@ system working: the campaign refilled the column, the fix emptied it. The
 rows were checked against the section headings rather than only re-summed
 — the sweep below, re-run for the BUG-35 lot, reports **35 `[HIGH]`
 headings, 35 with evidence, 0 open**. The MEDIUM column sums to 35:
-2 + 4 + 6 + 4 + 3 + 1 + 5 + 10 + 0 + 0 — the SEC-4/SEC-6/SEC-14 lot closed three on
+2 + 4 + 6 + 3 + 3 + 1 + 5 + 11 + 0 + 0 — TEST-7's lot on 2026-09-15 closed one
+and filed one MEDIUM (DC-17) and one filed-and-fixed (BUG-40): 35 → 35,
+total 144 → 146, resolved 88 → 90; the SEC-4/SEC-6/SEC-14 lot closed three on
 2026-09-14 (38 → 35, resolved 85 → 88); BUG-39 was filed on 2026-09-14 by
 the adversarial review of BUG-38's decision memo (39 → 40, total 143 → 144),
 and both were fixed the same day on Lot D's branch before its PR (40 → 38,

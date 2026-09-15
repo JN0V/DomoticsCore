@@ -111,3 +111,14 @@ their own.
 - OTAWebUI's three inlined `authenticate()` copies should call `WebUIComponent::authorize()` once OTA can require the WebUI version that has it.
   source_spec: `spec-sec-webui-console-lot.md`
 
+## Deferred from: the TEST-7 lot (2026-09-15)
+
+- Twelve component call sites parse user input with `toInt()`/`toFloat()` (`OTA.cpp` ×4, `RemoteConsole.h`, `RemoteConsoleWebUI.h` ×2, `LEDWebUI.h`, `MQTTWebUI.h`, `NTPWebUI.h`, `Storage_Stub.h` ×2) and no native suite feeds any of them a non-numeric value; until this lot the stub threw on one, so none could. What each handler does with `"abc"` in a numeric field is unmeasured.
+  source_spec: `spec-test-7-core-memory-config.md`
+- `validateInteger` used to refuse `"+5"` and `"05"` (a canonical-form rule, stated nowhere); the digits-only rule accepts them. If a sketch relied on the refusal, it is one extra check in `parsesAsInt32`.
+  source_spec: `spec-test-7-core-memory-config.md`
+- TEST-9's three remaining providers (NTP, OTA, RemoteConsole) need a host double of `WebUIComponent::registerApiRoute` and `AsyncWebServerRequest`; MQTTWebUI needs only its `WebUI.h` line removed, with the MQTT suite that would then compile it.
+  source_spec: `spec-test-7-core-memory-config.md`
+- `MemoryManager`'s `maxProviders` and `heapCheckInterval` are tabulated in the Core reference and reachable through no public method (DC-17).
+  source_spec: `spec-test-7-core-memory-config.md`
+
