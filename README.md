@@ -141,7 +141,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps =
-    jn0v/DomoticsCore@^2.0.0
+    jn0v/DomoticsCore@^2.5.0
 ```
 
 ### PlatformIO (GitHub)
@@ -155,7 +155,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps =
-    https://github.com/JN0V/DomoticsCore.git#v2.0.0
+    https://github.com/JN0V/DomoticsCore.git#v2.5.0
 ```
 
 ### Specific Components Only
@@ -166,6 +166,25 @@ lib_deps =
     symlink://path/to/DomoticsCore/DomoticsCore-LED
     symlink://path/to/DomoticsCore/DomoticsCore-Wifi
 ```
+
+### A Local Checkout
+
+```ini
+lib_deps =
+    symlink://../DomoticsCore
+```
+
+`symlink://` (PlatformIO 6.1.19 or later) compiles the library where it
+lives, so an edit in the checkout is seen by the next build. `file://` copies
+the whole repository into `.pio/libdeps` and never refreshes the copy. When a
+project switches between a registry version and a checkout, delete its `.pio`
+once: PlatformIO keeps the package it already holds.
+
+### Upgrading
+
+Every release entry in [CHANGELOG.md](CHANGELOG.md) opens with what a sketch
+sees — removed symbols, changed defaults, new behaviour — before the list of
+fixes. Read the entries between the version you run and the one you take.
 
 ## 🧩 Available Components
 

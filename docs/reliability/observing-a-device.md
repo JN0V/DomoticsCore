@@ -95,6 +95,19 @@ Defaults do the work; these are the fields that matter.
 `SystemConfig::firmwareVersion` is what the Home Assistant device block
 shows as software version; it is a display string, not the build id.
 
+## The first boot after a change
+
+What a correctly built and configured device shows, in the first minute:
+
+1. The serial line: the build id, `Loop watchdog armed: 30 s` on ESP32,
+   and a `bootdiag` block naming the last reset reason.
+2. The broker: `{clientId}/telemetry` within a minute, `{clientId}/crash`
+   retained.
+3. Home Assistant: the device's diagnostic sensors, `sys_last_death`
+   among them, reading `none` until something dies.
+4. The console, if RemoteConsole is in: `bootdiag` prints the same as
+   text.
+
 ## Where to look, in order
 
 When a device has rebooted:
