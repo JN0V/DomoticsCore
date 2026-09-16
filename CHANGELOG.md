@@ -26,7 +26,35 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
-## [Unreleased]
+## [2.5.0] - 2026-09-16
+
+> **This release adds two public fields, refuses one configuration it used
+> to accept, and changes what the native test stub does with a non-number.
+> It ships as a minor release**, the departure 2.1.0 through 2.4.0 took,
+> recorded here for the same reason.
+>
+> **Authentication with an empty password is refused** on the WebUI and the
+> console. A device that stored `enable_auth=true` with no password boots
+> with authentication *off* and a warning — it was never protecting
+> anything, `admin` with an empty password got in — and the next settings
+> save persists the cleared flag. `SystemConfig::consolePassword` is new;
+> without it a System user could not turn console authentication on at
+> all. `RemoteConsoleConfig::authDelayMaxMs` (8 s; `0` disables) caps the
+> wait a failed `auth` line sets before the next attempt from that address
+> is read; nothing is ever blocked or disconnected for failing.
+>
+> **Downstream native suites**: the `String` stub's `toInt()`/`toFloat()`
+> return `0` on a non-number instead of throwing, saturate to the boards'
+> 32-bit range, and `String(float)` prints two decimals as both cores do. A
+> test that relied on the throw sees the change; one that compared six
+> decimals sees two.
+>
+> **Local checkouts**: every manifest in this repository depends on its
+> siblings through `symlink://`, and `embed_webui.py` finds its sources
+> behind one. A project that depends on a checkout should say
+> `symlink://../DomoticsCore` rather than `file://` — the latter copies the
+> whole repository into `.pio/libdeps` and never refreshes it. Nothing
+> changes for a project that installs from the registry.
 
 ### Security
 

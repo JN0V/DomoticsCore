@@ -16,7 +16,7 @@ board = esp32dev
 framework = arduino
 
 lib_deps =
-    jn0v/DomoticsCore@^2.0.0
+    jn0v/DomoticsCore@^2.5.0
 ```
 
 **Step 2: Write your code**
@@ -68,8 +68,20 @@ framework = arduino
 board_build.partitions = min_spiffs.csv
 
 lib_deps =
-    https://github.com/JN0V/DomoticsCore.git#v2.0.0
+    https://github.com/JN0V/DomoticsCore.git#v2.5.0
 ```
+
+### From a Local Checkout
+
+```ini
+lib_deps =
+    symlink://../DomoticsCore
+```
+
+`symlink://` compiles the library where it lives, so an edit in the checkout
+is seen by the next build; `file://` would copy the whole repository into
+`.pio/libdeps` and never refresh it. Delete the project's `.pio` once when
+switching between a registry version and a checkout.
 
 ### ESP32-C3 Configuration
 
@@ -80,7 +92,7 @@ board = esp32-c3-devkitm-1
 framework = arduino
 
 lib_deps =
-    jn0v/DomoticsCore@^2.0.0
+    jn0v/DomoticsCore@^2.5.0
 ```
 
 ESP32-C3 is fully supported with USB CDC serial.
