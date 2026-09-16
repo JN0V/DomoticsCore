@@ -26,6 +26,48 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [Unreleased]
+
+### Security
+
+- fix(remoteconsole): a failed `auth` line sets a wait — 1 s, doubling per
+  consecutive failure, capped by `authDelayMaxMs` (8 s; `0` disables) — before
+  the next attempt from that address is read. Delay only: nothing is blocked
+  and nothing is disconnected for failing; one success or a minute of quiet
+  clears it (SEC-4).
+- fix(webui): the `Access-Control-Allow-Origin: *` header is withheld while
+  authentication is enabled (SEC-6).
+- fix(webui, remoteconsole): authentication can no longer be enabled with an
+  empty password — the settings card refuses it, a stored configuration with
+  an empty password boots with auth disabled and a warning, and an empty
+  `auth` line never authenticates. `SystemConfig::consolePassword` is new, so
+  a System user can turn console authentication on at all (SEC-14).
+
+### Fixed
+
+- fix(core): `ComponentConfig`'s numeric validators take digits only — `"4x"`
+  is no longer accepted as 4, `"1.5"` is no longer refused — and a parameter
+  defined twice replaces the first definition instead of being validated
+  twice (BUG-40).
+
+### Testing
+
+- The native `String` stub parses with `strtol`/`strtof` (`0` on garbage, a
+  `long` saturated to the boards' 32-bit range) and prints two decimals, as
+  both Arduino cores do. It ships in the Core package and every downstream
+  native suite compiles against it; a suite that relied on `toInt()`
+  throwing on a non-number sees the change.
+
+### Development
+
+- Every `file://../DomoticsCore-X` dependency in the repository's manifests
+  is `symlink://` (PlatformIO 6.1.19 or later): the component is compiled
+  where it lives, so nothing is copied into `.pio/libdeps`, nothing goes
+  stale and `rm -rf .pio` is no longer part of a trusted run. The READMEs
+  that handed a `file://` recipe say so, `clean_examples.py` is gone, and
+  `embed_webui.py` finds `webui_src` behind a symlinked dependency — a
+  project on `symlink://../DomoticsCore` builds (CI-15).
+
 ## [2.4.0] - 2026-09-14
 
 > **This release turns two behaviours on by default, adds one strong symbol,
