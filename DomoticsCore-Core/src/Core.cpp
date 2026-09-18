@@ -109,7 +109,9 @@ void Core::loop() {
 
     // LO-5 / BUG-36: the queue drops silently; say so, at most once a minute.
     if (drops != lastDropsLogged_ && (lastDropLog_ == 0 || HAL::getMillis() - lastDropLog_ >= 60000)) {
-        DLOG_W(LOG_CORE, "EventBus dropped %lu events since boot (queue cap 32)", (unsigned long)drops);
+        DLOG_W(LOG_CORE, "EventBus dropped %lu events (queue budget %u B, peak %u %%)",
+               (unsigned long)drops, (unsigned)DomoticsCore::Utils::QueueCost::kBudgetBytes,
+               (unsigned)componentRegistry.getEventBus().getQueueHighWaterPct());
         lastDropsLogged_ = drops;
         lastDropLog_ = HAL::getMillis();
     }

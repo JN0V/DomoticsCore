@@ -195,7 +195,12 @@ void test_loop_ticks_the_recorder_into_rtc() {
 void test_loop_carries_the_bus_drops_into_the_record() {
     testCore->addComponent(std::unique_ptr<SimpleComponent>(new SimpleComponent("A")));
     TEST_ASSERT_TRUE(testCore->begin());
-    for (int i = 0; i < 40; ++i) testCore->emit(String("storm"), i);   // past the cap of 32, on top of the lifecycle events already queued
+    // BUG-41: the storm is in bytes now — forty small events overflow nothing.
+    // The capacity is derived from QueueCost, never written down.
+    using DomoticsCore::Utils::QueueCost;
+    const size_t CAP = QueueCost::kBudgetBytes / QueueCost::of(830, strlen("storm"));
+    std::vector<uint8_t> buf(830, 0x66);
+    for (size_t i = 0; i < CAP + 8; ++i) testCore->emit(String("storm"), buf.data(), 830, false);
     testCore->loop();
     TEST_ASSERT_TRUE(FlightRecorder::instance().current().eventDrops() >= 8);
     TEST_ASSERT_EQUAL_UINT32(testCore->getEventBus().getDroppedCount(), FlightRecorder::instance().current().eventDrops());

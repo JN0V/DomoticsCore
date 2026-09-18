@@ -8,12 +8,77 @@
 #include <cassert>
 #include <type_traits>
 #include <DomoticsCore/Platform_HAL.h>
+#include <DomoticsCore/Logger.h>
 
 // Minimal core event enum kept here to avoid extra headers.
 namespace DomoticsCore { namespace Utils { enum class EventType : uint8_t { Custom = 1 }; }}
 
 namespace DomoticsCore {
 namespace Utils {
+
+/**
+ * BUG-41: what one queued event costs the heap. The queue is bounded by these
+ * bytes rather than by an entry count, because 32 was only ever a stand-in for
+ * them: it exists because an MQTTPublishEvent is 830 B, and applied to a 4-byte
+ * event it does not measure the resource it protects.
+ *
+ * The model has the SHAPE of the allocator, and its constants are platform
+ * constants measured on the boards (2026-09-17). That is what makes it safe:
+ * the shape being right, each constant holds its measured value and the model
+ * is an upper bound by equality on the target that runs it. An unmeasured
+ * target takes the conservative set and never aims for equality.
+ */
+struct QueueCostShape {
+#if defined(DOMOTICS_PLATFORM_ESP32)
+    static constexpr size_t kNode     = 33;   // deque chunk 512 + 16, over 16 elements
+    static constexpr size_t kOverhead = 16;   // TLSF header 4 + light poisoning 12
+    static constexpr size_t kSsoChars = 14;   // measured: the step falls between 14 and 15
+#elif defined(DOMOTICS_PLATFORM_ESP8266)
+    static constexpr size_t kNode     = 29;   // deque chunk 512 over 18 elements, rounded up
+    static constexpr size_t kOverhead = 8;    // umm, no poisoning
+    static constexpr size_t kSsoChars = 10;   // measured: the step falls between 10 and 11
+#else
+    // Test host and any target no board has measured: never equality.
+    static constexpr size_t kNode     = 80;
+    static constexpr size_t kOverhead = 24;
+    static constexpr size_t kSsoChars = 10;
+#endif
+    static constexpr size_t roundUp4(size_t n) { return ((n + 3) / 4) * 4; }
+    // No minimum block: the board measurement refuted one on both platforms.
+    static constexpr size_t block(size_t n) { return n == 0 ? 0 : kOverhead + roundUp4(n); }
+    // Arduino String rounds its buffer to (len + 16) & ~0xf (WString.cpp:193);
+    // below the SSO threshold it allocates nothing.
+    static constexpr size_t topicBlock(size_t len) {
+        return len <= kSsoChars ? 0 : kOverhead + ((len + 16) & ~(size_t)0xf);
+    }
+};
+
+// Both live at namespace scope rather than inside EventBus, and the derived
+// constants one layer out from the shape: a constexpr initialiser cannot call a
+// function of a class that is not yet complete, and inside the enclosing class
+// the member bodies are not available to constant evaluation either.
+struct QueueCost : QueueCostShape {
+    static constexpr size_t of(size_t payloadBytes, size_t topicLen) {
+        return kNode + block(payloadBytes) + topicBlock(topicLen);
+    }
+    // The reference is a COMPLETE event, topic term included: without it the
+    // budget holds 30 of them rather than 32 and the cliff moves.
+    static constexpr size_t kReference   = kNode + block(830) + topicBlock(12);
+    // The budget is 32 reference events unless the application says otherwise;
+    // -DDOMOTICS_EVENTBUS_QUEUE_BYTES is the only way to move it (BUG-41).
+#ifdef DOMOTICS_EVENTBUS_QUEUE_BYTES
+    static constexpr size_t kBudgetBytes = (size_t)(DOMOTICS_EVENTBUS_QUEUE_BYTES);
+#else
+    static constexpr size_t kBudgetBytes = 32 * kReference;
+#endif
+    static constexpr size_t kMaxEntries  = 256;   // guard rail against model drift
+};
+static_assert(QueueCost::kBudgetBytes <= UINT16_MAX, "queuedBytes_ is a uint16_t");
+// A budget under one reference event refuses every MQTT publish in silence, and a
+// budget of zero divides by zero in the high-water mark. Both are reachable only
+// through -DDOMOTICS_EVENTBUS_QUEUE_BYTES, so both are refused at compile time.
+static_assert(QueueCost::kBudgetBytes >= QueueCost::kReference,
+              "DOMOTICS_EVENTBUS_QUEUE_BYTES is below one reference event");
 
 class EventBus {
 public:
@@ -32,6 +97,7 @@ public:
         // Copy of payload bytes; we keep a small vector to store arbitrary payloads
         std::vector<uint8_t> data;
     };
+
 
     EventBus() : nextId(1) {}
 
@@ -192,6 +258,7 @@ public:
         while (!queue.empty() && processed < maxPerPoll) {
             QueuedEvent qe = std::move(queue.front());
             queue.pop();
+            queuedBytes_ -= static_cast<uint16_t>(QueueCost::of(qe.data.size(), qe.topic.length()));
             processed++;
 
             const void* payloadPtr = nullptr;
@@ -231,6 +298,10 @@ public:
 
     /** @brief Events dropped on queue overflow since construction or reset() (BUG-36, LO-5). */
     uint32_t getDroppedCount() const { return droppedEvents_; }
+    /** @brief Bytes the queue currently holds, as QueueCost models them (BUG-41). */
+    uint16_t getQueuedBytes() const { return queuedBytes_; }
+    /** @brief Highest occupancy reached since construction or reset(), in percent of the budget. */
+    uint8_t getQueueHighWaterPct() const { return highWaterPct_; }
 
     // Contract: reset() must leave the EventBus in the exact same state
     // as a freshly constructed instance. If you add new members, update this method.
@@ -245,19 +316,36 @@ public:
         lastByTopic.clear();
         pendingByTopic.clear();
         droppedEvents_ = 0;
+        queuedBytes_ = 0;
+        highWaterPct_ = 0;
     }
 
 private:
     void enqueue(QueuedEvent&& qe) {
-        // Basic backpressure: cap queue length
-        if (queue.size() >= 32) {
+        // BUG-41: backpressure is a byte budget, not an entry count.
+        const size_t cost = QueueCost::of(qe.data.size(), qe.topic.length());
+        // An event larger than the whole budget can never be queued: evicting
+        // for it would empty the queue and still fail. Name it instead.
+        if (cost > QueueCost::kBudgetBytes) {
+            ++droppedEvents_;
+            DLOG_W(LOG_CORE, "EventBus refused '%s': %u B over a %u B budget",
+                   qe.topic.c_str(), (unsigned)cost, (unsigned)QueueCost::kBudgetBytes);
+            return;
+        }
+        while (!queue.empty() && (queuedBytes_ + cost > QueueCost::kBudgetBytes ||
+                                  queue.size() >= QueueCost::kMaxEntries)) {
             // BUG-36: the dropped event is still counted as pending for its
             // topic unless it is released here; a stale count blocks the
             // topic's sticky replay for the life of the process.
-            releasePending(queue.front().topic);
+            const QueuedEvent& front = queue.front();
+            queuedBytes_ -= static_cast<uint16_t>(QueueCost::of(front.data.size(), front.topic.length()));
+            releasePending(front.topic);
             queue.pop();
             ++droppedEvents_;
         }
+        queuedBytes_ += static_cast<uint16_t>(cost);
+        const uint8_t pct = static_cast<uint8_t>(static_cast<size_t>(queuedBytes_) * 100u / QueueCost::kBudgetBytes);
+        if (pct > highWaterPct_) highWaterPct_ = pct;
         queue.push(std::move(qe));
         // Track pending by topic to help skip duplicate sticky replay
         const QueuedEvent& back = queue.back();
@@ -321,8 +409,19 @@ private:
     // Pending counts per topic to prevent duplicate sticky replay
     std::map<String, int> pendingByTopic;
     uint32_t droppedEvents_ = 0;   // BUG-36: events popped on overflow, since construction or reset()
+    // BUG-41: these two sit before dispatching_ on purpose — after it the uint16_t
+    // lands on an odd offset and sizeof(EventBus) grows by four bytes.
+    uint16_t queuedBytes_ = 0;
+    uint8_t highWaterPct_ = 0;
     bool dispatching_ = false;
 };
+
+// BUG-41: queuedBytes_ and highWaterPct_ must land in the padding that already
+// followed droppedEvents_. Asserted on the targets a board measured; a new one
+// reaching here red is the guard working, not a mistake.
+#if defined(DOMOTICS_PLATFORM_ESP32) || defined(DOMOTICS_PLATFORM_ESP8266)
+static_assert(sizeof(EventBus) == 172, "EventBus grew: the two counters are not in the padding");
+#endif
 
 } // namespace Utils
 } // namespace DomoticsCore

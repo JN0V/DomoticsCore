@@ -151,7 +151,7 @@ public:
         // shared client receives arrives here — before findEntity has decided the
         // message concerns HomeAssistant at all. Wrapping them in Strings asked the
         // allocator for the topic on every single message (38 characters and up,
-        // where both cores' small-string buffer stops at 14), to parse text the
+        // where the small-string buffer stops at 10 on ESP8266 and 14 on ESP32), to parse text the
         // component was handed as characters. They are passed through as they are.
         on<DomoticsCore::Components::MQTTMessageEvent>(DomoticsCore::MQTTEvents::EVENT_MESSAGE, [this](const DomoticsCore::Components::MQTTMessageEvent& ev) {
             handleCommand(ev.topic, ev.payload);
