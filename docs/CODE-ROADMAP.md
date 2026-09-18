@@ -1851,6 +1851,188 @@ one worth a one-line change, and six rows that are not defects.
   ESP8266 HTTP-level proof this entry now carries, and the half-open
   residual).
 
+### BUG-43 — HomeAssistant: the availability topic the discovery documents advertise has no Last Will, so Home Assistant never sees a device go away [MEDIUM] — **OPEN (filed 2026-09-18 from AlarmControl, by a read-only observation of the production broker)**
+
+- **File**: `DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h:29`,
+  `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h:420`,
+  `DomoticsCore-HomeAssistant/include/DomoticsCore/HAEntity.h:103`.
+- **Problem**: the Last Will is set on `{clientId}/status` and only there
+  (`MQTT_impl.h:29`). The Home Assistant availability topic,
+  `{discoveryPrefix}/{nodeId}/availability`, is published by an ordinary
+  retained `mqttPublish(..., retain=true)` when the component connects
+  (`HomeAssistant.h:420`) and carries **no Last Will**. Every entity's
+  discovery document points `avty_t` at that second topic (`HAEntity.h:103`).
+  So the only topic Home Assistant watches is the one the broker will never
+  correct: when the device drops off, the broker writes `offline` to
+  `{clientId}/status`, which nothing in Home Assistant subscribes to, and the
+  retained `online` on the availability topic survives indefinitely. No entity
+  ever goes unavailable.
+- **Evidence**: on the AlarmControl production broker (192.168.1.253),
+  2026-09-18, a 75-second read-only watch returned 8 messages, all retained,
+  none live — no telemetry at all — with these two retained values standing
+  side by side and contradicting each other:
+
+  ```
+  ESP32-ac89a0f7a608/status                 offline
+  homeassistant/alarmcontrol/availability   online
+  ```
+
+  The device had 21.3 days of uptime, 162 KB free heap, and its HTTP API still
+  answered, so this is a live MQTT session that died without Home Assistant
+  ever being told.
+- **What it costs**: the availability mechanism reports the one state it can
+  observe by itself (the device saying "I am here") and never the one it exists
+  for (the device being gone). Any device that drops off stays green in Home
+  Assistant until someone notices by other means. On an alarm panel that is the
+  difference between a fault and a silent fault.
+- **Options to arbitrate**: (a) set `lwtTopic` to the HA availability topic;
+  (b) keep both topics and list both in the discovery `avty` array; (c) make the
+  LWT topic configurable and point the discovery documents at it. (b) is the
+  only one that keeps `{clientId}/status` meaningful for non-HA subscribers.
+- **Next step**: RED first — a test that ties `avty_t` in a FullStack node's
+  discovery document to the effective `MQTTConfig::lwtTopic`, so the two cannot
+  drift apart again.
+- **Refs**: BUG-38 (the same discovery document, cut at 699 characters); the
+  AlarmControl handoff of 2026-09-17, which already noted the `status: offline`
+  / `availability: online` contradiction on 2026-09-16 without naming the cause.
+
+### BUG-42 — Core: `Core::begin()` reserves a kilobyte of the ESP8266's 4 KB cont stack, and the Storage board suite panicked on what was left [HIGH] — **DONE (2026-09-18, filed and fixed in the same lot)**
+
+- **Problem**: `pio test -e esp8266dev` in `DomoticsCore-Storage` never completed.
+  `test_storage_undrained_writes_plateau` panicked — `Panic
+  core_esp8266_main.cpp:191 __yield`, which is `yield()` reached while the cont
+  stack cannot suspend — the board rebooted, the runner started over, and the
+  cycle repeated until the timeout. **No verdict line was ever printed.** Five
+  tests passed on each pass, so a reader who does not count them saw a column of
+  `PASSED` and concluded the suite was healthy.
+- **It was the component, not the test.** The filing said the severity was
+  provisional on exactly that question. The exception decoder put the panic at a
+  bare `yield()` in the test body — which is the same statement four passing tests
+  execute, so the statement was never the cause. `ESP.getFreeContStack()` named it
+  in one flash: the suite reached the plateau test with **32 bytes** of the 4 096
+  it started with, and `OpenStorage` alone — a `Core` and one `begin()` — took it
+  from 3 200 to 80. `-fstack-usage` gives the frame without a probe to perturb it:
+  `Core::begin()` **1 216 bytes**, of which `char text[1024]` — OBS-4's formatted
+  flight record — is reserved by the prologue whether or not the record was
+  promoted, and it is still on the stack while `initializeAll()` runs the whole
+  component chain on top of it. The measurement that settles it: the block was
+  **not** taken (`promoted=0`) and the kilobyte was gone anyway.
+- **Fix**: the formatting block moves to a `noinline` file-local function. Nothing
+  else changes — same output, same acknowledgement, no allocation — but the
+  kilobyte now lives in a frame that returns *before* `initializeAll()` is called,
+  so the two subtrees no longer sum. `Core::begin()` measures **208 bytes**, and
+  the suite's deepest point over all seven tests goes from 32 bytes of free cont
+  stack to **896**.
+- **What it cost, and what it says beyond the suite**: the two tests that never
+  ran are `test_storage_undrained_writes_plateau` and
+  `test_storage_drain_reclaims_queue_memory` — the pair written to hold
+  STOR-ESP-1's lesson in place, that undrained growth must stop and that draining
+  must give the memory back. They guarded nothing for an unknown length of time,
+  and BUG-41 rewrote the first of the two without ever executing it. But the suite
+  is only where it was visible: **any** ESP8266 application whose `setup()` frame
+  is a hundred bytes deeper than this one's would have panicked at its next
+  `yield()`, in the library, on a shipped platform. That is the grade the row was
+  provisional about, and it is why this is HIGH rather than a test defect.
+- **Board**: 7/7 with a verdict line, `nodemcuv2` on `/dev/ttyUSB1` (MAC
+  `a4:e5:7c:af:c3:57`), 2026-09-18 — the first time this suite has printed one.
+  The plateau test is non-vacuous where it runs: first 40 writes 4 224 B, second
+  40 writes 64 B, against a 1 000 B occupancy floor. The removal check is the
+  reproduction itself, taken twice before the fix and decoded once.
+- **Refs**: OBS-4 (the 1 KB buffer and the test that sizes it); STOR-ESP-1
+  (withdrawn) and its two surviving items in `docs/deferred-work.md`; BUG-41,
+  whose board leg found this and whose plateau test is the first thing it unblocks.
+
+### BUG-41 — Core: the EventBus queue counted entries, and every boot dropped eight events [MEDIUM] — **DONE (2026-09-18, filed and fixed in the same lot)**
+
+- **Problem**: `enqueue()` capped the queue at 32 entries. Nothing drains the bus
+  between the first component `begin()` and the first `Core::loop()`, and a
+  FullStack application emits about forty events in that window. Measured on the
+  bench ESP32 (v2.5.0, a full application in AP mode): `EventBus dropped 8 events`, and a
+  temporary log line named them — `wifi/ap/enabled`, `network/ready`,
+  `storage/ready` and five `component/ready`. Six in STA mode. All eight happened
+  to have no subscriber; the one event that *did* have one — an `mqtt/subscribe`
+  emitted from `afterAllComponentsReady()` — survived with ten events of margin. Ten more emissions at boot and a device stops listening to its own
+  MQTT commands, silently. The 32 was a proxy for bytes — it exists because an
+  `MQTTPublishEvent` is 830 B — and applied to a 4-byte event it does not measure
+  the resource it protects.
+- **Fix**: the bound is the bytes the queue holds. `QueueCost` models what one
+  event costs the heap with the **shape of the allocator**, its constants being
+  platform constants measured on both boards; the budget is 32 events the size of
+  an `MQTTPublishEvent`, the oldest are evicted until a new one fits, an event
+  larger than the whole budget is refused and named, and a second bound of 256
+  entries guards against the model drifting. `getQueuedBytes()`,
+  `getQueueHighWaterPct()`, and `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` to lower the
+  budget where a board cannot carry it.
+- **What the design cost, and what it refuted**: the first model was wrong in
+  **six** places, and each was caught by a different instrument. `kNode = 66`
+  double-counted, because the `QueuedEvent` lives *inside* the deque chunk — the
+  probe table's "16/18/7" counts elements per chunk, not overheads. `kTopicHeap`
+  was a flat 36 and stops being an upper bound at 16 characters, which three of
+  the framework's own topics already exceed. Those two errors compensated, and
+  the calibration rule as written ("tighten a constant if the measurement gives
+  less") would have corrected only the first: the memory constraint then failed
+  by 1 213 B. `kReference` was spelled without its topic term while `of()` adds
+  one, so the budget held **30** reference events and the test meant to pin the
+  cliff would have moved it. `block()` under-counted payloads of 1 to 8 bytes,
+  which is `component/ready`, the most frequent event of the boot. And
+  `kMinBlock = 12` does not exist at all — the boards have no minimum block.
+  A single cross-platform constant set was tried last and rejected on measurement:
+  it overcharges the *reference* event, which inflates the budget rather than
+  protecting anything, while being exact for the classes that actually fill it.
+- **Measured** (`tools/on-device/probes/bug41-queuecost/`, both boards,
+  2026-09-17): `block(n) = kOverhead + roundUp4(n)` exact to the byte on payloads
+  of 4, 64, 96 and 830; `kOverhead` 16 on ESP32 (TLSF header 4 plus light
+  poisoning 12) and 8 on ESP8266; slot 33 and 28.4; SSO 14 and 10, a clean step.
+  `sizeof(EventBus)` is **172 on both**, on the real embedded header — the two new
+  counters sit in the padding that already followed `droppedEvents_`, and they
+  only do so if they are declared *before* `dispatching_`: after it the `uint16_t`
+  lands on an odd offset and the object grows four bytes, measured on both xtensa
+  toolchains at `gnu++11` and `gnu++17`. On the nodemcuv2 the budget holds 32
+  reference events and the 33rd drops, heap 49 808 → 20 744, no OOM, and the
+  drain gives it all back.
+- **Tests**: the list of what to rewrite was produced by *removing* the literal
+  32 and letting the suites name what fell — four went red, including one that two
+  readings of the spec had both missed. A fifth stayed **green while going
+  vacuous**, which no enumeration can catch. Eleven new cases, five rewritten,
+  and four removal checks each red for the right reason (the oversized guard, the
+  entry guard rail, the decrement in `poll()`, and the budget override).
+- **The override was announced before it was wired.** `-DDOMOTICS_EVENTBUS_QUEUE_BYTES`
+  reached the CHANGELOG, the reference and `DomoticsCore-Storage`'s `esp8266dev`
+  environment while `kBudgetBytes` was `32 * kReference` unconditionally — the flag
+  was passed by a build, documented as public API, and read by nothing. The two
+  `static_assert`s written to refuse a zero or under-reference budget guarded a
+  value no `-D` could reach, so they could not have fired either. A compile-time
+  constant cannot be exercised by a suite built without it, hence a project of its
+  own: `DomoticsCore-Core/test/test_queue_budget_override`, one environment, the
+  flag at 2 048 B. Unwired, its three cases fail on three different assertions —
+  the constant, the eviction cliff, and the high-water percentage — which is what
+  makes it a test of the flag rather than of the constant it sets. Core's own
+  native environment pins the other arm of the `#ifdef` and `test_ignore`s the
+  nested project, which it would otherwise compile without the flag.
+- **Board, before and after** (bench ESP32, two runs each mode): the first
+  `loop()` dropped **8 events in AP mode and 6 in STA**, and drops **0 in both**
+  after. The detail the simulator could not show: `dropsPreLoop=7,
+  dropsPostLoop=8` — the last victim falls *during* the first `loop()`, because
+  `poll()` drains eight per pass and the queue still overflowed while it drained.
+  The reformulated line, raw, provoked by a deliberate burst of 48 reference-size
+  events: `EventBus dropped 16 events (queue budget 28192 B, peak 100 %)`. The
+  build before it dropped **16 of the same 48**, so 32 fit on both sides — and
+  28 192 is 32 × 881, with 881 = `kNode` 33 + `block(830)` 848 + `topicBlock(11)`
+  0. The cliff is where the model puts it, on silicon.
+- **Two figures that were expected and were not obtained.** The boot transient was
+  predicted at about +2 KB of heap; it measures **≈ 350 B** in AP mode (run-to-run
+  noise on one binary: 124 B, so the 350 B is real) and **does not discriminate in
+  STA**, where the noise on the before-binary alone is 964 B. Drained, the extra
+  occupancy comes back whole: +48 B at t ≈ 5,4 s. And the fix is **1 844 bytes
+  smaller in flash** than the entry cap it replaces, with static RAM unchanged —
+  bounding by bytes costs less code than counting entries.
+- **What it does not fix**: the MQTT connect burst is made of full-size events.
+  Its cliff moved by exactly one entity — 29 sensors to 30, measured — which is
+  what the review predicted. Shrinking that burst is **LO-2**.
+- **Refs**: LO-5 (the drop line, now carrying the budget and the peak), BUG-36
+  (the pending-count release, preserved through multi-event eviction), LO-2,
+  `docs/decisions/0003-the-eventbus-queue-is-bounded-by-bytes-not-by-count.md`.
+
 ### BUG-40 — Core: `ComponentConfig`'s numeric validators refused most floats and accepted `"4x"`, and a redefined parameter was validated twice [MEDIUM] — **DONE (2026-09-15, filed the same day by TEST-7's reading)**
 
 - **File**: `ComponentConfig.h`, `validateInteger`, `validateFloat`,
@@ -3625,7 +3807,7 @@ not.
 | LO-2 | MQTT | `MQTTPublishEvent` is 832 bytes — consider reducing field sizes |
 | LO-3 | Core | `__dc_*` field names use reserved double-underscore prefix |
 | LO-4 | Core | `nextId` overflow after 4B subscribe/unsubscribe cycles (theoretical) |
-| LO-5 | Core | Backpressure silently drops oldest event with no logging |
+| ~~LO-5~~ | Core | ~~Backpressure silently drops oldest event with no logging~~ — **DONE**: logged since OBS Lot B, and the line now carries the budget and the peak occupancy (BUG-41) |
 | LO-6 | NTP | `TIMEZONE_LOOKUP` static constexpr duplicated per TU |
 | LO-7 | NTP | `setSyncInterval()` is no-op on ESP8266 — not documented |
 | LO-8 | RC | `nextClientId` wraps after 4B connections |
@@ -4346,16 +4528,16 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 2M (**SEC-4, SEC-6 and SEC-14 done 2026-09-14 in one lot, after its plan's adversarial review and the maintainer's rule that a brute-force defence delays and never blocks** — the console's `auth` wait, the CORS header withheld under auth with the entry's premise corrected, the empty password refused on both the WebUI and the console; **SEC-13 done 2026-09-14 in OBS Lot D** — the SSE stream behind a live middleware, `/api/system/info` gated, and `/` no longer reading a stale copy of `enableAuth`; **SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-40 | Multiple | 0C, **0H**, 6M (**32 done**; **BUG-40 filed and fixed 2026-09-15** — filed by TEST-7's reading: `ComponentConfig`'s float validator refused `"1.5"` and accepted `"1.50"` because it round-tripped through Arduino's two-decimal `String(float)`, octets and ports parsed `"4x"` as 4, a redefined parameter was validated twice; digits-only rule now stated in the reference, seven cases, three removal checks; **BUG-39 filed and fixed 2026-09-14** — filed by the adversarial review of BUG-38's decision memo: a queued message over PubSubClient's 768-byte ESP8266 buffer was retried forever and everything behind it waited; now dropped, named and counted; **BUG-38 filed and fixed 2026-09-14** — every discovery key abbreviated the way Home Assistant documents, the panel 774 → 638, the refusal counted; by OBS Lot D's review — the alarm control panel's discovery document is 774 characters against a 699-character event field and was published cut, so Home Assistant never created the panel; now refused aloud, the fix is a decision between abbreviating the documents and widening the field; **BUG-36 fixed 2026-09-06 in OBS Lot B** — released before the pop, per-bus drop counter in the flight record, "Expected 7 Was 0" on unfixed code; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, fixed with OBS-3's lot the next day; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-43 | Multiple | 0C, **0H**, 7M (**34 done**; **BUG-43 filed 2026-09-18 and open** — the Home Assistant availability topic that every discovery document advertises has no Last Will, so a device that drops off stays green in Home Assistant indefinitely; filed from AlarmControl by a read-only observation of its production broker, which held `status: offline` and `availability: online` retained side by side; **BUG-42 filed and fixed 2026-09-18**, HIGH, in BUG-41's lot — the panic was placed in the component, not in the test, and the row moved up a grade as its filing said it would: `Core::begin()` reserved `char text[1024]` in its prologue whether or not a flight record was promoted, and still held it while `initializeAll()` ran, leaving 32 bytes of the ESP8266's 4 096-byte cont stack; the block moved to a `noinline` function, `begin()` 1 216 → 208 B, the suite's free cont stack 32 → 896 B, and it prints 7/7 with a verdict line for the first time; filed and shut inside its lot, so no column moves; **BUG-41 filed and fixed 2026-09-18** — the EventBus queue counted entries, so every boot dropped eight events, and its cost model was wrong in six places before a board settled it; **BUG-40 filed and fixed 2026-09-15** — filed by TEST-7's reading: `ComponentConfig`'s float validator refused `"1.5"` and accepted `"1.50"` because it round-tripped through Arduino's two-decimal `String(float)`, octets and ports parsed `"4x"` as 4, a redefined parameter was validated twice; digits-only rule now stated in the reference, seven cases, three removal checks; **BUG-39 filed and fixed 2026-09-14** — filed by the adversarial review of BUG-38's decision memo: a queued message over PubSubClient's 768-byte ESP8266 buffer was retried forever and everything behind it waited; now dropped, named and counted; **BUG-38 filed and fixed 2026-09-14** — every discovery key abbreviated the way Home Assistant documents, the panel 774 → 638, the refusal counted; by OBS Lot D's review — the alarm control panel's discovery document is 774 characters against a 699-character event field and was published cut, so Home Assistant never created the panel; now refused aloud, the fix is a decision between abbreviating the documents and widening the field; **BUG-36 fixed 2026-09-06 in OBS Lot B** — released before the pop, per-bus drop counter in the flight record, "Expected 7 Was 0" on unfixed code; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, fixed with OBS-3's lot the next day; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 3M (**TEST-7 done 2026-09-15** — 42 cases over `MemoryManager` and `ComponentConfig`, plus 5 pinning the native `String` stub, which had to be made Arduino-like first (`toInt()` threw on garbage, `String(float)` printed six decimals); the reading filed BUG-40 and DC-17, and compiled one quarter of TEST-9's hypothesis; **TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 open, re-read 2026-09-15** — MQTTWebUI compiles without `WebUI.h`, the other three need a host double of the WebUI component) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
 | 7. Architecture | ARCH-1 to ARCH-3 | I, XIII | 0C, **0H**, 1M (**ARCH-3 done**; **ARCH-2 done 2026-08-31 by measurement** — both halves of its prescribed remedy already existed, one false at filing, one delivered by PR #17; no code changed. **ARCH-1 re-argued HIGH → MEDIUM 2026-08-31, restated 2026-09-06 and open** — SYS-F6 unreadable so the HIGH was never argued, one XIII indicator exceeded against a file otherwise inside every measurement; the fork trigger fired with marianorenzi's reply of 2026-09-01 and the three extractions are declined on merit; the boot-diagnostics residue (~95 lines) rides OBS Lot B, which rewrites that path, and `begin()` is re-measured at Lot B's closure) |
 | 8. CI/Infrastructure | CI-1 to CI-15 | II, XII | 0C, 0H, 4M, 1L (**CI-1, CI-2, CI-3, CI-5, CI-8, CI-9, CI-10, CI-12 done**; CI-11 open, **CI-13 done 2026-09-01** — paid a second time at 19 GB before the fix its entry prescribed was finally applied; **CI-14** — FullStack is green in CI and unusable on an ESP8266; **CI-15 done 2026-09-15** — filed as a packaging item, re-pointed 2026-09-05 when `export.exclude` measured inert, closed by `symlink://` in all 49 manifests, the 31 nested projects' libdeps moved out of the component that contains them, `clean_examples.py` retired) |
 | 9. Dead Code | DC-1 to DC-17, PERSIST-1 | IV (YAGNI) | 0C, 0H, 11M, 0L (**DC-17 filed 2026-09-15** — `ComponentConfig` and eight `MemoryManager` queries: no caller in the tree, documented public API, DC-13's decision on a major boundary; **DC-16 filed and fixed 2026-09-14**, LOW — `/api/ntp/timezones` was registered twice, the System's copy removed and the provider's `init()` finally called; **DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
-| 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 32L (**LO-11 done**; **DOC-1 new**) |
+| 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 31L (**LO-5 done 2026-09-18 in BUG-41's lot** — the silent drop has been logged since OBS Lot B and this row had not caught up; the line now carries the budget and the peak occupancy; **LO-11 done**; **DOC-1 new**) |
 | 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 0M, 0L — **all seven closed** (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-5 and OBS-1's transport closed by Lot D on 2026-09-14** — telemetry and the retained crash record on MQTT, discovered by Home Assistant through one topic scheme, the core dump downloaded, decoded against its ELF and erased through the WebUI, a Home Assistant container reading the entities; **OBS-4 closed by Lot C on 2026-09-06** — the failed-allocation group in the record, the ESP32 heap hook, the ESP8266 latch-and-clear, the diagnostic profile measured; **OBS-3 closed by Lot B on 2026-09-06** — the recorder in Core, promotion first, the record held until persisted, both boards' death sequences read back, three removal checks; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
-| **Total** | **146 items** | | **0C, 0H, 34M, 34L** (91 resolved) |
+| **Total** | **149 items** | | **0C, 0H, 35M, 33L** (94 resolved) |
 
 The severity columns sum across the rows: **zero open HIGH again — and
 this time the last one left by a fix.** BUG-35 was filed by the 2026-09-01
@@ -4365,8 +4547,13 @@ board-measured red-then-green on both platforms. The sequence is the
 system working: the campaign refilled the column, the fix emptied it. The
 rows were checked against the section headings rather than only re-summed
 — the sweep below, re-run for the BUG-35 lot, reports **35 `[HIGH]`
-headings, 35 with evidence, 0 open**. The MEDIUM column sums to 34:
-2 + 4 + 6 + 3 + 3 + 1 + 4 + 11 + 0 + 0 — the CI-15 lot on 2026-09-15 closed
+headings, 35 with evidence, 0 open**; BUG-42 makes that 36 and 36, filed
+and shut inside one lot. The MEDIUM column sums to 35:
+2 + 4 + 7 + 3 + 3 + 1 + 4 + 11 + 0 + 0 — AlarmControl's read-only observation of its production broker on 2026-09-18 filed one MEDIUM that stays open (BUG-43, 34 → 35, total 148 → 149, resolved unchanged at 93); BUG-41's lot on 2026-09-18 filed one MEDIUM
+and fixed it in place (BUG-41, no column move), closed one LOW (LO-5: 32 → 31
+in the Minor row, 34 → 33 overall) and filed one item that was graded MEDIUM,
+re-graded HIGH on measurement and fixed in the same lot (BUG-42, no column
+move), for a total of 146 → 148 and resolved 91 → 94; the CI-15 lot on 2026-09-15 closed
 one (35 → 34, resolved 90 → 91); TEST-7's lot on 2026-09-15 closed one
 and filed one MEDIUM (DC-17) and one filed-and-fixed (BUG-40): 35 → 35,
 total 144 → 146, resolved 88 → 90; the SEC-4/SEC-6/SEC-14 lot closed three on

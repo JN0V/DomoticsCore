@@ -390,11 +390,13 @@ struct QueuedEvent {
 | **poll** | `void poll(size_t maxPerPoll = 8)` | Dispatch up to `maxPerPoll` queued events. Called by `ComponentRegistry::loopAll()`. |
 | **reset** | `void reset()` | Clear all subscriptions and the queue. |
 | **getDroppedCount** | `uint32_t getDroppedCount() const` | Events popped on queue overflow since construction or `reset()` (BUG-36, LO-5); the flight recorder stores it, `Core::loop()` logs it. |
+| **getQueuedBytes** | `uint16_t getQueuedBytes() const` | Bytes the queue currently holds, as `QueueCost` models them. |
+| **getQueueHighWaterPct** | `uint8_t getQueueHighWaterPct() const` | Highest occupancy reached since construction or `reset()`, in percent of the budget; `Core::loop()` logs it beside the drop count. |
 
 ### Threading and Safety
 
 - **Single-threaded assumption.** `subscribe()`, `unsubscribe()`, and `unsubscribeOwner()` must NOT be called during `poll()` dispatch. An `assert` guards this in debug builds.
-- **Backpressure.** The internal queue is capped at 32 events. When full, the oldest event is dropped.
+- **Backpressure.** The internal queue is bounded by the **bytes** it holds, not by a count of entries: `QueueCost::kBudgetBytes`, which is 32 events the size of an `MQTTPublishEvent`. When a new event does not fit, the oldest are dropped until it does. An event larger than the whole budget is refused, counted and named in the log. A second bound, `kMaxEntries`, caps the queue at 256 entries whatever the model says.
 - **Wildcard matching.** Topics containing `*` are matched as prefix patterns (e.g., `"sensor/*"` matches `"sensor/temperature"` and `"sensor/humidity"`).
 - **Sticky deduplication.** The EventBus tracks `pendingByTopic` counters to avoid replaying a sticky event to a new subscriber when an equivalent event is already queued and will arrive shortly. This prevents a subscriber from receiving the same state value twice on registration.
 
@@ -916,7 +918,7 @@ Topics containing `*` are treated as prefix patterns. Example: subscribing to `"
 
 ### Backpressure
 
-The event queue is capped at **32 events**. When the queue is full, the **oldest event is dropped** to make room for the new one. The `poll()` method processes up to `maxPerPoll` (default 8) events per call.
+The event queue is bounded by the **bytes it holds** — `QueueCost::kBudgetBytes`, which is 32 events the size of an `MQTTPublishEvent` (about 28 KB). When a new event does not fit, the **oldest are dropped** until it does. `QueueCost` models what one event costs the heap with the shape of the allocator, and its constants are platform constants; `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` lowers the budget where the heap cannot carry it. The `poll()` method processes up to `maxPerPoll` (default 8) events per call.
 
 ---
 

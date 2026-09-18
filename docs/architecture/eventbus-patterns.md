@@ -12,7 +12,7 @@ The EventBus is **queue-based** with polling dispatch, NOT immediate:
 
 - Events are queued on `publish()` (not dispatched immediately)
 - `poll(maxPerPoll)` processes up to `maxPerPoll` events per call (default: 8)
-- **Backpressure**: Queue capped at 32 events; oldest dropped on overflow
+- **Backpressure**: Queue bounded by the bytes it holds (`QueueCost::kBudgetBytes`); oldest dropped until the new one fits
 - `Core::loop()` calls `eventBus.poll()` automatically each cycle
 
 ## Basic Usage

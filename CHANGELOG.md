@@ -26,6 +26,52 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [Unreleased]
+
+> **The EventBus queue is now bounded by the bytes it holds rather than by a
+> count of 32 entries.** A burst of *small* events is no longer truncated at 32 —
+> that is a visible behaviour change, and it is why this note is here. The worst
+> case is unchanged: the budget is 32 events the size of an `MQTTPublishEvent`,
+> which is what the old count stood for, so no device holds more than before.
+> `QueueCost` is public, and `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` lowers the budget
+> where a board cannot carry it. The once-a-minute drop line now reads
+> `EventBus dropped N events (queue budget B, peak P %)`.
+
+### Fixed
+
+- **ESP8266: `Core::begin()` took a quarter of the 4 KB cont stack and could
+  panic an application at its next `yield()`** (BUG-42). The 1 KB buffer that
+  formats a promoted flight record was a local of `begin()`, so the compiler
+  reserved it in the prologue whether or not a record existed, and it was still
+  held while every component's `begin()` ran on top of it. Measured on a
+  nodemcuv2: the Storage board suite reached its sixth test with **32 bytes** of
+  cont stack left and died on a bare `yield()` — `Panic
+  core_esp8266_main.cpp:191`. The block moved to a function of its own, which
+  returns before the components are initialised: `Core::begin()`'s frame goes
+  from 1 216 to 208 bytes and the same suite ends with 896 bytes to spare. No
+  output, API or behaviour changes. **If you ship on an ESP8266 and have seen
+  unexplained `__yield` panics at boot, this is a candidate.**
+- **EventBus: the queue counted entries, and a boot lost eight events** (BUG-41).
+  Nothing drains the bus between the first component `begin()` and the first
+  `Core::loop()`, and a FullStack application emits about forty events in that
+  window against a cap of 32. Measured on a bench ESP32: eight dropped at every
+  boot — `wifi/ap/enabled`, `network/ready`, `storage/ready` and five
+  `component/ready`. They were harmless by an accident of ordering, and ten more
+  emissions would have unsubscribed a device from its own MQTT commands in
+  silence. The bound is now `QueueCost::kBudgetBytes`; the boot burst costs about
+  6 KB of it and loses nothing — measured on a board, before and after: eight
+  dropped in AP mode and six in STA, zero in both after. The fix is also 1 844
+  bytes smaller in flash than the entry cap it replaces. This does **not** fix the
+  MQTT connect burst,
+  which is made of full-size events — its cliff moved by exactly one entity (29
+  sensors to 30) and shrinking it is LO-2's work.
+
+### Added
+
+- `EventBus::getQueuedBytes()` and `getQueueHighWaterPct()`, and
+  `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` to lower the budget on a board that cannot
+  carry 32 reference events.
+
 ## [2.5.0] - 2026-09-16
 
 > **This release adds two public fields, refuses one configuration it used
@@ -114,7 +160,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > the application declares first is left to it. The retained crash topic
 > outlives a decommissioned device until someone clears it
 > (`tools/on-device/mqtt_watch.py --clear`). The EventBus's 32-entry cap
-> leaves **21 entities** to an application at connect. A sketch driving
+> leaves **13 entities** to an application at connect. A sketch driving
 > `Core` without `System` gets none of this.
 >
 > **Every Home Assistant discovery document is now written with Home

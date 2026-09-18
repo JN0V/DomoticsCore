@@ -85,7 +85,7 @@ Platform-specific code is isolated in `*_HAL.h` files with compile-time routing:
 ### EventBus
 Instance-based, queue-based publish/subscribe messaging (`DomoticsCore::Utils::EventBus`). Components publish events without knowing who listens. Events are queued on `publish()` and dispatched during `poll()` (called automatically by `Core::loop()` via `ComponentRegistry::loopAll()`). Key features:
 - **Queued dispatch**: `poll(maxPerPoll=8)` processes up to 8 events per call
-- **Backpressure**: Queue capped at 32 events; oldest dropped on overflow
+- **Backpressure**: Queue bounded by the bytes it holds (`QueueCost::kBudgetBytes`); oldest dropped until the new one fits
 - **Sticky events**: `publishSticky()` stores the last payload; late subscribers with `replayLast=true` receive it immediately
 - **Wildcard subscriptions**: `sensor/*` matches `sensor/temperature`, `sensor/humidity`, etc.
 - **Owner-based cleanup**: `unsubscribeOwner(ptr)` removes all subscriptions for a component (called automatically on shutdown)
