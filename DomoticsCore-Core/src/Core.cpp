@@ -8,6 +8,22 @@
 
 namespace DomoticsCore {
 
+// BUG-42: kept out of Core::begin() and out of line. The 1 KB buffer is part of
+// begin()'s frame wherever it is declared, taken branch or not, and the ESP8266
+// runs begin() and all of initializeAll() on a 4 KB cont stack.
+static void __attribute__((noinline)) logPromotedRecord(FlightRecorder& recorder) {
+    char text[1024];   // sized by test_format_saturated_stays_under_128_per_line_and_1024_in_all (OBS-4)
+    recorder.format(text, sizeof(text));
+    // One log line per formatted line: the ESP8266's log buffer is 128 bytes.
+    char* line = text;
+    while (line && *line) {
+        char* nl = strchr(line, '\n');
+        if (nl) *nl = '\0';
+        DLOG_W(LOG_CORE, "%s", line);
+        line = nl ? nl + 1 : nullptr;
+    }
+}
+
 Core::Core() : initialized(false) {
 }
 
@@ -48,16 +64,7 @@ bool Core::begin(const CoreConfig& cfg) {
         DLOG_W(LOG_CORE, "Sampler compiled out: survived allocation failures will not be recorded on this platform");
     }
     if (recorder.hasPromotedRecord()) {
-        char text[1024];   // sized by test_format_saturated_stays_under_128_per_line_and_1024_in_all (OBS-4)
-        recorder.format(text, sizeof(text));
-        // One log line per formatted line: the ESP8266's log buffer is 128 bytes.
-        char* line = text;
-        while (line && *line) {
-            char* nl = strchr(line, '\n');
-            if (nl) *nl = '\0';
-            DLOG_W(LOG_CORE, "%s", line);
-            line = nl ? nl + 1 : nullptr;
-        }
+        logPromotedRecord(recorder);
         // A bare Core has no Storage: the log line above is where the record
         // got out, so the fresh record can take RTC now. System persists
         // first and acknowledges itself.
