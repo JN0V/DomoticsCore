@@ -133,3 +133,29 @@ their own.
   source_spec: `spec-ci-15-symlink-deps.md`
 - An ESP32 image embeds the source paths the core's log macros expand from `__FILE__` (30 strings in FullStack esp32dev); with `symlink://` they are the components' real, absolute paths, so the image and its flash figure depend on where the checkout lives (+864 bytes locally against `main`'s `.pio/libdeps/...` paths). `-ffile-prefix-map=<repo root>=` in the build flags would make the image path-independent; not done here because it changes what a crash log names.
   source_spec: `spec-ci-15-symlink-deps.md`
+
+## Deferred from: the BUG-41 / BUG-42 lot (2026-09-18)
+
+- The byte budget bounds the **queue** and not the sticky store. `publishSticky`
+  writes the topic's last payload into `lastByTopic`, its payload-less overload
+  clears the vector and keeps the key, and only `reset()` erases the map — so the
+  store grows with the number of distinct sticky topics ever published and
+  nothing counts it against `QueueCost::kBudgetBytes`. Bounded in practice by a
+  firmware's fixed topic set rather than by the code: a caller that composes topic
+  names at run time (per entity, per session) grows it without limit. Not fixed
+  here because the bound the lot argued and measured is the queue's, and evicting
+  a sticky payload changes what a late subscriber replays — a behaviour decision,
+  not a cap.
+  evidence: `EventBus.h:236`, `:242` (the two stores), `:247-248` (the clear that
+  keeps the key), `:316` (`reset()`, the only erase), `:408` (the map);
+  `docs/decisions/0003-the-eventbus-queue-is-bounded-by-bytes-not-by-count.md`.
+
+- `Core::begin()` is one deep frame among several on the ESP8266's 4 KB cont
+  stack, and BUG-42 measured only the one that was overflowing it. With that
+  kilobyte out of the way the Storage suite's deepest point still leaves 896 B,
+  which is margin, not comfort: `-fstack-usage` puts `logPromotedRecord` at
+  1 168 B and `app_entry_redefinable` at 4 160, and nothing in CI reads either
+  number. A build-time check on the frames of the paths an application runs at
+  boot would have caught this before a board did.
+  evidence: `.su` files from `PLATFORMIO_BUILD_FLAGS="-fstack-usage"`, 2026-09-18;
+  `ESP.getFreeContStack()` 32 B before the fix, 896 B after, same suite.

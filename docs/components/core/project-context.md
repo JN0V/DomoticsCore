@@ -148,7 +148,7 @@ Every DomoticsCore component depends on Core. Based on `library.json` dependency
 
 2. **Do NOT call `begin()` manually on components.** Let `ComponentRegistry::initializeAll()` handle initialization order. Manual early-init is an anti-pattern that breaks dependency resolution.
 
-3. **EventBus queue cap is 32.** If your component publishes many events in a burst, older events will be silently dropped. Design for moderate publish rates.
+3. **The EventBus queue is bounded by bytes**, not by a count: `QueueCost::kBudgetBytes`, 32 events the size of an `MQTTPublishEvent`. A burst of small events costs little and is not truncated at 32; a burst of large ones still is. Drops are counted, logged once a minute with the peak occupancy, and carried in the flight record.
 
 4. **`poll()` processes max 8 events per call by default.** High-throughput event scenarios may need multiple loop iterations to clear the queue.
 

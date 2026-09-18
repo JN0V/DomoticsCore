@@ -174,7 +174,7 @@ The EventBus is **queue-based** with polling dispatch:
 
 - Events are queued on `publish()` (not dispatched immediately)
 - `poll(maxPerPoll)` processes up to `maxPerPoll` events per call (default: 8)
-- **Backpressure**: Queue capped at 32 events — oldest dropped on overflow
+- **Backpressure**: Queue bounded by the bytes it holds (`QueueCost::kBudgetBytes`, 32 events the size of an `MQTTPublishEvent`) — oldest dropped until the new one fits
 - `Core::loop()` calls `eventBus.poll()` automatically
 
 ### Event Topics
