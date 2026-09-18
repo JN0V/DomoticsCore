@@ -136,8 +136,8 @@ public:
         // site, found by the static_assert rather than by grep because it neither
         // spells `emit<String>` nor mentions a String-returning call. The payload
         // was empty and carried nothing, so there is nothing to convert to bytes:
-        // the no-payload overload is what this always meant. The only subscriber
-        // takes `const void*` and ignores it.
+        // the no-payload overload is what this always meant. Subscribers take
+        // `const void*` and ignore it.
         eventBus.publish(Events::EVENT_SYSTEM_READY);
 
         // Post-initialization hooks for components

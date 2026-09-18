@@ -18,6 +18,29 @@ void tearDown(void) {
     testBus = nullptr;
 }
 
+// ---------------------------------------------------------------------------
+// BUG-41: the queue is bounded by the bytes it holds, not by an entry count.
+// Every expected number below is derived from QueueCost, never written as a
+// literal: the native stub String is not the boards' String, so these test the
+// model, not the silicon.
+// ---------------------------------------------------------------------------
+using DomoticsCore::Utils::QueueCost;
+
+// This project is built WITHOUT -DDOMOTICS_EVENTBUS_QUEUE_BYTES, so it pins the
+// default arm of the #ifdef; the flag's own arm is pinned by the project in
+// test/test_queue_budget_override, which is built with it.
+static_assert(QueueCost::kBudgetBytes == 32 * QueueCost::kReference,
+              "the default budget is no longer 32 reference events");
+
+// A topic that stays inside SSO on every target, so a small event costs node+payload only.
+static const char* SMALL_TOPIC = "t/small";           // 7 chars
+static const char* REF_TOPIC   = "mqtt/publish";      // 12 chars, the reference event's
+
+// How many events of this class fit in the budget.
+static size_t fits(size_t payload, size_t topicLen) {
+    return QueueCost::kBudgetBytes / QueueCost::of(payload, topicLen);
+}
+
 void test_subscribe_and_publish(void) {
     bool received = false;
     int receivedValue = 0;
@@ -163,27 +186,24 @@ void test_unsubscribe_owner(void) {
 }
 
 void test_backpressure(void) {
+    // BUG-41: a storm past the BUDGET keeps the most recent, in order, and counts
+    // what it dropped. The capacity is derived from QueueCost, never written down.
     std::vector<int> received;
-    testBus->subscribe(String("test.pressure"), [&](const void* payload) {
-        auto* value = static_cast<const int*>(payload);
-        if (value) received.push_back(*value);
+    testBus->subscribe(String(REF_TOPIC), [&](const void* p) {
+        if (p) received.push_back(*static_cast<const int*>(p));
     }, nullptr);
-    
-    // Publish more than queue capacity (32) to test backpressure
-    for (int i = 0; i < 100; i++) {
-        testBus->publish(String("test.pressure"), i);
+    const size_t CAP = QueueCost::kBudgetBytes / QueueCost::of(830, strlen(REF_TOPIC));
+    const int N = 100;
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(CAP, (size_t)N, "the storm must exceed the budget or it storms nothing");
+    std::vector<uint8_t> buf(830, 0);
+    for (int i = 0; i < N; i++) {
+        memcpy(buf.data(), &i, sizeof(int));
+        testBus->publish(String(REF_TOPIC), buf.data(), 830);
     }
-    
-    // Drain the queue
-    for (int i = 0; i < 10; i++) {
-        testBus->poll();
-    }
-    
-    // Should only have last 32 messages (68-99) due to drop-oldest policy
-    TEST_ASSERT_EQUAL(32, received.size());
-    for (int i = 0; i < 32; i++) {
-        TEST_ASSERT_EQUAL(68 + i, received[i]);
-    }
+    for (int i = 0; i < 40; i++) testBus->poll();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(CAP, received.size(), "the budget did not hold what it models");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE((size_t)N - CAP, testBus->getDroppedCount(), "the drop count and the survivors disagree");
+    for (size_t i = 0; i < CAP; i++) TEST_ASSERT_EQUAL_INT((int)((size_t)N - CAP + i), received[i]);
 }
 
 // BUG-36: on overflow enqueue() popped the oldest event without decrementing
@@ -191,11 +211,15 @@ void test_backpressure(void) {
 // another topic stormed the queue never replayed its sticky value again.
 void test_bug36_topic_dropped_on_overflow_still_replays_sticky(void) {
     int b = 7;
-    testBus->publishSticky(String("topic/B"), b);          // B is the oldest queued event
-    for (int i = 0; i < 40; i++) {                          // A storms past the cap of 32: B is dropped
-        testBus->publish(String("topic/A"), i);
-    }
-    for (int i = 0; i < 10; i++) testBus->poll();           // drain everything that survived
+    testBus->publishSticky(String("topic/B"), b);           // B is the oldest queued event
+    // BUG-41: the storm has to be in BYTES now. Forty small events no longer
+    // overflow anything, and this test would pass while reaching nothing.
+    const size_t CAP = QueueCost::kBudgetBytes / QueueCost::of(830, strlen("topic/A"));
+    std::vector<uint8_t> buf(830, 0x55);
+    for (size_t i = 0; i < CAP + 8; i++) testBus->publish(String("topic/A"), buf.data(), 830);
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0, testBus->getDroppedCount(),
+                                            "nothing was evicted: this test measured nothing");
+    for (int i = 0; i < 80; i++) testBus->poll();          // drain everything that survived
 
     int replayed = 0;
     testBus->subscribe(String("topic/B"), [&](const void* payload) {
@@ -206,10 +230,168 @@ void test_bug36_topic_dropped_on_overflow_still_replays_sticky(void) {
 
 void test_bug36_drop_counter_counts_every_overflow(void) {
     TEST_ASSERT_EQUAL_UINT32(0, testBus->getDroppedCount());
-    for (int i = 0; i < 40; i++) testBus->publish(String("topic/A"), i);
-    TEST_ASSERT_EQUAL_UINT32(8, testBus->getDroppedCount());
+    const size_t CAP = QueueCost::kBudgetBytes / QueueCost::of(830, strlen("topic/A"));
+    std::vector<uint8_t> buf(830, 0x44);
+    for (size_t i = 0; i < CAP + 8; i++) testBus->publish(String("topic/A"), buf.data(), 830);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(8, testBus->getDroppedCount(), "eight past the budget, eight counted");
     testBus->reset();
     TEST_ASSERT_EQUAL_UINT32(0, testBus->getDroppedCount());
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getQueuedBytes(), "reset() left bytes on the books");
+}
+
+
+void test_burst_of_small_events_beyond_32_is_not_dropped(void) {
+    const size_t N = 64;                                  // past the old entry cap, far inside the budget
+    TEST_ASSERT_GREATER_THAN_UINT32(N, fits(sizeof(int), strlen(SMALL_TOPIC)));
+    std::vector<int> got;
+    testBus->subscribe(String(SMALL_TOPIC), [&](const void* p) {
+        if (p) got.push_back(*static_cast<const int*>(p));
+    }, nullptr);
+    for (size_t i = 0; i < N; ++i) { int v = (int)i; testBus->publish(String(SMALL_TOPIC), v); }
+    for (int i = 0; i < 20; ++i) testBus->poll();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getDroppedCount(), "a burst well inside the budget still dropped");
+    TEST_ASSERT_EQUAL_UINT32(N, got.size());
+    for (size_t i = 0; i < N; ++i) TEST_ASSERT_EQUAL_INT((int)i, got[i]);
+}
+
+void test_late_subscriber_receives_every_event_published_before_it_subscribed(void) {
+    const size_t N = 40;                                  // C1 + C3: nothing drains before the first loop()
+    std::vector<int> got;
+    for (size_t i = 0; i < N; ++i) { int v = (int)i; testBus->publish(String(SMALL_TOPIC), v); }
+    testBus->subscribe(String(SMALL_TOPIC), [&](const void* p) {
+        if (p) got.push_back(*static_cast<const int*>(p));
+    }, nullptr);
+    for (int i = 0; i < 20; ++i) testBus->poll();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(N, got.size(), "a subscriber posted after the burst lost its head");
+    for (size_t i = 0; i < N; ++i) TEST_ASSERT_EQUAL_INT((int)i, got[i]);
+}
+
+// A measured boot: the events a FullStack application emits between the first
+// component begin() and the first Core::loop(), component subscribers posted
+// before, sketch subscribers after. All of it must survive one loop.
+void test_boot_sequence_is_delivered_in_full(void) {
+    struct E { const char* topic; size_t payload; };
+    std::vector<E> boot;
+    for (int i = 0; i < 13; ++i) boot.push_back({"component/ready", 4});
+    boot.push_back({"system/ready", 0});
+    boot.push_back({"storage/ready", 9});
+    boot.push_back({"mqtt/subscribe", 129});
+    boot.push_back({REF_TOPIC, 830});
+    for (int i = 0; i < 18; ++i) boot.push_back({"ha/entity_added", 96});
+    boot.push_back({"app/io/pulse_completed", 1});   // a sketch topic, 24 chars
+    TEST_ASSERT_EQUAL_UINT32(36, boot.size());   // 13 ready + system + storage + sub + pub + 18 entities + pulse
+
+    size_t modelled = 0;
+    for (const E& e : boot) modelled += QueueCost::of(e.payload, strlen(e.topic));
+    TEST_ASSERT_LESS_THAN_UINT32_MESSAGE(QueueCost::kBudgetBytes, modelled, "the boot burst no longer fits the budget");
+
+    size_t received = 0;
+    testBus->subscribe(String("component/ready"), [&](const void*) { received++; }, nullptr);
+    std::vector<uint8_t> buf(830, 0x5A);
+    for (const E& e : boot) {
+        if (e.payload) testBus->publish(String(e.topic), buf.data(), e.payload);
+        else           testBus->publish(String(e.topic));
+    }
+    testBus->subscribe(String(REF_TOPIC), [&](const void*) { received++; }, nullptr);   // the sketch, after begin()
+    for (int i = 0; i < 20; ++i) testBus->poll();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getDroppedCount(), "the boot burst still drops events");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(14, received, "13 component/ready and the sketch's own event");
+}
+
+// The cliff has to stay exactly where it is today: the budget is 32 reference
+// events, so the 33rd costs one and not before.
+void test_cliff_is_where_it_was(void) {
+    std::vector<uint8_t> buf(830, 0x11);
+    for (int i = 0; i < 32; ++i) testBus->publish(String(REF_TOPIC), buf.data(), 830);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getDroppedCount(), "32 reference events must fit exactly");
+    testBus->publish(String(REF_TOPIC), buf.data(), 830);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, testBus->getDroppedCount(), "the 33rd must cost exactly one");
+}
+
+// One large event evicts as many of the oldest as it needs — and BUG-36's
+// release still runs for every one of them.
+void test_one_large_event_evicts_as_many_oldest_as_needed_and_keeps_sticky_replayable(void) {
+    // Medium events, so the byte budget binds well before the entry guard rail:
+    // what is under test is eviction by bytes, not by count.
+    const size_t MED = 200;
+    std::vector<uint8_t> med(MED, 0x33), big(830, 0x22);
+    const size_t medCost = QueueCost::of(MED, strlen(SMALL_TOPIC));
+    const size_t bigCost = QueueCost::of(830, strlen(REF_TOPIC));
+    TEST_ASSERT_LESS_THAN_UINT32_MESSAGE(QueueCost::kMaxEntries, QueueCost::kBudgetBytes / medCost,
+                                         "this class would hit the entry guard first");
+
+    int b = 7;
+    testBus->publishSticky(String("topic/B"), b);            // oldest, and sticky
+    size_t queued = QueueCost::of(sizeof(int), strlen("topic/B"));
+    size_t n = 0;
+    while (queued + medCost + bigCost <= QueueCost::kBudgetBytes) {
+        testBus->publish(String(SMALL_TOPIC), med.data(), MED);
+        queued += medCost; n++;
+    }
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getDroppedCount(), "filling to the budget must not drop");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(queued, testBus->getQueuedBytes(), "the bus and the model disagree on what is queued");
+
+    // One more medium plus the big one cannot both fit: the big one evicts the
+    // oldest until it does, and topic/B is the oldest.
+    testBus->publish(String(SMALL_TOPIC), med.data(), MED);
+    testBus->publish(String(REF_TOPIC), big.data(), 830);
+    const uint32_t dropped = testBus->getDroppedCount();
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0, dropped, "the big event evicted nothing");
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(bigCost / medCost + 2, dropped, "it evicted far more than it needed");
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(QueueCost::kBudgetBytes, testBus->getQueuedBytes(),
+                                             "the queue is over its budget after an eviction");
+
+    for (int i = 0; i < 200; ++i) testBus->poll();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getQueuedBytes(), "a drained queue must account zero bytes");
+    int replayed = 0;
+    testBus->subscribe(String("topic/B"), [&](const void* p) {
+        if (p) replayed = *static_cast<const int*>(p);
+    }, nullptr, true);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(7, replayed, "sticky replay of a topic evicted by a large event");
+}
+
+
+void test_budget_is_accounted_on_publish_on_dispatch_and_on_reset(void) {
+    const size_t cost = QueueCost::of(sizeof(int), strlen(SMALL_TOPIC));
+    TEST_ASSERT_EQUAL_UINT32(0, testBus->getQueuedBytes());
+    const size_t N = 40;                                   // past the old entry cap, inside the budget
+    for (size_t i = 0; i < N; ++i) { int v = (int)i; testBus->publish(String(SMALL_TOPIC), v); }
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(N * cost, testBus->getQueuedBytes(), "publish did not bill the queue");
+    testBus->poll();                                       // maxPerPoll is 8
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE((N - 8) * cost, testBus->getQueuedBytes(), "dispatch did not credit it back");
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0, testBus->getQueueHighWaterPct(), "the high water mark never moved");
+    testBus->reset();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getQueuedBytes(), "reset() left bytes on the books");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getQueueHighWaterPct(), "reset() kept the old high water mark");
+}
+
+// An event bigger than the whole budget can never be queued: evicting for it
+// would empty the queue and still fail. It is refused, counted, and named.
+void test_oversized_event_is_refused_counted_and_not_queued(void) {
+    int keep = 3;
+    testBus->publish(String("topic/keep"), keep);
+    const uint16_t before = testBus->getQueuedBytes();
+    std::vector<uint8_t> huge(QueueCost::kBudgetBytes + 1, 0x77);
+    testBus->publish(String("topic/huge"), huge.data(), huge.size());
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, testBus->getDroppedCount(), "the oversized event was not counted");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(before, testBus->getQueuedBytes(),
+                                     "the oversized event emptied the queue on its way out");
+    size_t kept = 0;
+    testBus->subscribe(String("topic/keep"), [&](const void*) { kept++; }, nullptr);
+    for (int i = 0; i < 8; ++i) testBus->poll();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, kept, "the event that was already queued did not survive");
+}
+
+// The entry guard rail: a class of events cheap enough that the budget would
+// hold more of them than the model is trusted for.
+void test_entry_guard_rail_bounds_a_cheap_class(void) {
+    const size_t cheap = QueueCost::of(0, 4);              // no payload, a topic inside SSO
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(QueueCost::kMaxEntries, QueueCost::kBudgetBytes / cheap,
+                                            "this class is not cheap enough to reach the guard rail");
+    for (size_t i = 0; i < QueueCost::kMaxEntries; ++i) testBus->publish(String("t/gr"));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getDroppedCount(), "the guard rail fired early");
+    testBus->publish(String("t/gr"));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, testBus->getDroppedCount(), "the guard rail did not fire");
 }
 
 void test_publish_during_dispatch_safe(void) {
@@ -536,6 +718,14 @@ int main(int argc, char** argv) {
     RUN_TEST(test_backpressure);
     RUN_TEST(test_bug36_topic_dropped_on_overflow_still_replays_sticky);
     RUN_TEST(test_bug36_drop_counter_counts_every_overflow);
+    RUN_TEST(test_burst_of_small_events_beyond_32_is_not_dropped);
+    RUN_TEST(test_late_subscriber_receives_every_event_published_before_it_subscribed);
+    RUN_TEST(test_boot_sequence_is_delivered_in_full);
+    RUN_TEST(test_cliff_is_where_it_was);
+    RUN_TEST(test_one_large_event_evicts_as_many_oldest_as_needed_and_keeps_sticky_replayable);
+    RUN_TEST(test_budget_is_accounted_on_publish_on_dispatch_and_on_reset);
+    RUN_TEST(test_oversized_event_is_refused_counted_and_not_queued);
+    RUN_TEST(test_entry_guard_rail_bounds_a_cheap_class);
     RUN_TEST(test_publish_during_dispatch_safe);
     RUN_TEST(test_reset_clears_wildcard_subscriptions);
     RUN_TEST(test_reset_clears_sticky_events);

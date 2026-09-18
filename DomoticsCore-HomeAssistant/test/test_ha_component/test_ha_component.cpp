@@ -1226,10 +1226,10 @@ void test_discovery_config_for_a_sensor_is_this_exact_document() {
     core.shutdown();
 }
 
-// How many sensors a device can declare before the connect burst overflows
-// the EventBus: the connect handler's own events plus N configs against the
-// 32-entry cap. Twenty-nine fit today; the eight system entities OBS-5 adds
-// come out of this budget, and the number is recorded in the roadmap.
+// How many sensors a device can declare before the connect burst overflows the
+// EventBus. BUG-41 made this a platform figure: QueueCost decides it, not a
+// literal, and it is derived below rather than written down. The eight system
+// entities OBS-5 adds still come out of this budget.
 static void connectWithSensors(Core& core, int n, int& configs) {
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
@@ -1246,19 +1246,31 @@ static void connectWithSensors(Core& core, int n, int& configs) {
     for (int i = 0; i < 10; i++) core.loop();
 }
 
-void test_twenty_nine_sensors_reach_the_bus_at_connect_without_a_drop() {
+// The budget holds this many events the size of an MQTTPublishEvent; the connect
+// handler spends two of them on its own account (availability, and the command
+// subscription), and the rest carry configs.
+static size_t sensorsThatFitAtConnect() {
+    using DomoticsCore::Utils::QueueCost;
+    const size_t refEvents = QueueCost::kBudgetBytes /
+        QueueCost::of(sizeof(MQTTPublishEvent), strlen(DomoticsCore::MQTTEvents::EVENT_PUBLISH));
+    return refEvents - 2;
+}
+
+void test_every_sensor_the_budget_holds_reaches_the_bus_at_connect_without_a_drop() {
+    const size_t N = sensorsThatFitAtConnect();
     Core core;
     int configs = 0;
-    connectWithSensors(core, 29, configs);
-    TEST_ASSERT_EQUAL_INT(29, configs);
+    connectWithSensors(core, (int)N, configs);
+    TEST_ASSERT_EQUAL_INT((int)N, configs);
     TEST_ASSERT_EQUAL_UINT32(0, core.getEventBus().getDroppedCount());
     core.shutdown();
 }
 
-void test_the_thirtieth_sensor_costs_a_dropped_event_at_connect() {
+void test_one_sensor_past_the_budget_costs_a_dropped_event_at_connect() {
+    const size_t N = sensorsThatFitAtConnect();
     Core core;
     int configs = 0;
-    connectWithSensors(core, 30, configs);
+    connectWithSensors(core, (int)N + 1, configs);
     TEST_ASSERT_EQUAL_UINT32(1, core.getEventBus().getDroppedCount());
     core.shutdown();
 }
@@ -1482,8 +1494,8 @@ int runAllTests() {
 
     // Baselines pinned before OBS-5 changes the discovery payload
     RUN_TEST(test_discovery_config_for_a_sensor_is_this_exact_document);
-    RUN_TEST(test_twenty_nine_sensors_reach_the_bus_at_connect_without_a_drop);
-    RUN_TEST(test_the_thirtieth_sensor_costs_a_dropped_event_at_connect);
+    RUN_TEST(test_every_sensor_the_budget_holds_reaches_the_bus_at_connect_without_a_drop);
+    RUN_TEST(test_one_sensor_past_the_budget_costs_a_dropped_event_at_connect);
 
     // OBS-5 — the discovery fields and the duplicate-id warning
     RUN_TEST(test_discovery_config_with_the_diagnostic_fields_emits_exactly_them);

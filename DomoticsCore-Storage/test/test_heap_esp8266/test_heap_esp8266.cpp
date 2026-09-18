@@ -292,15 +292,18 @@ void test_storage_namespace_lifecycle() {
 // ============================================================================
 
 // Writing without ever draining the bus DOES cost heap: every put queues a
-// storage/changed event. What matters is that the cost stops. EventBus caps the
-// queue at 32 and drops the oldest to make room, so occupancy reaches a ceiling
-// and stays there.
+// storage/changed event. What matters is that the cost stops. EventBus bounds the
+// queue by the BYTES it holds (BUG-41) and drops the oldest to make room, so
+// occupancy reaches a ceiling and stays there. This environment lowers the budget
+// with -DDOMOTICS_EVENTBUS_QUEUE_BYTES so that ceiling is reachable in forty
+// writes; the shipped budget holds thirty-two reference events, measured on this
+// board, and needs two hundred storage writes to reach.
 //
 // This is the test the suite was missing. Measuring 20 undrained writes and
 // calling the result a per-operation leak is what produced STOR-ESP-1: 20 never
-// reached the 32-entry ceiling, so bounded growth was indistinguishable from
-// unbounded. Here the second half of the run is compared against the first — if
-// the cap is ever removed, the plateau disappears and this fails.
+// reached the ceiling, so bounded growth was indistinguishable from unbounded.
+// Here the second half of the run is compared against the first — if the bound is
+// ever removed, the plateau disappears and this fails, whatever the budget is.
 void test_storage_undrained_writes_plateau() {
     HeapTracker tracker;
     OpenStorage s("undrained");
@@ -314,7 +317,12 @@ void test_storage_undrained_writes_plateau() {
     s.core.loop();
     yield();
 
-    const int HALF = 40;  // 40 > 32, so the queue is already full at the midpoint
+    // Derived, not written down: enough writes that the queue is already at its
+    // budget by the midpoint, whatever the budget is set to.
+    using DomoticsCore::Utils::QueueCost;
+    const int CEILING = (int)(QueueCost::kBudgetBytes /
+                              QueueCost::of(sizeof(StorageEvents::StorageChangedEvent), strlen("storage/changed")));
+    const int HALF = CEILING + 8;
 
     tracker.checkpoint("baseline");
     for (int i = 0; i < HALF; i++) {
