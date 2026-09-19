@@ -9,6 +9,7 @@
  */
 
 #include <DomoticsCore/IComponent.h>
+#include <DomoticsCore/ComponentRegistry.h>  // BUG-43: resolve the MQTT component to read its Last Will
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/MQTT.h>  // For event structures (MQTTPublishEvent, MQTTSubscribeEvent, MQTTMessageEvent)
 #include <DomoticsCore/MQTTEvents.h>  // For MQTT event names
@@ -107,6 +108,7 @@ public:
         metadata.version = "2.1.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
+        availabilityTopicNamed = (this->config.availabilityTopic[0] != '\0');
         if (this->config.availabilityTopic[0] == '\0') {
             int written = snprintf(this->config.availabilityTopic, HA::MAX_AVAIL_TOPIC,
                                    "%s/%s/availability", this->config.discoveryPrefix, this->config.nodeId);
@@ -124,6 +126,10 @@ public:
         DLOG_I(LOG_HA, "Initializing Home Assistant integration");
         DLOG_I(LOG_HA, "Node ID: %s", config.nodeId);
         DLOG_I(LOG_HA, "Discovery prefix: %s", config.discoveryPrefix);
+
+        // BUG-43: before anything advertises a topic, make it the one the broker
+        // corrects.
+        reconcileAvailabilityWithWill();
         
         // Subscribe to MQTT events via EventBus
         on<bool>(DomoticsCore::MQTTEvents::EVENT_CONNECTED, [this](const bool&) {
@@ -476,6 +482,16 @@ public:
     
     void setConfig(const HAConfig& cfg) {
         config = cfg;
+        // "Named" is decided by what the caller HANDED us, before this function
+        // generates a topic of its own. The WebUI clears the field so the topic
+        // follows a new nodeId; generating one here and then calling it named
+        // would push it onto the will and bounce a live session on every
+        // settings save. A topic this component adopted from the will is not a
+        // named one either, or SystemPersistence's getConfig()/setConfig()
+        // round trip would make every boot look like an application choice.
+        const bool cameInNamed = (config.availabilityTopic[0] != '\0') &&
+                                 strcmp(config.availabilityTopic, adoptedFromWill_) != 0;
+        availabilityTopicNamed = cameInNamed;
         if (config.availabilityTopic[0] == '\0') {
             int written = snprintf(config.availabilityTopic, HA::MAX_AVAIL_TOPIC,
                                    "%s/%s/availability", config.discoveryPrefix, config.nodeId);
@@ -484,6 +500,11 @@ public:
                        written, HA::MAX_AVAIL_TOPIC - 1);
             }
         }
+        // BUG-43: this is the runtime entry point — SystemPersistence calls it
+        // after Core::begin(), and the WebUI calls it then republishes discovery.
+        // Recording the flag without re-reconciling would let the two topics
+        // drift apart again by exactly the path the fix closed at boot.
+        if (__dc_registry) reconcileAvailabilityWithWill();
     }
     
     /**
@@ -525,6 +546,14 @@ private:
     std::vector<std::unique_ptr<HAEntity>> entities;
     HAStatistics stats;
     bool availabilityPublished = false;  // Track if initial availability sent
+    // BUG-43: whether the application named availabilityTopic, or it was
+    // generated/adopted. Inferring it from "the field is non-empty" is not
+    // enough: begin() fills the field, and SystemPersistence round-trips
+    // getConfig() through setConfig() on every boot, so the component would
+    // then believe it had been named and push its adopted topic back over a
+    // will the user had moved.
+    bool availabilityTopicNamed = false;
+    char adoptedFromWill_[HA::MAX_AVAIL_TOPIC] = {0};
     bool mqttConnected = false;  // Track MQTT connection state via EventBus
     char commandTopicFilter[HA_TOPIC_BUF_SIZE] = {};  // Stored to keep pointer valid for EventBus
     
@@ -564,6 +593,99 @@ private:
     void warnIfDuplicateId(const String& id) {
         if (findEntity(id)) {
             DLOG_W(LOG_HA, "Entity id '%s' already registered; Home Assistant keeps the first config", id.c_str());
+        }
+    }
+
+    // BUG-43: Home Assistant watches exactly one topic per device, the one
+    // `avty_t` names, and only the broker can write `offline` to it. Whichever
+    // of availabilityTopic and MQTTConfig::lwtTopic the application named, the
+    // other follows it, so the two cannot drift apart.
+    void reconcileAvailabilityWithWill() {
+        // The registry is injected at addComponent(), so this resolves whatever
+        // the initialisation order is. The downcast is the framework's accepted
+        // one (BUG-2): the name selects the type.
+        IComponent* found = __dc_registry ? __dc_registry->getComponent("MQTT") : nullptr;
+        MQTTComponent* mqtt = static_cast<MQTTComponent*>(found);
+        if (!mqtt) {
+            // Every other exit from this function says why; this one used to be
+            // the silent one, and it is the likeliest in a sketch.
+            DLOG_W(LOG_HA, "No MQTT component: '%s' has no Last Will behind it",
+                   config.availabilityTopic);
+            return;
+        }
+
+        MQTTConfig cfg = mqtt->getConfig();
+        if (!cfg.enableLWT) {
+            DLOG_W(LOG_HA, "MQTT Last Will is off: '%s' will never report offline and "
+                           "every entity stays available after this device drops off",
+                   config.availabilityTopic);
+            return;
+        }
+        // The broker writes the payload, not this component, and HAEntity
+        // advertises pl_not_avail "offline" (HAEntity.h). A will that says
+        // anything else lands on the right topic and still never marks the
+        // device unavailable — BUG-43's symptom with its cause moved.
+        // setAvailable() publishes "online" retained. A will that is not
+        // retained is transient, so the broker's "offline" is seen only by
+        // whoever is subscribed at that instant and the retained "online"
+        // outlives the device — BUG-43's production symptom, one field away.
+        // The topic is already this component's to move; the retain flag that
+        // makes the topic mean anything goes with it.
+        if (!cfg.lwtRetain) {
+            DLOG_W(LOG_HA, "MQTT will was not retained: forcing it, or the retained "
+                           "'online' on '%s' would outlive this device",
+                   config.availabilityTopic);
+            cfg.lwtRetain = true;
+            mqtt->setConfig(cfg);
+        }
+        if (cfg.lwtMessage != "offline") {
+            DLOG_W(LOG_HA, "MQTT will payload is '%s', not 'offline': Home Assistant "
+                           "will not read it as unavailable",
+                   cfg.lwtMessage.c_str());
+        }
+
+        if (!availabilityTopicNamed) {
+            // The generated topic has no will behind it; adopt the one that has.
+            // An empty will topic would blank availabilityTopic, drop avty_t from
+            // every document and publish availability to no topic at all.
+            if (cfg.lwtTopic.isEmpty()) {
+                DLOG_W(LOG_HA, "MQTT has a Last Will and no topic for it: availability "
+                               "keeps '%s' and nothing corrects it",
+                       config.availabilityTopic);
+                return;
+            }
+            if (cfg.lwtTopic.length() >= HA::MAX_AVAIL_TOPIC) {
+                DLOG_W(LOG_HA, "LWT topic is %u chars, over the %u-char availability field: "
+                               "availability keeps '%s' and no will corrects it",
+                       (unsigned)cfg.lwtTopic.length(), (unsigned)(HA::MAX_AVAIL_TOPIC - 1),
+                       config.availabilityTopic);
+                return;
+            }
+            HA::setField(config.availabilityTopic, cfg.lwtTopic.c_str(), HA::MAX_AVAIL_TOPIC);
+            HA::setField(adoptedFromWill_, cfg.lwtTopic.c_str(), HA::MAX_AVAIL_TOPIC);
+            return;
+        }
+
+        if (cfg.lwtTopic == config.availabilityTopic) return;
+
+        // The application named the availability topic: move the will onto it.
+        // The will is sent in CONNECT, so a session opened before this has the
+        // old one and has to be reopened.
+        DLOG_I(LOG_HA, "Moving the MQTT Last Will from '%s' to '%s'",
+               cfg.lwtTopic.c_str(), config.availabilityTopic);
+        cfg.lwtTopic = config.availabilityTopic;
+        mqtt->setConfig(cfg);
+        if (mqtt->isConnected()) {
+            DLOG_I(LOG_HA, "Reopening the session so the broker holds the new will");
+            // Reopened here rather than left to MQTTComponent::loop(): that
+            // reconnection is gated on enabled && autoReconnect AND on a backoff
+            // timer, so the device would sit off the broker until the timer next
+            // fires — and for ever when autoReconnect is off.
+            mqtt->disconnect();
+            if (!mqtt->connect()) {
+                DLOG_W(LOG_HA, "Could not reopen the MQTT session: the broker still "
+                               "holds the old will until the next reconnection");
+            }
         }
     }
 
