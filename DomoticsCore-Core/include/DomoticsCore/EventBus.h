@@ -6,6 +6,7 @@
 #include <queue>
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <type_traits>
 #include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/Logger.h>
@@ -23,13 +24,25 @@ namespace Utils {
  * event it does not measure the resource it protects.
  *
  * The model has the SHAPE of the allocator, and its constants are platform
- * constants measured on the boards (2026-09-17). That is what makes it safe:
- * the shape being right, each constant holds its measured value and the model
- * is an upper bound by equality on the target that runs it. An unmeasured
- * target takes the conservative set and never aims for equality.
+ * constants measured on the boards (2026-09-17, the C3 on 2026-09-19). An
+ * unmeasured target takes the conservative set.
+ *
+ * It is NOT an upper bound, which this comment claimed until a full queue was
+ * weighed against the heap: 32 reference events cost 29 096 B on an ESP32-C3
+ * against 28 192 modelled, and 29 064 B on a nodemcuv2 against 28 576 — the
+ * model runs 2 to 3 % under at a full queue on both. The per-event constants
+ * are exact; something the shape omits is not. Treat the budget as a close
+ * estimate of the heap, not as a ceiling on it.
  */
 struct QueueCostShape {
-#if defined(DOMOTICS_PLATFORM_ESP32)
+// The measured arm names the chips a board calibrated, not every chip the Arduino
+// core calls ESP32: DOMOTICS_PLATFORM_ESP32 is also the S2 and S3, which nobody
+// here has measured and which fall through to the conservative set. The C3 was
+// measured on 2026-09-19 and matches the xtensa ESP32 on all three constants —
+// deque chunk 528 B over 16 elements, block(n) = 16 + roundUp4(n), and an SSO
+// step between 14 and 15 characters.
+#if defined(DOMOTICS_PLATFORM_ESP32) && \
+    (defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32C3))
     static constexpr size_t kNode     = 33;   // deque chunk 512 + 16, over 16 elements
     static constexpr size_t kOverhead = 16;   // TLSF header 4 + light poisoning 12
     static constexpr size_t kSsoChars = 14;   // measured: the step falls between 14 and 15
@@ -62,7 +75,9 @@ struct QueueCost : QueueCostShape {
         return kNode + block(payloadBytes) + topicBlock(topicLen);
     }
     // The reference is a COMPLETE event, topic term included: without it the
-    // budget holds 30 of them rather than 32 and the cliff moves.
+    // budget holds 30 of them rather than 32 on the platforms where the term is
+    // non-zero. It IS zero on ESP32 — "mqtt/publish" is 12 characters and the
+    // SSO threshold there is 14 — so this only moves the cliff on ESP8266.
     static constexpr size_t kReference   = kNode + block(830) + topicBlock(12);
     // The budget is 32 reference events unless the application says otherwise;
     // -DDOMOTICS_EVENTBUS_QUEUE_BYTES is the only way to move it (BUG-41).
@@ -80,6 +95,16 @@ static_assert(QueueCost::kBudgetBytes <= UINT16_MAX, "queuedBytes_ is a uint16_t
 static_assert(QueueCost::kBudgetBytes >= QueueCost::kReference,
               "DOMOTICS_EVENTBUS_QUEUE_BYTES is below one reference event");
 
+// BUG-42's lesson, applied to BUG-41's own log line: a DLOG buffer is reserved
+// in the prologue of whatever function declares it, taken branch or not. Inside
+// enqueue() that cost 128 B of the ESP8266's 4 KB cont stack on EVERY publish()
+// (frame measured 64 -> 192 B); out of line it is paid only when an event is
+// actually refused.
+inline void __attribute__((noinline)) logRefusedEvent(const char* topic, size_t cost) {
+    DLOG_W(LOG_CORE, "EventBus refused '%s': %u B over a %u B budget",
+           topic, (unsigned)cost, (unsigned)QueueCost::kBudgetBytes);
+}
+
 class EventBus {
 public:
     using Handler = std::function<void(const void* /*payload*/)>;
@@ -90,6 +115,12 @@ public:
         Handler handler;
     };
 
+    // BUG-41: an event larger than the whole budget can never be queued, and
+    // refusing it inside enqueue() is too late — publish() has copied the
+    // payload onto the heap by then, which on an ESP8266 is where the OOM
+    // happens. The entry points know the size before they allocate, so the
+    // refusal belongs there; enqueue() keeps its own check as a backstop for
+    // any caller added later.
     struct QueuedEvent {
         // Either a typed event or a topic-based event. If topic is non-empty, it takes precedence.
         EventType type{EventType::Custom};
@@ -100,6 +131,11 @@ public:
 
 
     EventBus() : nextId(1) {}
+
+    /** @brief True when an event of this class can never fit, whatever is queued (BUG-41). */
+    static bool exceedsBudget(size_t payloadBytes, size_t topicLen) {
+        return QueueCost::of(payloadBytes, topicLen) > QueueCost::kBudgetBytes;
+    }
 
     // Subscribe to an event type. Returns a subscription id.
     // WARNING: Must not be called during poll() dispatch (single-threaded assumption).
@@ -169,6 +205,7 @@ public:
     void publish(EventType type, const PayloadT& payload) {
         static_assert(std::is_trivially_copyable<PayloadT>::value,
                       "EventBus payload must be trivially copyable");
+        if (refuseOversized(nullptr, 0, sizeof(PayloadT))) return;
         QueuedEvent qe;
         qe.type = type;
         const uint8_t* p = reinterpret_cast<const uint8_t*>(&payload);
@@ -202,6 +239,7 @@ public:
                       "any other owning type, publish the bytes instead: "
                       "emit(topic, s.c_str(), s.length() + 1, sticky). See BUG-30.");
         if (topic.length() == 0) return;
+        if (refuseOversized(topic.c_str(), topic.length(), sizeof(PayloadT))) return;
         QueuedEvent qe;
         qe.topic = topic;
         const uint8_t* p = reinterpret_cast<const uint8_t*>(&payload);
@@ -213,6 +251,7 @@ public:
     // The caller retains ownership; the queued event owns its byte copy.
     void publish(const String& topic, const void* payload, size_t payloadSize) {
         if (topic.length() == 0 || payload == nullptr || payloadSize == 0) return;
+        if (refuseOversized(topic.c_str(), topic.length(), payloadSize)) return;
         QueuedEvent qe;
         qe.topic = topic;
         const uint8_t* p = static_cast<const uint8_t*>(payload);
@@ -232,12 +271,14 @@ public:
     template<typename PayloadT>
     void publishSticky(const String& topic, const PayloadT& payload) {
         if (topic.length() == 0) return;
+        if (refuseOversized(topic.c_str(), topic.length(), sizeof(PayloadT))) return;
         const uint8_t* p = reinterpret_cast<const uint8_t*>(&payload);
         lastByTopic[topic] = std::vector<uint8_t>(p, p + sizeof(PayloadT));
         publish(topic, payload);
     }
     void publishSticky(const String& topic, const void* payload, size_t payloadSize) {
         if (topic.length() == 0 || payload == nullptr || payloadSize == 0) return;
+        if (refuseOversized(topic.c_str(), topic.length(), payloadSize)) return;
         const uint8_t* p = static_cast<const uint8_t*>(payload);
         lastByTopic[topic] = std::vector<uint8_t>(p, p + payloadSize);
         publish(topic, payload, payloadSize);
@@ -321,6 +362,16 @@ public:
     }
 
 private:
+    // Counts and names the refusal, so a caller that never reaches enqueue()
+    // is still visible in getDroppedCount() and in the log.
+    bool refuseOversized(const char* topic, size_t topicLen, size_t payloadBytes) {
+        if (!exceedsBudget(payloadBytes, topicLen)) return false;
+        ++droppedEvents_;
+        logRefusedEvent(topicLen ? topic : "<typed event>",
+                        QueueCost::of(payloadBytes, topicLen));
+        return true;
+    }
+
     void enqueue(QueuedEvent&& qe) {
         // BUG-41: backpressure is a byte budget, not an entry count.
         const size_t cost = QueueCost::of(qe.data.size(), qe.topic.length());
@@ -328,8 +379,7 @@ private:
         // for it would empty the queue and still fail. Name it instead.
         if (cost > QueueCost::kBudgetBytes) {
             ++droppedEvents_;
-            DLOG_W(LOG_CORE, "EventBus refused '%s': %u B over a %u B budget",
-                   qe.topic.c_str(), (unsigned)cost, (unsigned)QueueCost::kBudgetBytes);
+            logRefusedEvent(qe.topic.length() ? qe.topic.c_str() : "<typed event>", cost);
             return;
         }
         while (!queue.empty() && (queuedBytes_ + cost > QueueCost::kBudgetBytes ||

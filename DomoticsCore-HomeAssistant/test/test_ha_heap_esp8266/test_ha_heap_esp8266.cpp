@@ -5,8 +5,9 @@
  *
  * The host suites cannot reach this claim at all. The native String is
  * std::string (Platform_Stub.h:27), so nothing on a PC measures what a board's
- * umm_malloc does — and both Arduino cores carry a 14-character small-string
- * buffer, so the claim only exists for strings longer than that. Every string
+ * umm_malloc does — and each Arduino core carries a small-string buffer (10
+ * characters on this board, 14 on ESP32), so the claim only exists for strings
+ * longer than that. Every string
  * here is deliberately on the allocating side of that threshold.
  *
  * **A net-heap assertion would be vacuous.** The Strings this lot removed were
@@ -248,7 +249,7 @@ void test_ha_discarded_command_holds_no_heap() {
     snprintf(msg, sizeof(msg),
              "the parse held %ld B between the two in-dispatch samples (%lu free at "
              "dispatch, %lu at the warning) -- it is allocating again: id=%u chars, "
-             "topic=%u chars, both over the cores' 14-character small-string buffer",
+             "topic=%u chars, both over this core's 10-character small-string buffer",
              (long)held, (unsigned long)g_heapAtDispatch, (unsigned long)g_heapAtWarning,
              (unsigned)strlen(UNKNOWN_ID),
              (unsigned)(strlen("homeassistant/switch/") + strlen(NODE_ID) + 1 +
@@ -263,7 +264,7 @@ void test_ha_discarded_command_holds_no_heap() {
 
 void test_ha_repeated_commands_are_never_dropped() {
     // A plateau must not be readable as success. This suite drains after every
-    // message, so EventBus's 32-entry cap (EventBus.h:253) is never approached
+    // message, so EventBus's byte budget (QueueCost::kBudgetBytes) is never approached
     // and nothing is dropped; if it ever were, dispatches would fall short of
     // the messages sent and the measurement above would be sampling a different
     // event from the one it thinks it is.
@@ -296,7 +297,7 @@ void test_ha_repeated_commands_are_never_dropped() {
 
     char dropMsg[192];
     snprintf(dropMsg, sizeof(dropMsg),
-             "%lu of %lu messages dispatched: the queue reached its 32-entry cap and "
+             "%lu of %lu messages dispatched: the queue reached its byte budget and "
              "dropped events, so nothing here measured a full parse",
              (unsigned long)g_dispatches, (unsigned long)MESSAGES);
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(MESSAGES, g_dispatches, dropMsg);

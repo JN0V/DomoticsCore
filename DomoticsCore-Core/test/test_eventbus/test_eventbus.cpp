@@ -704,6 +704,60 @@ void test_core_emit_non_sticky_default(void) {
     TEST_ASSERT_EQUAL(0, received);
 }
 
+
+// BUG-41: the refusal has to happen before the payload is copied. Inside
+// enqueue() the heap has already been asked for the buffer, which on an ESP8266
+// is where the OOM lands — the guard would then be accounting, not protection.
+// Natively the observable is the sticky store: a payload the queue refuses must
+// not become replayable either.
+void test_an_oversized_sticky_payload_is_not_stored_for_replay(void) {
+    std::vector<uint8_t> huge(QueueCost::kBudgetBytes + 1, 0x5A);
+    testBus->publishSticky(String("t/huge"), huge.data(), huge.size());
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, testBus->getDroppedCount(),
+                                     "the oversized sticky publish was not counted as refused");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getQueuedBytes(),
+                                     "it reached the queue");
+
+    bool replayed = false;
+    testBus->subscribe(String("t/huge"), [&](const void* p) { if (p) replayed = true; },
+                       nullptr, /*replayLast=*/true);
+    TEST_ASSERT_FALSE_MESSAGE(replayed,
+        "a payload the queue refuses was stored whole in the sticky map and replayed "
+        "to a late subscriber");
+}
+
+// The typed overload carries no topic, so the refusal used to name nothing.
+void test_an_oversized_typed_event_is_refused_and_named(void) {
+    struct Huge { uint8_t bytes[QueueCost::kBudgetBytes + 1]; };
+    Huge h{};
+    testBus->publish(EventType::Custom, h);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, testBus->getDroppedCount(),
+                                     "the oversized typed event was not counted");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getQueuedBytes(), "it reached the queue");
+}
+
+// The boundary the guard is written on: cost == budget must be ACCEPTED, and it
+// must evict everything else to make room. Nothing tested that side of `>`.
+void test_an_event_costing_exactly_the_budget_is_accepted(void) {
+    const size_t topicLen = strlen(SMALL_TOPIC);
+    // largest payload whose total cost is still within the budget
+    size_t payload = QueueCost::kBudgetBytes;
+    while (payload > 0 && QueueCost::of(payload, topicLen) > QueueCost::kBudgetBytes) --payload;
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0, payload, "no payload fits: the test is vacuous");
+
+    int filler = 1;
+    testBus->publish(String(SMALL_TOPIC), filler);
+    TEST_ASSERT_GREATER_THAN_UINT32(0, testBus->getQueuedBytes());
+
+    std::vector<uint8_t> big(payload, 0x11);
+    testBus->publish(String(SMALL_TOPIC), big.data(), big.size());
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(QueueCost::of(payload, topicLen), testBus->getQueuedBytes(),
+        "the largest event that fits was refused, or did not evict what stood in its way");
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
 
@@ -725,6 +779,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_one_large_event_evicts_as_many_oldest_as_needed_and_keeps_sticky_replayable);
     RUN_TEST(test_budget_is_accounted_on_publish_on_dispatch_and_on_reset);
     RUN_TEST(test_oversized_event_is_refused_counted_and_not_queued);
+    RUN_TEST(test_an_oversized_sticky_payload_is_not_stored_for_replay);
+    RUN_TEST(test_an_oversized_typed_event_is_refused_and_named);
+    RUN_TEST(test_an_event_costing_exactly_the_budget_is_accepted);
     RUN_TEST(test_entry_guard_rail_bounds_a_cheap_class);
     RUN_TEST(test_publish_during_dispatch_safe);
     RUN_TEST(test_reset_clears_wildcard_subscriptions);

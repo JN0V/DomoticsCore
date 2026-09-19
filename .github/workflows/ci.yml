@@ -35,10 +35,12 @@ jobs:
   # The unit-test suites. Every component carries its own platformio.ini with a
   # `native` environment; there is no top-level project that runs them all, so
   # the projects are discovered rather than listed. Discovery walks the tracked
-  # platformio.ini files, which finds both the eleven component projects and
-  # DomoticsCore-WebUI/test/test_streaming_serializer — a native project nested
-  # a level deeper that a component-level loop would have missed — and picks up
-  # any project added later without editing this file.
+  # platformio.ini files, which finds both the twelve component projects and the
+  # two native projects nested a level deeper that a component-level loop would
+  # have missed — DomoticsCore-WebUI/test/test_streaming_serializer and
+  # DomoticsCore-Core/test/test_queue_budget_override, the latter built with
+  # -DDOMOTICS_EVENTBUS_QUEUE_BYTES so it sees a flag its component cannot —
+  # and picks up any project added later without editing this file.
   #
   # One job rather than a matrix: the whole set takes about ninety seconds, and
   # a single job shares one PlatformIO cache instead of twelve. Failures are
