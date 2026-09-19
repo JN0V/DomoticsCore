@@ -1,13 +1,13 @@
 /**
- * Calibration of QueueCost, one constant per series.
+ * Measures HAL::Platform::AllocatorShape on a board, one constant per series.
  *
- * The queue is measured undrained and then given back, the way firmware does:
- * a series that never drains measures occupancy, and the drain line is what
- * says the occupancy was held rather than lost.
+ * The EventBus queue is the instrument: it is filled without draining, then
+ * drained. The fill measures occupancy and the drain line says the occupancy
+ * was held rather than lost. Across N the result is a staircase — its slope is
+ * the per-event cost, its steps are the deque chunk.
  *
- * Written against the entry cap this lot replaced, so every N stays under the
- * 32 entries that cap allowed. The staircase across N is the measurement: its
- * slope is the per-event cost, its steps are the deque chunk.
+ * Every N stays well under the queue budget, so nothing is evicted while a
+ * series runs. Series 8 and 9 then check the queue itself against the heap.
  */
 #include <Arduino.h>
 #include <DomoticsCore/EventBus.h>
@@ -64,7 +64,7 @@ static void series(const char* name, size_t payload, const char* topic, const si
 void setup() {
     Serial.begin(115200);
     delay(2500);
-    Serial.println("\n\n===== QueueCost calibration =====");
+    Serial.println("\n\n===== AllocatorShape calibration =====");
     Serial.printf("platform: %s\n", DOMOTICS_PLATFORM_NAME);
     Serial.printf("sizeof(EventBus)=%u sizeof(QueuedEvent)=%u sizeof(String)=%u free=%lu\n",
                   (unsigned)sizeof(EventBus), (unsigned)sizeof(EventBus::QueuedEvent),
