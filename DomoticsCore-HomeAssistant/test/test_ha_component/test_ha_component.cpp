@@ -1227,9 +1227,8 @@ void test_discovery_config_for_a_sensor_is_this_exact_document() {
 }
 
 // How many sensors a device can declare before the connect burst overflows the
-// EventBus. BUG-41 made this a platform figure: QueueCost decides it, not a
-// literal, and it is derived below rather than written down. The eight system
-// entities OBS-5 adds still come out of this budget.
+// EventBus. A platform figure: derived from QueueCost below, not written down.
+// The eight system entities come out of the same budget.
 static void connectWithSensors(Core& core, int n, int& configs) {
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));

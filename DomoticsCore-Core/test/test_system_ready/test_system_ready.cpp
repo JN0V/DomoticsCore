@@ -195,7 +195,7 @@ void test_loop_ticks_the_recorder_into_rtc() {
 void test_loop_carries_the_bus_drops_into_the_record() {
     testCore->addComponent(std::unique_ptr<SimpleComponent>(new SimpleComponent("A")));
     TEST_ASSERT_TRUE(testCore->begin());
-    // BUG-41: the storm is in bytes now — forty small events overflow nothing.
+    // The storm is in bytes now — forty small events overflow nothing.
     // The capacity is derived from QueueCost, never written down.
     using DomoticsCore::Utils::QueueCost;
     const size_t CAP = QueueCost::kBudgetBytes / QueueCost::of(830, strlen("storm"));

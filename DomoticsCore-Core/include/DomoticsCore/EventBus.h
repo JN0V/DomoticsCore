@@ -18,29 +18,14 @@ namespace DomoticsCore {
 namespace Utils {
 
 /**
- * BUG-41: what one queued event costs the heap. The queue is bounded by these
- * bytes rather than by an entry count, because 32 was only ever a stand-in for
- * them: it exists because an MQTTPublishEvent is 830 B, and applied to a 4-byte
- * event it does not measure the resource it protects.
+ * What one queued event costs the heap, per platform.
  *
- * The model has the SHAPE of the allocator, and its constants are platform
- * constants measured on the boards (2026-09-17, the C3 on 2026-09-19). An
- * unmeasured target takes the conservative set.
- *
- * It is NOT an upper bound, which this comment claimed until a full queue was
- * weighed against the heap: 32 reference events cost 29 096 B on an ESP32-C3
- * against 28 192 modelled, and 29 064 B on a nodemcuv2 against 28 576 — the
- * model runs 2 to 3 % under at a full queue on both. The per-event constants
- * are exact; something the shape omits is not. Treat the budget as a close
- * estimate of the heap, not as a ceiling on it.
+ * A close estimate, not a ceiling: a full queue measures 2-3 % above what this
+ * charges. Constants are measured; an unmeasured target takes the last arm.
  */
 struct QueueCostShape {
-// The measured arm names the chips a board calibrated, not every chip the Arduino
-// core calls ESP32: DOMOTICS_PLATFORM_ESP32 is also the S2 and S3, which nobody
-// here has measured and which fall through to the conservative set. The C3 was
-// measured on 2026-09-19 and matches the xtensa ESP32 on all three constants —
-// deque chunk 528 B over 16 elements, block(n) = 16 + roundUp4(n), and an SSO
-// step between 14 and 15 characters.
+// Measured chips only. ESP32-S2/S3 also match DOMOTICS_PLATFORM_ESP32 and fall
+// through to the conservative arm.
 #if defined(DOMOTICS_PLATFORM_ESP32) && \
     (defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32C3))
     static constexpr size_t kNode     = 33;   // deque chunk 512 + 16, over 16 elements
@@ -66,21 +51,14 @@ struct QueueCostShape {
     }
 };
 
-// Both live at namespace scope rather than inside EventBus, and the derived
-// constants one layer out from the shape: a constexpr initialiser cannot call a
-// function of a class that is not yet complete, and inside the enclosing class
-// the member bodies are not available to constant evaluation either.
+// Outside EventBus, and derived one layer out from the shape: a constexpr
+// initialiser cannot call a member of a class that is not yet complete.
 struct QueueCost : QueueCostShape {
     static constexpr size_t of(size_t payloadBytes, size_t topicLen) {
         return kNode + block(payloadBytes) + topicBlock(topicLen);
     }
-    // The reference is a COMPLETE event, topic term included: without it the
-    // budget holds 30 of them rather than 32 on the platforms where the term is
-    // non-zero. It IS zero on ESP32 — "mqtt/publish" is 12 characters and the
-    // SSO threshold there is 14 — so this only moves the cliff on ESP8266.
+    // A complete event: drop the topic term and the budget holds 30, not 32.
     static constexpr size_t kReference   = kNode + block(830) + topicBlock(12);
-    // The budget is 32 reference events unless the application says otherwise;
-    // -DDOMOTICS_EVENTBUS_QUEUE_BYTES is the only way to move it (BUG-41).
 #ifdef DOMOTICS_EVENTBUS_QUEUE_BYTES
     static constexpr size_t kBudgetBytes = (size_t)(DOMOTICS_EVENTBUS_QUEUE_BYTES);
 #else
@@ -89,17 +67,12 @@ struct QueueCost : QueueCostShape {
     static constexpr size_t kMaxEntries  = 256;   // guard rail against model drift
 };
 static_assert(QueueCost::kBudgetBytes <= UINT16_MAX, "queuedBytes_ is a uint16_t");
-// A budget under one reference event refuses every MQTT publish in silence, and a
-// budget of zero divides by zero in the high-water mark. Both are reachable only
-// through -DDOMOTICS_EVENTBUS_QUEUE_BYTES, so both are refused at compile time.
+// Below one reference event, every MQTT publish is refused in silence.
 static_assert(QueueCost::kBudgetBytes >= QueueCost::kReference,
               "DOMOTICS_EVENTBUS_QUEUE_BYTES is below one reference event");
 
-// BUG-42's lesson, applied to BUG-41's own log line: a DLOG buffer is reserved
-// in the prologue of whatever function declares it, taken branch or not. Inside
-// enqueue() that cost 128 B of the ESP8266's 4 KB cont stack on EVERY publish()
-// (frame measured 64 -> 192 B); out of line it is paid only when an event is
-// actually refused.
+// Out of line: a DLOG buffer is reserved in its function's prologue whether the
+// branch runs or not, and enqueue() is on every publish() path.
 inline void __attribute__((noinline)) logRefusedEvent(const char* topic, size_t cost) {
     DLOG_W(LOG_CORE, "EventBus refused '%s': %u B over a %u B budget",
            topic, (unsigned)cost, (unsigned)QueueCost::kBudgetBytes);
@@ -115,12 +88,6 @@ public:
         Handler handler;
     };
 
-    // BUG-41: an event larger than the whole budget can never be queued, and
-    // refusing it inside enqueue() is too late — publish() has copied the
-    // payload onto the heap by then, which on an ESP8266 is where the OOM
-    // happens. The entry points know the size before they allocate, so the
-    // refusal belongs there; enqueue() keeps its own check as a backstop for
-    // any caller added later.
     struct QueuedEvent {
         // Either a typed event or a topic-based event. If topic is non-empty, it takes precedence.
         EventType type{EventType::Custom};
@@ -132,7 +99,7 @@ public:
 
     EventBus() : nextId(1) {}
 
-    /** @brief True when an event of this class can never fit, whatever is queued (BUG-41). */
+    /** @brief True when an event of this class can never fit, whatever is queued. */
     static bool exceedsBudget(size_t payloadBytes, size_t topicLen) {
         return QueueCost::of(payloadBytes, topicLen) > QueueCost::kBudgetBytes;
     }
@@ -223,21 +190,12 @@ public:
     // Topic-based publish (with payload copy)
     template<typename PayloadT>
     void publish(const String& topic, const PayloadT& payload) {
-        // BUG-30: the same guard the EventType overload above has carried since
-        // BUG-1, and for the same reason — this reinterpret_cast copies the
-        // object's bytes, so a type that owns anything (a String's pointer, length
-        // and capacity) is dispatched after the original has been destroyed and
-        // its storage freed.
-        //
-        // It could not be added until there was somewhere for legitimate
-        // variable-length callers to go: refusing them with no alternative would
-        // have been a worse defect than the one it prevents. publish(topic, const
-        // void*, size_t) below is that alternative, and everything that used to
-        // need this overload for a String now uses it.
+        // The payload is byte-copied, so an owning type would be dispatched
+        // after the original is gone. Use the (topic, void*, size) overload.
         static_assert(std::is_trivially_copyable<PayloadT>::value,
                       "EventBus payload must be trivially copyable. For a String or "
                       "any other owning type, publish the bytes instead: "
-                      "emit(topic, s.c_str(), s.length() + 1, sticky). See BUG-30.");
+                      "emit(topic, s.c_str(), s.length() + 1, sticky).");
         if (topic.length() == 0) return;
         if (refuseOversized(topic.c_str(), topic.length(), sizeof(PayloadT))) return;
         QueuedEvent qe;
@@ -337,9 +295,9 @@ public:
         dispatching_ = false;
     }
 
-    /** @brief Events dropped on queue overflow since construction or reset() (BUG-36, LO-5). */
+    /** @brief Events dropped on queue overflow since construction or reset(). */
     uint32_t getDroppedCount() const { return droppedEvents_; }
-    /** @brief Bytes the queue currently holds, as QueueCost models them (BUG-41). */
+    /** @brief Bytes the queue currently holds, as QueueCost models them. */
     uint16_t getQueuedBytes() const { return queuedBytes_; }
     /** @brief Highest occupancy reached since construction or reset(), in percent of the budget. */
     uint8_t getQueueHighWaterPct() const { return highWaterPct_; }
@@ -373,7 +331,6 @@ private:
     }
 
     void enqueue(QueuedEvent&& qe) {
-        // BUG-41: backpressure is a byte budget, not an entry count.
         const size_t cost = QueueCost::of(qe.data.size(), qe.topic.length());
         // An event larger than the whole budget can never be queued: evicting
         // for it would empty the queue and still fail. Name it instead.
@@ -384,9 +341,8 @@ private:
         }
         while (!queue.empty() && (queuedBytes_ + cost > QueueCost::kBudgetBytes ||
                                   queue.size() >= QueueCost::kMaxEntries)) {
-            // BUG-36: the dropped event is still counted as pending for its
-            // topic unless it is released here; a stale count blocks the
-            // topic's sticky replay for the life of the process.
+            // Release the pending count too, or sticky replay stays blocked
+            // for this topic for the life of the process.
             const QueuedEvent& front = queue.front();
             queuedBytes_ -= static_cast<uint16_t>(QueueCost::of(front.data.size(), front.topic.length()));
             releasePending(front.topic);
@@ -458,17 +414,15 @@ private:
     std::map<String, std::vector<uint8_t>> lastByTopic;
     // Pending counts per topic to prevent duplicate sticky replay
     std::map<String, int> pendingByTopic;
-    uint32_t droppedEvents_ = 0;   // BUG-36: events popped on overflow, since construction or reset()
-    // BUG-41: these two sit before dispatching_ on purpose — after it the uint16_t
-    // lands on an odd offset and sizeof(EventBus) grows by four bytes.
+    uint32_t droppedEvents_ = 0;   // events popped on overflow
+    // Before dispatching_: after it the uint16_t lands on an odd offset and the
+    // object grows four bytes.
     uint16_t queuedBytes_ = 0;
     uint8_t highWaterPct_ = 0;
     bool dispatching_ = false;
 };
 
-// BUG-41: queuedBytes_ and highWaterPct_ must land in the padding that already
-// followed droppedEvents_. Asserted on the targets a board measured; a new one
-// reaching here red is the guard working, not a mistake.
+// The two counters must stay in the padding that follows droppedEvents_.
 #if defined(DOMOTICS_PLATFORM_ESP32) || defined(DOMOTICS_PLATFORM_ESP8266)
 static_assert(sizeof(EventBus) == 172, "EventBus grew: the two counters are not in the padding");
 #endif

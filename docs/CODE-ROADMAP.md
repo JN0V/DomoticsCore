@@ -1896,93 +1896,60 @@ one worth a one-line change, and six rows that are not defects.
   AlarmControl handoff of 2026-09-17, which already noted the `status: offline`
   / `availability: online` contradiction on 2026-09-16 without naming the cause.
 
-### BUG-42 — Core: `Core::begin()` reserves a kilobyte of the ESP8266's 4 KB cont stack [HIGH] — **DONE (2026-09-18, filed and fixed in the same lot)**
+### BUG-42 — Core: `Core::begin()` reserves a kilobyte of the ESP8266's 4 KB cont stack [HIGH] — **DONE (2026-09-18)**
 
 - **Problem**: the Storage ESP8266 suite panicked at `core_esp8266_main.cpp:191
   __yield`, rebooted and started over, printing no verdict line. Five of seven
   tests passed on every pass, so the scrollback looked healthy.
-- **Cause — the component, not the test, which is the grade the filing was
-  provisional about.** `char text[1024]` in `Core::begin()` is reserved by the
-  prologue **whether or not its branch is taken** (measured: `promoted=0` and the
-  kilobyte goes anyway), and is still held while `initializeAll()` runs every
-  component on top of it. `Core::begin()` measures 1 216 B against a 4 096 B cont
-  stack; the suite reached its sixth test with **32 bytes** free.
+- **Cause**: `char text[1024]` in `Core::begin()` is reserved by the prologue
+  **whether or not its branch runs**, and is still held while `initializeAll()`
+  runs every component on top of it. `begin()` measured 1 216 B against a 4 096 B
+  cont stack; the suite reached its sixth test with **32 bytes** free. The
+  component, not the test — which is the grade the filing was provisional about.
 - **Fix**: the block moves to a `noinline` function that returns before the
   components are initialised, so the two frames no longer sum. Same output, no
-  allocation. `Core::begin()` 1 216 → **208 B**, free cont stack 32 → **896 B**.
-- **Why HIGH**: any ESP8266 application whose `setup()` frame is a hundred bytes
+  allocation. `begin()` 1 216 → **208 B**, free cont stack 32 → **896 B**.
+- **Why HIGH**: any ESP8266 application with a `setup()` frame a hundred bytes
   deeper would have hit the same panic, in the library, on a shipped platform.
-- **Board**: 7/7 with a verdict line on a `nodemcuv2`, the first time this suite
-  has printed one. The removal check is the reproduction itself, decoded once.
-- **How it was found**: the exception decoder pointed at a bare `yield()` that
-  four passing tests also execute — so the statement was never the cause.
-  `ESP.getFreeContStack()` named it in one flash, `-fstack-usage` gave the frame
-  without a probe to perturb it.
-- **Refs**: OBS-4 (the 1 KB buffer and the test that sizes it); BUG-41, whose
-  board leg found this; STOR-ESP-1's two surviving items in `docs/deferred-work.md`.
+- **Board**: 7/7 with a verdict line on a `nodemcuv2`, a first for this suite.
+- **Refs**: OBS-4 (the buffer and the test that sizes it); BUG-41, whose board
+  leg found this.
 
-### BUG-41 — Core: the EventBus queue counted entries, and every boot dropped eight events [MEDIUM] — **DONE (2026-09-18, filed and fixed in the same lot)**
+### BUG-41 — Core: the EventBus queue counted entries, and every boot dropped eight events [MEDIUM] — **DONE (2026-09-18)**
 
 - **Problem**: `enqueue()` capped the queue at 32 entries, and a FullStack
   application emits about forty events between the first component `begin()` and
   the first `Core::loop()`, which is when nothing drains the bus. Bench ESP32:
-  **8 dropped at every boot** in AP mode, 6 in STA. All eight happened to have no
-  subscriber; ten more emissions and a device stops listening to its own MQTT
-  commands, in silence. The 32 stood for bytes — it exists because an
-  `MQTTPublishEvent` is 830 B — so on a 4-byte event it measured nothing.
+  **8 dropped at every boot** in AP mode, 6 in STA — harmless only because
+  nothing had subscribed yet. Ten more emissions and a device stops listening to
+  its own MQTT commands, in silence. The 32 stood for bytes: it exists because an
+  `MQTTPublishEvent` is 830 B, so on a 4-byte event it measured nothing.
 - **Fix**: the bound is the bytes the queue holds. `QueueCost` models one event's
-  heap cost with the shape of the allocator and per-platform measured constants;
-  the budget is the same 32 reference events, the oldest are evicted until a new
-  one fits, an oversized event is refused and named, and a 256-entry guard rail
-  catches model drift. New: `getQueuedBytes()`, `getQueueHighWaterPct()`, and
-  `-DDOMOTICS_EVENTBUS_QUEUE_BYTES`.
-- **Board, before and after**: 8 dropped in AP and 6 in STA → **0 in both**. The
-  cliff is where the model puts it: 32 of 48 reference events survive a deliberate
-  burst, and 28 192 B is exactly 32 × 881. The fix is **1 844 bytes smaller in
-  flash** than the entry cap, static RAM unchanged.
-- **What the design cost**: the first model was wrong in six places, each caught
-  by a different instrument — a double-counted node, a topic term that stopped
-  being an upper bound at 16 characters (two errors that compensated), a reference
-  spelled without its topic term so the budget held 30 events rather than 32, a
-  block that under-counted 1-to-8-byte payloads, and a minimum block that does not
-  exist on either board. A single cross-platform constant set was tried last and
-  rejected on measurement.
-- **Tests**: the rewrite list was produced by *removing* the literal 32 and
-  letting the suites name what fell — four went red, and a fifth stayed green
-  while going vacuous, which no enumeration catches. Eleven new cases, five
-  rewritten, four removal checks.
-- **The flag was announced before it was wired.** `-DDOMOTICS_EVENTBUS_QUEUE_BYTES`
-  reached the CHANGELOG, the reference and a build's `platformio.ini` while
-  `kBudgetBytes` was `32 * kReference` unconditionally — so the two `static_assert`s
-  guarding a zero or under-reference budget guarded a value no `-D` could reach. A
-  compile-time constant cannot be exercised by a suite built without it, hence
-  `test/test_queue_budget_override`: one environment, the flag at 2 048 B, three
-  cases that fail on three different assertions when it is unwired.
-- **Four more the code review found.** (1) This lot broke BUG-42's rule within the
-  hour: the refusal logs with `DLOG_W`, whose buffer the prologue reserves, in
-  `enqueue()` — frame **64 → 192 B**, now out of line and 64 again. (2) The
-  oversized guard fired *after* `publish()` had copied the payload onto the heap,
-  which is where an ESP8266 OOMs; moved to the entry points, and it now covers
-  `publishSticky` too. Heap dip inside the refusal frame: 48 B (nodemcuv2), 268 B
-  (C3), against 31 552 B with the guard removed. (3) `DOMOTICS_PLATFORM_ESP32` is
-  not a chip — it covers the C3, S2 and S3, which all took constants measured on
-  one of them; the arm is now named by `CONFIG_IDF_TARGET_*`. (4) The refusal
-  named nothing for a typed event.
-- **The C3, measured 2026-09-19, is not different**: `kNode` 33, `kOverhead` 16,
-  SSO step between 14 and 15, `block(830)` = 848. It joins the measured arm; S2
-  and S3 stay conservative until somebody weighs one.
-- **The model is not the upper bound it claimed.** Nothing had ever compared
-  `QueueCost` to real heap — every suite recomputes its expectations from the same
-  constants, which is self-consistency. A full queue measures **29 096 B on the C3
-  against 28 192 modelled, 29 064 B on a nodemcuv2 against 28 576** — 3.2 % and
-  1.7 % under. `EventBus.h` and ADR 0003 said "an upper bound by equality"; both
-  now say what the boards say. Whether the residue is per-event or per-queue needs
-  a second point per board (`docs/deferred-work.md`).
+  heap cost from measured per-platform constants; the budget is the same 32
+  reference events, oldest evicted first, an oversized event refused before its
+  payload is copied, and a 256-entry guard rail against model drift. New:
+  `getQueuedBytes()`, `getQueueHighWaterPct()`, `-DDOMOTICS_EVENTBUS_QUEUE_BYTES`.
+- **Board**: 8 and 6 dropped → **0 in both modes**. 32 of 48 reference events
+  survive a deliberate burst, and 28 192 B is exactly 32 × 881. **1 844 bytes
+  smaller in flash** than the entry cap, static RAM unchanged.
+- **The model is a close estimate, not a ceiling.** Nothing had ever weighed it
+  against real heap — the suites recompute their expectations from the same
+  constants, which is self-consistency. A full queue measures **29 096 B on an
+  ESP32-C3 against 28 192 modelled, 29 064 B on a nodemcuv2 against 28 576** —
+  2 to 3 % under. Whether the residue is per-event or per-queue needs a second
+  point per board (`docs/deferred-work.md`).
+- **Calibration**: `kNode`, `kOverhead` and `kSsoChars` are measured per chip
+  (`tools/on-device/probes/bug41-queuecost/`). The C3 matches the xtensa ESP32 on
+  all three; ESP32-S2 and -S3 are unmeasured and take the conservative arm.
+- **Tests**: the rewrite list came from *removing* the literal 32 and letting the
+  suites name what fell — four went red, and a fifth stayed green while going
+  vacuous. Eleven new cases, five rewritten, four removal checks.
+  `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` had been announced in three places and read in
+  none; a compile-time constant cannot be exercised by a suite built without it,
+  hence `test/test_queue_budget_override`.
 - **What it does not fix**: the MQTT connect burst is full-size events; its cliff
   moved by exactly one entity (29 sensors to 30). Shrinking it is **LO-2**.
-- **Refs**: LO-5 (the drop line, now carrying budget and peak), BUG-36 (the
-  pending-count release, preserved through multi-event eviction), LO-2,
-  `docs/decisions/0003-the-eventbus-queue-is-bounded-by-bytes-not-by-count.md`.
+- **Refs**: LO-5, BUG-36, LO-2, `docs/decisions/0003-the-eventbus-queue-is-bounded-by-bytes-not-by-count.md`.
 
 ### BUG-40 — Core: `ComponentConfig`'s numeric validators refused most floats and accepted `"4x"`, and a redefined parameter was validated twice [MEDIUM] — **DONE (2026-09-15, filed the same day by TEST-7's reading)**
 

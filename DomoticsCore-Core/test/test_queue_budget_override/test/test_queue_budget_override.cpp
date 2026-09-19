@@ -4,24 +4,16 @@
 
 using namespace DomoticsCore::Utils;
 
-// ---------------------------------------------------------------------------
-// BUG-41: -DDOMOTICS_EVENTBUS_QUEUE_BYTES lowers the queue budget. It was
-// announced, passed by DomoticsCore-Storage's esp8266dev environment, and read
-// by nothing — kBudgetBytes was 32 reference events unconditionally. This
-// project is built with the flag at 2048 and is the only place that sees it.
-//
-// Two things the suite deliberately does not test: the pathological values the
-// static_asserts in EventBus.h refuse (a budget of zero, a budget under one
-// reference event) cannot be exercised from a suite that has to compile.
-// ---------------------------------------------------------------------------
+// -DDOMOTICS_EVENTBUS_QUEUE_BYTES is compile-time, so it needs a project built
+// with it. This is that project. The values EventBus.h's static_asserts refuse
+// cannot be covered here: a suite has to compile.
 
 static const size_t kOverride = 2048;
 
 // A topic inside SSO on every target, so a small event costs node + payload.
 static const char* SMALL_TOPIC = "t/small";
 
-// The flag is honoured at compile time or not at all: if the #ifdef is ever
-// removed again, this fails before a single test runs.
+// Fails before a single test runs if the #ifdef goes away.
 static_assert(QueueCost::kBudgetBytes == kOverride,
               "-DDOMOTICS_EVENTBUS_QUEUE_BYTES is not read by QueueCost");
 
