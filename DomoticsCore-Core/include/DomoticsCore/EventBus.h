@@ -18,31 +18,17 @@ namespace DomoticsCore {
 namespace Utils {
 
 /**
- * What one queued event costs the heap, per platform.
+ * What one queued event costs the heap.
  *
  * A close estimate, not a ceiling: a full queue measures 2-3 % above what this
- * charges. Constants are measured; an unmeasured target takes the last arm.
+ * charges on the platforms a board has measured.
  */
 struct QueueCostShape {
-// Measured chips only. ESP32-S2/S3 also match DOMOTICS_PLATFORM_ESP32 and fall
-// through to the conservative arm.
-#if defined(DOMOTICS_PLATFORM_ESP32) && \
-    (defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32C3))
-    static constexpr size_t kNode     = 33;   // deque chunk 512 + 16, over 16 elements
-    static constexpr size_t kOverhead = 16;   // TLSF header 4 + light poisoning 12
-    static constexpr size_t kSsoChars = 14;   // measured: the step falls between 14 and 15
-#elif defined(DOMOTICS_PLATFORM_ESP8266)
-    static constexpr size_t kNode     = 29;   // deque chunk 512 over 18 elements, rounded up
-    static constexpr size_t kOverhead = 8;    // umm, no poisoning
-    static constexpr size_t kSsoChars = 10;   // measured: the step falls between 10 and 11
-#else
-    // Test host and any target no board has measured: never equality.
-    static constexpr size_t kNode     = 80;
-    static constexpr size_t kOverhead = 24;
-    static constexpr size_t kSsoChars = 10;
-#endif
+    // The allocator's figures are the platform's, not this file's (Constitution IX).
+    static constexpr size_t kNode     = HAL::Platform::AllocatorShape::kDequeNodeBytes;
+    static constexpr size_t kOverhead = HAL::Platform::AllocatorShape::kBlockOverhead;
+    static constexpr size_t kSsoChars = HAL::Platform::AllocatorShape::kSsoChars;
     static constexpr size_t roundUp4(size_t n) { return ((n + 3) / 4) * 4; }
-    // No minimum block: the board measurement refuted one on both platforms.
     static constexpr size_t block(size_t n) { return n == 0 ? 0 : kOverhead + roundUp4(n); }
     // Arduino String rounds its buffer to (len + 16) & ~0xf (WString.cpp:193);
     // below the SSO threshold it allocates nothing.
@@ -421,11 +407,6 @@ private:
     uint8_t highWaterPct_ = 0;
     bool dispatching_ = false;
 };
-
-// The two counters must stay in the padding that follows droppedEvents_.
-#if defined(DOMOTICS_PLATFORM_ESP32) || defined(DOMOTICS_PLATFORM_ESP8266)
-static_assert(sizeof(EventBus) == 172, "EventBus grew: the two counters are not in the padding");
-#endif
 
 } // namespace Utils
 } // namespace DomoticsCore

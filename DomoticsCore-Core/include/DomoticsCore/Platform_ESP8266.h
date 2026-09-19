@@ -515,6 +515,20 @@ private:
  */
 #define LED_BUILTIN 2
 
+
+/**
+ * @brief What this platform's allocator and String cost, for callers that size
+ *        a buffer or a queue in bytes.
+ *
+ * Measured on a nodemcuv2, not derived.
+ */
+struct AllocatorShape {
+    static constexpr size_t kDequeNodeBytes = 29;  ///< deque chunk 512 over 18 elements, rounded up
+    static constexpr size_t kBlockOverhead  = 8;   ///< umm header, no poisoning
+    static constexpr size_t kSsoChars       = 10;  ///< a String this long or shorter allocates nothing
+    static constexpr bool   kMeasured       = true;
+};
+
 } // namespace Platform
 } // namespace HAL
 } // namespace DomoticsCore
