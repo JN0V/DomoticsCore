@@ -119,7 +119,7 @@ Worth knowing before a green tick is read for more than it is worth.
 
 | | |
 |---|---|
-| ✅ | The 13 native projects run — 913 test cases, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, 767 after BUG-31's provider suite on 2026-08-29, 788 after BUG-32's twenty-one, and 804 after TEST-4's sixteen in `test_wifi_behaviour`; 809 adds SIZE-2's five in `test_streaming_serializer` on 2026-08-31 (that suite runs 15: the UTF-8 pin, two chunk sweeps, an empty-multiselect sweep and a serializer-reuse test on top of the original ten); **819** adds SIZE-1's ten on the same day — `test_schema_chunking` (5) and `test_update_builder` (5), both new directories in the WebUI project's own `test_filter`, driving the chunk-assembly loop and the update builder that no test could compile before the extraction; **851** after Lot A's thirty-two; **913** after Lot B's sixty-two (`test_flight_recorder` 40, `test_system_ready` +6, `test_eventbus` +2, `test_system_lifecycle` +6, `test_system_persistence` +8), counted as RUN_TEST lines against `main` |
+| ✅ | The 14 native projects run — 1 085 `[PASSED]` lines, discovered from the tracked `platformio.ini` files rather than a hard-coded list. **Re-derive this figure, do not trust it**: it read 729 on 2026-08-28, 739 after MEM-2's hot half, 747 after its closing lot, 767 after BUG-31's provider suite on 2026-08-29, 788 after BUG-32's twenty-one, and 804 after TEST-4's sixteen in `test_wifi_behaviour`; 809 adds SIZE-2's five in `test_streaming_serializer` on 2026-08-31 (that suite runs 15: the UTF-8 pin, two chunk sweeps, an empty-multiselect sweep and a serializer-reuse test on top of the original ten); **819** adds SIZE-1's ten on the same day — `test_schema_chunking` (5) and `test_update_builder` (5), both new directories in the WebUI project's own `test_filter`, driving the chunk-assembly loop and the update builder that no test could compile before the extraction; **851** after Lot A's thirty-two; **913** after Lot B's sixty-two (`test_flight_recorder` 40, `test_system_ready` +6, `test_eventbus` +2, `test_system_lifecycle` +6, `test_system_persistence` +8), counted as RUN_TEST lines against `main`; **1 070** at the CI-15 lot, counted properly for the first time as `[PASSED]` lines from a full run rather than as RUN_TEST lines; **1 085** after the BUG-41/42 lot: the fourteenth project (`DomoticsCore-Core/test/test_queue_budget_override`, 3), 11 added in `test_eventbus`, and the connect-cliff pair in `test_ha_component` rewritten to derive from `QueueCost` — **measured from a full run, not derived from the previous figure**, which is the only reason it is trustworthy: the same arithmetic done by hand disagreed with the run twice in this lot alone. **Count `[PASSED]` lines, not pio's "test cases" summary** — the two disagree, and the summary is what put a wrong figure in this lot's first commit message |
 | ✅ | The three declared targets compile: `esp32dev`, `esp8266dev`, `esp32c3`, via the FullStack example, the only one pulling all twelve components |
 | ✅ | `library.json` versions agree with `metadata.version` |
 | ✅ | The install-from-GitHub path builds **both** declared platforms — the only thing in CI that resolves through the root `library.json` rather than `file://` paths (CI-8) |
@@ -1996,6 +1996,50 @@ one worth a one-line change, and six rows that are not defects.
   vacuous**, which no enumeration can catch. Eleven new cases, five rewritten,
   and four removal checks each red for the right reason (the oversized guard, the
   entry guard rail, the decrement in `poll()`, and the budget override).
+- **Three more the code review found, after the lot looked finished.** The
+  oversized-event refusal sat in `enqueue()`, which is *after* every `publish()`
+  overload has copied the payload onto the heap — on an ESP8266 that is where the
+  OOM lands, so the guard was accounting rather than protection. It moved to the
+  entry points, where the size is known before anything is allocated; `enqueue()`
+  keeps its own check as a backstop. **Measured on two boards, both ways**: the
+  refusal is reached with a logger callback sampling the heap from inside its own
+  frame, and the dip is 48 B on the nodemcuv2 and 268 B on the C3 — against
+  31 552 B on the same C3 with the entry-point guard removed, for a 31 233-byte
+  payload. That is the half of this no host build can show. The same guard now covers `publishSticky`,
+  which stored a payload the queue refuses and replayed it to late subscribers.
+  And the refusal log named nothing for a typed event, which carries no topic.
+- **`DOMOTICS_PLATFORM_ESP32` is not a chip, and the model was treating it as
+  one.** The macro is defined for the C3, S2 and S3 as well as the xtensa ESP32,
+  so every one of them took the constants a board measured on *one* of them —
+  while the header's own safety argument says an unmeasured target takes the
+  conservative set, and `esp32c3` is built by CI on every change. The arm is now
+  named by `CONFIG_IDF_TARGET_*` rather than by the family macro.
+- **Then the C3 was measured, on 2026-09-19, and it is not different.** Deque
+  chunk 528 B over 16 elements (`kNode` 33), `block(64)` = 80 and `block(4)` = 20
+  (`kOverhead` 16), and an SSO step that falls between 14 and 15 characters —
+  the slope is 0 at 14 and 32 B per event at 15. `block(830)` = 848 on the nose.
+  Identical to the xtensa ESP32 on all three, so the C3 joins the measured arm
+  and the S2 and S3 stay conservative until somebody weighs one.
+- **And weighing a full queue refuted the model's own safety claim.** Nothing had
+  ever compared `QueueCost` to the heap — every suite recomputes its expectations
+  from the same constants, which is self-consistency, not measurement. The probe
+  now fills to the budget and reads the heap: **32 reference events cost 29 096 B
+  on the C3 against 28 192 modelled, and 29 064 B on the nodemcuv2 against
+  28 576** — 3.2 % and 1.7 % **under**. The per-event constants reproduce the
+  allocator exactly; something outside them does not. The header and ADR 0003
+  both said "an upper bound by equality on the target that runs it", and both now
+  say what the boards say instead. One point per board does not decide whether
+  the residue is per-event or a fixed per-queue cost `QueueCost::of()` has no term
+  for; that is in `docs/deferred-work.md`.
+- **It broke BUG-42's rule in the same lot, and the code review caught it.** The
+  refusal branch added here logs with `DLOG_W`, whose 128-byte buffer the compiler
+  reserves in the prologue of whatever function declares it — the exact defect
+  BUG-42 was filed for, in `enqueue()`, which every `publish()` calls. Measured
+  with `-fstack-usage` on the ESP8266: the frame went **64 → 192 B**, taking back
+  128 of the 1 008 bytes BUG-42 had just recovered, on the deepest paths in the
+  framework. The line now sits in a `noinline` helper and the frame is 64 again.
+  The lesson the sibling entry states in the abstract was violated by its own lot
+  within the hour, by code written after it, and no test would ever have said so.
 - **The override was announced before it was wired.** `-DDOMOTICS_EVENTBUS_QUEUE_BYTES`
   reached the CHANGELOG, the reference and `DomoticsCore-Storage`'s `esp8266dev`
   environment while `kBudgetBytes` was `32 * kReference` unconditionally — the flag

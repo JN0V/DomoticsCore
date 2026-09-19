@@ -36,12 +36,21 @@ second bound of 256 entries guards against the model drifting from the allocator
 
 The model takes the **shape** of the allocator, and its constants are **platform
 constants** measured on the boards. That is what makes it safe to tighten: the
-shape being right, each constant holds its measured value and the model is an
-upper bound by equality on the target that runs it. A single cross-platform set
-was tried and could not hold the memory constraint — it overcharges the
-*reference* event, which inflates the budget rather than protecting anything,
-while being exact for the classes that actually fill it. An unmeasured target
-takes a conservative set and never aims for equality.
+shape being right, each constant holds its measured value. A single
+cross-platform set was tried and could not hold the memory constraint — it
+overcharges the *reference* event, which inflates the budget rather than
+protecting anything, while being exact for the classes that actually fill it. An
+unmeasured target takes a conservative set.
+
+**It is not an upper bound.** This record said "an upper bound by equality on the
+target that runs it" until a full queue was weighed against the heap: 32
+reference events cost 29 096 B on an ESP32-C3 against 28 192 modelled, and
+29 064 B on a nodemcuv2 against 28 576 — 2 to 3 % under on both. The per-event
+constants reproduce the allocator exactly; something outside them does not, and
+one measurement per board does not say whether the residue is per-event or a
+fixed per-queue cost. The budget is a close estimate of the heap the queue holds,
+not a ceiling on it, and the sentence that claimed otherwise was written before
+anything compared the two.
 
 ## Consequences
 

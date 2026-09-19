@@ -159,3 +159,92 @@ their own.
   boot would have caught this before a board did.
   evidence: `.su` files from `PLATFORMIO_BUILD_FLAGS="-fstack-usage"`, 2026-09-18;
   `ESP.getFreeContStack()` 32 B before the fix, 896 B after, same suite.
+
+## Deferred from: code review of the BUG-41 / BUG-42 lot (2026-09-18)
+
+- `static_assert(sizeof(EventBus) == 172)` ships in a public header, gated only on
+  the platform macros, so it fires for every consumer rather than for CI. The size
+  it pins depends on `std::map`/`std::function`/`std::deque` layout — a toolchain
+  this project does not control, and `marianorenzi`'s fork builds Arduino core 3.x
+  through pioarduino. A layout check should not be able to stop someone else's
+  build; a `#pragma message`, a test-only macro or a test translation unit would
+  all keep the guard without the hazard. Not changed here because which of the
+  three is right is a decision, not a fix.
+  evidence: `EventBus.h`, the assert below the class; CI builds core 2.0.17 only.
+
+- **The byte model runs 2 to 3 % under a full queue** — measured 2026-09-19,
+  after this entry first said the confrontation had never happened. 32 reference
+  events cost 29 096 B on an ESP32-C3 against 28 192 modelled and 29 064 B on a
+  nodemcuv2 against 28 576. The per-event constants are exact on both boards, so
+  the residue is something `QueueCost::of()` has no term for — plausibly the
+  deque's map array, or an allocation per queue rather than per event, which one
+  point per board cannot separate. Two points per board (a half-full queue and a
+  full one) would. Until then the budget is a close estimate and not a ceiling,
+  which the header and ADR 0003 now say. The rest of this entry stands: no
+  automated check compares the two, and the probe still asserts nothing.
+
+- **The byte model is never confronted with real heap by any test.** Every expected value in
+  every suite is computed by calling `QueueCost::of()` or dividing
+  `kBudgetBytes` — the suites say so themselves ("these test the model, not the
+  silicon"). Set `kNode` to 12 and `kOverhead` to 0 and nothing turns red: the
+  native suites recompute their capacities from the new constants and still agree
+  with the bus, and the Storage board suite derives `HALF` the same way. The only
+  thing that ever compared the model to the heap is
+  `tools/on-device/probes/bug41-queuecost`, which prints a staircase for a human,
+  asserts nothing, and is not in CI's device-build list. The shape that would
+  close it: promote the probe's fill block into the board suites as a Unity test —
+  `getQueuedBytes()` against a measured free-heap delta, asserting the model is an
+  upper bound and not a loose one. The same gap explains why the two literals this
+  lot removed from the HomeAssistant connect-cliff test (29 and 30) left nothing
+  independent behind: expectation and code now share one model.
+  evidence: `git grep QueueCost`; `test_eventbus.cpp` header comment.
+
+- `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` is a compile-time constant in a header whose
+  `enqueue()` is inline. Passed through `build_src_flags` rather than
+  `build_flags`, an application's translation units would compile against one
+  budget and the library's against another, and the linker would pick one
+  silently. Nothing in the header, the reference or CI refuses that spelling, and
+  the documentation names the flag without saying where it has to be set.
+
+- The entry guard rail went from 32 to 256 while `pendingByTopic`'s map nodes and
+  their `String` keys are counted by nothing. A burst of small events on distinct
+  topics can now hold eight times as many of them as before, outside the budget
+  that exists to bound exactly that.
+  evidence: `EventBus.h`, `kMaxEntries` and the `pendingByTopic` insert.
+
+- `publishSticky` stores a payload the queue itself would refuse — **DONE the
+  same day**, with the oversized guard moved from `enqueue()` to the publish
+  entry points: an event over the whole budget is now refused before anything is
+  copied, `publishSticky` included, so it is neither stored nor replayed. The
+  unbounded sticky store recorded above is a different item and stays open.
+
+- The high-water mark is logged only when the drop counter changes, so a queue
+  that peaks at 95 % and never drops is invisible. `FlightRecord` carries
+  `eventDrops()` and no occupancy, and OBS-5's telemetry carries neither — the one
+  number that would let an application see the cliff coming is surfaced nowhere.
+  evidence: `Core.cpp`, the drop line's `drops != lastDropsLogged_` guard.
+
+- The shipped 2.5.0 release note says "The EventBus's 32-entry cap leaves **13
+  entities** to an application at connect". The sentence describes a cap this lot
+  removes, and the figure is derived nowhere in the repository — it replaced 21 in
+  uncommitted work that predates the review. Settling it needs whoever produced
+  21 and 13; the suites now derive the connect-burst capacity from `QueueCost`
+  instead, so nothing pins either number.
+  evidence: `CHANGELOG.md`, the 2.5.0 block.
+
+- `DomoticsCore-Storage`'s `esp8266dev` environment sets
+  `-DDOMOTICS_EVENTBUS_QUEUE_BYTES=4096` for the whole environment, so after this
+  lot no board anywhere exercises the shipped 32-reference-event budget end to
+  end. The plateau test now derives its own numbers from `QueueCost`, which
+  arguably removes the need for the flag there at all — but dropping it lengthens
+  the run and that is a judgement about board time.
+
+- `sizeof(MQTTPublishEvent)` is written 830 in `QueueCost`'s comment, ADR 0003 and
+  the CHANGELOG, and 832 in LO-2. `block()` rounds both to 848, so nothing
+  computes differently and the disagreement will survive until someone states it
+  as `sizeof(MQTTPublishEvent)` in prose the way the tests already do in code.
+
+- `test_ha_component`'s connect-cliff helper computes `refEvents - 2` on a
+  `size_t`. `kBudgetBytes >= kReference` is asserted, so `refEvents >= 1`, but a
+  tight override makes the subtraction wrap and the test then asks for a negative
+  number of sensors. One clamp, whenever that helper is next touched.

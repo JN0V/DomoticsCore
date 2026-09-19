@@ -36,6 +36,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > `QueueCost` is public, and `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` lowers the budget
 > where a board cannot carry it. The once-a-minute drop line now reads
 > `EventBus dropped N events (queue budget B, peak P %)`.
+>
+> The cost model is calibrated per chip. The ESP8266, the xtensa ESP32 and the
+> ESP32-C3 are measured; **the ESP32-S2 and -S3 take a conservative set**, since
+> no board here has weighed one. Read the budget as a close estimate of the heap
+> the queue holds and **not as a ceiling on it**: a full queue measures 2 to 3 %
+> above what the model charges, on both boards it was weighed on.
 
 ### Fixed
 
