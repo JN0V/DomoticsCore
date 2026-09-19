@@ -1939,7 +1939,7 @@ one worth a one-line change, and six rows that are not defects.
   2 to 3 % under. Whether the residue is per-event or per-queue needs a second
   point per board (`docs/deferred-work.md`).
 - **Calibration**: `kNode`, `kOverhead` and `kSsoChars` are measured per chip
-  (`tools/on-device/probes/bug41-queuecost/`). The C3 matches the xtensa ESP32 on
+  (`tools/on-device/probes/allocator-shape/`). The C3 matches the xtensa ESP32 on
   all three; ESP32-S2 and -S3 are unmeasured and take the conservative arm.
 - **Tests**: the rewrite list came from *removing* the literal 32 and letting the
   suites name what fell — four went red, and a fifth stayed green while going

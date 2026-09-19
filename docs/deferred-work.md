@@ -187,7 +187,7 @@ their own.
   native suites recompute their capacities from the new constants and still agree
   with the bus, and the Storage board suite derives `HALF` the same way. The only
   thing that ever compared the model to the heap is
-  `tools/on-device/probes/bug41-queuecost`, which prints a staircase for a human,
+  `tools/on-device/probes/allocator-shape`, which prints a staircase for a human,
   asserts nothing, and is not in CI's device-build list. The shape that would
   close it: promote the probe's fill block into the board suites as a Unity test —
   `getQueuedBytes()` against a measured free-heap delta, asserting the model is an
