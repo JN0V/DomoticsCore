@@ -508,7 +508,7 @@ static void simulateSwitchCommand(Core& core, const char* nodeId,
 
 
 // ============================================================================
-// BUG-43: the availability topic and the Last Will
+// The availability topic and the Last Will
 // ============================================================================
 
 // Home Assistant watches exactly one topic per device, the one `avty_t` names.
@@ -596,7 +596,7 @@ void test_discovery_availability_topic_is_the_one_the_will_corrects() {
 
 // The other direction, and the half that keeps the invariant from being
 // satisfied by accident: a user who names the availability topic moves the
-// will with it. Without this, setting `availabilityTopic` re-opens BUG-43.
+// will with it, or naming the topic re-opens the defect.
 void test_a_named_availability_topic_moves_the_will() {
     Core core;
 
@@ -714,7 +714,7 @@ void test_moving_the_will_does_not_strand_a_component_that_never_reconnects() {
 }
 
 // A will with no topic must not blank the availability topic: an empty avty_t
-// is dropped from every document, which is BUG-43's symptom by another road.
+// is dropped from every document, which is the same symptom by another road.
 void test_an_empty_will_topic_does_not_blank_availability() {
     Core core;
     MQTTConfig mcfg;
@@ -792,7 +792,7 @@ void test_naming_the_topic_after_begin_moves_the_will_too() {
 // getConfig() through setConfig() on every boot of a FullStack application. A
 // component that then believes it was named pushes the topic it ADOPTED back
 // over a will the user has since moved — option (a), the layering inversion
-// BUG-43 rejected, reached without the application naming anything.
+// the layering inversion, reached without the application naming anything.
 void test_an_adopted_topic_is_not_mistaken_for_a_named_one() {
     HAL::WiFiImpl::setConnectedForTest(true);
     Core core;

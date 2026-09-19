@@ -200,8 +200,13 @@ To add a new entity type (e.g., `HANumber`), follow the pattern established by `
 ### Availability Topic (separate pattern)
 
 ```
-{discoveryPrefix}/{nodeId}/availability
+{clientId}/status        # the MQTT component's effective lwtTopic
 ```
+
+Not under the discovery prefix: the availability topic is the topic the MQTT
+Last Will is set on, so that the broker — not the device — is what writes
+`"offline"` when the device disappears. Setting `HAConfig::availabilityTopic`
+moves the Last Will onto that topic instead.
 
 Payload: `"online"` or `"offline"` (always retained).
 
