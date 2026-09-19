@@ -33,6 +33,9 @@ Core::~Core() {
     }
 }
 
+// BUG-42: this function runs with all of initializeAll() stacked on top of it,
+// on the ESP8266's 4 KB cont stack. Keep its frame small — no large locals; put
+// any buffer in a noinline helper, as logPromotedRecord above does.
 bool Core::begin(const CoreConfig& cfg) {
     if (initialized) {
         DLOG_W(LOG_CORE, "Core already initialized");

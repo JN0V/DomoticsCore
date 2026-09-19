@@ -388,7 +388,10 @@ void test_storage_drain_reclaims_queue_memory() {
     TEST_ASSERT_TRUE_MESSAGE(s.storage->putString("counter", "0"),
                              "Storage did not open — the rest would measure nothing");
 
-    const int WRITES = 40;  // 40 > the queue cap, so the queue reaches its ceiling
+    // Its sibling above derives this; kept literal here because the assertions
+    // rest on a 1 000 B occupancy floor rather than on a full queue. It is only
+    // above the ceiling while this environment lowers the budget (BUG-41).
+    const int WRITES = 40;
 
     // Cycle 1 — absorbs every one-time cost, and is not measured.
     for (int i = 0; i < WRITES; i++) {
