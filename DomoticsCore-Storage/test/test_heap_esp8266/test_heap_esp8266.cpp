@@ -33,6 +33,12 @@ using namespace DomoticsCore;
 using namespace DomoticsCore::Testing;
 using namespace DomoticsCore::Components;
 
+// The two byte counters must stay in the padding that follows droppedEvents_;
+// declared after dispatching_ they land on an odd offset and the object grows.
+// Here rather than in the shipped header: a consumer on another toolchain must
+// not fail to build over our layout.
+static_assert(sizeof(DomoticsCore::Utils::EventBus) == 172, "EventBus layout moved");
+
 void setUp() {}
 void tearDown() {}
 

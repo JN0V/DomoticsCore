@@ -531,6 +531,30 @@ private:
 #define LED_BUILTIN 2
 #endif
 
+
+/**
+ * @brief What this platform's allocator and String cost, for callers that size
+ *        a buffer or a queue in bytes.
+ *
+ * Measured on the xtensa ESP32 and on an ESP32-C3, which agree. The S2 and S3
+ * are unmeasured and take a deliberately pessimistic set.
+ */
+#if defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32C3)
+struct AllocatorShape {
+    static constexpr size_t kDequeNodeBytes = 33;  ///< deque chunk 512 + 16, over 16 elements
+    static constexpr size_t kBlockOverhead  = 16;  ///< TLSF header 4 + light poisoning 12
+    static constexpr size_t kSsoChars       = 14;  ///< a String this long or shorter allocates nothing
+    static constexpr bool   kMeasured       = true;
+};
+#else
+struct AllocatorShape {
+    static constexpr size_t kDequeNodeBytes = 80;
+    static constexpr size_t kBlockOverhead  = 24;
+    static constexpr size_t kSsoChars       = 10;
+    static constexpr bool   kMeasured       = false;
+};
+#endif
+
 } // namespace Platform
 } // namespace HAL
 } // namespace DomoticsCore

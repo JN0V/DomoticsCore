@@ -162,15 +162,12 @@ their own.
 
 ## Deferred from: code review of the BUG-41 / BUG-42 lot (2026-09-18)
 
-- `static_assert(sizeof(EventBus) == 172)` ships in a public header, gated only on
-  the platform macros, so it fires for every consumer rather than for CI. The size
-  it pins depends on `std::map`/`std::function`/`std::deque` layout — a toolchain
-  this project does not control, and `marianorenzi`'s fork builds Arduino core 3.x
-  through pioarduino. A layout check should not be able to stop someone else's
-  build; a `#pragma message`, a test-only macro or a test translation unit would
-  all keep the guard without the hazard. Not changed here because which of the
-  three is right is a decision, not a fix.
-  evidence: `EventBus.h`, the assert below the class; CI builds core 2.0.17 only.
+- `static_assert(sizeof(EventBus) == 172)` no longer ships in a public header —
+  **DONE the same day**: it broke the build of any consumer whose toolchain lays
+  the object out differently, and the fork builds Arduino core 3.x. It moved to
+  `DomoticsCore-Storage/test/test_heap_esp8266`, which CI compiles for the board.
+  That pins the ESP8266 layout only; the ESP32 side is now unpinned, and pinning
+  it needs a suite that compiles for that target.
 
 - **The byte model runs 2 to 3 % under a full queue** — measured 2026-09-19,
   after this entry first said the confrontation had never happened. 32 reference

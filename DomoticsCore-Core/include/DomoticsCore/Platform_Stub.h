@@ -878,6 +878,20 @@ public:
     }
 };
 
+
+/**
+ * @brief What this platform's allocator and String cost, for callers that size
+ *        a buffer or a queue in bytes.
+ *
+ * The host, and any target nobody has measured: pessimistic on purpose.
+ */
+struct AllocatorShape {
+    static constexpr size_t kDequeNodeBytes = 80;
+    static constexpr size_t kBlockOverhead  = 24;
+    static constexpr size_t kSsoChars       = 10;
+    static constexpr bool   kMeasured       = false;
+};
+
 } // namespace Platform
 } // namespace HAL
 } // namespace DomoticsCore
