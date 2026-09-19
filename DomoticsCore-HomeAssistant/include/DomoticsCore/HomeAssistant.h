@@ -9,7 +9,7 @@
  */
 
 #include <DomoticsCore/IComponent.h>
-#include <DomoticsCore/ComponentRegistry.h>  // BUG-43: resolve the MQTT component to read its Last Will
+#include <DomoticsCore/ComponentRegistry.h>  // to resolve the MQTT component
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/MQTT.h>  // For event structures (MQTTPublishEvent, MQTTSubscribeEvent, MQTTMessageEvent)
 #include <DomoticsCore/MQTTEvents.h>  // For MQTT event names
@@ -127,8 +127,7 @@ public:
         DLOG_I(LOG_HA, "Node ID: %s", config.nodeId);
         DLOG_I(LOG_HA, "Discovery prefix: %s", config.discoveryPrefix);
 
-        // BUG-43: before anything advertises a topic, make it the one the broker
-        // corrects.
+        // Before anything advertises a topic, make it the one the broker corrects.
         reconcileAvailabilityWithWill();
         
         // Subscribe to MQTT events via EventBus
@@ -500,10 +499,8 @@ public:
                        written, HA::MAX_AVAIL_TOPIC - 1);
             }
         }
-        // BUG-43: this is the runtime entry point — SystemPersistence calls it
-        // after Core::begin(), and the WebUI calls it then republishes discovery.
-        // Recording the flag without re-reconciling would let the two topics
-        // drift apart again by exactly the path the fix closed at boot.
+        // Persistence and the WebUI both land here after begin(), so the two
+        // topics have to be reconciled again or they drift apart.
         if (__dc_registry) reconcileAvailabilityWithWill();
     }
     
@@ -546,12 +543,8 @@ private:
     std::vector<std::unique_ptr<HAEntity>> entities;
     HAStatistics stats;
     bool availabilityPublished = false;  // Track if initial availability sent
-    // BUG-43: whether the application named availabilityTopic, or it was
-    // generated/adopted. Inferring it from "the field is non-empty" is not
-    // enough: begin() fills the field, and SystemPersistence round-trips
-    // getConfig() through setConfig() on every boot, so the component would
-    // then believe it had been named and push its adopted topic back over a
-    // will the user had moved.
+    // Whether the application named availabilityTopic, or it was generated or
+    // adopted. Not inferable from "the field is non-empty": begin() fills it.
     bool availabilityTopicNamed = false;
     char adoptedFromWill_[HA::MAX_AVAIL_TOPIC] = {0};
     bool mqttConnected = false;  // Track MQTT connection state via EventBus
@@ -596,14 +589,12 @@ private:
         }
     }
 
-    // BUG-43: Home Assistant watches exactly one topic per device, the one
-    // `avty_t` names, and only the broker can write `offline` to it. Whichever
-    // of availabilityTopic and MQTTConfig::lwtTopic the application named, the
-    // other follows it, so the two cannot drift apart.
+    // Home Assistant watches one topic per device, the one `avty_t` names, and
+    // only the broker can write `offline` to it. Whichever of availabilityTopic
+    // and MQTTConfig::lwtTopic the application named, the other follows.
     void reconcileAvailabilityWithWill() {
-        // The registry is injected at addComponent(), so this resolves whatever
-        // the initialisation order is. The downcast is the framework's accepted
-        // one (BUG-2): the name selects the type.
+        // Injected at addComponent(), so the initialisation order is irrelevant.
+        // The downcast is the framework's accepted one: the name selects the type.
         IComponent* found = __dc_registry ? __dc_registry->getComponent("MQTT") : nullptr;
         MQTTComponent* mqtt = static_cast<MQTTComponent*>(found);
         if (!mqtt) {
@@ -622,15 +613,11 @@ private:
             return;
         }
         // The broker writes the payload, not this component, and HAEntity
-        // advertises pl_not_avail "offline" (HAEntity.h). A will that says
-        // anything else lands on the right topic and still never marks the
-        // device unavailable — BUG-43's symptom with its cause moved.
-        // setAvailable() publishes "online" retained. A will that is not
-        // retained is transient, so the broker's "offline" is seen only by
-        // whoever is subscribed at that instant and the retained "online"
-        // outlives the device — BUG-43's production symptom, one field away.
-        // The topic is already this component's to move; the retain flag that
-        // makes the topic mean anything goes with it.
+        // advertises pl_not_avail "offline". Anything else lands on the right
+        // topic and still never marks the device unavailable.
+        // setAvailable() publishes "online" retained, so a transient will is
+        // seen only by whoever is subscribed at that instant and the retained
+        // "online" outlives the device.
         if (!cfg.lwtRetain) {
             DLOG_W(LOG_HA, "MQTT will was not retained: forcing it, or the retained "
                            "'online' on '%s' would outlive this device",

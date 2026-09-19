@@ -245,3 +245,15 @@ their own.
   `size_t`. `kBudgetBytes >= kReference` is asserted, so `refEvents >= 1`, but a
   tight override makes the subtraction wrap and the test then asks for a negative
   number of sensors. One clamp, whenever that helper is next touched.
+
+
+## Deferred from: the BUG-43 lot (2026-09-18)
+
+- The MQTT WebUI exposes `lwt_topic`, `lwt_enabled` and `lwt_message` as
+  first-class settings and writes them straight into the component. BUG-43 ties
+  the availability topic to the will from HomeAssistant's side; nothing tells
+  HomeAssistant when the will moves from MQTT's side, so a user editing that field
+  leaves every retained discovery document pointing at the previous topic. The
+  mechanism is a decision — an event, a direct call, or refusing the edit while a
+  HomeAssistant component is present — not a patch.
+  evidence: `MQTTWebUI.h`, the settings context and its save handler.

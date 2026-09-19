@@ -59,7 +59,7 @@ struct HAConfig {
 | `swVersion` | 16 chars | `"1.0.0"` | Populated from `SystemConfig.firmwareVersion`. |
 | `retainDiscovery` | -- | `true` | When true, discovery payloads persist on the broker across broker restarts. |
 | `discoveryPrefix` | 32 chars | `"homeassistant"` | Must match the MQTT discovery prefix configured in Home Assistant. |
-| `availabilityTopic` | 128 chars | `""` (auto) | If left empty, auto-generated as `{discoveryPrefix}/{nodeId}/availability`. |
+| `availabilityTopic` | 128 chars | `""` (auto) | The topic every entity's `avty_t` points at. **Left empty it becomes the MQTT component's effective `lwtTopic`** (`{clientId}/status` by default), so the broker's Last Will lands where Home Assistant is watching. Set it, and the Last Will moves onto it instead. See [Availability](#availability). |
 | `configUrl` | 128 chars | `""` | Optional. If set, HA shows a "Configuration" link on the device page. |
 | `suggestedArea` | 32 chars | `""` | Optional. Suggests a room/area when the device first appears in HA. |
 
@@ -123,7 +123,7 @@ HomeAssistantComponent(const HAConfig& config = HAConfig());
 Sets component metadata:
 - `name`: `"HomeAssistant"`
 - `version`: `"2.0.0"`
-- Auto-generates `availabilityTopic` if not provided.
+- Auto-generates `availabilityTopic` if not provided, then reconciles it with the MQTT component's Last Will — see [Availability](#availability).
 
 ### IComponent Lifecycle
 
@@ -811,7 +811,7 @@ All topics follow the Home Assistant MQTT Discovery convention.
 | State | `{prefix}/{component}/{nodeId}/{entityId}/state` | Device -> Broker | Yes (per entity) |
 | Command | `{prefix}/{component}/{nodeId}/{entityId}/set` | HA -> Device | No |
 | Attributes | `{prefix}/{component}/{nodeId}/{entityId}/attributes` | Device -> Broker | Yes |
-| Availability | `{prefix}/{nodeId}/availability` | Device -> Broker | Yes |
+| Availability | the MQTT component's `lwtTopic` — `{clientId}/status` by default | Device -> Broker and Broker -> HA (Last Will) | Yes |
 
 ### Command Subscription
 
@@ -856,7 +856,7 @@ Topic: `homeassistant/sensor/esp32-demo/temperature/config`
     "mf": "DomoticsCore",
     "sw": "1.0.0"
   },
-  "avty_t": "homeassistant/esp32-demo/availability",
+  "avty_t": "ESP32-0000a1b2c3d4/status",
   "pl_avail": "online",
   "pl_not_avail": "offline"
 }
@@ -877,7 +877,7 @@ Topic: `homeassistant/switch/esp32-demo/relay/config`
   "stat_on": "ON",
   "stat_off": "OFF",
   "dev": { "..." : "..." },
-  "avty_t": "homeassistant/esp32-demo/availability",
+  "avty_t": "ESP32-0000a1b2c3d4/status",
   "pl_avail": "online",
   "pl_not_avail": "offline"
 }
@@ -903,7 +903,7 @@ Topic: `homeassistant/light/esp32-demo/led/config`
   "bri_val_tpl": "{{ value_json.brightness }}",
   "on_cmd_type": "brightness",
   "dev": { "..." : "..." },
-  "avty_t": "homeassistant/esp32-demo/availability",
+  "avty_t": "ESP32-0000a1b2c3d4/status",
   "pl_avail": "online",
   "pl_not_avail": "offline"
 }
@@ -921,7 +921,7 @@ Topic: `homeassistant/button/esp32-demo/restart/config`
   "pl_prs": "PRESS",
   "ic": "mdi:restart",
   "dev": { "..." : "..." },
-  "avty_t": "homeassistant/esp32-demo/availability",
+  "avty_t": "ESP32-0000a1b2c3d4/status",
   "pl_avail": "online",
   "pl_not_avail": "offline"
 }
@@ -951,7 +951,7 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
   "pl_trig": "TRIGGER",
   "sup_feat": ["arm_home", "arm_away", "trigger"],
   "dev": { "..." : "..." },
-  "avty_t": "homeassistant/esp32-demo/availability",
+  "avty_t": "ESP32-0000a1b2c3d4/status",
   "pl_avail": "online",
   "pl_not_avail": "offline"
 }
@@ -1007,11 +1007,22 @@ A `volatile bool publishing` flag prevents re-entrant state publishing. This pro
 
 ## Availability
 
-The component manages device-level availability:
+Home Assistant watches exactly **one** topic per device, the one `avty_t` names, and it is the only signal that tells it a device has gone. The device can publish `"online"` itself; it cannot publish `"offline"` when it has crashed or lost the link. Only the broker can, through the MQTT Last Will — so the topic Home Assistant is told to watch must be the topic the Last Will is set on, or entities stay available for ever after the device disappears.
 
-- **On MQTT connect**: Publishes `"online"` to `{prefix}/{nodeId}/availability` (retained).
-- **On shutdown**: Publishes `"offline"` (retained).
-- **LWT integration**: Configure the MQTT component's Last Will Testament to publish `"offline"` to the same availability topic for crash detection.
+The component enforces that at `begin()`, and again on every `setConfig()`:
+
+- **`availabilityTopic` left empty** — it becomes the MQTT component's effective `lwtTopic`, `{clientId}/status` by default. Nothing else has to be configured.
+- **`availabilityTopic` set by the application** — `MQTTConfig::lwtTopic` is moved onto it. A session already open is reopened, because the Last Will is sent in the CONNECT packet and cannot be changed afterwards.
+- **`lwtRetain` false** — forced to `true`. Availability is published retained; a transient Last Will would leave that retained `"online"` standing after the device is gone.
+
+Three configurations cannot be reconciled and are reported in the log instead of being advertised as if they worked: **no MQTT component**, **`enableLWT` false**, and **a `lwtTopic` set to an empty string**. In all three the generated topic is kept and no Last Will corrects it. A **`lwtMessage` other than `"offline"`** is also reported: entities declare `pl_not_avail: "offline"`, so a will saying anything else lands on the right topic and still never marks the device unavailable.
+
+What the component publishes itself:
+
+- **On MQTT connect**: `"online"` to the availability topic (retained).
+- **On shutdown**: `"offline"` (retained).
+
+Moving `MQTTConfig::lwtTopic` from the MQTT side afterwards — through the MQTT settings page, for instance — is not observed: the discovery documents keep pointing at the previous topic until the next reconciliation. Configure the pair from one side.
 
 The `isReady()` method returns `true` only when both conditions are met:
 1. MQTT is connected (`mqttConnected == true`)

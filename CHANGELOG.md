@@ -28,6 +28,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+> **Every Home Assistant entity's availability topic changes, and it is the
+> change that makes availability work.** The discovery documents advertised
+> `{discoveryPrefix}/{nodeId}/availability`, which no Last Will ever wrote, so a
+> device that dropped off stayed green in Home Assistant for ever — observed on a
+> production broker with `<clientId>/status offline` and
+> `homeassistant/<node>/availability online` retained side by side. `avty_t` is
+> now the topic the broker corrects: by default `{clientId}/status`, and if you
+> set `HAConfig::availabilityTopic` yourself the MQTT Last Will moves onto it
+> instead. Home Assistant follows the new topic from the retained discovery
+> document with no action; the stale retained `online` on the old topic is
+> orphaned and worth clearing with an empty retained publish.
+
 > **The EventBus queue is now bounded by the bytes it holds rather than by a
 > count of 32 entries.** A burst of *small* events is no longer truncated at 32 —
 > that is a visible behaviour change, and it is why this note is here. The worst
@@ -45,6 +57,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- **HomeAssistant: the availability topic had no Last Will, so no device ever
+  went unavailable** (BUG-43). Home Assistant watches exactly one topic per
+  device, the one `avty_t` names, and only the broker can write `offline` to it
+  after a device drops off. The component advertised its own retained topic and
+  the Last Will sat on another, so the two contradicted each other indefinitely —
+  on an alarm panel, the difference between a fault and a silent fault. The two
+  are now one topic, and symmetric: whichever of `HAConfig::availabilityTopic`
+  and `MQTTConfig::lwtTopic` the application names moves the other, at boot and
+  through `setConfig()` afterwards, and a session already open is reopened so the
+  broker holds the new will rather than the old one for the rest of its life.
+  Three configurations cannot be reconciled and are now named in the log instead
+  of being advertised as if they worked: no Last Will at all, a Last Will with no
+  topic, and a will payload other than `offline` — Home Assistant is told
+  `pl_not_avail: "offline"`, so a will that says anything else lands on the right
+  topic and still never marks the device unavailable. On the alarm panel the
+  discovery document also loses fourteen characters per entity against the size
+  ceiling BUG-38 measured; a short `nodeId` with a MAC-derived `clientId` can go
+  the other way. `MQTTConfig::lwtRetain` is **forced to `true`** when a
+  HomeAssistant component is present: availability is published retained, and a
+  transient Last Will would leave that retained `online` standing after the
+  device is gone.
 - **ESP8266: `Core::begin()` took a quarter of the 4 KB cont stack and could
   panic an application at its next `yield()`** (BUG-42). The 1 KB buffer that
   formats a promoted flight record was a local of `begin()`, so the compiler
