@@ -17,7 +17,19 @@ Mocks allow testing components in complete isolation without:
 | `MockMQTTClient` | `PubSubClient` | Test MQTT publish/subscribe logic |
 | `MockEventBus` | `EventBus.h` | Test event emission/subscription |
 | `MockStorage` | `StorageComponent` | Test persistence logic |
-| `MockAsyncWebServer` | `ESPAsyncWebServer` | Test WebUI routes |
+
+### Library mocks (`libraries/`)
+
+These carry the real library's file name, so an unchanged `#include <X.h>` finds
+the mock instead of the package. A project opts in by putting the directory on
+its include path; nothing else sees them.
+
+| Mock | Replaces | Use Case |
+|------|----------|----------|
+| `libraries/ESPAsyncWebServer.h` | `ESPAsyncWebServer` | Run route and upload handlers on the host |
+| `libraries/AsyncEventSource.h` | its SSE half | Assert what a handler pushed |
+| `libraries/FS.h` | `FS.h` | Compile headers that name `fs::FS` |
+| `libraries/pgmspace.h` | `pgmspace.h` | Compile headers using `PROGMEM` |
 
 ## Usage Pattern
 

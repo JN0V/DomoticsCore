@@ -105,7 +105,17 @@ Mock implementations for isolated unit testing without hardware or network depen
 | `MockEventBus.h` | EventBus mock for isolated testing |
 | `MockStorage.h` | Storage mock (in-memory key-value) |
 | `MockNTPClient.h` | NTP client simulation |
-| `MockAsyncWebServer.h` | AsyncWebServer mock for WebUI tests |
+
+Mocks named after a library they stand in for live in `mocks/libraries/`: they are
+found by that name instead of the real package, so only a project that puts the
+directory on its include path gets them.
+
+| Mock | Replaces |
+|------|----------|
+| `libraries/ESPAsyncWebServer.h` | the async web server — records routes, responses, timeouts |
+| `libraries/AsyncEventSource.h` | its SSE half |
+| `libraries/FS.h` | the Arduino filesystem header |
+| `libraries/pgmspace.h` | the flash-string macros |
 
 See [`tests/mocks/README.md`](mocks/README.md) for usage details.
 

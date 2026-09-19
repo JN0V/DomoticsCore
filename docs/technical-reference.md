@@ -619,7 +619,7 @@ tests/
 │   ├── MockEventBus.h             # EventBus mock
 │   ├── MockStorage.h              # Storage mock
 │   ├── MockNTPClient.h            # NTP mock
-│   ├── MockAsyncWebServer.h       # ESPAsyncWebServer mock
+│   ├── libraries/                 # Mocks carrying a real library's file name
 │   └── README.md                  # Mock usage guide
 └── README.md
 ```

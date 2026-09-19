@@ -257,3 +257,15 @@ their own.
   mechanism is a decision — an event, a direct call, or refusing the edit while a
   HomeAssistant component is present — not a patch.
   evidence: `MQTTWebUI.h`, the settings context and its save handler.
+
+- source_spec: TEST-8's lot (2026-09-19)
+  summary: `WebUI.h:18` includes `<pgmspace.h>` unconditionally — a platform header named by a component file rather than reached through a HAL one. Constitution IX is written about `#ifdef`, so this is adjacent rather than a breach, but it is the reason the host build needs a `pgmspace.h` mock at all.
+  evidence: `DomoticsCore-WebUI/include/DomoticsCore/WebUI.h:18`. The whole repository uses `PROGMEM` (17 sites) and `memcpy_P` (1); nothing else includes the header. `WebResponse_HAL.h` already dispatches the one API that differs per platform, which is where the include belongs.
+
+- source_spec: TEST-8's lot (2026-09-19)
+  summary: the upload handler's `uploadState.active` check inside `onDisconnect` is redundant: `OTAComponent::abortUpload()` refuses an inactive session on its own, so removing either guard alone changes nothing observable.
+  evidence: `OTAWebUI.h:433` and `OTA.cpp:453`. Removal of either leaves `test_a_finished_uploads_own_disconnect_aborts_nothing` green; removing both gives `Expected 0 Was 1`. Left as belt-and-braces — the handler's copy documents the invariant at the point a reader meets it.
+
+- source_spec: TEST-8's lot (2026-09-19)
+  summary: the host mocks prove handler logic and nothing about ESPAsyncWebServer. Multipart parsing, the real `setRxTimeout` and every timing question remain covered only by `tools/on-device/ota_upload_check.py`, which needs a board.
+  evidence: `tests/mocks/libraries/ESPAsyncWebServer.h` records calls and parses no HTTP. The board script's discriminating case stays the refused upload: `total` 475264 with SEC-9's narrowing against 475452 without.

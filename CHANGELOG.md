@@ -111,6 +111,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` to lower the budget on a board that cannot
   carry 32 reference events.
 
+### Internal
+
+- **The OTA upload endpoint's security gates now run under test** (TEST-8). No
+  public API changes. Every OTA test used to call `beginUpload()` and its
+  neighbours directly, one layer below the handler that a browser actually
+  reaches, so the CSRF check, the credentials check and the state reset that
+  must precede it, the abort on a vanished client, the widened receive-idle
+  limit and the narrowing of the announced upload size had never been executed
+  by anything automated. `OTAWebUI.h` could not compile on the host at all —
+  it reaches `<ESPAsyncWebServer.h>` — so the suite was impossible rather than
+  missing. Mocks carrying the real library file names now live in
+  `tests/mocks/libraries/` and only OTA's native environment sees them; the
+  real `WebUIComponent` registers its routes on the host and the suite drives
+  them. Ten cases, nine removal checks, and the native total moves 1 096 →
+  1 107. A dead `tests/mocks/MockAsyncWebServer.h`, advertised by three
+  documents and included by none, was deleted with them.
+
 ## [2.5.0] - 2026-09-16
 
 > **This release adds two public fields, refuses one configuration it used
