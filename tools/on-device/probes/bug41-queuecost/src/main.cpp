@@ -65,17 +65,13 @@ void setup() {
     Serial.begin(115200);
     delay(2500);
     Serial.println("\n\n===== QueueCost calibration =====");
-#if defined(DOMOTICS_PLATFORM_ESP32)
-    Serial.println("platform: ESP32");
-#else
-    Serial.println("platform: ESP8266");
-#endif
+    Serial.printf("platform: %s\n", DOMOTICS_PLATFORM_NAME);
     Serial.printf("sizeof(EventBus)=%u sizeof(QueuedEvent)=%u sizeof(String)=%u free=%lu\n",
                   (unsigned)sizeof(EventBus), (unsigned)sizeof(EventBus::QueuedEvent),
                   (unsigned)sizeof(String), (unsigned long)freeHeap());
 
-    // Les N restent sous le plafond de 32 de l'en-tête livré. 16 et 17 encadrent
-    // la frontière de chunk de deque sur ESP32 (512/32 = 16 éléments).
+    // Every N stays under the 32 the shipped header allowed. 16 and 17 straddle
+    // the deque chunk boundary on ESP32 (512/32 = 16 elements).
     static const size_t Ns[]    = {1, 4, 8, 16, 17, 24, 30};
     static const size_t NsBig[] = {1, 4, 8, 12};        // 830 B : 30 x 830 noie un ESP8266
 
