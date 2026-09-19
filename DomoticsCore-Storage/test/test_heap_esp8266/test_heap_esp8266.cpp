@@ -293,7 +293,7 @@ void test_storage_namespace_lifecycle() {
 
 // Writing without ever draining the bus DOES cost heap: every put queues a
 // storage/changed event. What matters is that the cost stops. EventBus bounds the
-// queue by the BYTES it holds (BUG-41) and drops the oldest to make room, so
+// queue by the BYTES it holds and drops the oldest to make room, so
 // occupancy reaches a ceiling and stays there. This environment lowers the budget
 // with -DDOMOTICS_EVENTBUS_QUEUE_BYTES so that ceiling is reachable in forty
 // writes; the shipped budget holds thirty-two reference events, measured on this
@@ -390,7 +390,7 @@ void test_storage_drain_reclaims_queue_memory() {
 
     // Its sibling above derives this; kept literal here because the assertions
     // rest on a 1 000 B occupancy floor rather than on a full queue. It is only
-    // above the ceiling while this environment lowers the budget (BUG-41).
+    // above the ceiling while this environment lowers the budget.
     const int WRITES = 40;
 
     // Cycle 1 — absorbs every one-time cost, and is not measured.

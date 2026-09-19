@@ -1,9 +1,9 @@
 /**
- * BUG-41 — calibration of QueueCost, one constant per series.
+ * Calibration of QueueCost, one constant per series.
  *
  * The queue is measured undrained and then given back, the way firmware does:
  * a series that never drains measures occupancy, and the drain line is what
- * says the occupancy was held rather than lost (the STOR-ESP-1 lesson).
+ * says the occupancy was held rather than lost.
  *
  * Written against the entry cap this lot replaced, so every N stays under the
  * 32 entries that cap allowed. The staircase across N is the measurement: its
@@ -64,7 +64,7 @@ static void series(const char* name, size_t payload, const char* topic, const si
 void setup() {
     Serial.begin(115200);
     delay(2500);
-    Serial.println("\n\n===== BUG-41 QueueCost calibration =====");
+    Serial.println("\n\n===== QueueCost calibration =====");
 #if defined(DOMOTICS_PLATFORM_ESP32)
     Serial.println("platform: ESP32");
 #else

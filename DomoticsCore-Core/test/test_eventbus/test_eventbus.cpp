@@ -19,7 +19,7 @@ void tearDown(void) {
 }
 
 // ---------------------------------------------------------------------------
-// BUG-41: the queue is bounded by the bytes it holds, not by an entry count.
+// The queue is bounded by the bytes it holds, not by an entry count.
 // Every expected number below is derived from QueueCost, never written as a
 // literal: the native stub String is not the boards' String, so these test the
 // model, not the silicon.
@@ -186,7 +186,7 @@ void test_unsubscribe_owner(void) {
 }
 
 void test_backpressure(void) {
-    // BUG-41: a storm past the BUDGET keeps the most recent, in order, and counts
+    // A storm past the BUDGET keeps the most recent, in order, and counts
     // what it dropped. The capacity is derived from QueueCost, never written down.
     std::vector<int> received;
     testBus->subscribe(String(REF_TOPIC), [&](const void* p) {
@@ -212,7 +212,7 @@ void test_backpressure(void) {
 void test_bug36_topic_dropped_on_overflow_still_replays_sticky(void) {
     int b = 7;
     testBus->publishSticky(String("topic/B"), b);           // B is the oldest queued event
-    // BUG-41: the storm has to be in BYTES now. Forty small events no longer
+    // The storm has to be in BYTES now. Forty small events no longer
     // overflow anything, and this test would pass while reaching nothing.
     const size_t CAP = QueueCost::kBudgetBytes / QueueCost::of(830, strlen("topic/A"));
     std::vector<uint8_t> buf(830, 0x55);
@@ -308,7 +308,7 @@ void test_cliff_is_where_it_was(void) {
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, testBus->getDroppedCount(), "the 33rd must cost exactly one");
 }
 
-// One large event evicts as many of the oldest as it needs — and BUG-36's
+// One large event evicts as many of the oldest as it needs — and the
 // release still runs for every one of them.
 void test_one_large_event_evicts_as_many_oldest_as_needed_and_keeps_sticky_replayable(void) {
     // Medium events, so the byte budget binds well before the entry guard rail:
@@ -705,7 +705,7 @@ void test_core_emit_non_sticky_default(void) {
 }
 
 
-// BUG-41: the refusal has to happen before the payload is copied. Inside
+// The refusal has to happen before the payload is copied. Inside
 // enqueue() the heap has already been asked for the buffer, which on an ESP8266
 // is where the OOM lands — the guard would then be accounting, not protection.
 // Natively the observable is the sticky store: a payload the queue refuses must

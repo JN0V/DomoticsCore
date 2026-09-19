@@ -8,11 +8,11 @@
 
 namespace DomoticsCore {
 
-// BUG-42: kept out of Core::begin() and out of line. The 1 KB buffer is part of
-// begin()'s frame wherever it is declared, taken branch or not, and the ESP8266
-// runs begin() and all of initializeAll() on a 4 KB cont stack.
+// Out of line: the 1 KB buffer below is part of its function's frame whether
+// the branch runs or not, and begin() already carries all of initializeAll()
+// on the ESP8266's 4 KB cont stack.
 static void __attribute__((noinline)) logPromotedRecord(FlightRecorder& recorder) {
-    char text[1024];   // sized by test_format_saturated_stays_under_128_per_line_and_1024_in_all (OBS-4)
+    char text[1024];   // size pinned by test_format_saturated_stays_under_128_per_line_and_1024_in_all
     recorder.format(text, sizeof(text));
     // One log line per formatted line: the ESP8266's log buffer is 128 bytes.
     char* line = text;
@@ -33,9 +33,9 @@ Core::~Core() {
     }
 }
 
-// BUG-42: this function runs with all of initializeAll() stacked on top of it,
-// on the ESP8266's 4 KB cont stack. Keep its frame small — no large locals; put
-// any buffer in a noinline helper, as logPromotedRecord above does.
+// Runs with all of initializeAll() stacked on top of it, on the ESP8266's 4 KB
+// cont stack. Keep the frame small: no large locals, buffers go in a noinline
+// helper like logPromotedRecord above.
 bool Core::begin(const CoreConfig& cfg) {
     if (initialized) {
         DLOG_W(LOG_CORE, "Core already initialized");
