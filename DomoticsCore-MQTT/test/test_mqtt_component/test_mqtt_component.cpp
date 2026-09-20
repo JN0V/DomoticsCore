@@ -17,7 +17,9 @@
  */
 
 #include <unity.h>
+#include <memory>
 #include <string>
+#include <vector>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/MQTT.h>
 #include <DomoticsCore/MQTTEvents.h>
@@ -679,8 +681,9 @@ void test_mqtt_loop_empty_broker_early_return() {
     mqtt.setBroker("", 0);
     mqtt.loop();  // Must not crash
 
-    // isConnected() may still return true (stale state)
-    // The key assertion is no crash
+    // The state follows: loop() gives up the session rather than leaving it
+    // reading Connected for ever.
+    TEST_ASSERT_FALSE(mqtt.isConnected());
     mqtt.shutdown();
 }
 
@@ -1070,6 +1073,139 @@ void test_publish_now_connected_reaches_the_client_and_shares_the_window() {
     HAL::WiFiImpl::setConnectedForTest(false);
 }
 
+
+// ============================================================================
+// A link the broker or the network drops
+// ============================================================================
+
+namespace {
+
+/// Brings a component up inside a Core, connected to the stub broker.
+struct ConnectedBus {
+    Core core;
+    MQTTComponent* mqtt = nullptr;
+    uint32_t connects = 0;
+    uint32_t disconnects = 0;
+    std::vector<const char*> order;
+
+    explicit ConnectedBus(bool autoReconnect) {
+        MQTTConfig cfg;
+        cfg.broker = "test.broker.com";
+        cfg.port = 1883;
+        cfg.enabled = true;
+        cfg.autoReconnect = autoReconnect;
+        cfg.reconnectDelay = 0;  // Eliminate the timer as a variable
+        core.addComponent(std::make_unique<MQTTComponent>(cfg));
+        core.begin();
+        HAL::WiFiImpl::setConnectedForTest(true);
+        mqtt = core.getComponent<MQTTComponent>("MQTT");
+        TEST_ASSERT_NOT_NULL_MESSAGE(mqtt, "the fixture has no component to drive");
+        core.getEventBus().subscribe(String(MQTTEvents::EVENT_CONNECTED), [this](const void*) {
+            connects++;
+            order.push_back(MQTTEvents::EVENT_CONNECTED);
+        }, nullptr);
+        core.getEventBus().subscribe(String(MQTTEvents::EVENT_DISCONNECTED), [this](const void*) {
+            disconnects++;
+            order.push_back(MQTTEvents::EVENT_DISCONNECTED);
+        }, nullptr);
+        mqtt->connect();
+        core.getEventBus().poll();
+    }
+
+    ~ConnectedBus() {
+        mqtt->shutdown();
+        HAL::WiFiImpl::setConnectedForTest(false);
+    }
+
+    /// The broker or the network drops the link: the client goes down under the
+    /// component, which is never told.
+    void dropTheLink() {
+        auto* client = mqtt->getClientForTest();
+        TEST_ASSERT_NOT_NULL_MESSAGE(client, "nothing to drop: the fixture never built a client");
+        client->disconnect();
+    }
+
+    void loopAndPoll(int times = 1) {
+        for (int i = 0; i < times; i++) mqtt->loop();
+        core.getEventBus().poll();
+    }
+};
+
+}  // namespace
+
+void test_a_dropped_link_emits_disconnected_once() {
+    ConnectedBus bus(/*autoReconnect=*/false);
+    TEST_ASSERT_TRUE(bus.mqtt->isConnected());
+    TEST_ASSERT_EQUAL_UINT32(1, bus.connects);
+    TEST_ASSERT_EQUAL_UINT32(0, bus.disconnects);
+
+    bus.dropTheLink();
+    bus.loopAndPoll();
+
+    TEST_ASSERT_EQUAL_UINT32(1, bus.disconnects);
+    TEST_ASSERT_FALSE(bus.mqtt->isConnected());
+}
+
+void test_a_dropped_link_does_not_repeat_the_event_on_later_loops() {
+    ConnectedBus bus(/*autoReconnect=*/false);
+    bus.dropTheLink();
+    bus.loopAndPoll();
+    TEST_ASSERT_EQUAL_UINT32(1, bus.disconnects);
+
+    bus.loopAndPoll(10);
+
+    TEST_ASSERT_EQUAL_UINT32(1, bus.disconnects);
+}
+
+void test_a_dropped_link_reports_the_state_it_is_in() {
+    // The WebUI reads getState(); over a dead link it said Connected.
+    ConnectedBus bus(/*autoReconnect=*/false);
+    bus.dropTheLink();
+    bus.loopAndPoll();
+
+    TEST_ASSERT_EQUAL(static_cast<int>(MQTTState::Disconnected),
+                      static_cast<int>(bus.mqtt->getState()));
+}
+
+void test_a_reconnection_announces_the_loss_before_its_own_success() {
+    ConnectedBus bus(/*autoReconnect=*/true);
+    bus.dropTheLink();
+    bus.loopAndPoll();
+
+    // One loop() both notices the loss and reconnects, so the order the bus
+    // dispatches them in is the whole assertion.
+    TEST_ASSERT_EQUAL_UINT32(1, bus.disconnects);
+    TEST_ASSERT_EQUAL_UINT32(2, bus.connects);
+    TEST_ASSERT_TRUE(bus.mqtt->isConnected());
+    TEST_ASSERT_EQUAL_size_t(3, bus.order.size());
+    TEST_ASSERT_EQUAL_STRING(MQTTEvents::EVENT_CONNECTED, bus.order[0]);
+    TEST_ASSERT_EQUAL_STRING(MQTTEvents::EVENT_DISCONNECTED, bus.order[1]);
+    TEST_ASSERT_EQUAL_STRING(MQTTEvents::EVENT_CONNECTED, bus.order[2]);
+}
+
+void test_clearing_the_broker_while_connected_announces_the_loss() {
+    // The WebUI writes this field straight through, empty value included, and
+    // loop() returns on an empty broker before it can notice anything.
+    ConnectedBus bus(/*autoReconnect=*/false);
+    bus.mqtt->setBroker("", 0);
+    bus.loopAndPoll(3);
+
+    TEST_ASSERT_EQUAL_UINT32(1, bus.disconnects);
+    TEST_ASSERT_FALSE(bus.mqtt->isConnected());
+    TEST_ASSERT_EQUAL(static_cast<int>(MQTTState::Disconnected),
+                      static_cast<int>(bus.mqtt->getState()));
+}
+
+void test_a_deliberate_disconnect_still_emits_exactly_once() {
+    // disconnect() emits, then loop() sees a client that is down: the pair must
+    // not announce the same loss twice.
+    ConnectedBus bus(/*autoReconnect=*/false);
+    bus.mqtt->disconnect();
+    bus.loopAndPoll(3);
+
+    TEST_ASSERT_EQUAL_UINT32(1, bus.disconnects);
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -1158,6 +1294,14 @@ int main() {
     RUN_TEST(test_publish_now_refuses_a_packet_larger_than_the_client_buffer);
     RUN_TEST(test_an_oversized_queued_message_is_dropped_and_the_queue_keeps_draining);
     RUN_TEST(test_mqtt_rate_limited_queue_still_bounded);
+
+    // A link the broker or the network drops
+    RUN_TEST(test_a_dropped_link_emits_disconnected_once);
+    RUN_TEST(test_a_dropped_link_does_not_repeat_the_event_on_later_loops);
+    RUN_TEST(test_a_dropped_link_reports_the_state_it_is_in);
+    RUN_TEST(test_a_reconnection_announces_the_loss_before_its_own_success);
+    RUN_TEST(test_clearing_the_broker_while_connected_announces_the_loss);
+    RUN_TEST(test_a_deliberate_disconnect_still_emits_exactly_once);
 
     return UNITY_END();
 }

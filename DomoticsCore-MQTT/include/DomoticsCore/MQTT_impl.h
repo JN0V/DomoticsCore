@@ -110,8 +110,22 @@ inline ComponentStatus MQTTComponent::begin() {
     return ComponentStatus::Success;
 }
 
+// Leaving the connected state without disconnect() having been called: move the
+// state and say so, so a subscriber's view of the link matches the component's.
+inline void MQTTComponent::announceConnectionLost() {
+    state = MQTTState::Disconnected;
+    stateChangeTime = HAL::Platform::getMillis();
+    DLOG_W(LOG_MQTT, "Connection lost");
+    emit(MQTTEvents::EVENT_DISCONNECTED, true);
+}
+
 inline void MQTTComponent::loop() {
-    if (config.broker.isEmpty()) return;
+    if (config.broker.isEmpty()) {
+        // Clearing the broker at runtime abandons a live session, and nothing
+        // below this return would ever notice it leaving Connected.
+        if (state == MQTTState::Connected) announceConnectionLost();
+        return;
+    }
 
     if (isConnected()) {
         // Always process an active connection even if config.enabled was
@@ -119,7 +133,15 @@ inline void MQTTComponent::loop() {
         mqttClient->loop();
         updateStatistics();
         processMessageQueue();
-    } else if (config.enabled && config.autoReconnect) {
+        return;
+    }
+
+    // A link the broker or the network drops never reaches disconnect(), so the
+    // loss is noticed here, at the transition out of Connected, and announced
+    // before a reconnection attempt can announce its own success.
+    if (state == MQTTState::Connected) announceConnectionLost();
+
+    if (config.enabled && config.autoReconnect) {
         // Only attempt reconnection when explicitly enabled
         handleReconnection();
     }

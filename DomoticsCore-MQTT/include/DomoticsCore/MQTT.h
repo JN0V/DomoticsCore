@@ -419,6 +419,7 @@ private:
     // Internal methods
     bool connectInternal();
     void handleReconnection();
+    void announceConnectionLost();
     void processMessageQueue();
     /**
      * @brief Advance the tumbling window and report whether a publish may go out now.
