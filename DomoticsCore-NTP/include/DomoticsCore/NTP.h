@@ -17,6 +17,7 @@
 #include "DomoticsCore/NTPEvents.h"
 #include "DomoticsCore/Platform_HAL.h"  // For millis/delay abstractions
 #include "NTP_HAL.h"  // Hardware Abstraction Layer for NTP
+#include <cstdint>
 #include <time.h>
 #include <sys/time.h>
 #include <vector>
@@ -148,8 +149,13 @@ public:
             DLOG_I(LOG_NTP, "NTP server %zu: %s", i, config.servers[i].c_str());
         }
         
-        // Set sync interval via HAL
-        HAL::NTP::setSyncInterval(config.syncInterval * 1000);  // Convert to ms
+        // The client takes milliseconds in a uint32_t, so an interval past
+        // ~49.7 days is held at the ceiling rather than wrapped into a value
+        // that would resync several times a second.
+        const uint32_t intervalMs = (config.syncInterval > UINT32_MAX / 1000u)
+                                        ? UINT32_MAX
+                                        : config.syncInterval * 1000u;
+        HAL::NTP::setSyncInterval(intervalMs);
         
         // Initialize NTP client via HAL
         HAL::NTP::init(srv1, srv2, srv3);
