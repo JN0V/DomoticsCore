@@ -140,9 +140,7 @@ public:
             doc["config_url"] = cfg.configUrl[0] == '\0' ? "N/A" : (const char*)cfg.configUrl;
         }
 
-        String json;
-        serializeJson(doc, json);
-        return json;
+        return webUIContextData(doc);
     }
 
     /**
@@ -155,8 +153,8 @@ public:
      * callback and `publishDiscovery()` ran on every request and the answer was
      * `success`. That is BUG-31.
      *
-     * Refusals carry no `error` key: `app.js` inspects only `data.error`, so an
-     * error key pops a modal alert where a silent refusal is intended.
+     * Refusals are silent on purpose: `app.js` turns any `error` key into a
+     * blocking alert, and the field redraws from the stored value either way.
      */
     String handleWebUIRequest(const String& contextId, const String& endpoint,
                               const String& method, const std::map<String, String>& params) override {

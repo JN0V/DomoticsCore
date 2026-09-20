@@ -263,6 +263,13 @@ void test_another_context_is_refused(void) {
     TEST_ASSERT_EQUAL_UINT32(0, f.discoveries());
 }
 
+// A regression guard, not evidence: nothing declares a context this provider
+// does not handle, so the answer is unreachable from the SSE path today.
+void test_an_unknown_context_answers_an_empty_object(void) {
+    Fixture f;
+    TEST_ASSERT_EQUAL_STRING("{}", f.ui.getWebUIData(String("not_a_context")).c_str());
+}
+
 // Would pass without the fix in outcome, not in shape: the old guard returned
 // `{"error":"Component not available"}`. Neither version dereferences null.
 void test_a_null_component_is_refused_rather_than_dereferenced(void) {
@@ -370,6 +377,7 @@ int runAllTests(void) {
     RUN_TEST(test_a_request_without_a_value_is_refused);
     RUN_TEST(test_a_non_post_method_is_refused);
     RUN_TEST(test_another_context_is_refused);
+    RUN_TEST(test_an_unknown_context_answers_an_empty_object);
     RUN_TEST(test_a_null_component_is_refused_rather_than_dereferenced);
 
     RUN_TEST(test_changing_the_node_id_regenerates_the_availability_topic);
