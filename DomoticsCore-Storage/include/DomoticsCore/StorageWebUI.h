@@ -50,9 +50,7 @@ public:
             doc["namespace"] = storage->getNamespace();
         }
 
-        String json;
-        serializeJson(doc, json);
-        return json;
+        return webUIContextData(doc);
     }
 
     String handleWebUIRequest(const String& /*contextId*/, const String& /*endpoint*/, const String& /*method*/, const std::map<String, String>& /*params*/) override {

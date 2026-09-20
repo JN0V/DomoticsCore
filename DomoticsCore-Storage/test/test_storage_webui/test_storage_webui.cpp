@@ -34,6 +34,17 @@ void test_a_null_component_is_inert(void) {
     TEST_ASSERT_EQUAL_STRING("Storage", provider.getWebUIName().c_str());
 }
 
+// --- a context nobody handles is an empty object, not "null" -------------------
+// A regression guard, not evidence: every declared context is handled, so this
+// answer is unreachable from the SSE path today.
+void test_an_unknown_context_answers_an_empty_object(void) {
+    StorageConfig cfg; cfg.namespace_name = "teststore";
+    StorageComponent sc(cfg);
+    sc.begin();
+    StorageWebUI provider(&sc);
+    TEST_ASSERT_EQUAL_STRING("{}", provider.getWebUIData("not_a_context").c_str());
+}
+
 // --- the component context reports the stats -----------------------------------
 void test_component_context_reports_the_stats(void) {
     StorageConfig cfg; cfg.namespace_name = "teststore";
@@ -76,6 +87,7 @@ void test_the_handler_is_inert(void) {
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_a_null_component_is_inert);
+    RUN_TEST(test_an_unknown_context_answers_an_empty_object);
     RUN_TEST(test_component_context_reports_the_stats);
     RUN_TEST(test_settings_context_reports_the_namespace);
     RUN_TEST(test_the_handler_is_inert);
