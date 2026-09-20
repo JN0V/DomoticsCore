@@ -28,6 +28,39 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+> **Five WebUI settings fields now refuse values they used to accept and store,
+> a sixth refusal names a field that does not exist, and two of them say so with
+> a modal.** A settings POST that answered
+> `{"success":true}` can now answer `{"success":false}`, so a client that drives
+> `/api/ui/action` itself and reads the answer will see the difference. What
+> changed, and why each one was wrong: the **MQTT port** took anything —
+> `65536` wrapped through `uint16_t` and landed as `0`, a broker the device can
+> never reach, stored as if it had saved; an **MQTT field the provider does not
+> know** fell through to `setConfig()` with an unmodified copy and reported
+> success, which also cost a needless flash write on every such request; the
+> **NTP sync interval** was assigned only when positive but answered success
+> either way, so the page reported a save that had not happened — and it now
+> also refuses anything above **1193 hours**, the ceiling of the millisecond
+> conversion `begin()` hands to the SNTP client; and **RemoteConsole's port and
+> log level** read `"2424x"` as `2424`, because `String::toInt()` is `atol()`.
+> **LED brightness** changes too, though a slider cannot reach it: a hand-made
+> POST of `"abc"` used to darken the LED.
+>
+> A numeric settings field is now digits only, and what happens next is the
+> field's own: a port, a log level and a sync interval out of range are refused,
+> while a brightness that parses and overshoots is still clamped, as a slider
+> should be. **MQTT and NTP name their new refusals, and `app.js` shows a named
+> refusal as a blocking alert** — so two settings pages that never opened a
+> dialog now do, and the alert holds the page's own live updates until it is
+> dismissed. That is the shape, not an oversight: the seven providers that
+> refuse without naming a reason stay silent, because making all of them speak
+> is a frontend decision this release does not take. Tracked as BUG-51.
+>
+> `getWebUIData()` also answers `"{}"` rather than `"null"` for a context a
+> provider does not handle. `IWebUIProvider`'s default implementation always
+> returned `"{}"`; what is new is that the contract is written down and six
+> overrides now keep it.
+
 > **A lost MQTT link is now announced, and HomeAssistant stops publishing during
 > one.** `mqtt/disconnected` used to fire only for a deliberate `disconnect()`;
 > it now fires whenever the link goes, which is what `mqtt/connected` has always
@@ -70,6 +103,34 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > above what the model charges, on both boards it was weighed on.
 
 ### Fixed
+
+- **WebUI: the settings pages disagreed about what they refuse, and three of
+  them stored values no device can use** (BUG-45). Found by writing the first
+  native suites those providers had ever had: every divergence was visible by
+  reading, and none had ever been read. MQTT took a port with no range check
+  where RemoteConsole refused one; MQTT answered success for a field it did not
+  know where NTP named it; NTP accepted a sync interval it then discarded; and
+  six providers returned `"null"` where `IWebUIProvider`'s default returns
+  `"{}"`, which `UpdateBuilder` skipped for `"{}"` but not for `"null"`. A
+  settings field that holds a number is now parsed digits-only — the rule BUG-40
+  set for `ComponentConfig` — and the range policy stays the field's: refused
+  where a range exists, clamped where a slider clamps. `UpdateBuilder` skips
+  `"null"` as well, so a provider that regresses cannot put `"ctx":null` in an
+  SSE payload. `LEDWebUI::getWebUIData()` also gained the null-component guard
+  the other eight providers already had; without it a provider built without its
+  component segfaulted on the dashboard context rather than answering. Measured
+  with a real browser on an ESP32: typing `65536` into the MQTT port stored `0`
+  with nothing said, and now leaves `1883` standing and says `Invalid port`; an
+  NTP interval of `0` stored nothing and said nothing, and now says
+  `Invalid sync interval`. See the note at the top of this section for what a
+  named refusal looks like to the person typing.
+- **NTP: a sync interval above ~49.7 days made the client resync several times
+  a second** (BUG-45's lot). `begin()` converts the interval to milliseconds in
+  a `uint32_t`, and nothing clamped it: `4294968` seconds wrapped to **704 ms**
+  and 1194 hours to 57 minutes. The settings page now refuses anything above 1193 hours, but
+  `setConfig()` and the persistence restore never pass through it — the
+  conversion itself now holds the value at the ceiling. A device carrying such
+  an interval in storage stops hammering its NTP servers after this release.
 
 - **MQTT: a link the broker or the network dropped was never announced, so
   `HomeAssistant::isReady()` answered true over a dead link** (BUG-44).
@@ -142,6 +203,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   sensors to 30) and shrinking it is LO-2's work.
 
 ### Added
+
+- **Two helpers for provider authors**, free `inline` functions in
+  `IWebUIProvider.h`: `webUIContextData(doc)` serialises a context document and
+  answers `"{}"` for one no branch touched, and `webUIParseUnsigned(value, out)`
+  reads a settings field as an unsigned number, digits only, refusing a numeric
+  prefix and anything wider than `uint32_t`. Both are documented in the WebUI
+  technical reference; neither is virtual, so no provider has to change.
 
 - `EventBus::getQueuedBytes()` and `getQueueHighWaterPct()`, and
   `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` to lower the budget on a board that cannot

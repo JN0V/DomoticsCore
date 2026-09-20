@@ -219,6 +219,10 @@ Extend `CachingWebUIProvider`, implement `buildContexts()`, `getWebUIName()`, `g
 | `test_schema_memory` | `test/test_schema_memory/test_schema_memory.cpp` | ESP32 | Heap profiling during schema generation (has own `platformio.ini`) |
 | `test_heap_esp8266` | `test/test_heap_esp8266/test_heap_esp8266.cpp` | ESP8266 | Low-heap behavior, combined asset mode, fragmentation |
 
+A rendered settings field shows the schema's placeholder, not the stored value, until the first SSE tick redraws it — roughly five seconds after load. Anything that drives the page must wait for the field to carry the stored value before editing it: setting a field to the value the device already holds fires no `change` event, so `applySave()` posts nothing and the run looks like a clean negative while measuring nothing.
+
+A refused field is not drawn refused. `app.js` reverts a checkbox on `success === false` and nothing else, and reports a reason only when the answer carries an `"error"` key, which it shows as a blocking `alert()`. A text field refused inside edit mode redraws from the stored value at the next tick; one refused outside edit mode (`alwaysInteractive`) reverts too, but only once focus leaves it — `updateCardData` skips the input holding focus — and never says why. That is BUG-51.
+
 The host mocks under `tests/mocks/libraries/` (`ESPAsyncWebServer.h`, `AsyncEventSource.h`, `FS.h`, `pgmspace.h`) record calls and parse no HTTP. They prove handler logic and nothing about ESPAsyncWebServer: multipart parsing, the real `setRxTimeout` and every timing question are covered only by `tools/on-device/ota_upload_check.py`, which needs a board.
 
 ### Examples

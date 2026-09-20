@@ -334,7 +334,7 @@ The `console_settings` context exposes the following fields with a 5-second real
 
 POST requests to `console_settings` accept `field` and `value` parameters:
 
-- **`field=port`**: Calls `console->setPort()`. Returns `{"success":false}` for invalid or out-of-range values.
+- **`field=port`**: Calls `console->setPort()`. Returns `{"success":false}` for invalid or out-of-range values. The value is digits only and inside 1..65535 — `"2424x"` is refused, not read as 2424. The same rule and range 0..5 apply to `field=log_level`.
 - **`field=log_level`**: Calls `console->setLogLevel()`. Returns `{"success":false}` for values outside 0-5.
 
 The `hasDataChanged()` method tracks state via `LazyState<ConsoleUIState>` to avoid redundant JSON serialization when nothing has changed.

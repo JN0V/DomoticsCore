@@ -351,7 +351,7 @@ Must be called after the WebUI component is ready. Registers the `/api/ntp/timez
 |---|---|---|
 | `enabled` | Boolean | Enable or disable NTP synchronization. |
 | `servers` | Text | Comma-separated list of NTP server hostnames. |
-| `sync_interval` | Number | Synchronization interval in hours. |
+| `sync_interval` | Number | Synchronization interval in hours, 1 to 1193. |
 | `timezone` | Select | Timezone selector; options loaded from `/api/ntp/timezones`. |
 
 ### API Endpoints
@@ -380,8 +380,10 @@ Accepts field-by-field configuration updates via `field` and `value` parameters:
 |---|---|---|
 | `enabled` | `"true"` or `"false"` | Enables or disables NTP. |
 | `servers` | Comma-separated hostnames | Updates the server list. |
-| `sync_interval` | Integer (hours) | Sets sync interval (converted to seconds internally). |
+| `sync_interval` | Integer (hours), 1 to 1193 | Sets sync interval, stored in seconds. Digits only — a value with any other character, a `0`, or one above 1193 is refused with `Invalid sync interval` and nothing is stored. The ceiling is the SNTP client's: `begin()` hands the interval over as milliseconds in a `uint32_t`, and holds any larger value at that ceiling whatever path it arrived by. |
 | `timezone` | POSIX TZ string | Changes the timezone immediately. |
+
+A field this handler does not know is refused with `Unknown field` and nothing is stored.
 
 After any successful settings update, a `syncNow()` is triggered automatically if NTP is enabled. If a config save callback is registered, it is also invoked.
 
