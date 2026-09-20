@@ -158,13 +158,9 @@ public:
             }
         }
 
-        String json;
-        if (serializeJson(doc, json) == 0) {
-            return "{}";
-        }
-        return json;
+        return webUIContextData(doc);
     }
-    
+
     bool hasDataChanged(const String& contextId) override {
         if (!mqtt) return false;
         if (contextId == "mqtt_status") {
@@ -224,7 +220,15 @@ public:
                 } else if (field == "broker") {
                     cfg.broker = value;
                 } else if (field == "port") {
-                    cfg.port = value.toInt();
+                    // Digits only, then the range: toInt() is atol(), so a
+                    // range check alone lets "8883x" and "abc" through, and a
+                    // value past 65535 wraps into a port nothing can open.
+                    uint32_t port = 0;
+                    if (!webUIParseUnsigned(value, port) || port < 1 || port > 65535) {
+                        DLOG_W(LOG_MQTT, "[WebUI] invalid port '%s'", value.c_str());
+                        return "{\"success\":false,\"error\":\"Invalid port\"}";
+                    }
+                    cfg.port = (uint16_t)port;
                 } else if (field == "username") {
                     cfg.username = value;
                 } else if (field == "password") {
@@ -241,8 +245,13 @@ public:
                     cfg.lwtTopic = value;
                 } else if (field == "lwt_message") {
                     cfg.lwtMessage = value;
+                } else {
+                    // An unknown field leaves the copy below unmodified, so
+                    // saying no is the only answer that matches what happens.
+                    DLOG_W(LOG_MQTT, "[WebUI] Unknown field: %s", field.c_str());
+                    return "{\"success\":false,\"error\":\"Unknown field\"}";
                 }
-                
+
                 mqtt->setConfig(cfg);
                 
                 // Invoke persistence callback if set
