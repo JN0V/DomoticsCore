@@ -91,6 +91,10 @@ protected:
 public:
 
     String getWebUIData(const String& contextId) override {
+        // Without a component there is nothing to report, and the dashboard
+        // branch below reads the LED names straight off it.
+        if (!led) return "{}";
+
         JsonDocument doc;
         if (contextId == "led_dashboard") {
             // reflect current LED name as the selected value
@@ -109,7 +113,7 @@ public:
         } else if (contextId == "led_status") {
             doc["state"] = enabled ? "ON" : "OFF";
         }
-        String json; serializeJson(doc, json); return json;
+        return webUIContextData(doc);
     }
 
     String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params) override {
@@ -151,8 +155,11 @@ public:
             return "{\"success\":true}";
         }
         if (field == "brightness") {
-            int b = value.toInt();
-            if (b < 0) b = 0;
+            // The field is unsigned, so a malformed value is refused rather
+            // than coerced to one; a value that parses and overshoots is
+            // clamped, which is what a slider does.
+            uint32_t b = 0;
+            if (!webUIParseUnsigned(value, b)) return "{\"success\":false}";
             if (b > 255) b = 255;
             brightness = (uint8_t)b;
             // Ensure selected index is valid before using

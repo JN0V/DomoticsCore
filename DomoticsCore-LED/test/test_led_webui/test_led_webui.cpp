@@ -144,11 +144,20 @@ void test_brightness_is_clamped_above(void) {
     TEST_ASSERT_TRUE(contains(f.led.getLEDStatus(0), "Brightness: 255"));
 }
 
-void test_brightness_is_clamped_below(void) {
+void test_brightness_that_is_not_a_number_is_refused(void) {
     Fixture f;
     post(f.ui, "enabled_toggle", "true");
-    post(f.ui, "brightness", "-5");
-    TEST_ASSERT_TRUE(contains(f.led.getLEDStatus(0), "Brightness: 0"));
+    post(f.ui, "brightness", "200");
+    // The field is unsigned, so "-5" is not a value out of range but a value of
+    // the wrong shape, and toInt() used to read it as -5 and darken the LED —
+    // as it read "abc" as 0. A value that parses and overshoots still clamps.
+    // "4294967296" is the one that matters: without the parser's width check it
+    // truncates to 0, darkens the LED and answers success, and the clamp below
+    // never sees a value to refuse.
+    for (const char* bad : {"-5", "abc", "", "200x", "4294967296", "99999999999999999999"}) {
+        TEST_ASSERT_FALSE_MESSAGE(succeeded(post(f.ui, "brightness", bad)), bad);
+        TEST_ASSERT_TRUE_MESSAGE(contains(f.led.getLEDStatus(0), "Brightness: 200"), bad);
+    }
 }
 
 void test_brightness_on_a_disabled_led_stays_dark(void) {
@@ -247,13 +256,18 @@ void test_dashboard_context_mirrors_the_provider_state(void) {
     TEST_ASSERT_TRUE(contains(data, "\"effect\":\"Pulse\""));
 }
 
-void test_unknown_context_returns_json_null(void) {
+void test_unknown_context_returns_an_empty_object(void) {
     Fixture f;
-    // Not "{}": an untouched JsonDocument serializes as null in ArduinoJson 7.
-    // Recorded as it is rather than corrected — the build-a-doc-then-serialize
-    // shape is shared by every WebUI provider in the tree, so changing the
-    // answer is a WebUI-wide decision, not an LED one.
-    TEST_ASSERT_EQUAL_STRING("null", f.ui.getWebUIData(String("nope")).c_str());
+    // An untouched JsonDocument serializes as null in ArduinoJson 7, which is
+    // not the object IWebUIProvider promises for a context nobody handles.
+    TEST_ASSERT_EQUAL_STRING("{}", f.ui.getWebUIData(String("nope")).c_str());
+}
+
+void test_a_provider_without_a_component_answers_an_empty_object(void) {
+    // Alone of the nine providers this one dereferenced its component here.
+    LEDWebUI orphan(nullptr);
+    TEST_ASSERT_EQUAL_STRING("{}", orphan.getWebUIData(String("led_dashboard")).c_str());
+    TEST_ASSERT_EQUAL_STRING("{}", orphan.getWebUIData(String("led_status")).c_str());
 }
 
 // ============================================================================
@@ -290,7 +304,7 @@ int main(int argc, char** argv) {
 
     RUN_TEST(test_brightness_reaches_the_led_when_enabled);
     RUN_TEST(test_brightness_is_clamped_above);
-    RUN_TEST(test_brightness_is_clamped_below);
+    RUN_TEST(test_brightness_that_is_not_a_number_is_refused);
     RUN_TEST(test_brightness_on_a_disabled_led_stays_dark);
 
     RUN_TEST(test_each_effect_name_is_parsed);
@@ -302,10 +316,13 @@ int main(int argc, char** argv) {
 
     RUN_TEST(test_status_context_reports_off_then_on);
     RUN_TEST(test_dashboard_context_mirrors_the_provider_state);
-    RUN_TEST(test_unknown_context_returns_json_null);
+    RUN_TEST(test_unknown_context_returns_an_empty_object);
 
     RUN_TEST(test_two_contexts_are_published);
     RUN_TEST(test_building_contexts_applies_the_initial_off_state);
 
+    // Last: on the unfixed provider this one segfaults rather than failing
+    // red, and would take every test after it down with it.
+    RUN_TEST(test_a_provider_without_a_component_answers_an_empty_object);
     return UNITY_END();
 }
