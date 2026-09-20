@@ -128,6 +128,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   1 107. A dead `tests/mocks/MockAsyncWebServer.h`, advertised by three
   documents and included by none, was deleted with them.
 
+- **The four WebUI provider settings pages now have native suites** (TEST-9).
+  No public API changes and no production header changed. `MQTTWebUI`,
+  `NTPWebUI`, `OTAWebUI` and `RemoteConsoleWebUI` could not be compiled by any
+  native test, because each reaches `<ESPAsyncWebServer.h>` through `WebUI.h` —
+  so the pages that write a broker address, a port, an NTP server list, a
+  timezone and a log level into a device's configuration had never been
+  exercised at all. TEST-8's library mocks resolve the include, and three suites
+  add 41 cases over the two registered routes, the range checks, the
+  comma-separated server parsing, the hours-to-seconds conversion, the boolean
+  coercion and the change detector that gates every SSE push. Reading what those
+  pages accept filed **BUG-45**: four divergences between providers doing the
+  same job, each pinned by a test rather than fixed here. Native total 1 107 →
+  1 151.
+
 ## [2.5.0] - 2026-09-16
 
 > **This release adds two public fields, refuses one configuration it used
