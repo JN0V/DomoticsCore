@@ -116,8 +116,9 @@ public:
                 const String& value = valueIt->second;
 
                 if (field == "device_name") {
-                    // Refusals carry no "error" key: app.js inspects only
-                    // data.error, so an error key would pop a modal alert.
+                    // Silent on purpose: app.js turns any "error" key into a
+                    // blocking alert, and the field redraws from the stored
+                    // value on the next update either way.
                     if (value.length() == 0) {
                         return "{\"success\":false}";  // an empty name would blank the device
                     }

@@ -108,6 +108,7 @@ says so at the top. The README's *Installation* gains the local-checkout
 recipe and an *Upgrading* pointer to the CHANGELOG's top notes; the
 observation page gains the first-boot checklist. Native 1070, read from CI.
 
+| WebUI | BUG-45 | 2026-09-20 — what five settings fields accept. A numeric field is digits only (BUG-40's rule on the WebUI surface) and the range policy stays the field's: refused where a range exists, clamped where a slider clamps. Six providers answer `"{}"` for a context they ignore and `UpdateBuilder` tolerates `"null"` at the sink. The refusal *shape* was left alone — it contradicts `ba901c4` — and became BUG-51; the adversarial review opened BUG-52 and BUG-53 and caught a vacuous width guard, an unpinned schema/dispatch coupling and a forced `String` copy on the broadcast path. Native 1 160 → 1 173; a browser on the WROOM-32D each side of two fixes; ESP8266 +164 B RAM, +580 B flash |
 | Docs | deferred-work purge | 2026-09-20 — `docs/deferred-work.md` had 62 entries and 5 ever closed, 42 of them added in fifteen days, none of them counted by the tracking summary. Read one by one: **34 became nineteen items** — SEC-15 and BUG-47 (MEDIUM); MEM-7, MEM-8, BUG-48, BUG-49, BUG-50, TEST-10, CI-16, CI-17, CI-18, DC-18, DC-19, OBS-8, DOC-2, LO-33 to LO-36 (LOW) — 5 folded into the entries that parked them (SEC-4, SEC-6, CI-11, BUG-45, LO-2), 6 became `project-context.md` or ADR notes, 15 deleted as done or already recorded, 2 kept as decisions. Rule in the file's header: a finding with a visible consequence takes an id when it is written. Docs only, no code |
 
 `main` requires seven checks: `test-install`, `check-versions`,
@@ -2007,54 +2008,79 @@ one worth a one-line change, and six rows that are not defects.
 - **Refs**: BUG-44 (which opened it), MEM-2 (the per-entity RAM argument), BUG-29
   (the offline queue that used to cover this).
 
-### BUG-45 — WebUI providers: the settings handlers disagree about what they refuse [MEDIUM] — **OPEN (filed 2026-09-19 by TEST-9's lot)**
+### BUG-45 — WebUI providers: the settings handlers disagree about what they refuse [MEDIUM] — **DONE (2026-09-20)**
 
-- **Files**: `MQTTWebUI.h:223-249`, `NTPWebUI.h:270-273`, `RemoteConsoleWebUI.h:117-132`,
-  and `getWebUIData()` in six providers.
-- **Found by**: writing the first native suites these four providers have ever
-  had. Every divergence below was visible by reading; none had ever been read.
-- **Four divergences, each pinned by a test that must move with the fix.**
-  1. **MQTT takes a port with no range check.** `cfg.port = value.toInt()`,
-     nothing else, so `0` lands in the config and `65536` wraps to `0` through
-     `uint16_t`. `RemoteConsoleWebUI` refuses the same input outside 1..65535
-     and says so. Pinned by `test_the_port_is_taken_without_any_range_check`.
-  2. **MQTT answers `"success":true` for a field it does not know.** The
-     dispatch has no `else`, so an unknown field falls through to `setConfig()`
-     with an unmodified copy and reports success. `NTPWebUI` refuses the same
-     request with `"Unknown field"`. Pinned by
-     `test_an_unknown_field_reports_success_and_changes_nothing`.
-  3. **NTP accepts a sync interval it then discards.** `if (hours > 0)` guards
-     the assignment but not the answer, so `0` and `"soon"` both come back
-     `"success":true` with the stored value untouched — the settings page
-     reports a save that did not happen. Pinned by two tests.
-  4. **Six providers return `null` where the interface promises `{}`.**
-     `IWebUIProvider.h:516` declares the default as `return "{}"`, and the
-     component-missing guard at the top of each override returns `"{}"`, but an
-     untouched `JsonDocument` serialises to `"null"`. MQTT, NTP, RemoteConsole,
-     Storage, LED and HomeAssistant fall through to it; OTA, Wifi and SystemInfo
-     return `"{}"` explicitly. NTP's `if (serializeJson(doc, json) == 0)` guard
-     never fires — `"null"` is four bytes written.
-- **Latent, and why that is not the same as harmless.** Checked rather than
-  assumed: no provider declares a context it does not handle, so nothing reaches
-  the `null` path today. What makes it worth an item is
-  `UpdateBuilder.h:63` — `if (contextData.isEmpty() || contextData == "{}")
-  continue;` skips an empty object but not `null`, so the day a declared context
-  loses its branch, the SSE payload carries `"ctx":null` rather than nothing.
-- **Not fixed here.** This lot adds tests; changing four handlers and six
-  `getWebUIData()` bodies is a behaviour change across five components and wants
-  its own lot. The tests say so at the assertion, so whoever takes it sees them
-  fail and knows why.
-- **Next step**: one refusal shape for all providers — a named error for an
-  unknown field, a range check where a range exists, and `"{}"` for an unknown
-  context. `BUG-40`'s digits-only rule is the precedent for what "refuse" should
-  mean here.
-- **Also here, from TEST-7's lot**: twelve call sites in seven component files
-  parse user input with `toInt()`/`toFloat()` — `OTA.cpp` ×4, `RemoteConsole.h`,
-  `RemoteConsoleWebUI.h` ×2, `LEDWebUI.h`, `MQTTWebUI.h`, `NTPWebUI.h`,
-  `Storage_Stub.h` ×2. TEST-9's suites feed some of them a non-numeric value
-  (NTP's `"soon"` above); the four in `OTA.cpp` are fed by no suite. The
-  refusal shape decided here decides what `"abc"` in a numeric field does
-  everywhere.
+- **Problem**: four divergences between providers doing the same job, all
+  visible by reading and none read until TEST-9's lot wrote these pages their
+  first native suites. MQTT took a port with no range check, so `0` landed in
+  the config and `65536` wrapped through `uint16_t` to `0` — a broker the device
+  can never reach, stored as if it had saved. MQTT answered `"success":true` for
+  a field it did not know, the dispatch having no `else`. NTP's `if (hours > 0)`
+  guarded the assignment but not the answer, so `0` and `"soon"` reported a save
+  that had not happened. And six providers serialised an untouched
+  `JsonDocument` to `"null"`, which `UpdateBuilder` skipped for `"{}"` and not
+  for `"null"`.
+- **Three more found while fixing.** `RemoteConsoleWebUI` refused `"telnet"`
+  only because `toInt()` reads it as `0` — it took `"2424x"` as `2424`;
+  `LEDWebUI::getWebUIData()` dereferenced its component with no guard, alone of
+  the nine; and NTP's true ceiling is the SNTP client's, since `begin()` hands
+  the interval over as milliseconds in a `uint32_t`, so the cap is **1193
+  hours**, not `2^32 / 3600`.
+- **And the WebUI bound was not enough**, which the second review pass caught:
+  `setConfig()` and `SystemPersistence.h:246` reach `syncInterval` without
+  passing the page at all, so the conversion still wrapped — 1194 hours to 57
+  minutes, and `4294968` seconds to **704 ms**, measured on the component rather
+  than argued. `NTP.h` now holds the value at the client's ceiling instead, and
+  the stub records what it was given, a host suite having no SNTP client to
+  interrogate. All four shut in-lot, so no column moves.
+- **Rule**: a numeric settings field is digits only, BUG-40's rule applied to
+  the WebUI surface. What happens next belongs to the field, not the parser — a
+  port, a log level and a sync interval out of range are refused; a brightness
+  that parses and overshoots is clamped, because a slider never sends a value of
+  the wrong shape. `webUIParseUnsigned()` and `webUIContextData()` are free
+  `inline` functions in `IWebUIProvider.h`: the contract's own header, no
+  virtual, no vtable, nothing a fork inherits.
+- **The refusal *shape* is deliberately not touched**, and that is the lot's
+  main finding. Its filed "Next step" — every refusal naming its reason —
+  contradicts `ba901c4` (BUG-32), which left `SystemInfoWebUI`'s refusal
+  nameless on purpose because `app.js` turns any `error` key into a blocking
+  alert. Each file keeps the vocabulary it has, so MQTT and NTP name their new
+  refusals and the seven silent providers stay silent. Filed as BUG-51.
+- **Tests**: **four** suites pinned `"null"` — LED, MQTT, NTP, RemoteConsole —
+  and moved, as they were written to. Storage and HomeAssistant had none and
+  gained one assertion each, labelled a regression guard and not evidence: no
+  declared context is unhandled, so a per-provider test detects a change, not a
+  behaviour. The behaviour test goes where the behaviour is, in
+  `test_update_builder` with a stub provider answering `"null"`, RED first.
+  `LEDWebUI`'s null guard segfaults rather than failing red, so its test runs
+  last, as BUG-32's did.
+- **Three tests exist because the review asked what would still pass.** The
+  parser's width guard was pinned by nothing: delete `acc > 0xFFFFFFFF` and
+  `"4294967296"` truncates to `0`, so brightness darkens the LED and a log level
+  silences the console, both answering success, with every suite green — it now
+  turns three red. The new `else` makes the MQTT card and its dispatch agree or
+  fail loudly, so a test walks the declared fields and counts them. And the NTP
+  conversion above. The second pass then found two of those three tests
+  vacuous at their own boundary and they were tightened.
+- **Measured with a browser on the WROOM-32D** through a new
+  `tools/on-device/webui_settings_refusal_check.py`, which reads the stored value
+  back from `/api/ui/updates` and not from the DOM. `65536` into the MQTT port
+  **stored `0` with nothing said**, and now leaves `1883` standing and says
+  `Invalid port`; an NTP interval of `0` stored nothing and said nothing, and
+  now says `Invalid sync interval`; `1194` hours is refused the same way. All
+  three are range cases: the fields are `<input type="number">`, so a browser
+  cannot type `"8883x"` into one and the digits-only half has native coverage
+  only, as does everything else.
+- **Cost**, FullStack, both images built with `-ffile-prefix-map` so the
+  comparison is not one of path lengths: ESP8266 **+164 B RAM, +580 B flash**;
+  ESP32 **0 RAM, +968 B flash**. The DRAM is the new refusal literals, the same
+  shape as every refusal already in the tree — MEM-7's subject.
+- **Verification**: 1 160 -> 1 173 `[PASSED]` over the fourteen native projects,
+  0 failed, the baseline re-derived from a run on `main` rather than taken from
+  this file, which said 1 151 and was two lots old. FullStack compiles on the
+  three targets; the eight on-device suites compile.
+- **Refs**: BUG-40 (the digits-only rule), BUG-32 (the shape it contradicts),
+  BUG-51, BUG-52, BUG-53 (opened here), TEST-9 (which filed it).
 
 ### BUG-43 — HomeAssistant: the availability topic has no Last Will, so Home Assistant never sees a device go away [MEDIUM] — **DONE (2026-09-18)**
 
@@ -2566,6 +2592,100 @@ one worth a one-line change, and six rows that are not defects.
   entities go missing rather than break, so it reads as a Home Assistant problem
   rather than a firmware one.
 - **Tracked publicly** as issue #27.
+
+### BUG-51 — WebUI: a refused settings field either shouts or says nothing, and seven providers say nothing [MEDIUM] — **NEW (2026-09-20, by BUG-45's lot)**
+
+- **Problem**: a settings field has exactly one way to report a refusal —
+  `sendUICommand()`'s `alert(data.error)`, `app.js:1276` — so a provider chooses
+  between a blocking modal and silence. **Twenty-six** bare `{"success":false}`
+  returns across **seven** providers are therefore invisible (RemoteConsole 7,
+  HomeAssistant 4, LED 4, OTA 4, SystemInfo 3, Wifi 3, Storage 1); MQTT and NTP
+  name theirs and so pop a modal. The other `alert()` in the file,
+  `app.js:927`, belongs to the component enable/disable list, not to a field.
+- **Not an oversight on either side.** `ba901c4` (BUG-32) chose silence for
+  `SystemInfoWebUI` deliberately, and `HomeAssistantWebUI` carries the same note.
+  The rationale recorded in the code was circular — *no error key, because an
+  error key would pop a modal on a silent refusal* — and recovering the real
+  reason took a `git log -L`. The comment now states the mechanism.
+- **Why it is not merely cosmetic.** `updateCardData()` skips a card in edit
+  mode (`app.js:668`) but `applySave()` leaves edit mode immediately
+  (`app.js:1136`), so a refused *text* field does redraw from the stored value
+  within a tick. The field that does not is the one `attachCardActions()` never
+  arms — `alwaysInteractive`, `app.js:1078` — whose listener posts on change and
+  reverts only a checkbox (`app.js:1062`, SEC-14). There the POST goes, the
+  refusal comes back, and the field is redrawn from the stored value at the next
+  tick — silently, and only once focus has left it, since `updateCardData` skips
+  the input holding focus (`app.js:717`). The revert happens; the reason never
+  arrives.
+- **A named refusal costs more than a dialog.** `sendUICommand()` is called from
+  `applySave()`, which has already stopped polling and has not yet reached
+  `exitEdit()`, so the page's own live updates stay stopped and the card stays
+  in edit mode until someone clicks OK. And `applySave()` posts each pending
+  field in turn: a refused `port` does not undo a `broker` stored a moment
+  earlier, so a card can be half saved with only the refusal announced.
+- **The decision**: one channel that is neither a modal nor nothing — a refusal
+  shown on the field — after which every provider can name its reason and the
+  vocabulary can be unified. Half of it is already available and unused:
+  `WebUIField::range()` puts `min`/`max` in the schema, but `port` and
+  `sync_interval` are plain `Number` fields, so the browser constrains nothing.
+  Measured detail for whoever takes it: a field carries the schema's placeholder
+  until the first SSE tick, so "what the page shows" and "what the device holds"
+  differ for about five seconds after load.
+- **Rides with it**, raised by the same reading: a settings page has both an
+  edit mode with a Save button and fields that POST on change. The two refusal
+  paths exist because of that, and it is the larger question.
+- **Refs**: BUG-45 (which filed it), BUG-32 and BUG-31 (the two providers whose
+  comments record the standing choice), SEC-14 (the checkbox revert, the only
+  refusal the UI draws today).
+
+### BUG-52 — Accept, discard, report success: the shape BUG-45's rule did not reach [MEDIUM] — **NEW (2026-09-20, by BUG-45's lot)**
+
+- **Problem**: BUG-45 removed that shape from every *numeric* settings field.
+  Three non-numeric surfaces keep it, and one of them is the same setting as a
+  field BUG-45 just fixed.
+  1. **`RemoteConsole.h:467`, the telnet `level` command.** It still parses with
+     `toInt()`, so `level 3x` sets 3 and `level abc` sets `0` — `LOG_LEVEL_NONE`,
+     logging off — and answers `Log level set to: 0`. It also refuses anything
+     outside **0-4** while `RemoteConsoleWebUI` accepts **0-5** and the
+     provider's own `/api/console/loglevels` route lists six
+     (`LOG_LEVEL_VERBOSE = 5`, `Logger.h:16`). Same setting, two channels, two
+     contracts, and the quieter one silences the log on a typo.
+  2. **`LEDWebUI`'s `effect`.** `stringToEffect()` maps any unknown string to
+     `Solid`, and the handler answers success.
+  3. **`LEDWebUI`'s `led_select`.** An unknown LED name leaves the selection
+     where it was, and the handler answers success.
+- **Pinned as they are** by `test_an_unknown_effect_name_falls_back_to_solid` and
+  the `led_select` case, so whoever fixes them sees the tests move.
+- **No test invokes `level`**, though the harness exists:
+  `test_system_lifecycle.cpp` already drives `status`, `wifi`, `crash` and
+  others through the real dispatch, so `run(sys, "level abc")` would exercise
+  this directly. The range disagreement is the cheaper half and the one a user
+  meets first.
+- **Carried forward from TEST-7's inventory**, which BUG-45's entry no longer
+  holds: the four `toInt()` sites in `OTA.cpp:717-722` parse a version string
+  from the update manifest and are fed by no suite.
+- **Refs**: BUG-45 (which found all three), BUG-40 (the rule they are outside of).
+
+### BUG-53 — NTP: an interval below an hour can be stored, shown as 0, and not saved back [LOW] — **NEW (2026-09-20, by BUG-45's lot)**
+
+- **Problem**: the settings field is denominated in hours and
+  `getWebUIData()` renders `cfg.syncInterval / 3600`, so a stored 1000 seconds
+  shows as **0** — and since BUG-45 that displayed 0 is refused on save. The
+  round trip was broken before too, silently: saving 0 was accepted and
+  discarded. The fix made an existing display defect visible rather than
+  creating it.
+- **Reachable**: `NTPConfig::syncInterval` is public and in seconds,
+  `SystemPersistence.h:246` restores whatever is in storage, and
+  `test_ntp_component.cpp:264` already sets 1000.
+- **The decision**: either the page stops being denominated in hours, or a
+  sub-hour interval is named rather than rendered as a number the page will not
+  take back.
+- **Same family, half closed**: a port or interval **already persisted** out of
+  range by the old handlers is never repaired, since validation sits on the
+  write path only — a device carrying `port = 0` keeps it until someone edits
+  the field. The NTP interval is the exception: `NTP.h` now holds an
+  out-of-range value at the client's ceiling wherever it came from.
+- **Refs**: BUG-45 (which made the display defect visible).
 
 ### BUG-47 — Wifi: the WebUI scan cannot complete in AP mode, and its result is displayed nowhere [MEDIUM] — **NEW (2026-09-20, by the deferred-work purge)**
 
@@ -4814,7 +4934,7 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-15 | OTA, Remote, WebUI | 0C, 0H, 3M (**SEC-15 filed 2026-09-20 by the deferred-work purge** — the WebUI's HTTP authentication has no brute-force delay, MEDIUM by parity with SEC-4; **SEC-4, SEC-6 and SEC-14 done 2026-09-14 in one lot, after its plan's adversarial review and the maintainer's rule that a brute-force defence delays and never blocks** — the console's `auth` wait, the CORS header withheld under auth with the entry's premise corrected, the empty password refused on both the WebUI and the console; **SEC-13 done 2026-09-14 in OBS Lot D** — the SSE stream behind a live middleware, `/api/system/info` gated, and `/` no longer reading a stale copy of `enableAuth`; **SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-8, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M, 2L (**MEM-7 and MEM-8 filed 2026-09-20 by the deferred-work purge** — ESP8266 literals in DRAM, and the three things the EventBus byte budget does not bound; **MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-50 | Multiple | 0C, **0H**, 9M, 3L (**36 done**; **BUG-47 to BUG-50 filed 2026-09-20 by the deferred-work purge** — the WebUI scan that cannot complete in AP mode and shows nothing (MEDIUM); the Last Will edit that reopens BUG-43 from the UI, BUG-44's three leftovers, and the chunk-time OTA refusal reported as "Upload not active" (LOW); **BUG-46 filed 2026-09-20 and open** — opened by BUG-44's own fix: with the `mqttConnected` guard finally firing, an entity state published during an outage is skipped and nothing republishes it, because `republishEntity()` rebuilds the discovery document and `HAEntity` holds no state; the remedy is a decision between a `String` per entity, an application-side hook and an opt-in flag, and the CHANGELOG announces the change meanwhile; **BUG-45 filed 2026-09-19 and open** — the four WebUI provider settings handlers disagree about what they refuse: MQTT takes a port with no range check where RemoteConsole refuses one, MQTT answers success for a field it does not know where NTP names it, NTP accepts a sync interval it then discards, and six providers return `null` where `IWebUIProvider` promises `{}`; found by writing the first native suites those providers have ever had, each divergence pinned by a test that moves with the fix; **BUG-44 filed 2026-09-19 and fixed 2026-09-20** — `mqtt/disconnected` had one emission site, inside `disconnect()`, which a dropped link never reaches and which would have refused it anyway, so `HomeAssistant::isReady()` answered true over a dead link; the loss is now announced at `loop()`'s transition out of Connected, before the reconnection announces its own success, and `getState()` stops reading Connected over a dead link; one bench capture each side of the fix on the WROOM-32D, nine tests and four mutations; the code review found a second path the bench could not reach — a broker cleared at runtime — and the cost the filing had inverted: outage publishes were queued and arrived stale, not lost, but now that the guard fires an entity state published during an outage is skipped and never re-sent, which the CHANGELOG announces at the top; **BUG-43 filed and fixed 2026-09-18** — the Home Assistant availability topic that every discovery document advertises had no Last Will, so a device that dropped off stayed green in Home Assistant indefinitely; filed from a read-only observation of a production broker, which held `status: offline` and `availability: online` retained side by side; arbitrated to option (c) — one topic, symmetric, whichever the application names moves the other — with (b) refused on BUG-38's own character budget and the entry's reason for preferring it corrected; RED first, two cases, removal check re-run against the final fix; **BUG-42 filed and fixed 2026-09-18**, HIGH, in BUG-41's lot — the panic was placed in the component, not in the test, and the row moved up a grade as its filing said it would: `Core::begin()` reserved `char text[1024]` in its prologue whether or not a flight record was promoted, and still held it while `initializeAll()` ran, leaving 32 bytes of the ESP8266's 4 096-byte cont stack; the block moved to a `noinline` function, `begin()` 1 216 → 208 B, the suite's free cont stack 32 → 896 B, and it prints 7/7 with a verdict line for the first time; filed and shut inside its lot, so no column moves; **BUG-41 filed and fixed 2026-09-18** — the EventBus queue counted entries, so every boot dropped eight events, and its cost model was wrong in six places before a board settled it; **BUG-40 filed and fixed 2026-09-15** — filed by TEST-7's reading: `ComponentConfig`'s float validator refused `"1.5"` and accepted `"1.50"` because it round-tripped through Arduino's two-decimal `String(float)`, octets and ports parsed `"4x"` as 4, a redefined parameter was validated twice; digits-only rule now stated in the reference, seven cases, three removal checks; **BUG-39 filed and fixed 2026-09-14** — filed by the adversarial review of BUG-38's decision memo: a queued message over PubSubClient's 768-byte ESP8266 buffer was retried forever and everything behind it waited; now dropped, named and counted; **BUG-38 filed and fixed 2026-09-14** — every discovery key abbreviated the way Home Assistant documents, the panel 774 → 638, the refusal counted; by OBS Lot D's review — the alarm control panel's discovery document is 774 characters against a 699-character event field and was published cut, so Home Assistant never created the panel; now refused aloud, the fix is a decision between abbreviating the documents and widening the field; **BUG-36 fixed 2026-09-06 in OBS Lot B** — released before the pop, per-bus drop counter in the flight record, "Expected 7 Was 0" on unfixed code; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, fixed with OBS-3's lot the next day; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-53 | Multiple | 0C, **0H**, 10M, 4L (**37 done**; **BUG-52 and BUG-53 filed 2026-09-20 and open** — the accept-discard-report-success shape on the three surfaces BUG-45's numeric rule did not reach, the telnet `level` command among them, which reads `abc` as NONE and disagrees with its own WebUI route on the range (MEDIUM); and an NTP interval below an hour, which the hours-denominated page shows as 0 and now refuses to take back (LOW); **BUG-51 filed 2026-09-20 and open** — `app.js` has one way to report a refusal, `alert(data.error)`, so a provider chooses between a blocking modal and silence: twenty-six bare refusals across seven providers are invisible, and the two that name theirs pop a modal that also stops the page's own polling until it is dismissed; `ba901c4` chose that silence deliberately and recorded a circular reason for it, so the decision is a channel, not a payload; **BUG-45 filed 2026-09-19 and fixed 2026-09-20** — the four settings-page divergences, plus four found while fixing them and shut in-lot: RemoteConsole read `"2424x"` as 2424, `LEDWebUI::getWebUIData()` dereferenced a null component, NTP's true ceiling is the SNTP client's 1193 hours, and the conversion wrapped anyway on the `setConfig()` and persistence paths the page never sees; a numeric settings field is now digits only (BUG-40's rule) with the range policy left to the field — refused where a range exists, clamped where a slider clamps — and `"{}"` is answered at the source and tolerated at the sink; the refusal *shape* was deliberately not touched and became BUG-51; twelve removal checks, 1 160 -> 1 173 `[PASSED]`, and a browser on the WROOM-32D each side of two fixes: `65536` in the MQTT port stored `0` in silence and now leaves `1883` standing with `Invalid port`; **BUG-47 to BUG-50 filed 2026-09-20 by the deferred-work purge** — the WebUI scan that cannot complete in AP mode and shows nothing (MEDIUM); the Last Will edit that reopens BUG-43 from the UI, BUG-44's three leftovers, and the chunk-time OTA refusal reported as "Upload not active" (LOW); **BUG-46 filed 2026-09-20 and open** — opened by BUG-44's own fix: with the `mqttConnected` guard finally firing, an entity state published during an outage is skipped and nothing republishes it, because `republishEntity()` rebuilds the discovery document and `HAEntity` holds no state; the remedy is a decision between a `String` per entity, an application-side hook and an opt-in flag, and the CHANGELOG announces the change meanwhile; **BUG-44 filed 2026-09-19 and fixed 2026-09-20** — `mqtt/disconnected` had one emission site, inside `disconnect()`, which a dropped link never reaches and which would have refused it anyway, so `HomeAssistant::isReady()` answered true over a dead link; the loss is now announced at `loop()`'s transition out of Connected, before the reconnection announces its own success, and `getState()` stops reading Connected over a dead link; one bench capture each side of the fix on the WROOM-32D, nine tests and four mutations; the code review found a second path the bench could not reach — a broker cleared at runtime — and the cost the filing had inverted: outage publishes were queued and arrived stale, not lost, but now that the guard fires an entity state published during an outage is skipped and never re-sent, which the CHANGELOG announces at the top; **BUG-43 filed and fixed 2026-09-18** — the Home Assistant availability topic that every discovery document advertises had no Last Will, so a device that dropped off stayed green in Home Assistant indefinitely; filed from a read-only observation of a production broker, which held `status: offline` and `availability: online` retained side by side; arbitrated to option (c) — one topic, symmetric, whichever the application names moves the other — with (b) refused on BUG-38's own character budget and the entry's reason for preferring it corrected; RED first, two cases, removal check re-run against the final fix; **BUG-42 filed and fixed 2026-09-18**, HIGH, in BUG-41's lot — the panic was placed in the component, not in the test, and the row moved up a grade as its filing said it would: `Core::begin()` reserved `char text[1024]` in its prologue whether or not a flight record was promoted, and still held it while `initializeAll()` ran, leaving 32 bytes of the ESP8266's 4 096-byte cont stack; the block moved to a `noinline` function, `begin()` 1 216 → 208 B, the suite's free cont stack 32 → 896 B, and it prints 7/7 with a verdict line for the first time; filed and shut inside its lot, so no column moves; **BUG-41 filed and fixed 2026-09-18** — the EventBus queue counted entries, so every boot dropped eight events, and its cost model was wrong in six places before a board settled it; **BUG-40 filed and fixed 2026-09-15** — filed by TEST-7's reading: `ComponentConfig`'s float validator refused `"1.5"` and accepted `"1.50"` because it round-tripped through Arduino's two-decimal `String(float)`, octets and ports parsed `"4x"` as 4, a redefined parameter was validated twice; digits-only rule now stated in the reference, seven cases, three removal checks; **BUG-39 filed and fixed 2026-09-14** — filed by the adversarial review of BUG-38's decision memo: a queued message over PubSubClient's 768-byte ESP8266 buffer was retried forever and everything behind it waited; now dropped, named and counted; **BUG-38 filed and fixed 2026-09-14** — every discovery key abbreviated the way Home Assistant documents, the panel 774 → 638, the refusal counted; by OBS Lot D's review — the alarm control panel's discovery document is 774 characters against a 699-character event field and was published cut, so Home Assistant never created the panel; now refused aloud, the fix is a decision between abbreviating the documents and widening the field; **BUG-36 fixed 2026-09-06 in OBS Lot B** — released before the pop, per-bus drop counter in the flight record, "Expected 7 Was 0" on unfixed code; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, fixed with OBS-3's lot the next day; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-10 | II (NON-NEGOTIABLE) | 0C, **0H**, 1M, 1L (**TEST-10 filed 2026-09-20 by the deferred-work purge** — no test confronts the EventBus byte model with a board's heap; **TEST-9 done 2026-09-19** — four providers no native test could compile now have three suites and 41 cases, closed by TEST-8's mocks rather than by the per-file include removal this entry proposed, so no production header changed; the compile problem was the smaller half, and reading what these settings pages accept filed BUG-45; ten removal checks, 1 107 → 1 151 `[PASSED]`; **TEST-8 done 2026-09-19** — the OTA upload handler's gates had never run under test, because `OTAWebUI.h` did not compile natively at all; mocks under the real library names in `tests/mocks/libraries/` let the real `WebUIComponent` register its eighteen routes on the host, ten cases and nine removal checks, two of them written vacuous and caught by those checks rather than by review; it also corrected TEST-9's premise and deleted a dead `MockAsyncWebServer.h` three documents advertised; **TEST-7 done 2026-09-15** — 42 cases over `MemoryManager` and `ComponentConfig`, plus 5 pinning the native `String` stub, which had to be made Arduino-like first (`toInt()` threw on garbage, `String(float)` printed six decimals); the reading filed BUG-40 and DC-17, and compiled one quarter of TEST-9's hypothesis; **TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 open, re-read 2026-09-15** — MQTTWebUI compiles without `WebUI.h`, the other three need a host double of the WebUI component) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
@@ -4823,7 +4943,7 @@ not.
 | 9. Dead Code | DC-1 to DC-19, PERSIST-1 | IV (YAGNI) | 0C, 0H, 11M, 2L (**DC-18 and DC-19 filed 2026-09-20 by the deferred-work purge** — OTA's no-op buffering path and its three inlined credential checks; **DC-17 filed 2026-09-15** — `ComponentConfig` and eight `MemoryManager` queries: no caller in the tree, documented public API, DC-13's decision on a major boundary; **DC-16 filed and fixed 2026-09-14**, LOW — `/api/ntp/timezones` was registered twice, the System's copy removed and the provider's `init()` finally called; **DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-36, DOC-1, DOC-2 | Various | 0C, 0H, 0M, 36L (**LO-33 to LO-36 and DOC-2 filed 2026-09-20 by the deferred-work purge**; **LO-5 done 2026-09-18 in BUG-41's lot** — the silent drop has been logged since OBS Lot B and this row had not caught up; the line now carries the budget and the peak occupancy; **LO-11 done**; **DOC-1 new**) |
 | 11. Observability | OBS-1 to OBS-8 | XIV (its instrument) | 0C, 0H, 0M, 1L — **the seven of 2026-09-05 all closed; OBS-8 filed 2026-09-20 by the deferred-work purge**, the queue's high-water mark reaching no telemetry (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-5 and OBS-1's transport closed by Lot D on 2026-09-14** — telemetry and the retained crash record on MQTT, discovered by Home Assistant through one topic scheme, the core dump downloaded, decoded against its ELF and erased through the WebUI, a Home Assistant container reading the entities; **OBS-4 closed by Lot C on 2026-09-06** — the failed-allocation group in the record, the ESP32 heap hook, the ESP8266 latch-and-clear, the diagnostic profile measured; **OBS-3 closed by Lot B on 2026-09-06** — the recorder in Core, promotion first, the record held until persisted, both boards' death sequences read back, three removal checks; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
-| **Total** | **171 items** | | **0C, 0H, 36M, 50L** (98 resolved) |
+| **Total** | **174 items** | | **0C, 0H, 37M, 51L** (99 resolved) |
 
 The severity columns sum across the rows: **zero open HIGH again — and
 this time the last one left by a fix.** BUG-35 was filed by the 2026-09-01
@@ -4834,12 +4954,12 @@ system working: the campaign refilled the column, the fix emptied it. The
 rows were checked against the section headings rather than only re-summed
 — the sweep below, re-run for the BUG-35 lot, reports **35 `[HIGH]`
 headings, 35 with evidence, 0 open**; BUG-42 makes that 36 and 36, filed
-and shut inside one lot. The MEDIUM column sums to 36:
-3 + 4 + 9 + 1 + 3 + 1 + 4 + 11 + 0 + 0, and the LOW column to 50:
-0 + 2 + 3 + 1 + 1 + 0 + 4 + 2 + 36 + 1 — the deferred-work purge on
+and shut inside one lot. The MEDIUM column sums to 37:
+3 + 4 + 10 + 1 + 3 + 1 + 4 + 11 + 0 + 0, and the LOW column to 51:
+0 + 2 + 4 + 1 + 1 + 0 + 4 + 2 + 36 + 1 — the deferred-work purge on
 2026-09-20 read that file's 62 entries one by one and filed nineteen items, two
 MEDIUM (SEC-15, BUG-47) and seventeen LOW (34 → 36 M, 33 → 50 L, total
-152 → 171, resolved unchanged at 98); BUG-44's lot on 2026-09-20 closed one and filed one MEDIUM that stays open, opened by its own fix (BUG-44 and BUG-46: the column holds at 34, total 151 → 152, resolved 97 → 98); TEST-9's lot on 2026-09-19 closed one and filed one MEDIUM that stays open (TEST-9 and BUG-45: the column holds at 34, total 150 → 151, resolved 96 → 97); TEST-8's lot the same day closed one (35 → 34, resolved 95 → 96); a bench capture the same day filed one MEDIUM that stayed open until the next day (BUG-44, 34 → 35, total 149 → 150, resolved unchanged at 95; closed 2026-09-20 by the lot above); a read-only observation of a production broker on 2026-09-18 filed one MEDIUM and it was fixed the same day (BUG-43, no column move, total 148 → 149, resolved 94 → 95); BUG-41's lot on 2026-09-18 filed one MEDIUM
+152 → 171, resolved unchanged at 98); BUG-45's lot on 2026-09-20 closed one MEDIUM and filed three items, two of them by its own adversarial review (BUG-45 closed; BUG-51, BUG-52 and BUG-53 open: 36 → 37 M, 50 → 51 L, total 171 → 174, resolved 98 → 99); BUG-44's lot on 2026-09-20 closed one and filed one MEDIUM that stays open, opened by its own fix (BUG-44 and BUG-46: the column holds at 34, total 151 → 152, resolved 97 → 98); TEST-9's lot on 2026-09-19 closed one and filed one MEDIUM that stays open (TEST-9 and BUG-45: the column holds at 34, total 150 → 151, resolved 96 → 97); TEST-8's lot the same day closed one (35 → 34, resolved 95 → 96); a bench capture the same day filed one MEDIUM that stayed open until the next day (BUG-44, 34 → 35, total 149 → 150, resolved unchanged at 95; closed 2026-09-20 by the lot above); a read-only observation of a production broker on 2026-09-18 filed one MEDIUM and it was fixed the same day (BUG-43, no column move, total 148 → 149, resolved 94 → 95); BUG-41's lot on 2026-09-18 filed one MEDIUM
 and fixed it in place (BUG-41, no column move), closed one LOW (LO-5: 32 → 31
 in the Minor row, 34 → 33 overall) and filed one item that was graded MEDIUM,
 re-graded HIGH on measurement and fixed in the same lot (BUG-42, no column

@@ -365,6 +365,8 @@ Maps an `LEDEffect` enum to its display string. Used by `getWebUIData()` to seri
 
 Parses a display string back into an `LEDEffect` enum. Used by `handleWebUIRequest()` to deserialize the effect field from POST params. Defaults to `LEDEffect::Solid` for unrecognized strings.
 
+The `brightness` field is digits only: a value with any other character — `"abc"`, `"-5"`, `"200x"` — is refused and nothing changes, while a value that parses and exceeds 255 is clamped, as a slider does.
+
 #### `void ensureInitialized()`
 
 Called once (guarded by `initialApplied` flag) during the first `buildContexts()` invocation. Applies the initial mirrored state to the hardware: if `enabled` is true, sets the LED to white at the current brightness with the current effect; otherwise forces the LED off.

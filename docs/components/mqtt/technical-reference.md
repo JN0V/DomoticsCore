@@ -423,6 +423,7 @@ if (webui && mqtt) {
 - **API endpoint**: `/api/mqtt/settings`
 - **Editable fields**: `enabled`, `broker`, `port`, `username`, `password`, `client_id`, `use_tls`, `lwt_enabled`, `lwt_topic`, `lwt_message`
 - **POST handling**: Updates config field-by-field; calls `setConfig()`, optionally invokes `onConfigSaved` callback. Toggling `enabled` triggers `connect()` or `disconnect()`.
+- **Refusals**: `port` is digits only and inside 1..65535 — anything else answers `Invalid port` and stores nothing. A field not in the list above answers `Unknown field` and stores nothing, invoking neither `setConfig()` nor the persistence callback. An empty `password` means "leave the stored one alone"; an empty `username` clears it.
 
 #### `mqtt_detail` -- Component Detail Card
 

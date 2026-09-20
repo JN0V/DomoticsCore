@@ -107,9 +107,30 @@ Abstract interface that any component can implement to contribute UI elements.
 | Method | Signature | Default | Description |
 |--------|-----------|---------|-------------|
 | `getContextAtRef` | `const WebUIContext* getContextAtRef(size_t index)` | `nullptr` | Zero-copy reference to a cached context. |
-| `getWebUIData` | `String getWebUIData(const String& contextId)` | `"{}"` | Return current real-time data as JSON. |
+| `getWebUIData` | `String getWebUIData(const String& contextId)` | `"{}"` | Return current real-time data as a JSON object; `"{}"` for a context this provider does not handle. |
 | `hasDataChanged` | `bool hasDataChanged(const String& contextId)` | `true` | Delta check for SSE broadcasts. Override to skip unchanged data. |
 | `isWebUIEnabled` | `bool isWebUIEnabled()` | `true` | Return `false` to hide from the UI. |
+
+### Helpers for a provider
+
+Free functions in `IWebUIProvider.h`, in `DomoticsCore::Components`.
+
+| Function | Signature | Purpose |
+|----------|-----------|---------|
+| `webUIContextData` | `String webUIContextData(const JsonDocument& doc)` | Serialise a context document. Answers `"{}"` for an untouched one — `serializeJson()` writes `"null"`, which is not an object. |
+| `webUIParseUnsigned` | `bool webUIParseUnsigned(const String& value, uint32_t& out)` | Read a settings field as an unsigned number, digits only. `String::toInt()` is `atol()`: it reads `"4x"` as `4` and `"abc"` as `0`. |
+
+A numeric settings field parses through `webUIParseUnsigned()`; the range policy
+stays the field's. A port, a log level and a sync interval out of range are
+refused; a brightness that parses and overshoots is clamped, because a slider
+never sends a value of the wrong shape and its clamp is what a slider does.
+
+A provider that returns `"{}"` itself on its fall-through, as `OTAWebUI`, `WifiWebUI`
+and `SystemInfoWebUI` do, is equally correct and needs no helper.
+
+`buildUpdateJson()` skips a context whose data is empty, `"{}"` or `"null"`, so
+a provider that answers any of the three contributes nothing to the payload — silently,
+which is the trade the sink guard makes for never emitting `"ctx":null`.
 
 ---
 
