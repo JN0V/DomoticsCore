@@ -27,8 +27,8 @@ namespace WebUI {
 /**
  * @brief Build one `{"system":{...},"contexts":{...}}` update into `buf`.
  *
- * Walks `contextProviders` in map order. A provider whose data is empty or
- * `"{}"` is skipped; when `forceFull` is false a provider is also skipped
+ * Walks `contextProviders` in map order. A provider whose data is empty,
+ * `"{}"` or `"null"` is skipped; when `forceFull` is false a provider is also skipped
  * unless `forceNext` is set or its `hasDataChanged(contextId)` reports a
  * change (the delta path used by the periodic broadcast; polling passes
  * `forceFull=true`). Contexts that no longer fit are dropped, never
@@ -60,7 +60,9 @@ inline int buildUpdateJson(char* buf, size_t bufSize,
         if (!forceFull && !forceNext && !provider->hasDataChanged(contextId)) continue;
 
         String contextData = provider->getWebUIData(contextId);
-        if (contextData.isEmpty() || contextData == "{}") continue;
+        // An untouched JsonDocument serialises to "null", which carries no
+        // more than "{}": there is no field for a renderer to apply.
+        if (contextData.isEmpty() || contextData == "{}" || contextData == "null") continue;
 
         int needed = contextId.length() + contextData.length() + 5;
         if (pos + needed >= (int)bufSize - 10) break;
