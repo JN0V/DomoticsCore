@@ -2,6 +2,7 @@
 
 #include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/WebUI_HAL.h>  // For WEBUI_* constants
+#include <cstdint>
 #include <vector>
 #include <map>
 #include <functional>
@@ -86,6 +87,48 @@ struct LazyState {
         initialized = false;
     }
 };
+
+/**
+ * @brief Serialise a context document, answering "{}" for an untouched one.
+ *
+ * An untouched JsonDocument serialises to "null", which is neither an object
+ * nor what getWebUIData() promises. A provider whose context dispatch fell
+ * through has nothing to report, and that is spelled "{}".
+ */
+inline String webUIContextData(const JsonDocument& doc) {
+    if (doc.isNull()) return "{}";
+    String json;
+    serializeJson(doc, json);
+    // Separate returns, not a conditional: the ternary yields a prvalue, which
+    // copies the string instead of returning it in place. This runs once per
+    // context per broadcast. An empty result here means the serialisation
+    // itself failed, since an untouched document is already handled above.
+    if (json.isEmpty()) return "{}";
+    return json;
+}
+
+/**
+ * @brief Read a settings field as an unsigned number, digits only.
+ *
+ * String::toInt() is atol(): it reads "4x" as 4 and "abc" as 0, so a field
+ * validated by its return accepts text. This refuses anything but digits and
+ * anything wider than the type; the caller owns what the range means, since a
+ * port out of range is refused while a slider clamps.
+ */
+inline bool webUIParseUnsigned(const String& value, uint32_t& out) {
+    out = 0;
+    const unsigned n = static_cast<unsigned>(value.length());
+    if (n == 0) return false;
+    uint64_t acc = 0;
+    for (unsigned i = 0; i < n; ++i) {
+        const char c = value[i];
+        if (c < '0' || c > '9') return false;
+        acc = acc * 10 + static_cast<uint64_t>(c - '0');
+        if (acc > 0xFFFFFFFFULL) return false;
+    }
+    out = static_cast<uint32_t>(acc);
+    return true;
+}
 
 /**
  * Enhanced WebUI system with multi-context support
@@ -511,7 +554,12 @@ public:
     /**
      * Get real-time data for specific context
      * @param contextId The context identifier
-     * @return JSON string with current context data
+     * @return JSON object; "{}" for a context this provider does not handle,
+     *         never "null" — which is what serializeJson() writes for a
+     *         document no branch touched. An override that builds a document
+     *         and serialises it unconditionally gets that for free from
+     *         webUIContextData(); one that returns "{}" itself is equally
+     *         correct.
      */
     virtual String getWebUIData(const String& contextId) { return "{}"; }
     

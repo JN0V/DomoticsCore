@@ -144,6 +144,53 @@ void test_empty_data_skipped() {
     TEST_ASSERT_TRUE(doc["contexts"]["c_real"]["ok"].as<bool>());
 }
 
+// A provider that serialises an untouched JsonDocument hands back "null", not
+// "{}" — six of them do. The skip guard above tested only "{}", so "null"
+// reached the payload as "ctx":null, which no client field renderer expects.
+void test_a_null_document_is_skipped_like_an_empty_one() {
+    ScriptedProvider nullP, realP;
+    nullP.data = "null";
+    realP.data = "{\"ok\":true}";
+    std::map<String, IWebUIProvider*> providers;
+    providers["a_null"] = &nullP;
+    providers["c_real"] = &realP;
+
+    char buf[1024];
+    int len = buildUpdateJson(buf, sizeof(buf), providers, "D",
+                              1, 1, 0, true, false);
+    TEST_ASSERT_TRUE(len > 0);
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(deserializeJson(doc, buf) == DeserializationError::Ok);
+    TEST_ASSERT_EQUAL_MESSAGE(1, doc["contexts"].as<JsonObject>().size(),
+                              "a null context reached the payload");
+    TEST_ASSERT_TRUE(doc["contexts"]["c_real"]["ok"].as<bool>());
+}
+
+// The parser behind every numeric settings field. Its callers apply their own
+// range afterwards, and two of them — LED brightness, which clamps, and the
+// console log level, which has no lower bound — would take a truncated value
+// as a valid one, so the width half of the contract is pinned here.
+void test_the_settings_field_parser_refuses_shape_and_width() {
+    uint32_t out = 12345;
+
+    for (const char* bad : {"", "abc", "1883x", " 1883", "+1883", "-5", "1.5",
+                            "4294967296", "99999999999999999999"}) {
+        out = 12345;
+        TEST_ASSERT_FALSE_MESSAGE(webUIParseUnsigned(String(bad), out), bad);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, out, "a refused parse left a value behind");
+    }
+
+    // Reset first: out is 0 from the last refusal, so a parser that returned
+    // true without writing anything would pass this one.
+    out = 12345;
+    TEST_ASSERT_TRUE(webUIParseUnsigned(String("0"), out));
+    TEST_ASSERT_EQUAL_UINT32(0, out);
+    TEST_ASSERT_TRUE(webUIParseUnsigned(String("01883"), out));
+    TEST_ASSERT_EQUAL_UINT32(1883, out);
+    TEST_ASSERT_TRUE(webUIParseUnsigned(String("4294967295"), out));
+    TEST_ASSERT_EQUAL_UINT32(4294967295u, out);
+}
+
 // The crowding behaviour BUG-32 documented: with a small buffer, later
 // contexts are dropped SILENTLY — but the output must stay complete, valid
 // JSON at every buffer size, with no comma dangling where a context was
@@ -217,6 +264,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_full_update_parses_and_carries_contexts);
     RUN_TEST(test_delta_skips_unchanged_and_forcenext_overrides);
     RUN_TEST(test_empty_data_skipped);
+    RUN_TEST(test_a_null_document_is_skipped_like_an_empty_one);
+    RUN_TEST(test_the_settings_field_parser_refuses_shape_and_width);
     RUN_TEST(test_crowding_drops_contexts_but_never_corrupts);
     RUN_TEST(test_header_too_small_returns_zero);
     return UNITY_END();
