@@ -66,9 +66,10 @@ ComponentStatus shutdown() override;
 
 **`loop()`**:
 
-- If `config.broker` is empty, returns immediately.
+- If `config.broker` is empty, returns immediately — after announcing the loss, if the component was still `Connected`. Clearing the broker at runtime abandons a live session, and nothing further down would ever report it.
 - If connected: calls `mqttClient->loop()`, updates statistics, and processes the offline message queue.
-- If disconnected and `config.enabled && config.autoReconnect`: calls `handleReconnection()`.
+- Otherwise, if the state was still `Connected`, the link went away without `disconnect()` having been called: the state moves to `Disconnected`, a `Connection lost` warning is logged and `mqtt/disconnected` is emitted. This is the only place an involuntary loss is noticed, and it happens before any reconnection attempt — so a reconnection's `mqtt/connected` always arrives after the `mqtt/disconnected` for the loss that preceded it.
+- If `config.enabled && config.autoReconnect`: calls `handleReconnection()`.
 
 **`shutdown()`**: Disconnects from the broker if connected.
 
@@ -84,7 +85,9 @@ Initiates connection to the MQTT broker. Checks WiFi connectivity first (via `HA
 void disconnect();
 ```
 
-Disconnects from broker, transitions to `Disconnected`, emits `mqtt/disconnected`.
+Disconnects from broker, transitions to `Disconnected`, emits `mqtt/disconnected`. This is the
+deliberate disconnection only; a link the broker or the network drops is noticed by `loop()`,
+which makes the same transition and emits the same event before attempting to reconnect.
 
 ```cpp
 void resetReconnect();
@@ -263,7 +266,7 @@ enum class MQTTState {
 | Disconnected | Connecting | `connect()` called (WiFi available, broker configured) |
 | Connecting | Connected | Broker sends CONNACK success |
 | Connecting | Error | Connection timeout or broker rejection |
-| Connected | Disconnected | `disconnect()` called or network loss detected |
+| Connected | Disconnected | `disconnect()` called, or `loop()` finds the link gone — a broker or network drop, or a broker cleared at runtime |
 | Error | Connecting | Reconnection timer fires (if `autoReconnect = true`) |
 | Error | Disconnected | `autoReconnect` disabled or component shutdown |
 
@@ -437,7 +440,7 @@ Defined in `MQTTEvents.h` under namespace `DomoticsCore::MQTTEvents`:
 | Constant | Value | Direction | Description |
 |----------|-------|-----------|-------------|
 | `EVENT_CONNECTED` | `"mqtt/connected"` | Emitted | Fired after successful broker connection |
-| `EVENT_DISCONNECTED` | `"mqtt/disconnected"` | Emitted | Fired after disconnection |
+| `EVENT_DISCONNECTED` | `"mqtt/disconnected"` | Emitted | Fired once per lost connection, deliberate or not |
 | `EVENT_MESSAGE` | `"mqtt/message"` | Emitted | Fired for each incoming message |
 | `EVENT_PUBLISH` | `"mqtt/publish"` | Listened | Other components request a publish |
 | `EVENT_SUBSCRIBE` | `"mqtt/subscribe"` | Listened | Other components request a subscription |

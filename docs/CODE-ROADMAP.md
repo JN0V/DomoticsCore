@@ -1851,47 +1851,100 @@ one worth a one-line change, and six rows that are not defects.
   ESP8266 HTTP-level proof this entry now carries, and the half-open
   residual).
 
-### BUG-44 — MQTT: `mqtt/disconnected` is emitted only for a deliberate `disconnect()`, never for a link the broker or the network drops [MEDIUM] — **OPEN (filed 2026-09-19, measured on the bench against `main`)**
+### BUG-44 — MQTT: `mqtt/disconnected` is emitted only for a deliberate `disconnect()`, never for a link the broker or the network drops [MEDIUM] — **DONE (filed 2026-09-19, fixed 2026-09-20)**
 
-- **File**: `DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h:113-127` (`loop()`),
-  `:188-199` (`disconnect()`), `MQTT.h:225-227` (`isConnected()`),
-  `DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h:148`.
-- **Problem**: `EVENT_DISCONNECTED` has exactly one emission site, inside
-  `disconnect()`. `loop()` reads `if (isConnected()) {…} else if (config.enabled &&
-  config.autoReconnect) handleReconnection();` — a dropped link goes straight to
-  reconnection and never calls `disconnect()`. `disconnect()` would refuse anyway:
-  it opens with `if (!isConnected()) return;`, and `isConnected()` is
-  `mqttClient->connected() && state == MQTTState::Connected`, already false by
-  then. So the event fires for a deliberate disconnect and never for an
-  involuntary one, while `EVENT_CONNECTED` fires on every reconnection. The pair
-  is asymmetric, and only half of it is observable.
-- **Evidence** (bench ESP32 `08:a6:f7:6b:0c:88`, `main` with BUG-41/42/43 in,
-  MQTT 1.6.0, HomeAssistant 2.1.0; local broker restarted at t≈45 s):
+- **Files**: `MQTT_impl.h` (`loop()`, `announceConnectionLost()`), `MQTT.h`
+  (`isConnected()`), `HomeAssistant.h:148`.
+- **Problem**: `EVENT_DISCONNECTED` had one emission site, inside `disconnect()`.
+  `loop()` read `if (isConnected()) {…} else if (config.enabled &&
+  config.autoReconnect) handleReconnection();`, so a dropped link went straight
+  to reconnection; `disconnect()` would have refused it anyway, opening on
+  `if (!isConnected()) return;` against a client already down. `EVENT_CONNECTED`
+  fired on every reconnection, so the pair was asymmetric and only half of it
+  observable.
+- **Fix**: the loss is announced where it is noticed — `loop()`'s transition out
+  of `Connected` sets the state, logs `[MQTT] Connection lost` and emits, *before*
+  `handleReconnection()` can announce its own success. `disconnect()` is
+  untouched and remains the only site for a deliberate one.
+- **A second path, found by this lot's code review and not by the bench**: the
+  `if (config.broker.isEmpty()) return;` at the top of `loop()` sat in front of
+  the new transition, so clearing the broker at runtime left `state == Connected`
+  for ever — the same defect, on a path the WebUI reaches (`MQTTWebUI.h` writes
+  `cfg.broker = value` with no check for an empty one). The announcement moved
+  in front of that return too.
+- **A third symptom the filing had not named**: between the drop and the first
+  reconnection attempt `getState()` returned `Connected`. It returns
+  `Disconnected` now, and the WebUI's connection panel with it. The reference had
+  been *claiming* this since long before it was true: its transition table read
+  `Connected → Disconnected | disconnect() called or network loss detected`.
+- **Measured on the bench** — WROOM-32D, a local mosquitto restarted under it at
+  t≈44.5 s, `tools/on-device/probes/mqtt-link-loss`; one capture each side of the
+  fix, same vehicle, same script, read on the 5 s ticks rather than inside a
+  handler (subscriber order decides what a handler sees mid-dispatch):
 
-  ```
-  [ 44532][I][MQTT_impl.h:521] handleReconnection(): [MQTT] Attempting reconnection (delay: 2000 ms)
-  [ 44563][E][MQTT_impl.h:182] connect(): [MQTT] Connection failed
-  [ 46542][I][MQTT_impl.h:521] handleReconnection(): [MQTT] Attempting reconnection (delay: 4000 ms)
-  [ 46595][I][HomeAssistant.h:135] operator()(): [HA] MQTT connected (via EventBus), publishing availability
-  ```
+  | | before | after |
+  |---|---|---|
+  | `[MQTT] Connection lost` | 0 | 1 |
+  | `MQTT disconnected (via EventBus)` | 0 | 1 |
+  | `MQTT connected (via EventBus)` | 2 | 2 |
+  | `HomeAssistant::isReady()` on the tick inside the outage | true | false |
 
-  Over the whole capture: `MQTT connected (via EventBus)` ×2 (boot and
-  reconnection), `MQTT disconnected (via EventBus)` ×0, `Disconnected from
-  broker` ×0. The link fell and came back, and nothing said so.
-- **What it costs**: `HomeAssistant::mqttConnected` latches true for the life of
-  the process after the first connect, so `isReady()` answers true over a dead
-  link. Every `mqttConnected` guard in that component then stops guarding —
-  `publishState()` (`HomeAssistant.h:348`), `publishDiscovery()`,
-  `republishEntity()`: publishes made during an outage are handed to the EventBus
-  and lost in silence instead of being skipped or deferred. No application can
-  detect a lost link from the documented event either: a downstream fix built on
-  an edge of `isReady()` passed its unit tests and changed nothing on the board,
-  which is how this was found.
-- **Next step**: RED first — drop the link under the component and assert
-  `mqtt/disconnected` is emitted exactly once, then that `isReady()` goes false.
-  The emission belongs where the loss is noticed, at `loop()`'s transition out of
-  `isConnected()`, not in `disconnect()`.
-- **Refs**: BUG-43 (same component pair, availability and Last Will).
+- **The filing overstated the cost; the review found the opposite one.** Outage
+  publishes were not "lost in silence" — they were queued against `maxQueueSize`
+  (100) and arrived stale. But making the guard fire costs what the filing never
+  asked: **HomeAssistant never republishes entity state**, so a state published
+  during an outage is now skipped and never re-sent. `republishEntity()` rebuilds
+  the *discovery* document and `HAEntity` holds no state, so for an entity that
+  publishes only on change, that change is gone. Filed as **BUG-46** — the lot
+  files what its own fix opens — and announced meanwhile in the CHANGELOG's top
+  note with the application-side workaround.
+- **Tests**: six native cases in `test_mqtt_component` — emitted once, not
+  repeated, the state it reports, the order against the reconnection's own
+  `mqtt/connected`, a deliberate `disconnect()` still emitting once, the broker
+  cleared at runtime — and three at the seam in `test_ha_component`: `isReady()`
+  falling, a state published during the outage reaching nothing, HomeAssistant
+  ready again once the link returns. The last two exist because the review showed
+  the first was not enough: `isReady()` is a conjunction, so clearing
+  `availabilityPublished` instead of `mqttConnected` keeps it green while every
+  guard stays open.
+- **Four mutations, each isolating one assertion**: the empty-broker announcement
+  removed (2 red); the one-shot guard removed so it emits every loop (2 red —
+  the repeat case at its *final* assertion, and the deliberate-disconnect case
+  the first removal could not reach); the handler clearing the wrong member (1);
+  the reconnection's `mqtt/connected` never sent (1). **1 151 → 1 160 `[PASSED]`,
+  both ends measured** — the baseline by stashing the lot and re-running the
+  fourteen native projects, not by subtracting.
+- **Refs**: BUG-43 (same component pair, availability and Last Will), BUG-29
+  (the offline queue this entry corrects itself against).
+
+### BUG-46 — HomeAssistant: entity state is never republished after a reconnection, so a state published during an outage is lost [MEDIUM] — **OPEN (filed 2026-09-20 by BUG-44's lot)**
+
+- **Files**: `HomeAssistant.h:134-146` (the `mqtt/connected` handler), `:340-357`
+  (`publishState`), `:469` (`republishEntity`), `HAEntity.h`.
+- **Opened by the fix, not found beside it.** Before BUG-44, `mqttConnected` never
+  fell, so the guard inside `publishState()` never fired: a state published during
+  an outage went into MQTT's 100-message offline queue and arrived stale after the
+  reconnection. Now the guard fires, the publish is skipped, and nothing sends it
+  afterwards — the `mqtt/connected` handler republishes availability and
+  discovery, `republishEntity()` rebuilds the *discovery* document, and
+  `HAEntity` holds no state field. For an entity that publishes only on change — a
+  binary sensor, an alarm panel's mode — that change is gone until the next one.
+- **MEDIUM rather than HIGH, measured against what a device does.** A periodic
+  sensor republishes within its own interval, so the gap is one cycle; the
+  exposure is the event-driven entity. The window is bounded by the reconnection
+  backoff, 2 s at the first attempt and `maxReconnectDelay` at worst.
+- **A decision, not a patch.** Three shapes, none free:
+  (a) hold the last payload per entity and republish it from the `mqtt/connected`
+  handler — correct, and it costs a `String` per entity on a device that counts
+  DRAM in hundreds of bytes, which was MEM-2's whole argument;
+  (b) state in the reference that the application owns the republish and give it
+  the hook — free, and every application has to remember;
+  (c) an opt-in flag on `HAEntity` — (a)'s cost for those that ask for it, (b)'s
+  silence for the rest.
+- **Announced meanwhile**: the CHANGELOG's Unreleased top note names the change
+  and gives (b) as the workaround, so no consumer meets it by surprise.
+- **Refs**: BUG-44 (which opened it), MEM-2 (the per-entity RAM argument), BUG-29
+  (the offline queue that used to cover this).
 
 ### BUG-45 — WebUI providers: the settings handlers disagree about what they refuse [MEDIUM] — **OPEN (filed 2026-09-19 by TEST-9's lot)**
 
@@ -4479,7 +4532,7 @@ not.
 |----------|-------|-------------|-----------|
 | 1. Security | SEC-1 to SEC-14 | OTA, Remote, WebUI | 0C, 0H, 2M (**SEC-4, SEC-6 and SEC-14 done 2026-09-14 in one lot, after its plan's adversarial review and the maintainer's rule that a brute-force defence delays and never blocks** — the console's `auth` wait, the CORS header withheld under auth with the entry's premise corrected, the empty password refused on both the WebUI and the console; **SEC-13 done 2026-09-14 in OBS Lot D** — the SSE stream behind a live middleware, `/api/system/info` gated, and `/` no longer reading a stale copy of `enableAuth`; **SEC-1, SEC-3, SEC-7, SEC-8, SEC-9 done; SEC-2 done twice** — the v2.0.1 fix was inert, re-fixed 2026-08-26; **SEC-9 fixed 2026-08-27 and downgraded MEDIUM → LOW**, two of its three recorded consequences refuted against the Arduino cores; **SEC-10 CRITICAL and SEC-11 HIGH filed and fixed 2026-08-29** — a per-boot CSRF token, board-measured both directions; **SEC-12/SEC-14 MEDIUM filed and open** — SEC-12 re-argued HIGH → MEDIUM by parity with SEC-7; **SEC-5 re-pointed** onto the cross-origin axis SEC-10 measured, its history-leak point kept) |
 | 2. Memory Safety | MEM-1 to MEM-6, STOR-ESP-1 | XIV (ABSOLUTE) | 0C, **0H**, 4M (**MEM-1 done; STOR-ESP-1 withdrawn** — the suite measured an undrained EventBus; **MEM-2 closed 2026-08-29** across both halves — three rows fixed, one one-line change, four refuted, one re-pointed, two moved out, and the 14-character threshold the whole finding was reasoned against corrected to 10 on the ESP8266; the board run that was owed here happened 2026-08-31, 3/3 under TEST-4's closing lot; **MEM-5 and MEM-6 new and open**, both filed by the rows MEM-2 re-pointed) |
-| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-45 | Multiple | 0C, **0H**, 8M (**35 done**; **BUG-45 filed 2026-09-19 and open** — the four WebUI provider settings handlers disagree about what they refuse: MQTT takes a port with no range check where RemoteConsole refuses one, MQTT answers success for a field it does not know where NTP names it, NTP accepts a sync interval it then discards, and six providers return `null` where `IWebUIProvider` promises `{}`; found by writing the first native suites those providers have ever had, each divergence pinned by a test that moves with the fix; **BUG-44 filed 2026-09-19 and open** — `mqtt/disconnected` is emitted only for a deliberate `disconnect()` and never for a link the broker or the network drops, so `HomeAssistant::isReady()` answers true over a dead link and its publish guards stop guarding; measured on the bench against `main`; **BUG-43 filed and fixed 2026-09-18** — the Home Assistant availability topic that every discovery document advertises had no Last Will, so a device that dropped off stayed green in Home Assistant indefinitely; filed from a read-only observation of a production broker, which held `status: offline` and `availability: online` retained side by side; arbitrated to option (c) — one topic, symmetric, whichever the application names moves the other — with (b) refused on BUG-38's own character budget and the entry's reason for preferring it corrected; RED first, two cases, removal check re-run against the final fix; **BUG-42 filed and fixed 2026-09-18**, HIGH, in BUG-41's lot — the panic was placed in the component, not in the test, and the row moved up a grade as its filing said it would: `Core::begin()` reserved `char text[1024]` in its prologue whether or not a flight record was promoted, and still held it while `initializeAll()` ran, leaving 32 bytes of the ESP8266's 4 096-byte cont stack; the block moved to a `noinline` function, `begin()` 1 216 → 208 B, the suite's free cont stack 32 → 896 B, and it prints 7/7 with a verdict line for the first time; filed and shut inside its lot, so no column moves; **BUG-41 filed and fixed 2026-09-18** — the EventBus queue counted entries, so every boot dropped eight events, and its cost model was wrong in six places before a board settled it; **BUG-40 filed and fixed 2026-09-15** — filed by TEST-7's reading: `ComponentConfig`'s float validator refused `"1.5"` and accepted `"1.50"` because it round-tripped through Arduino's two-decimal `String(float)`, octets and ports parsed `"4x"` as 4, a redefined parameter was validated twice; digits-only rule now stated in the reference, seven cases, three removal checks; **BUG-39 filed and fixed 2026-09-14** — filed by the adversarial review of BUG-38's decision memo: a queued message over PubSubClient's 768-byte ESP8266 buffer was retried forever and everything behind it waited; now dropped, named and counted; **BUG-38 filed and fixed 2026-09-14** — every discovery key abbreviated the way Home Assistant documents, the panel 774 → 638, the refusal counted; by OBS Lot D's review — the alarm control panel's discovery document is 774 characters against a 699-character event field and was published cut, so Home Assistant never created the panel; now refused aloud, the fix is a decision between abbreviating the documents and widening the field; **BUG-36 fixed 2026-09-06 in OBS Lot B** — released before the pop, per-bus drop counter in the flight record, "Expected 7 Was 0" on unfixed code; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, fixed with OBS-3's lot the next day; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
+| 3. Code Safety | BUG-1 to BUG-26, BUG-28 to BUG-46 | Multiple | 0C, **0H**, 8M (**36 done**; **BUG-46 filed 2026-09-20 and open** — opened by BUG-44's own fix: with the `mqttConnected` guard finally firing, an entity state published during an outage is skipped and nothing republishes it, because `republishEntity()` rebuilds the discovery document and `HAEntity` holds no state; the remedy is a decision between a `String` per entity, an application-side hook and an opt-in flag, and the CHANGELOG announces the change meanwhile; **BUG-45 filed 2026-09-19 and open** — the four WebUI provider settings handlers disagree about what they refuse: MQTT takes a port with no range check where RemoteConsole refuses one, MQTT answers success for a field it does not know where NTP names it, NTP accepts a sync interval it then discards, and six providers return `null` where `IWebUIProvider` promises `{}`; found by writing the first native suites those providers have ever had, each divergence pinned by a test that moves with the fix; **BUG-44 filed 2026-09-19 and fixed 2026-09-20** — `mqtt/disconnected` had one emission site, inside `disconnect()`, which a dropped link never reaches and which would have refused it anyway, so `HomeAssistant::isReady()` answered true over a dead link; the loss is now announced at `loop()`'s transition out of Connected, before the reconnection announces its own success, and `getState()` stops reading Connected over a dead link; one bench capture each side of the fix on the WROOM-32D, nine tests and four mutations; the code review found a second path the bench could not reach — a broker cleared at runtime — and the cost the filing had inverted: outage publishes were queued and arrived stale, not lost, but now that the guard fires an entity state published during an outage is skipped and never re-sent, which the CHANGELOG announces at the top; **BUG-43 filed and fixed 2026-09-18** — the Home Assistant availability topic that every discovery document advertises had no Last Will, so a device that dropped off stayed green in Home Assistant indefinitely; filed from a read-only observation of a production broker, which held `status: offline` and `availability: online` retained side by side; arbitrated to option (c) — one topic, symmetric, whichever the application names moves the other — with (b) refused on BUG-38's own character budget and the entry's reason for preferring it corrected; RED first, two cases, removal check re-run against the final fix; **BUG-42 filed and fixed 2026-09-18**, HIGH, in BUG-41's lot — the panic was placed in the component, not in the test, and the row moved up a grade as its filing said it would: `Core::begin()` reserved `char text[1024]` in its prologue whether or not a flight record was promoted, and still held it while `initializeAll()` ran, leaving 32 bytes of the ESP8266's 4 096-byte cont stack; the block moved to a `noinline` function, `begin()` 1 216 → 208 B, the suite's free cont stack 32 → 896 B, and it prints 7/7 with a verdict line for the first time; filed and shut inside its lot, so no column moves; **BUG-41 filed and fixed 2026-09-18** — the EventBus queue counted entries, so every boot dropped eight events, and its cost model was wrong in six places before a board settled it; **BUG-40 filed and fixed 2026-09-15** — filed by TEST-7's reading: `ComponentConfig`'s float validator refused `"1.5"` and accepted `"1.50"` because it round-tripped through Arduino's two-decimal `String(float)`, octets and ports parsed `"4x"` as 4, a redefined parameter was validated twice; digits-only rule now stated in the reference, seven cases, three removal checks; **BUG-39 filed and fixed 2026-09-14** — filed by the adversarial review of BUG-38's decision memo: a queued message over PubSubClient's 768-byte ESP8266 buffer was retried forever and everything behind it waited; now dropped, named and counted; **BUG-38 filed and fixed 2026-09-14** — every discovery key abbreviated the way Home Assistant documents, the panel 774 → 638, the refusal counted; by OBS Lot D's review — the alarm control panel's discovery document is 774 characters against a 699-character event field and was published cut, so Home Assistant never created the panel; now refused aloud, the fix is a decision between abbreviating the documents and widening the field; **BUG-36 fixed 2026-09-06 in OBS Lot B** — released before the pop, per-bus drop counter in the flight record, "Expected 7 Was 0" on unfixed code; **BUG-37 filed and fixed 2026-09-05**, MEDIUM — an HTTP upload died with a broken pipe whenever the link was quiet for 3 s: ESPAsyncWebServer's receive-idle limit meeting TCP retransmission backoff; the upload handler now sets `uploadIdleTimeoutSec` (30 s), red-then-green with a drained-silence probe on both boards, 3 of 3 natural uploads and one full commit on the WROOM-32D — **new public field and a 3 s → 30 s default the next release must announce at the top**; **BUG-36 filed 2026-09-05**, MEDIUM — the `pendingByTopic` drift on queue overflow that STOR-ESP-1's withdrawal had left in deferred-work without an identifier, fixed with OBS-3's lot the next day; **BUG-35 filed 2026-09-01 by the second real-conditions campaign and fixed the same day** — a client disconnect mid-upload locked OTA out until a power-cycle; onDisconnect→abortUpload gated on the upload-active discriminator, red-then-green with the same script on both boards; **BUG-34 filed and fixed 2026-08-31**, MEDIUM, in SIZE-1's lot — the `/api/ui/schema` truncation drift its dedup exposed, opening and shutting in-lot so no column moves; BUG-29 filed and fixed same day, **BUG-21 done 2026-08-27 after this row claimed it for months**, **BUG-30 filed and fixed 2026-08-28** — this cell said "new and open" for a day after it was closed, corrected 2026-08-29 — **BUG-31 filed and fixed 2026-08-29**, HIGH, **BUG-32 filed and fixed 2026-08-31**, MEDIUM, and **BUG-33 filed and fixed 2026-08-31**, LOW, host-only, each opening and shutting inside its lot so no column moves; **BUG-26 and BUG-28 closed by SIZE-2's lot 2026-08-31** — BUG-26 had been fixed by marianorenzi's `dc8886f1` since July and was stale at filing, BUG-28 closed with his fork's own streaming design — **BUG-2 never closed and never counted** — see below) |
 | 4. Test Coverage | TEST-1 to TEST-9 | II (NON-NEGOTIABLE) | 0C, **0H**, 1M (**TEST-9 done 2026-09-19** — four providers no native test could compile now have three suites and 41 cases, closed by TEST-8's mocks rather than by the per-file include removal this entry proposed, so no production header changed; the compile problem was the smaller half, and reading what these settings pages accept filed BUG-45; ten removal checks, 1 107 → 1 151 `[PASSED]`; **TEST-8 done 2026-09-19** — the OTA upload handler's gates had never run under test, because `OTAWebUI.h` did not compile natively at all; mocks under the real library names in `tests/mocks/libraries/` let the real `WebUIComponent` register its eighteen routes on the host, ten cases and nine removal checks, two of them written vacuous and caught by those checks rather than by review; it also corrected TEST-9's premise and deleted a dead `MockAsyncWebServer.h` three documents advertised; **TEST-7 done 2026-09-15** — 42 cases over `MemoryManager` and `ComponentConfig`, plus 5 pinning the native `String` stub, which had to be made Arduino-like first (`toInt()` threw on garbage, `String(float)` printed six decimals); the reading filed BUG-40 and DC-17, and compiled one quarter of TEST-9's hypothesis; **TEST-1, TEST-2, TEST-3 done; TEST-6 done 2026-08-31** — its row was wrong in both directions, LEDWebUI already had a 23-test suite and the other three are now covered or inert; **TEST-4 done 2026-08-31** — the blocker was the stubs, not the tests: scriptable millis/heap/restart and a stateful WiFi stub opened the fallback ladder, AP mode and reconnection to a 16-case native suite, five mutations all caught, and the device scan suite ran 3/3 against a real radio at last; **TEST-8 open, three holes closed and the fourth nearly** — a real multipart POST now runs against a board, refused and accepted, each with a discriminating removal check; what remains is what a browser renders; **TEST-9 open, re-read 2026-09-15** — MQTTWebUI compiles without `WebUI.h`, the other three need a host double of the WebUI component) |
 | 5. SSE Bug | SSE-1 | — | **DONE** |
 | 6. File Size | SIZE-1 to SIZE-6 | VII (800 lines) | 0C, **0H**, 3M, 1L (**SIZE-2 done 2026-08-31** — 933 → 756 + a 216-line `JsonStreamWriter.h`, shaped so the fork's serializer hunks still land; closing it closed BUG-26 and BUG-28. **SIZE-1 done 2026-08-31, same day** — 1008 → 769 + two new headers, the chunk loop deduplicated into `ProviderRegistry.h`; closing it filed and closed BUG-34. **File Size joins the zero-HIGH sections**) |
@@ -4488,7 +4541,7 @@ not.
 | 9. Dead Code | DC-1 to DC-17, PERSIST-1 | IV (YAGNI) | 0C, 0H, 11M, 0L (**DC-17 filed 2026-09-15** — `ComponentConfig` and eight `MemoryManager` queries: no caller in the tree, documented public API, DC-13's decision on a major boundary; **DC-16 filed and fixed 2026-09-14**, LOW — `/api/ntp/timezones` was registered twice, the System's copy removed and the provider's `init()` finally called; **DC-3b, DC-4, DC-5, DC-6, DC-7, DC-8, DC-11 done**; PERSIST-1 new, DC-12 new, DC-13 new, **DC-14 new** — every provider declares a REST endpoint nothing registers, and the schema ships it to every client; **DC-15 new** — WifiConfig's two "advanced settings" are accepted and ignored) |
 | 10. Minor | LO-1 to LO-32, DOC-1 | Various | 0C, 0H, 0M, 31L (**LO-5 done 2026-09-18 in BUG-41's lot** — the silent drop has been logged since OBS Lot B and this row had not caught up; the line now carries the budget and the peak occupancy; **LO-11 done**; **DOC-1 new**) |
 | 11. Observability | OBS-1 to OBS-7 | XIV (its instrument) | 0C, 0H, 0M, 0L — **all seven closed** (**all seven filed 2026-09-05** from a design discussion, adversarially reviewed and board-measured the same day; **OBS-5 and OBS-1's transport closed by Lot D on 2026-09-14** — telemetry and the retained crash record on MQTT, discovered by Home Assistant through one topic scheme, the core dump downloaded, decoded against its ELF and erased through the WebUI, a Home Assistant container reading the entities; **OBS-4 closed by Lot C on 2026-09-06** — the failed-allocation group in the record, the ESP32 heap hook, the ESP8266 latch-and-clear, the diagnostic profile measured; **OBS-3 closed by Lot B on 2026-09-06** — the recorder in Core, promotion first, the record held until persisted, both boards' death sequences read back, three removal checks; **OBS-2, OBS-6, OBS-7 closed by Lot A the same day**, with OBS-1's boot check; OBS-7 — a stuck ESP32 `loop()` never reboots — was filed by the review, confirmed on the WROOM-32D, and fixed with a 30 s default the next release must announce) |
-| **Total** | **151 items** | | **0C, 0H, 34M, 33L** (97 resolved) |
+| **Total** | **152 items** | | **0C, 0H, 34M, 33L** (98 resolved) |
 
 The severity columns sum across the rows: **zero open HIGH again — and
 this time the last one left by a fix.** BUG-35 was filed by the 2026-09-01
@@ -4499,8 +4552,8 @@ system working: the campaign refilled the column, the fix emptied it. The
 rows were checked against the section headings rather than only re-summed
 — the sweep below, re-run for the BUG-35 lot, reports **35 `[HIGH]`
 headings, 35 with evidence, 0 open**; BUG-42 makes that 36 and 36, filed
-and shut inside one lot. The MEDIUM column sums to 35:
-2 + 4 + 8 + 1 + 3 + 1 + 4 + 11 + 0 + 0 — TEST-9's lot on 2026-09-19 closed one and filed one MEDIUM that stays open (TEST-9 and BUG-45: the column holds at 34, total 150 → 151, resolved 96 → 97); TEST-8's lot the same day closed one (35 → 34, resolved 95 → 96); a bench capture the same day filed one MEDIUM that stays open (BUG-44, 34 → 35, total 149 → 150, resolved unchanged at 95); a read-only observation of a production broker on 2026-09-18 filed one MEDIUM and it was fixed the same day (BUG-43, no column move, total 148 → 149, resolved 94 → 95); BUG-41's lot on 2026-09-18 filed one MEDIUM
+and shut inside one lot. The MEDIUM column sums to 34:
+2 + 4 + 8 + 1 + 3 + 1 + 4 + 11 + 0 + 0 — BUG-44's lot on 2026-09-20 closed one and filed one MEDIUM that stays open, opened by its own fix (BUG-44 and BUG-46: the column holds at 34, total 151 → 152, resolved 97 → 98); TEST-9's lot on 2026-09-19 closed one and filed one MEDIUM that stays open (TEST-9 and BUG-45: the column holds at 34, total 150 → 151, resolved 96 → 97); TEST-8's lot the same day closed one (35 → 34, resolved 95 → 96); a bench capture the same day filed one MEDIUM that stayed open until the next day (BUG-44, 34 → 35, total 149 → 150, resolved unchanged at 95; closed 2026-09-20 by the lot above); a read-only observation of a production broker on 2026-09-18 filed one MEDIUM and it was fixed the same day (BUG-43, no column move, total 148 → 149, resolved 94 → 95); BUG-41's lot on 2026-09-18 filed one MEDIUM
 and fixed it in place (BUG-41, no column move), closed one LOW (LO-5: 32 → 31
 in the Minor row, 34 → 33 overall) and filed one item that was graded MEDIUM,
 re-graded HIGH on measurement and fixed in the same lot (BUG-42, no column

@@ -28,6 +28,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+> **A lost MQTT link is now announced, and HomeAssistant stops publishing during
+> one.** `mqtt/disconnected` used to fire only for a deliberate `disconnect()`;
+> it now fires whenever the link goes, which is what `mqtt/connected` has always
+> done. That closes the asymmetry — and it changes HomeAssistant's behaviour,
+> which is why this note is here. Its `mqttConnected` guards now stop the
+> publishes they were written to stop, so **a state published while the broker is
+> unreachable is skipped rather than queued**, and nothing republishes entity
+> states when the link returns: `republishEntity()` republishes *discovery*, and
+> `HAEntity` holds no state. Before this release those states went into MQTT's
+> 100-message offline queue and arrived stale after the reconnection. **If your
+> entities change rarely and you were relying on that, publish them again from
+> your own `mqtt/connected` handler.** Tracked as BUG-46; the component-side
+> remedy is a decision between a per-entity cost and an opt-in.
+
 > **Every Home Assistant entity's availability topic changes, and it is the
 > change that makes availability work.** The discovery documents advertised
 > `{discoveryPrefix}/{nodeId}/availability`, which no Last Will ever wrote, so a
@@ -57,6 +71,28 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- **MQTT: a link the broker or the network dropped was never announced, so
+  `HomeAssistant::isReady()` answered true over a dead link** (BUG-44).
+  `mqtt/disconnected` had exactly one emission site, inside `disconnect()`, and a
+  dropped link never reaches it — `loop()` went straight to reconnection, and
+  `disconnect()` would have refused anyway on its own `if (!isConnected())`
+  guard. `mqtt/connected`, meanwhile, fired on every reconnection: the pair was
+  asymmetric and only half of it was observable. **If you have been subscribing
+  to `mqtt/connected` alone because its opposite never came, you can now pair
+  them.** The event is emitted where the loss is noticed, at `loop()`'s
+  transition out of the connected state and before any reconnection can announce
+  its own success; a new `[MQTT] Connection lost` warning marks it in the log,
+  and `getState()` stops reporting `Connected` over a dead link. Measured on a
+  bench ESP32 with the broker restarted under it: the same capture held two
+  `mqtt/connected` and no `mqtt/disconnected` before, one of each after, and
+  HomeAssistant's `isReady()` went from `true` for the whole outage to `false`
+  for its duration. The `mqttConnected` guards inside `publishState()` and
+  `publishStateJson()` guard again — see the note at the top of this section for
+  what that changes for entity states during an outage. `publishDiscovery()` and
+  `republishEntity()` are *not* guarded: their `mqttConnected` checks sit at the
+  call sites inside `addSensor()` and friends, so calling either directly during
+  an outage still queues. Clearing the broker at runtime is covered by the same
+  transition: it used to leave the component reading `Connected` for ever.
 - **HomeAssistant: the availability topic had no Last Will, so no device ever
   went unavailable** (BUG-43). Home Assistant watches exactly one topic per
   device, the one `avty_t` names, and only the broker can write `offline` to it
