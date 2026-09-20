@@ -80,13 +80,12 @@ void test_the_settings_context_reports_the_live_port_and_level() {
     TEST_ASSERT_TRUE(contains(data, "telnet "));
 }
 
-void test_an_unknown_context_serializes_an_empty_document_as_null() {
+void test_an_unknown_context_answers_an_empty_object() {
     Fixture f;
-    // Pinned as it is, not as it should be: an untouched JsonDocument serializes
-    // to "null", while the component-missing guard two lines above returns "{}"
-    // and IWebUIProvider's own default is "{}". Latent — every declared context
-    // is handled — and UpdateBuilder's skip guard tests "{}" but not "null".
-    TEST_ASSERT_EQUAL_STRING("null", f.ui.getWebUIData(String("not_a_context")).c_str());
+    // An untouched JsonDocument used to serialize to "null" while the
+    // component-missing guard two lines above returned "{}" and
+    // IWebUIProvider's own default is "{}".
+    TEST_ASSERT_EQUAL_STRING("{}", f.ui.getWebUIData(String("not_a_context")).c_str());
 }
 
 void test_a_port_outside_the_range_is_refused() {
@@ -102,10 +101,12 @@ void test_a_port_outside_the_range_is_refused() {
 void test_a_port_that_is_not_a_number_is_refused() {
     Fixture f;
     const uint16_t before = f.console.getPort();
-    // The native String stub parses with strtol, so garbage reads 0 — which the
-    // range check then refuses. On a board toInt() does the same.
-    TEST_ASSERT_FALSE_MESSAGE(succeeded(f.post("port", "telnet")), "a non-numeric port passed");
-    TEST_ASSERT_EQUAL_UINT16(before, f.console.getPort());
+    // "telnet" read as 0, which the range check caught. A numeric prefix did
+    // not: toInt() is atol(), so "2424x" reached setPort() as 2424.
+    for (const char* bad : {"telnet", "", "2424x", " 2424"}) {
+        TEST_ASSERT_FALSE_MESSAGE(succeeded(f.post("port", bad)), bad);
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(before, f.console.getPort(), bad);
+    }
 }
 
 void test_a_port_inside_the_range_is_applied() {
@@ -119,6 +120,12 @@ void test_a_log_level_outside_the_range_is_refused() {
     f.console.setLogLevel(LOG_LEVEL_INFO);
     TEST_ASSERT_FALSE_MESSAGE(succeeded(f.post("log_level", "6")), "level 6 was accepted");
     TEST_ASSERT_FALSE_MESSAGE(succeeded(f.post("log_level", "-1")), "level -1 was accepted");
+    TEST_ASSERT_FALSE_MESSAGE(succeeded(f.post("log_level", "3x")), "level \"3x\" was accepted");
+    TEST_ASSERT_FALSE_MESSAGE(succeeded(f.post("log_level", "")), "an empty level was accepted");
+    // The guard is an upper bound only, so a value that truncates to 0 would
+    // pass it and silence the log while answering success.
+    TEST_ASSERT_FALSE_MESSAGE(succeeded(f.post("log_level", "4294967296")),
+                              "a level past 2^32 was accepted");
     TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(LOG_LEVEL_INFO),
                                   static_cast<int>(f.console.getLogLevel()),
                                   "a refused level was applied anyway");
@@ -188,7 +195,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_the_log_levels_route_lists_all_six);
     RUN_TEST(test_the_settings_context_reports_the_live_port_and_level);
-    RUN_TEST(test_an_unknown_context_serializes_an_empty_document_as_null);
+    RUN_TEST(test_an_unknown_context_answers_an_empty_object);
     RUN_TEST(test_a_port_outside_the_range_is_refused);
     RUN_TEST(test_a_port_that_is_not_a_number_is_refused);
     RUN_TEST(test_a_port_inside_the_range_is_applied);

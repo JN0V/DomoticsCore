@@ -98,12 +98,10 @@ public:
             doc["port"] = String(port);
             doc["log_level"] = String((int)console->getLogLevel());
         }
-        
-        String json;
-        serializeJson(doc, json);
-        return json;
+
+        return webUIContextData(doc);
     }
-    
+
     String handleWebUIRequest(const String& contextId, const String& /*endpoint*/, 
                              const String& method, const std::map<String, String>& params) override {
         if (!console) return "{\"success\":false}";
@@ -117,8 +115,10 @@ public:
         const String& value = valueIt->second;
 
         if (field == "port") {
-            long p = value.toInt();
-            if (p <= 0 || p > 65535) {
+            // Digits only, then the range: toInt() is atol(), so a range
+            // check alone catches "telnet" (read as 0) and passes "2424x".
+            uint32_t p = 0;
+            if (!webUIParseUnsigned(value, p) || p < 1 || p > 65535) {
                 DLOG_W(LOG_CONSOLE, "WebUI: invalid port '%s'", value.c_str());
                 uiState.reset();
                 return "{\"success\":false}";
@@ -132,8 +132,8 @@ public:
         }
 
         if (field == "log_level") {
-            long lvl = value.toInt();
-            if (lvl < 0 || lvl > 5) {
+            uint32_t lvl = 0;
+            if (!webUIParseUnsigned(value, lvl) || lvl > 5) {
                 DLOG_W(LOG_CONSOLE, "WebUI: invalid log level '%s'", value.c_str());
                 uiState.reset();
                 return "{\"success\":false}";
