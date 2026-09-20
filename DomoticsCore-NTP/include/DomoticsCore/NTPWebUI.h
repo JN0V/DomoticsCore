@@ -4,6 +4,7 @@
 #include "DomoticsCore/IWebUIProvider.h"
 #include "DomoticsCore/WebUI.h"
 #include <ArduinoJson.h>
+#include <cstdint>
 
 namespace DomoticsCore {
 namespace Components {
@@ -198,11 +199,7 @@ public:
 
         }
 
-        String json;
-        if (serializeJson(doc, json) == 0) {
-            return "{}";
-        }
-        return json;
+        return webUIContextData(doc);
     }
 
     String handleWebUIRequest(const String& contextId, const String& /*endpoint*/,
@@ -267,10 +264,16 @@ public:
                         cfg.servers.push_back(server);
                     }
                 } else if (field == "sync_interval") {
-                    int hours = value.toInt();
-                    if (hours > 0) {
-                        cfg.syncInterval = hours * 3600;  // Convert to seconds
+                    // Hours, at least one, and low enough that begin() can
+                    // hand the interval to the SNTP client as milliseconds in
+                    // a uint32_t — which caps it at 1193 hours, not at 2^32/3600.
+                    uint32_t hours = 0;
+                    if (!webUIParseUnsigned(value, hours) || hours < 1 ||
+                        hours > (UINT32_MAX / 3600000u)) {
+                        DLOG_W(LOG_NTP, "[WebUI] invalid sync interval '%s'", value.c_str());
+                        return "{\"success\":false,\"error\":\"Invalid sync interval\"}";
                     }
+                    cfg.syncInterval = hours * 3600u;
                 } else if (field == "timezone") {
                     cfg.timezone = value;
                 } else {

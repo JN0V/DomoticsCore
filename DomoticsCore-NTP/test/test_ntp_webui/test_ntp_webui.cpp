@@ -39,10 +39,13 @@ struct Fixture {
     WebUI::NTPWebUI ui;
     WebUIComponent webui;
 
+    int saves = 0;
+
     Fixture() : ntp(), ui(&ntp), webui(webConfig) {
         ntp.begin();
         webui.begin();
         ui.init(&webui);
+        ui.setConfigSaveCallback([this](const NTPConfig&) { ++saves; });
     }
 
     String post(const char* field, const char* value) {
@@ -111,22 +114,46 @@ void test_the_sync_interval_is_read_in_hours_and_stored_in_seconds() {
     TEST_ASSERT_EQUAL_UINT32(6 * 3600, f.ntp.getConfig().syncInterval);
 }
 
-void test_a_sync_interval_of_zero_is_accepted_and_discarded() {
+void test_a_sync_interval_of_zero_is_refused() {
     Fixture f;
     const uint32_t before = f.ntp.getConfig().syncInterval;
-    // Pinned as it is, not as it should be: the hours > 0 guard skips the
-    // assignment but the handler still answers success, so the UI reports a
-    // saved value that was never stored.
-    TEST_ASSERT_TRUE_MESSAGE(succeeded(f.post("sync_interval", "0")),
-                             "the refusal became visible — update this test with the fix");
+    // The hours > 0 guard used to skip the assignment while the handler still
+    // answered success, so the page reported a save that never happened.
+    const String response = f.post("sync_interval", "0");
+    TEST_ASSERT_FALSE(succeeded(response));
+    TEST_ASSERT_TRUE_MESSAGE(contains(response, "Invalid"), response.c_str());
     TEST_ASSERT_EQUAL_UINT32(before, f.ntp.getConfig().syncInterval);
 }
 
-void test_a_sync_interval_that_is_not_a_number_is_accepted_and_discarded() {
+void test_a_sync_interval_that_is_not_a_number_is_refused() {
     Fixture f;
     const uint32_t before = f.ntp.getConfig().syncInterval;
-    TEST_ASSERT_TRUE(succeeded(f.post("sync_interval", "soon")));
+    for (const char* bad : {"soon", "", "6h", " 6"}) {
+        TEST_ASSERT_FALSE_MESSAGE(succeeded(f.post("sync_interval", bad)), bad);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(before, f.ntp.getConfig().syncInterval, bad);
+    }
+}
+
+void test_a_sync_interval_the_sntp_client_cannot_hold_is_refused() {
+    Fixture f;
+    const uint32_t before = f.ntp.getConfig().syncInterval;
+    // The ceiling is the SNTP client's, not this page's: begin() hands the
+    // interval over as milliseconds in a uint32_t, so 1194 hours would wrap to
+    // 57 minutes and a bound on the seconds alone lets 1 193 046 hours through.
+    // The conversion clamps as well, for the paths that never pass here.
+    TEST_ASSERT_FALSE(succeeded(f.post("sync_interval", "1194")));
     TEST_ASSERT_EQUAL_UINT32(before, f.ntp.getConfig().syncInterval);
+
+    TEST_ASSERT_FALSE(succeeded(f.post("sync_interval", "1193046")));
+    TEST_ASSERT_EQUAL_UINT32(before, f.ntp.getConfig().syncInterval);
+
+    TEST_ASSERT_TRUE(succeeded(f.post("sync_interval", "1193")));
+    TEST_ASSERT_EQUAL_UINT32(1193u * 3600u, f.ntp.getConfig().syncInterval);
+    // Read from the config, not from the literal: an assertion over constants
+    // would still hold if the handler's ceiling expression were edited wrong.
+    TEST_ASSERT_TRUE_MESSAGE(
+        (uint64_t)f.ntp.getConfig().syncInterval * 1000ull <= 0xFFFFFFFFull,
+        "the accepted ceiling itself overflows the millisecond conversion");
 }
 
 void test_enabled_accepts_true_and_one_and_nothing_else() {
@@ -156,6 +183,38 @@ void test_an_unknown_field_is_named_in_the_refusal() {
     const String response = f.post("stratum", "2");
     TEST_ASSERT_FALSE(succeeded(response));
     TEST_ASSERT_TRUE_MESSAGE(contains(response, "Unknown field"), response.c_str());
+}
+
+void test_every_field_the_settings_card_declares_is_accepted() {
+    Fixture f;
+    // NTP names its refusals, so a field on the card with no dispatch arm pops
+    // a modal on every save. Nothing else relates the two lists.
+    WebUIContext settings = f.ui.getWebUIContext(String("ntp_settings"));
+    TEST_ASSERT_TRUE_MESSAGE(settings.fields.size() > 0, "the settings card declared no field");
+
+    size_t posted = 0;
+    for (const auto& field : settings.fields) {
+        if (field.readOnly) continue;
+        const char* name = field.getNameCStr();
+        TEST_ASSERT_TRUE_MESSAGE(name && *name, "a declared field has no name");
+        const String response = f.post(name, "1");
+        TEST_ASSERT_FALSE_MESSAGE(contains(response, "Unknown field"), name);
+        ++posted;
+    }
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(4, posted,
+                                     "the settings card no longer declares four editable fields");
+}
+
+void test_a_refused_field_reaches_neither_the_config_nor_the_flash() {
+    Fixture f;
+    TEST_ASSERT_TRUE(succeeded(f.post("timezone", "UTC0")));
+    const int afterOneAccept = f.saves;
+    TEST_ASSERT_EQUAL_INT(1, afterOneAccept);
+
+    TEST_ASSERT_FALSE(succeeded(f.post("stratum", "2")));
+    TEST_ASSERT_FALSE(succeeded(f.post("sync_interval", "0")));
+    TEST_ASSERT_EQUAL_INT_MESSAGE(afterOneAccept, f.saves,
+                                  "a refused field still invoked the save callback");
 }
 
 void test_a_method_other_than_get_or_post_is_refused() {
@@ -189,12 +248,12 @@ void test_the_settings_context_reports_what_was_saved() {
     TEST_ASSERT_TRUE_MESSAGE(contains(data, "\"sync_interval\":3"), data.c_str());
 }
 
-void test_an_unknown_context_serializes_an_empty_document_as_null() {
+void test_an_unknown_context_answers_an_empty_object() {
     Fixture f;
-    // Same shape as the other providers: an untouched JsonDocument serializes to
-    // "null" while IWebUIProvider's own default is "{}". The serializeJson == 0
-    // guard below it never fires, since "null" is four bytes written.
-    TEST_ASSERT_EQUAL_STRING("null", f.ui.getWebUIData(String("not_a_context")).c_str());
+    // An untouched JsonDocument used to serialize to "null" while
+    // IWebUIProvider's own default is "{}". The serializeJson == 0 guard that
+    // was meant to catch it never fired: "null" is four bytes written.
+    TEST_ASSERT_EQUAL_STRING("{}", f.ui.getWebUIData(String("not_a_context")).c_str());
 }
 
 int main(int, char**) {
@@ -205,14 +264,17 @@ int main(int, char**) {
     RUN_TEST(test_a_single_server_needs_no_comma);
     RUN_TEST(test_an_all_empty_server_list_leaves_no_server_at_all);
     RUN_TEST(test_the_sync_interval_is_read_in_hours_and_stored_in_seconds);
-    RUN_TEST(test_a_sync_interval_of_zero_is_accepted_and_discarded);
-    RUN_TEST(test_a_sync_interval_that_is_not_a_number_is_accepted_and_discarded);
+    RUN_TEST(test_a_sync_interval_of_zero_is_refused);
+    RUN_TEST(test_a_sync_interval_that_is_not_a_number_is_refused);
+    RUN_TEST(test_a_sync_interval_the_sntp_client_cannot_hold_is_refused);
     RUN_TEST(test_enabled_accepts_true_and_one_and_nothing_else);
     RUN_TEST(test_the_timezone_is_stored_verbatim);
     RUN_TEST(test_an_unknown_field_is_named_in_the_refusal);
+    RUN_TEST(test_every_field_the_settings_card_declares_is_accepted);
+    RUN_TEST(test_a_refused_field_reaches_neither_the_config_nor_the_flash);
     RUN_TEST(test_a_method_other_than_get_or_post_is_refused);
     RUN_TEST(test_a_post_without_field_or_value_is_refused);
     RUN_TEST(test_the_settings_context_reports_what_was_saved);
-    RUN_TEST(test_an_unknown_context_serializes_an_empty_document_as_null);
+    RUN_TEST(test_an_unknown_context_answers_an_empty_object);
     return UNITY_END();
 }
