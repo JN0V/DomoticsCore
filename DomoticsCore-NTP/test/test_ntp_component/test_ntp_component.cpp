@@ -304,6 +304,26 @@ void test_ntp_set_timezone() {
     TEST_ASSERT_EQUAL_STRING("JST-9", ntp.getTimezone().c_str());
 }
 
+void test_the_sync_interval_handed_to_the_client_never_wraps() {
+    // The WebUI refuses an interval past 1193 hours, but setConfig() and the
+    // persistence restore do not go through it, and begin() converts to
+    // milliseconds in a uint32_t.
+    NTPConfig cfg;
+    cfg.enabled = true;
+    cfg.syncInterval = 4294968u;  // one second past what 1000x can hold
+    NTPComponent ntp(cfg);
+    ntp.begin();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0xFFFFFFFFu, HAL::NTPImpl::lastSyncIntervalMs(),
+                                     "the conversion wrapped instead of clamping");
+
+    NTPConfig ok;
+    ok.enabled = true;
+    ok.syncInterval = 3600;
+    NTPComponent normal(ok);
+    normal.begin();
+    TEST_ASSERT_EQUAL_UINT32(3600u * 1000u, HAL::NTPImpl::lastSyncIntervalMs());
+}
+
 void test_ntp_get_formatted_time_not_synced() {
     NTPComponent ntp;
 
@@ -564,6 +584,7 @@ int main() {
     // Time methods tests
     RUN_TEST(test_ntp_get_timezone);
     RUN_TEST(test_ntp_set_timezone);
+    RUN_TEST(test_the_sync_interval_handed_to_the_client_never_wraps);
     RUN_TEST(test_ntp_get_formatted_time_not_synced);
     RUN_TEST(test_ntp_get_iso8601_not_synced);
     RUN_TEST(test_ntp_get_unix_time);
