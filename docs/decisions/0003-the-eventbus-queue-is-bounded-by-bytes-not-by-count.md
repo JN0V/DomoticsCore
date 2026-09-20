@@ -66,5 +66,5 @@ job, not this one.
 **What the bound does not cover**: the sticky store. `publishSticky` keeps the
 last payload per topic in `lastByTopic`, its payload-less overload empties the
 vector and keeps the key, and only `reset()` erases the map. That store grows
-with the number of distinct sticky topics and no budget counts it. Recorded in
-`docs/deferred-work.md`; the title of this record is about the queue.
+with the number of distinct sticky topics and no budget counts it. Filed as
+MEM-8; the title of this record is about the queue.

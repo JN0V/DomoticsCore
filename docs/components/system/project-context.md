@@ -174,3 +174,10 @@ Call `console->registerCommand()` in `registerConsoleComponent()` or via `system
 1. Add the value to the `SystemState` enum in `SystemConfig.h`.
 2. Add its string representation to `systemStateToString()`.
 3. Add the LED pattern mapping in `System::updateLEDPattern()`.
+
+---
+
+## What the native suite does not cover
+
+- The telemetry sink, the MQTT connect subscription and the Home Assistant entity registration are proven on a board only: the native System environment compiles without MQTT and HomeAssistant by design.
+- `POST /api/system/coredump/erase` answers `409` while a download is in flight; the race needs two clients on a board and no suite drives it.

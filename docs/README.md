@@ -58,7 +58,7 @@ Welcome to the DomoticsCore documentation. DomoticsCore is a modular, production
 ### Project Health
 
 - [Code Remediation Roadmap](CODE-ROADMAP.md) — Every finding, open or resolved, with what was measured
-- [Deferred Work](deferred-work.md) — Defects found by a lot and deliberately left for a later one
+- [Deferred Work](deferred-work.md) — Decisions a lot parked, with their evidence; a defect takes a roadmap id instead
 - [Decisions](decisions/README.md) — Architecture decision records: the why that outlives a lot
 - [Review Findings](REVIEW-FINDINGS.md) — Code review findings and resolutions
 

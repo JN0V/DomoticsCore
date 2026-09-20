@@ -287,3 +287,9 @@ This section maps component behavior to the [DomoticsCore Constitution](../../..
 | **XIII. Anti-Patterns** | No singletons. No circular dependencies. Event constants centralized in `HAEvents.h` and `MQTTEvents.h`. |
 | **XIV. Memory Leak Prevention** | Entities stored in `std::unique_ptr`. No raw `new`/`delete`. Fixed-size char buffers for MQTT events (`MQTT_EVENT_TOPIC_SIZE`, `MQTT_EVENT_PAYLOAD_SIZE`) and HAConfig. |
 | **XV. Semantic Versioning** | `library.json` version (`2.0.0`) matches `metadata.version` in constructor. |
+
+---
+
+## Figures reconstructed, not measured
+
+- Discovery document sizes with a `configuration_url` on an ESP8266 were reconstructed (974 characters for a maximal alarm control panel, against the 699-character event field), not measured on that board. The refusal path is measured; the exact size of that document is not.

@@ -219,6 +219,8 @@ Extend `CachingWebUIProvider`, implement `buildContexts()`, `getWebUIName()`, `g
 | `test_schema_memory` | `test/test_schema_memory/test_schema_memory.cpp` | ESP32 | Heap profiling during schema generation (has own `platformio.ini`) |
 | `test_heap_esp8266` | `test/test_heap_esp8266/test_heap_esp8266.cpp` | ESP8266 | Low-heap behavior, combined asset mode, fragmentation |
 
+The host mocks under `tests/mocks/libraries/` (`ESPAsyncWebServer.h`, `AsyncEventSource.h`, `FS.h`, `pgmspace.h`) record calls and parse no HTTP. They prove handler logic and nothing about ESPAsyncWebServer: multipart parsing, the real `setRxTimeout` and every timing question are covered only by `tools/on-device/ota_upload_check.py`, which needs a board.
+
 ### Examples
 
 | Example | Path | Description |

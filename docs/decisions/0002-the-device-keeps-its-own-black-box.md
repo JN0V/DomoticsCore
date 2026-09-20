@@ -51,4 +51,8 @@ that has no `coredump` partition keeps no dump; nothing decodes without the
 ELF of the deployed build. A layout change costs a one-boot migration that
 must keep the previous death. The tick costs microseconds on the idle loop
 of an ESP8266, and its exact figure belongs to the link layout of the build
-that measured it, not to the recorder.
+that measured it, not to the recorder. While a promoted death is held, the
+new run's failed-allocation group stays in RAM and is not written over the
+held record's: a bring-up that dies again before `acknowledge()` loses the
+failures it survived, so that the next boot does not attribute this run's
+failures to the old death.
