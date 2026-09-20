@@ -37,6 +37,38 @@ Puts the repository root on the include path so examples pick up an untracked
 `secrets.h` through `__has_include`. Logs land beside the script as
 `log-<example>-<env>.txt`.
 
+## `webui_settings_refusal_check.py`
+
+Type a value into one settings field with a real browser, and report what the
+device stored and what the page said.
+
+```
+uv run --with playwright tools/on-device/webui_settings_refusal_check.py \
+    http://<ip> mqtt_settings port 65536 /tmp/out
+```
+
+A native suite asserts the handler's answer; it cannot show whether the refusal
+reaches the person typing. `app.js` turns an `"error"` key into a blocking alert
+and otherwise leaves a text field alone, so "refused" and "silently refused"
+look identical until a browser drives the page. The stored value is read back
+from `/api/ui/updates`, never from the DOM: a field that merely redrew must not
+pass for one that never moved.
+
+**A field carries the schema's placeholder until the first SSE tick redraws it**
+— about five seconds after load. Editing before that makes a `fill()` of the
+stored value a no-op change, so nothing is posted and the run measures nothing
+while looking like a clean negative. The script waits for the field to show the
+stored value before it edits; that wait is the whole reason two measurements had
+to be thrown away.
+
+It drives a Settings card through its Edit/Save buttons, so it reaches text and
+number fields on a card that has them. The path BUG-51 calls invisible —
+`alwaysInteractive` and dashboard fields such as LED brightness, which post on
+change with no Save button — is not covered. `/api/ui/updates` is behind
+`enableAuth` and this probe does not authenticate; it says so and exits non-zero
+rather than reporting a 401 as a crash, as it does for every case where the
+measurement could not be taken.
+
 ## `webui_check.py`
 
 Drive a WebUI with a real browser and report console errors, failed requests and
