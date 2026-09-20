@@ -269,3 +269,16 @@ their own.
 - source_spec: TEST-8's lot (2026-09-19)
   summary: the host mocks prove handler logic and nothing about ESPAsyncWebServer. Multipart parsing, the real `setRxTimeout` and every timing question remain covered only by `tools/on-device/ota_upload_check.py`, which needs a board.
   evidence: `tests/mocks/libraries/ESPAsyncWebServer.h` records calls and parses no HTTP. The board script's discriminating case stays the refused upload: `total` 475264 with SEC-9's narrowing against 475452 without.
+
+- source_spec: TEST-9's lot (2026-09-19) — **filed as BUG-45**
+  summary: the four WebUI provider settings handlers disagree about what they refuse — MQTT takes a port with no range check, MQTT answers success for an unknown field, NTP accepts a sync interval it discards, and six providers return `null` where `IWebUIProvider` promises `{}`.
+  evidence: `MQTTWebUI.h:223-249`, `NTPWebUI.h:270-273`, `RemoteConsoleWebUI.h:117-132`, `IWebUIProvider.h:516`. Each is pinned by a test asserting the behaviour as it is, with an assertion message telling whoever fixes it that the test moves too.
+
+- source_spec: TEST-9's lot (2026-09-19)
+  summary: `UpdateBuilder` skips a context whose data is empty or `{}` but not one that is `null`, so the day a declared context loses its `getWebUIData()` branch the SSE payload carries `"ctx":null` rather than nothing.
+  evidence: `UpdateBuilder.h:63`. Latent today — checked provider by provider, every declared context is handled.
+
+- source_spec: TEST-9's lot (2026-09-19)
+  summary: `MQTTWebUI` is the only provider with no `init()`, so its `#include <DomoticsCore/WebUI.h>` is genuinely redundant and removable. Left in place: with the library mocks the include costs nothing on the host, and removing it would be a production change in a test lot.
+  evidence: it names `WebUIComponent` only in a doc comment (`MQTTWebUI.h:26-29`) and compiles host-side with the line removed.
+
