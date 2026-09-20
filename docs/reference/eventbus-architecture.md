@@ -162,7 +162,7 @@ sequenceDiagram
 | Event Name | Type | Payload | When |
 |------------|------|---------|------|
 | `mqtt/connected` | `bool` | `true` | After successful connection to broker |
-| `mqtt/disconnected` | `bool` | `true` | After disconnection from broker |
+| `mqtt/disconnected` | `bool` | `true` | After a connection is lost, deliberately or not |
 | `mqtt/message` | `MQTTMessageEvent` | `{topic, payload}` | When message received from broker |
 
 #### Listened Events

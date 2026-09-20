@@ -282,3 +282,44 @@ their own.
   summary: `MQTTWebUI` is the only provider with no `init()`, so its `#include <DomoticsCore/WebUI.h>` is genuinely redundant and removable. Left in place: with the library mocks the include costs nothing on the host, and removing it would be a production change in a test lot.
   evidence: it names `WebUIComponent` only in a doc comment (`MQTTWebUI.h:26-29`) and compiles host-side with the line removed.
 
+
+## Deferred from: code review of the BUG-44 lot (2026-09-20)
+
+- source_spec: BUG-44's lot (2026-09-20) — **filed as BUG-46**
+  summary: HomeAssistant never republishes entity **state** after a reconnection,
+  so now that its `mqttConnected` guard actually fires, a state published during
+  an outage is skipped and never re-sent. Graded and argued in the roadmap rather
+  than parked here: the lot's own fix opened it, so the lot files it.
+  evidence: `HomeAssistant.h:469`, `HAEntity.h:20-45`. Three remedies weighed in
+  the BUG-46 entry; announced meanwhile in the CHANGELOG's Unreleased top note.
+
+- source_spec: BUG-44's lot (2026-09-20)
+  summary: `resetReconnect()` is the last silent exit from `Connected` — it sets
+  `state = MQTTState::Disconnected` without touching the client and without
+  emitting, so a caller using it after changing the broker leaves every
+  subscriber believing the link is up, and the next successful `connect()` sends a
+  second `mqtt/connected` with no `mqtt/disconnected` between. Not fixed here
+  because nothing in the tree calls it: it is public API only, and whether it
+  should announce or should first close the session is a design question.
+  evidence: `MQTT_impl.h:214-222`; `grep -rn resetReconnect` finds the declaration
+  and the definition and no call site.
+
+- source_spec: BUG-44's lot (2026-09-20)
+  summary: `MQTTStatistics` counts connections and never counts losses, so nothing
+  in the WebUI or the telemetry can see a link flapping; and `stats.uptime` is
+  refreshed only while connected, so it freezes at its last value and reads as a
+  live uptime for the whole outage. Both are visible to a user the moment the
+  panel is looked at during a drop.
+  evidence: `MQTT_impl.h:586-590` (`updateStatistics()` guarded by `isConnected()`),
+  `MQTT.h`'s `MQTTStatistics` — `connectCount`, `reconnectCount`, no disconnect
+  counter.
+
+- source_spec: BUG-44's lot (2026-09-20)
+  summary: the loss is announced exactly once per drop, and the EventBus drops
+  events on a full queue. `mqtt/connected` survives that — every reconnection
+  re-emits it — but a dropped `mqtt/disconnected` is never re-sent, and
+  HomeAssistant's `mqttConnected` then stays true for the life of the process.
+  Sticky publication would fix it and changes replay semantics for every existing
+  subscriber, which is why it is not done here.
+  evidence: `EventBus.h`'s overflow path (BUG-41's budget), `MQTT_impl.h`'s
+  `announceConnectionLost()`, `HomeAssistant.h:148-151`.
