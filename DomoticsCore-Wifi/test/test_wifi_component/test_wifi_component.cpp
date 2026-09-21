@@ -667,16 +667,17 @@ void test_wifi_async_summary_caps_at_ten(void) {
 }
 
 void test_wifi_async_summary_empty_scan(void) {
-    // Zero networks: the loop is not entered and the summary is empty. This is
-    // also the state a CI runner is always in, which is why the on-device suite
-    // refuses to pass on it.
+    // Zero networks: the formatting loop is not entered, and the summary says
+    // so rather than staying empty, which is what "never scanned" means. This
+    // is also the state a CI runner is always in, which is why the on-device
+    // suite refuses to pass on it.
     WifiComponent wifi;
     makeIdle(wifi);
 
     wifi.startScanAsync();
     wifi.loop();
 
-    TEST_ASSERT_EQUAL_STRING("", wifi.getLastScanSummary().c_str());
+    TEST_ASSERT_EQUAL_STRING("No networks found", wifi.getLastScanSummary().c_str());
 }
 
 

@@ -50,6 +50,9 @@ void tearDown(void) {
     // setUp here runs an AP fixture, so reset it rather than leak AccessPoint
     // into the next test.
     HAL::WiFiImpl::resetWifiStateForTest();
+    // Same for the scripted scan table: one test's networks would otherwise
+    // decide the next one's summary.
+    HAL::WiFiImpl::resetScanForTest();
 }
 
 // ============================================================================
@@ -362,6 +365,146 @@ void test_has_data_changed_returns_false_when_unchanged(void) {
 }
 
 // ============================================================================
+// The scan card: the action, and the result it draws
+// ============================================================================
+
+static const WebUIContext* findContext(std::vector<WebUIContext>& into, const char* id) {
+    wifiWebUI->forEachContext([&into](const WebUIContext& ctx) {
+        into.push_back(ctx);
+        return true;
+    });
+    for (const auto& ctx : into) {
+        if (strcmp(ctx.getContextIdCStr(), id) == 0) return &ctx;
+    }
+    return nullptr;
+}
+
+void test_wifi_scan_card_offers_the_action(void) {
+    // The scan was handled but never offered: scan_networks was a field of no
+    // context, so no page could send it.
+    std::vector<WebUIContext> contexts;
+    const WebUIContext* scan = findContext(contexts, "wifi_scan");
+    TEST_ASSERT_NOT_NULL_MESSAGE(scan, "no wifi_scan context");
+
+    TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(WebUILocation::Settings),
+                              static_cast<int>(scan->location), "not a settings card");
+    // Without this the card is locked behind Edit, and the update tick skips a
+    // card in edit mode — the result could never be drawn.
+    TEST_ASSERT_TRUE_MESSAGE(scan->alwaysInteractive, "the card would be locked behind Edit");
+
+    bool hasButton = false, hasResult = false;
+    for (const auto& f : scan->fields) {
+        if (strcmp(f.getNameCStr(), "scan_networks") == 0) {
+            hasButton = (f.type == WebUIFieldType::Button);
+        } else if (strcmp(f.getNameCStr(), "scan_result") == 0) {
+            hasResult = (f.type == WebUIFieldType::Display);
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(hasButton, "no Button field named scan_networks");
+    TEST_ASSERT_TRUE_MESSAGE(hasResult, "no Display field named scan_result");
+}
+
+void test_wifi_scan_result_is_the_components_summary(void) {
+    // The provider kept its own copy of the summary and never read it back.
+    // This reads the field before any loop() runs, so it needs the wiring and
+    // not the harvest.
+    String posted = wifiWebUI->handleWebUIRequest("wifi_scan", "/api/wifi", "POST",
+                                                  makeParams("scan_networks", "clicked"));
+    TEST_ASSERT_TRUE_MESSAGE(posted.indexOf("\"success\":true") >= 0, posted.c_str());
+
+    String data = wifiWebUI->getWebUIData("wifi_scan");
+    JsonDocument doc;
+    TEST_ASSERT_FALSE_MESSAGE(deserializeJson(doc, data), data.c_str());
+
+    const char* result = doc["scan_result"];
+    TEST_ASSERT_NOT_NULL_MESSAGE(result, data.c_str());
+    TEST_ASSERT_EQUAL_STRING(wifi->getLastScanSummary().c_str(), result);
+    TEST_ASSERT_EQUAL_STRING("Scanning...", result);
+}
+
+void test_wifi_scan_summary_reaches_the_page(void) {
+    // End to end in the state the card exists for: AP mode, no configured SSID.
+    HAL::WiFiImpl::setScannedNetworksForTest({
+        {String("HomeNet"), -42},
+        {String("Guest"), -71},
+    });
+
+    wifiWebUI->handleWebUIRequest("wifi_scan", "/api/wifi", "POST",
+                                  makeParams("scan_networks", "clicked"));
+    wifi->loop();
+
+    String data = wifiWebUI->getWebUIData("wifi_scan");
+    JsonDocument doc;
+    TEST_ASSERT_FALSE_MESSAGE(deserializeJson(doc, data), data.c_str());
+
+    const char* result = doc["scan_result"];
+    TEST_ASSERT_NOT_NULL_MESSAGE(result, data.c_str());
+    TEST_ASSERT_EQUAL_STRING("HomeNet (-42 dBm), Guest (-71 dBm)", result);
+}
+
+void test_wifi_scan_refuses_a_second_scan_with_a_reason(void) {
+    wifiWebUI->handleWebUIRequest("wifi_scan", "/api/wifi", "POST",
+                                  makeParams("scan_networks", "clicked"));
+
+    String second = wifiWebUI->handleWebUIRequest("wifi_scan", "/api/wifi", "POST",
+                                                  makeParams("scan_networks", "clicked"));
+    TEST_ASSERT_TRUE_MESSAGE(second.indexOf("\"success\":false") >= 0, second.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(second.indexOf("Scan already running") >= 0, second.c_str());
+}
+
+void test_has_data_changed_follows_the_scan_summary(void) {
+    HAL::WiFiImpl::setScannedNetworksForTest({
+        {String("HomeNet"), -42},
+    });
+
+    wifiWebUI->hasDataChanged("wifi_scan");
+    TEST_ASSERT_FALSE_MESSAGE(wifiWebUI->hasDataChanged("wifi_scan"),
+                              "the summary did not move");
+
+    wifiWebUI->handleWebUIRequest("wifi_scan", "/api/wifi", "POST",
+                                  makeParams("scan_networks", "clicked"));
+    wifi->loop();
+
+    TEST_ASSERT_TRUE_MESSAGE(wifiWebUI->hasDataChanged("wifi_scan"),
+                             "a finished scan is not sent to the page");
+}
+
+void test_wifi_scan_that_found_nothing_says_so(void) {
+    // An empty summary means no scan has run. A scan that ran and found nothing
+    // must not read as the same thing.
+    String before = wifiWebUI->getWebUIData("wifi_scan");
+    TEST_ASSERT_TRUE_MESSAGE(before.indexOf("No scan yet") >= 0, before.c_str());
+
+    wifiWebUI->handleWebUIRequest("wifi_scan", "/api/wifi", "POST",
+                                  makeParams("scan_networks", "clicked"));
+    wifi->loop();
+
+    String after = wifiWebUI->getWebUIData("wifi_scan");
+    JsonDocument doc;
+    TEST_ASSERT_FALSE_MESSAGE(deserializeJson(doc, after), after.c_str());
+    TEST_ASSERT_EQUAL_STRING("No networks found", doc["scan_result"]);
+}
+
+void test_wifi_scan_card_answers_only_for_its_own_field(void) {
+    // The card declares scan_networks and nothing else; a credential posted
+    // under its context id is refused rather than applied.
+    String r = wifiWebUI->handleWebUIRequest("wifi_scan", "/api/wifi", "POST",
+                                             makeParams("ssid", "Somewhere"));
+    TEST_ASSERT_TRUE_MESSAGE(r.indexOf("\"success\":false") >= 0, r.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(r.indexOf("Unknown field") >= 0, r.c_str());
+    TEST_ASSERT_EQUAL_STRING("", wifi->getConfiguredSSID().c_str());
+}
+
+void test_wifi_scan_still_starts_from_the_settings_context(void) {
+    // The action was only ever reachable by a hand-made POST to wifi_settings.
+    // Whoever sent one keeps it.
+    String r = wifiWebUI->handleWebUIRequest("wifi_settings", "/api/wifi", "POST",
+                                             makeParams("scan_networks", "clicked"));
+    TEST_ASSERT_TRUE_MESSAGE(r.indexOf("\"success\":true") >= 0, r.c_str());
+    TEST_ASSERT_EQUAL_STRING("Scanning...", wifi->getLastScanSummary().c_str());
+}
+
+// ============================================================================
 // Test runner
 // ============================================================================
 
@@ -391,6 +534,16 @@ int main(int argc, char **argv) {
     RUN_TEST(test_every_refusal_names_its_reason);
     RUN_TEST(test_wifi_settings_data_reflects_current_state);
     RUN_TEST(test_has_data_changed_returns_false_when_unchanged);
+
+    // The scan card
+    RUN_TEST(test_wifi_scan_card_offers_the_action);
+    RUN_TEST(test_wifi_scan_result_is_the_components_summary);
+    RUN_TEST(test_wifi_scan_summary_reaches_the_page);
+    RUN_TEST(test_wifi_scan_refuses_a_second_scan_with_a_reason);
+    RUN_TEST(test_has_data_changed_follows_the_scan_summary);
+    RUN_TEST(test_wifi_scan_that_found_nothing_says_so);
+    RUN_TEST(test_wifi_scan_card_answers_only_for_its_own_field);
+    RUN_TEST(test_wifi_scan_still_starts_from_the_settings_context);
     
     return UNITY_END();
 }
