@@ -178,6 +178,31 @@ static std::map<String, String> makeParams(const String& field, const String& va
     return params;
 }
 
+// Every refusal this provider can answer, each with the reason the page draws
+// under the field: a refusal naming nothing reaches the person typing as nothing.
+void test_every_refusal_names_its_reason(void) {
+    auto refused = [](const String& r, const char* reason) {
+        TEST_ASSERT_TRUE_MESSAGE(r.indexOf("\"success\":false") >= 0, r.c_str());
+        TEST_ASSERT_TRUE_MESSAGE(r.indexOf(reason) >= 0, r.c_str());
+    };
+    auto params = makeParams("ssid", "TestNetwork");
+
+    refused(wifiWebUI->handleWebUIRequest("wifi_settings", "/api/wifi", "GET", params),
+            "Method not allowed");
+    refused(wifiWebUI->handleWebUIRequest("not_a_context", "/api/wifi", "POST", params),
+            "Unknown context");
+    refused(wifiWebUI->handleWebUIRequest("wifi_settings", "/api/wifi", "POST",
+                                          std::map<String, String>()),
+            "Invalid request");
+    refused(wifiWebUI->handleWebUIRequest("wifi_settings", "/api/wifi", "POST",
+                                          makeParams("channel", "6")),
+            "Unknown field");
+
+    WifiWebUI orphan(nullptr);
+    refused(orphan.handleWebUIRequest("wifi_settings", "/api/wifi", "POST", params),
+            "Component not available");
+}
+
 void test_sta_enable_without_ssid_returns_error(void) {
     // Bug: Enabling STA without SSID caused crash
     // Fix: Should return error JSON without crashing
@@ -363,6 +388,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_mode_change_sequence_ap_to_sta);
     
     // Data flow tests
+    RUN_TEST(test_every_refusal_names_its_reason);
     RUN_TEST(test_wifi_settings_data_reflects_current_state);
     RUN_TEST(test_has_data_changed_returns_false_when_unchanged);
     

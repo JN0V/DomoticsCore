@@ -87,20 +87,49 @@ void test_an_empty_name_is_refused(void) {
     String r = provider.handleWebUIRequest("system_settings", "/", "POST", action("device_name", ""));
     TEST_ASSERT_FALSE(ok(r));
     TEST_ASSERT_EQUAL_STRING(before.c_str(), sys.getConfig().deviceName.c_str());
-    // A refusal carries no error key (app.js would pop a modal on data.error).
-    TEST_ASSERT_TRUE(r.indexOf("error") < 0);
+    // The reason is named: the page draws it under the field, where a refusal
+    // with no error key reaches the person typing as nothing at all.
+    TEST_ASSERT_TRUE_MESSAGE(r.indexOf("Device name cannot be empty") >= 0, r.c_str());
 }
 
 // --- guards that already held: recorded as coverage, not evidence ---------------
 void test_an_unknown_field_is_refused(void) {
     SystemInfoComponent sys;
     SystemInfoWebUI provider(&sys);
-    TEST_ASSERT_FALSE(ok(provider.handleWebUIRequest("system_settings", "/", "POST", action("nope", "x"))));
+    String r = provider.handleWebUIRequest("system_settings", "/", "POST", action("nope", "x"));
+    TEST_ASSERT_FALSE(ok(r));
+    TEST_ASSERT_TRUE_MESSAGE(r.indexOf("Unknown field") >= 0, r.c_str());
 }
 void test_a_non_post_is_refused(void) {
     SystemInfoComponent sys;
     SystemInfoWebUI provider(&sys);
-    TEST_ASSERT_FALSE(ok(provider.handleWebUIRequest("system_settings", "/", "GET", action("device_name", "x"))));
+    String r = provider.handleWebUIRequest("system_settings", "/", "GET", action("device_name", "x"));
+    TEST_ASSERT_FALSE(ok(r));
+    TEST_ASSERT_TRUE_MESSAGE(r.indexOf("Method not allowed") >= 0, r.c_str());
+}
+
+// The page's header renames the device through this provider. It posted a
+// context the handler does not take, so the rename never reached the component
+// and the refusal went nowhere.
+void test_the_context_the_header_posts_is_the_one_that_renames(void) {
+    SystemInfoComponent sys;
+    SystemInfoWebUI provider(&sys);
+    String r = provider.handleWebUIRequest("system_info", "/", "POST", action("device_name", "Garage"));
+    TEST_ASSERT_FALSE(ok(r));
+    TEST_ASSERT_TRUE_MESSAGE(r.indexOf("Unknown context") >= 0, r.c_str());
+    TEST_ASSERT_TRUE(ok(provider.handleWebUIRequest("system_settings", "/", "POST",
+                                                    action("device_name", "Garage"))));
+    TEST_ASSERT_EQUAL_STRING("Garage", sys.getConfig().deviceName.c_str());
+}
+
+void test_a_request_without_a_value_is_refused(void) {
+    SystemInfoComponent sys;
+    SystemInfoWebUI provider(&sys);
+    std::map<String, String> onlyField;
+    onlyField["field"] = "device_name";
+    String r = provider.handleWebUIRequest("system_settings", "/", "POST", onlyField);
+    TEST_ASSERT_FALSE(ok(r));
+    TEST_ASSERT_TRUE_MESSAGE(r.indexOf("Invalid request") >= 0, r.c_str());
 }
 
 // --- getWebUIData shape (coverage) ----------------------------------------------
@@ -130,6 +159,8 @@ int main(int, char**) {
     RUN_TEST(test_an_empty_name_is_refused);
     RUN_TEST(test_an_unknown_field_is_refused);
     RUN_TEST(test_a_non_post_is_refused);
+    RUN_TEST(test_the_context_the_header_posts_is_the_one_that_renames);
+    RUN_TEST(test_a_request_without_a_value_is_refused);
     RUN_TEST(test_getwebuidata_carries_the_device_name);
     RUN_TEST(test_a_null_component_is_refused_rather_than_dereferenced);
     return UNITY_END();

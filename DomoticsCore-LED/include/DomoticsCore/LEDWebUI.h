@@ -117,9 +117,11 @@ public:
     }
 
     String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params) override {
-        if (!led || method != "POST") return "{\"success\":false}";
+        if (!led) return "{\"success\":false,\"error\":\"Component not available\"}";
+        if (method != "POST") return "{\"success\":false,\"error\":\"Method not allowed\"}";
+        if (contextId != "led_dashboard") return "{\"success\":false,\"error\":\"Unknown context\"}";
         auto fieldIt = params.find("field"); auto valueIt = params.find("value");
-        if (fieldIt == params.end() || valueIt == params.end()) return "{\"success\":false}";
+        if (fieldIt == params.end() || valueIt == params.end()) return "{\"success\":false,\"error\":\"Invalid request\"}";
         const String& field = fieldIt->second;
         const String& value = valueIt->second;
 
@@ -159,7 +161,7 @@ public:
             // than coerced to one; a value that parses and overshoots is
             // clamped, which is what a slider does.
             uint32_t b = 0;
-            if (!webUIParseUnsigned(value, b)) return "{\"success\":false}";
+            if (!webUIParseUnsigned(value, b)) return "{\"success\":false,\"error\":\"Invalid brightness\"}";
             if (b > 255) b = 255;
             brightness = (uint8_t)b;
             // Ensure selected index is valid before using
@@ -182,7 +184,7 @@ public:
             }
             return "{\"success\":true}";
         }
-        return "{\"success\":false}";
+        return "{\"success\":false,\"error\":\"Unknown field\"}";
     }
 
 private:

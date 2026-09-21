@@ -153,17 +153,18 @@ public:
      * callback and `publishDiscovery()` ran on every request and the answer was
      * `success`. That is BUG-31.
      *
-     * Refusals are silent on purpose: `app.js` turns any `error` key into a
-     * blocking alert, and the field redraws from the stored value either way.
+     * A refused field answers with the reason; the page draws it under the
+     * field the value was typed into.
      */
     String handleWebUIRequest(const String& contextId, const String& endpoint,
                               const String& method, const std::map<String, String>& params) override {
-        if (!ha || method != "POST") return "{\"success\":false}";
-        if (contextId != "ha_settings") return "{\"success\":false}";
+        if (!ha) return "{\"success\":false,\"error\":\"Component not available\"}";
+        if (method != "POST") return "{\"success\":false,\"error\":\"Method not allowed\"}";
+        if (contextId != "ha_settings") return "{\"success\":false,\"error\":\"Unknown context\"}";
 
         auto fieldIt = params.find("field");
         auto valueIt = params.find("value");
-        if (fieldIt == params.end() || valueIt == params.end()) return "{\"success\":false}";
+        if (fieldIt == params.end() || valueIt == params.end()) return "{\"success\":false,\"error\":\"Invalid request\"}";
         const String& field = fieldIt->second;
         const String& value = valueIt->second;
 
@@ -198,7 +199,7 @@ public:
             dest = newCfg.suggestedArea;    currentValue = cur.suggestedArea;
             maxLen = HA::MAX_SUGGESTED_AREA;
         } else {
-            return "{\"success\":false}";   // unknown field, nothing touched
+            return "{\"success\":false,\"error\":\"Unknown field\"}";   // nothing touched
         }
 
         // HA::setField is the only validation these fields have: a truncation with

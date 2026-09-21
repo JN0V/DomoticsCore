@@ -104,23 +104,24 @@ public:
     }
 
     String handleWebUIRequest(const String& contextId, const String& /*endpoint*/, const String& method, const std::map<String, String>& params) override {
-        // BUG-32/TEST-6: guard the component, as getWebUIData and hasDataChanged
-        // already do. Without it a POST dereferences a null sys below and crashes.
-        if (!sys) return "{\"success\":false}";
+        // Guard the component, as getWebUIData and hasDataChanged already do:
+        // without it a POST dereferences a null sys below and crashes.
+        if (!sys) return "{\"success\":false,\"error\":\"Component not available\"}";
 
-        if (contextId == "system_settings" && method == "POST") {
-            auto fieldIt = params.find("field");
-            auto valueIt = params.find("value");
-            if (fieldIt != params.end() && valueIt != params.end()) {
+        if (contextId != "system_settings") return "{\"success\":false,\"error\":\"Unknown context\"}";
+        if (method != "POST") return "{\"success\":false,\"error\":\"Method not allowed\"}";
+
+        auto fieldIt = params.find("field");
+        auto valueIt = params.find("value");
+        if (fieldIt == params.end() || valueIt == params.end()) return "{\"success\":false,\"error\":\"Invalid request\"}";
+        {
+            {
                 const String& field = fieldIt->second;
                 const String& value = valueIt->second;
 
                 if (field == "device_name") {
-                    // Silent on purpose: app.js turns any "error" key into a
-                    // blocking alert, and the field redraws from the stored
-                    // value on the next update either way.
                     if (value.length() == 0) {
-                        return "{\"success\":false}";  // an empty name would blank the device
+                        return "{\"success\":false,\"error\":\"Device name cannot be empty\"}";
                     }
                     // Cap at 31, the char[31] the browser header and WebUIConfig
                     // already truncate to (WebUIConfig.h:17). SystemConfig keeps the
@@ -147,7 +148,7 @@ public:
                 }
             }
         }
-        return "{\"success\":false}";
+        return "{\"success\":false,\"error\":\"Unknown field\"}";
     }
 
     bool hasDataChanged(const String& contextId) override {

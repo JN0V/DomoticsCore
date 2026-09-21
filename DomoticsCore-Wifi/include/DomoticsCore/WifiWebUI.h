@@ -123,12 +123,16 @@ protected:
 public:
 
     String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params) override {
-        if (!wifi) return "{\"success\":false}";
-        // Backward compatibility: accept legacy context id as STA settings
-        if ((contextId == "wifi_settings" || contextId == "wifi_sta_settings") && method == "POST") {
+        if (!wifi) return "{\"success\":false,\"error\":\"Component not available\"}";
+        if (method != "POST") return "{\"success\":false,\"error\":\"Method not allowed\"}";
+        // Backward compatibility: accept the legacy context id as STA settings
+        if (contextId != "wifi_settings" && contextId != "wifi_sta_settings") {
+            return "{\"success\":false,\"error\":\"Unknown context\"}";
+        }
+        {
             auto f = params.find("field");
             auto v = params.find("value");
-            if (f == params.end() || v == params.end()) return "{\"success\":false}";
+            if (f == params.end() || v == params.end()) return "{\"success\":false,\"error\":\"Invalid request\"}";
             String field = f->second; String value = v->second;
             if (field == "ssid") {
                 DLOG_D(LOG_WIFI_WEBUI, "Updated SSID to: '%s'", value.c_str());
@@ -236,7 +240,7 @@ public:
                 return "{\"success\":true}";
             }
         }
-        return "{\"success\":false}";
+        return "{\"success\":false,\"error\":\"Unknown field\"}";
     }
 
     String getWebUIData(const String& contextId) override {
