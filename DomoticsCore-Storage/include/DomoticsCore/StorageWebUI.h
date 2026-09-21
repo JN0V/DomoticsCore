@@ -53,8 +53,9 @@ public:
         return webUIContextData(doc);
     }
 
-    String handleWebUIRequest(const String& /*contextId*/, const String& /*endpoint*/, const String& /*method*/, const std::map<String, String>& /*params*/) override {
-        return "{\"success\":false}";
+    String handleWebUIRequest(const String& /*contextId*/, const String& /*endpoint*/, const String& method, const std::map<String, String>& /*params*/) override {
+        if (method != "POST") return "{\"success\":false,\"error\":\"Method not allowed\"}";
+        return "{\"success\":false,\"error\":\"Storage has no editable settings\"}";
     }
 };
 

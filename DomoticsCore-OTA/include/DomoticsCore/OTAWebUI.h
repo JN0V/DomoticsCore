@@ -130,7 +130,7 @@ public:
     String handleWebUIRequest(const String& contextId, const String& /*endpoint*/, const String& method,
                               const std::map<String, String>& params) override {
         if (!ota) {
-            return "{\"success\":false}";
+            return "{\"success\":false,\"error\":\"Component not available\"}";
         }
 
         if (method == "GET") {
@@ -139,13 +139,13 @@ public:
         }
 
         if (method != "POST") {
-            return "{\"success\":false}";
+            return "{\"success\":false,\"error\":\"Method not allowed\"}";
         }
 
         auto fieldIt = params.find("field");
         auto valueIt = params.find("value");
         if (fieldIt == params.end()) {
-            return "{\"success\":false}";
+            return "{\"success\":false,\"error\":\"Invalid request\"}";
         }
         const String field = fieldIt->second;
         const String value = (valueIt != params.end()) ? valueIt->second : String();
@@ -180,7 +180,7 @@ public:
             }
         }
 
-        return "{\"success\":false}";
+        return "{\"success\":false,\"error\":\"Unknown field\"}";
     }
 
 private:

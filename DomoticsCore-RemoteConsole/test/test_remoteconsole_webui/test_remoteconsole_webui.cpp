@@ -25,6 +25,13 @@ bool contains(const String& haystack, const char* needle) {
 
 bool succeeded(const String& response) { return contains(response, "\"success\":true"); }
 
+/// A refusal that names nothing is drawn nowhere: the page reports `data.error`
+/// and shows it under the field.
+void assertRefusedWith(const String& response, const char* reason) {
+    TEST_ASSERT_FALSE_MESSAGE(succeeded(response), response.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(contains(response, reason), response.c_str());
+}
+
 std::map<String, String> fieldValue(const char* field, const char* value) {
     std::map<String, String> params;
     params[String("field")] = String(field);
@@ -145,31 +152,44 @@ void test_a_request_missing_its_field_or_value_is_refused() {
     Fixture f;
     std::map<String, String> onlyField;
     onlyField[String("field")] = String("port");
-    TEST_ASSERT_FALSE(succeeded(f.ui.handleWebUIRequest(String("console_settings"),
-                                                        String("/api/ui/action"),
-                                                        String("POST"), onlyField)));
+    assertRefusedWith(f.ui.handleWebUIRequest(String("console_settings"),
+                                              String("/api/ui/action"),
+                                              String("POST"), onlyField), "Invalid request");
     std::map<String, String> empty;
-    TEST_ASSERT_FALSE(succeeded(f.ui.handleWebUIRequest(String("console_settings"),
-                                                        String("/api/ui/action"),
-                                                        String("POST"), empty)));
+    assertRefusedWith(f.ui.handleWebUIRequest(String("console_settings"),
+                                              String("/api/ui/action"),
+                                              String("POST"), empty), "Invalid request");
+}
+
+// Every refusal this provider can answer, each with the reason the page draws.
+void test_every_refusal_names_its_reason() {
+    Fixture f;
+    assertRefusedWith(f.post("port", "telnet"), "Invalid port");
+    assertRefusedWith(f.post("port", "0"), "Invalid port");
+    assertRefusedWith(f.post("port", "65536"), "Invalid port");
+    assertRefusedWith(f.post("log_level", "6"), "Invalid log level");
+    assertRefusedWith(f.post("log_level", "3x"), "Invalid log level");
+    assertRefusedWith(f.post("baud", "115200"), "Unknown field");
+
+    WebUI::RemoteConsoleWebUI orphan(nullptr);
+    assertRefusedWith(orphan.handleWebUIRequest(String("console_settings"), String("/"),
+                                                String("POST"), fieldValue("port", "2424")),
+                      "Component not available");
 }
 
 void test_a_get_or_a_foreign_context_is_refused() {
     Fixture f;
-    TEST_ASSERT_FALSE_MESSAGE(succeeded(f.ui.handleWebUIRequest(String("console_settings"),
-                                                                 String("/api/ui/action"),
-                                                                 String("GET"),
-                                                                 fieldValue("port", "2424"))),
-                              "a GET mutated the configuration");
-    TEST_ASSERT_FALSE(succeeded(f.ui.handleWebUIRequest(String("other_context"),
-                                                        String("/api/ui/action"),
-                                                        String("POST"),
-                                                        fieldValue("port", "2424"))));
+    assertRefusedWith(f.ui.handleWebUIRequest(String("console_settings"),
+                                              String("/api/ui/action"), String("GET"),
+                                              fieldValue("port", "2424")), "Method not allowed");
+    assertRefusedWith(f.ui.handleWebUIRequest(String("other_context"),
+                                              String("/api/ui/action"), String("POST"),
+                                              fieldValue("port", "2424")), "Unknown context");
 }
 
 void test_an_unknown_field_is_refused() {
     Fixture f;
-    TEST_ASSERT_FALSE(succeeded(f.post("baud", "115200")));
+    assertRefusedWith(f.post("baud", "115200"), "Unknown field");
 }
 
 void test_the_change_detector_settles_and_wakes_on_a_change() {
@@ -204,6 +224,7 @@ int main(int, char**) {
     RUN_TEST(test_a_request_missing_its_field_or_value_is_refused);
     RUN_TEST(test_a_get_or_a_foreign_context_is_refused);
     RUN_TEST(test_an_unknown_field_is_refused);
+    RUN_TEST(test_every_refusal_names_its_reason);
     RUN_TEST(test_the_change_detector_settles_and_wakes_on_a_change);
     RUN_TEST(test_a_foreign_context_always_reports_a_change);
     return UNITY_END();

@@ -276,6 +276,53 @@ void test_the_announced_envelope_is_narrowed_to_what_was_delivered() {
                                      "the reported total is the envelope, not the firmware");
 }
 
+// The provider's action handler had never been called by anything. Its refusals
+// are what a person meets: the Start Update button with no URL configured is one
+// click on the OTA card.
+void test_every_refusal_of_the_action_handler_names_its_reason(void) {
+    Harness h;
+    h.build();
+    auto refused = [](const String& r, const char* reason) {
+        TEST_ASSERT_TRUE_MESSAGE(r.indexOf("\"success\":false") >= 0, r.c_str());
+        TEST_ASSERT_TRUE_MESSAGE(r.indexOf(reason) >= 0, r.c_str());
+    };
+    std::map<String, String> params;
+    params["field"] = String("start_update");
+    params["value"] = String("clicked");
+
+    refused(h.provider->handleWebUIRequest(String("ota_unified"), String("/"), String("POST"), params),
+            "No firmware URL configured");
+
+    std::map<String, String> unknown;
+    unknown["field"] = String("nope");
+    unknown["value"] = String("1");
+    refused(h.provider->handleWebUIRequest(String("ota_unified"), String("/"), String("POST"), unknown),
+            "Unknown field");
+    refused(h.provider->handleWebUIRequest(String("ota_unified"), String("/"), String("PUT"), params),
+            "Method not allowed");
+    refused(h.provider->handleWebUIRequest(String("ota_unified"), String("/"), String("POST"),
+                                           std::map<String, String>()),
+            "Invalid request");
+
+    WebUI::OTAWebUI orphan(nullptr);
+    refused(orphan.handleWebUIRequest(String("ota_unified"), String("/"), String("POST"), params),
+            "Component not available");
+}
+
+// A URL the page stored is the one the button uses, so the refusal above is
+// about the configuration and not about the button.
+void test_a_configured_url_is_stored(void) {
+    Harness h;
+    h.build();
+    std::map<String, String> params;
+    params["field"] = String("update_url");
+    params["value"] = String("http://example.invalid/fw.bin");
+    const String stored = h.provider->handleWebUIRequest(String("ota_unified"), String("/"),
+                                                         String("POST"), params);
+    TEST_ASSERT_TRUE_MESSAGE(stored.indexOf("\"success\":true") >= 0, stored.c_str());
+    TEST_ASSERT_EQUAL_STRING("http://example.invalid/fw.bin", h.ota->getConfig().updateUrl.c_str());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_the_upload_route_is_registered_with_an_upload_handler);
@@ -288,5 +335,7 @@ int main(int, char**) {
     RUN_TEST(test_a_finished_uploads_own_disconnect_aborts_nothing);
     RUN_TEST(test_the_receive_idle_timeout_widens_only_once_the_gates_pass);
     RUN_TEST(test_the_announced_envelope_is_narrowed_to_what_was_delivered);
+    RUN_TEST(test_every_refusal_of_the_action_handler_names_its_reason);
+    RUN_TEST(test_a_configured_url_is_stored);
     return UNITY_END();
 }

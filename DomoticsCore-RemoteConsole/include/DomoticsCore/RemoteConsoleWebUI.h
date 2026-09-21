@@ -104,12 +104,13 @@ public:
 
     String handleWebUIRequest(const String& contextId, const String& /*endpoint*/, 
                              const String& method, const std::map<String, String>& params) override {
-        if (!console) return "{\"success\":false}";
-        if (contextId != "console_settings" || method != "POST") return "{\"success\":false}";
+        if (!console) return "{\"success\":false,\"error\":\"Component not available\"}";
+        if (contextId != "console_settings") return "{\"success\":false,\"error\":\"Unknown context\"}";
+        if (method != "POST") return "{\"success\":false,\"error\":\"Method not allowed\"}";
 
         auto fieldIt = params.find("field");
         auto valueIt = params.find("value");
-        if (fieldIt == params.end() || valueIt == params.end()) return "{\"success\":false}";
+        if (fieldIt == params.end() || valueIt == params.end()) return "{\"success\":false,\"error\":\"Invalid request\"}";
 
         const String& field = fieldIt->second;
         const String& value = valueIt->second;
@@ -121,11 +122,11 @@ public:
             if (!webUIParseUnsigned(value, p) || p < 1 || p > 65535) {
                 DLOG_W(LOG_CONSOLE, "WebUI: invalid port '%s'", value.c_str());
                 uiState.reset();
-                return "{\"success\":false}";
+                return "{\"success\":false,\"error\":\"Invalid port\"}";
             }
             if (!console->setPort((uint16_t)p)) {
                 uiState.reset();
-                return "{\"success\":false}";
+                return "{\"success\":false,\"error\":\"Invalid port\"}";
             }
             uiState.reset();
             return "{\"success\":true}";
@@ -136,14 +137,14 @@ public:
             if (!webUIParseUnsigned(value, lvl) || lvl > 5) {
                 DLOG_W(LOG_CONSOLE, "WebUI: invalid log level '%s'", value.c_str());
                 uiState.reset();
-                return "{\"success\":false}";
+                return "{\"success\":false,\"error\":\"Invalid log level\"}";
             }
             console->setLogLevel((LogLevel)lvl);
             uiState.reset();
             return "{\"success\":true}";
         }
 
-        return "{\"success\":false}";
+        return "{\"success\":false,\"error\":\"Unknown field\"}";
     }
     
     bool hasDataChanged(const String& contextId) override {

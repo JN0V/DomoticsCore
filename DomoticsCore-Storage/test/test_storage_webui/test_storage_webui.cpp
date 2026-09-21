@@ -2,12 +2,11 @@
  * @file test_storage_webui.cpp
  * @brief TEST-6: coverage for StorageWebUI, which has no input surface.
  *
- * StorageWebUI's handler ignores its arguments and always returns
- * {"success":false} — there is nothing to validate and nothing to fix here.
- * These tests are recorded as coverage, not evidence: none of them can fail
- * against an "unfixed" version, because there is no fix. They pin the read shape
- * of both contexts, the inert handler, and the null-component guard the provider
- * already carries.
+ * StorageWebUI's handler has no writable field: it refuses every POST, and says
+ * so — "Storage has no editable settings" — rather than answering a bare
+ * {"success":false} the page could not draw anywhere. These tests pin the read
+ * shape of both contexts, that refusal and its reason, and the null-component
+ * guard the provider already carries.
  */
 
 #include <unity.h>
@@ -80,8 +79,13 @@ void test_the_handler_is_inert(void) {
     p["value"] = "hijack";
     String r = provider.handleWebUIRequest("storage_settings", "/", "POST", p);
     TEST_ASSERT_TRUE(r.indexOf("\"success\":false") >= 0);
+    TEST_ASSERT_TRUE_MESSAGE(r.indexOf("Storage has no editable settings") >= 0, r.c_str());
     // It changed nothing.
     TEST_ASSERT_EQUAL_STRING("teststore", sc.getNamespace().c_str());
+
+    // A GET is not the same refusal, and is not drawn as one.
+    String g = provider.handleWebUIRequest("storage_settings", "/", "GET", p);
+    TEST_ASSERT_TRUE_MESSAGE(g.indexOf("Method not allowed") >= 0, g.c_str());
 }
 
 int main(int, char**) {

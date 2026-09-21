@@ -91,13 +91,14 @@ static bool succeeded(const String& response) {
     return contains(response, "\"success\":true");
 }
 
-// A refusal says `success:false` and carries no `error` key: app.js inspects
-// only `data.error`, so an error key pops a modal alert where the refusal is
-// meant to be silent.
+// A refusal says `success:false` and names its reason: the page draws that
+// reason under the field the value was typed into, and a refusal with no error
+// key reaches the person typing as nothing at all.
 static void assertRefused(const String& response) {
     TEST_ASSERT_FALSE(succeeded(response));
     TEST_ASSERT_TRUE(contains(response, "\"success\":false"));
-    TEST_ASSERT_FALSE(contains(response, "error"));
+    TEST_ASSERT_TRUE_MESSAGE(contains(response, "\"error\":\""), response.c_str());
+    TEST_ASSERT_FALSE_MESSAGE(contains(response, "\"error\":\"\""), response.c_str());
 }
 
 // ============================================================================
