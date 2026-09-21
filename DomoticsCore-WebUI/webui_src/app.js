@@ -1087,9 +1087,13 @@ class DomoticsApp {
             this.editingContexts.add(context.contextId);
             const baseline = {};
             context.fields.forEach(f => {
-                const el = card.querySelector(`#${f.name}`);
+                // Fields render as `${contextId}_${name}`; a bare name matches
+                // nothing on the page.
+                const el = document.getElementById(`${context.contextId}_${f.name}`);
                 if (!el) return;
-                baseline[f.name] = (el.type === 'checkbox') ? el.checked : el.value;
+                baseline[f.name] = (el.type === 'checkbox') ? el.checked
+                    : el.multiple ? Array.from(el.selectedOptions, o => o.value)
+                    : el.value;
             });
             card.dataset.baseline = JSON.stringify(baseline);
             card.dataset.pending = '{}';
@@ -1150,13 +1154,19 @@ class DomoticsApp {
         const cancelEdit = () => {
             const baseline = card.dataset.baseline ? JSON.parse(card.dataset.baseline) : {};
             Object.entries(baseline).forEach(([name, value]) => {
-                const el = card.querySelector(`#${name}`);
+                const el = document.getElementById(`${context.contextId}_${name}`);
                 if (!el) return;
                 if (el.type === 'checkbox') {
                     el.checked = (value === true || value === 'true');
+                } else if (el.multiple) {
+                    const wanted = new Set(Array.isArray(value) ? value : []);
+                    Array.from(el.options).forEach(o => { o.selected = wanted.has(o.value); });
                 } else {
                     el.value = value;
                 }
+                // Custom component JS mirrors a field through this event, as the
+                // update tick does when it writes one.
+                el.dispatchEvent(new Event('change', { bubbles: true }));
             });
             card.dataset.pending = '{}';
             exitEdit();
