@@ -61,10 +61,26 @@ while looking like a clean negative. The script waits for the field to show the
 stored value before it edits; that wait is the whole reason two measurements had
 to be thrown away.
 
-It drives a Settings card through its Edit/Save buttons, so it reaches text and
-number fields on a card that has them. The path BUG-51 calls invisible —
-`alwaysInteractive` and dashboard fields such as LED brightness, which post on
-change with no Save button — is not covered. `/api/ui/updates` is behind
+Two paths, because a refusal travels differently on each. `--mode save` (the
+default) drives a Settings card through its Edit/Save buttons. `--mode change`
+drives a card that has no Save button — a dashboard card, or one declared
+`alwaysInteractive` — where the listener posts as soon as the value leaves the
+field; with `--click` the field is a button and nothing is typed:
+
+```
+uv run --with playwright tools/on-device/webui_settings_refusal_check.py \
+    --mode change --click http://<ip> ota_unified start_update clicked /tmp/out
+```
+
+The report says what the page showed: the message under the field
+(`field_error`), the card banner (`card_error`) and any modal (`dialogs`) —
+**that last one is the discriminator**, since a refusal drawn on the field
+raises none. `page_updates_after_answer` counts the page's own updates after the
+action (SSE messages, or polls on a board that fell back to polling) and is
+context rather than evidence: this probe accepts a dialog the moment it opens,
+so a modal never holds the page *here* the way it holds a person. A run that
+issued no POST to `/api/ui/action` exits non-zero rather than printing a clean
+report about a value the page never sent. `/api/ui/updates` is behind
 `enableAuth` and this probe does not authenticate; it says so and exits non-zero
 rather than reporting a 401 as a crash, as it does for every case where the
 measurement could not be taken.
