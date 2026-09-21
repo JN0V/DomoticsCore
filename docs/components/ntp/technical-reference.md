@@ -351,7 +351,7 @@ Must be called after the WebUI component is ready. Registers the `/api/ntp/timez
 |---|---|---|
 | `enabled` | Boolean | Enable or disable NTP synchronization. |
 | `servers` | Text | Comma-separated list of NTP server hostnames. |
-| `sync_interval` | Number | Synchronization interval in hours, 1 to 1193. |
+| `sync_interval` | Number | Synchronization interval in seconds, 3600 to 4294967. |
 | `timezone` | Select | Timezone selector; options loaded from `/api/ntp/timezones`. |
 
 ### API Endpoints
@@ -380,7 +380,7 @@ Accepts field-by-field configuration updates via `field` and `value` parameters:
 |---|---|---|
 | `enabled` | `"true"` or `"false"` | Enables or disables NTP. |
 | `servers` | Comma-separated hostnames | Updates the server list. |
-| `sync_interval` | Integer (hours), 1 to 1193 | Sets sync interval, stored in seconds. Digits only — a value with any other character, a `0`, or one above 1193 is refused with `Invalid sync interval` and nothing is stored. The ceiling is the SNTP client's: `begin()` hands the interval over as milliseconds in a `uint32_t`, and holds any larger value at that ceiling whatever path it arrived by. |
+| `sync_interval` | Integer (seconds), 3600 to 4294967 | Sets the sync interval, in the unit the component stores. Digits only — a value with any other character, one below an hour, or one above the ceiling is refused with `Interval must be 3600-4294967 seconds` and nothing is stored. The ceiling is the SNTP client's: `begin()` hands the interval over as milliseconds in a `uint32_t`, and holds any larger value at that ceiling whatever path it arrived by. `NTPConfig::syncInterval` itself accepts a shorter interval, which the page then shows as it is rather than as a rounded-down number it would refuse to take back. |
 | `timezone` | POSIX TZ string | Changes the timezone immediately. |
 
 A field this handler does not know is refused with `Unknown field` and nothing is stored.

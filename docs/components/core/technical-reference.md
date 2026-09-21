@@ -277,6 +277,7 @@ struct ConfigParam {
 | **validate** | `ValidationResult validate() const` | Validate all defined parameters against their constraints. |
 | **getParameters** | `const std::vector<ConfigParam>& getParameters() const` | Get all parameter definitions. |
 | **hasParameter** | `bool hasParameter(const String& name) const` | Check if a value is set — a parameter defined without a default has none. |
+| **digitsOnly** | `static bool digitsOnly(const String& s)` | True when the string is one or more decimal digits and nothing else. The rule every numeric input a user types goes through, here and in the console's `level` command: `String::toInt()` is `atol()`, which reads `"4x"` as 4 and `"abc"` as 0. An empty string is not a number. |
 
 ### ValidationResult
 

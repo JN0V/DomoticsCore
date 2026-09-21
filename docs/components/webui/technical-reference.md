@@ -128,6 +128,30 @@ never sends a value of the wrong shape and its clamp is what a slider does.
 A provider that returns `"{}"` itself on its fall-through, as `OTAWebUI`, `WifiWebUI`
 and `SystemInfoWebUI` do, is equally correct and needs no helper.
 
+A refusal answers `{"success":false,"error":"<reason>"}`, and the page draws that
+reason under the field the value was typed into — on the card itself when no
+field is in cause, as for an unknown context or a method the provider does not
+accept. The vocabulary is shared: `Component not available`, `Method not
+allowed`, `Invalid request` (no `field` or no `value`), `Unknown context`,
+`Unknown field`, and a reason of the field's own for a value it understands but
+will not take. A refusal that names nothing reaches the person typing as
+nothing at all: the field redraws from the stored value at the next tick, and
+only once it has lost focus.
+
+The message is cleared when the next attempt starts, on entering edit mode and
+on cancel — never by a redraw, which happens on every update and would wipe it
+within a tick. Two consequences of that rule: a message can outlive its cause,
+sitting under a field the tick has already redrawn to a valid value; and a
+schema reload, which re-renders every card, takes the message with it.
+
+A card built from `withCustomHtml()` has no `.field-row`, so its refusals land
+on the card banner whatever field they name. A transport refusal carries no body to
+name it and is drawn from the status instead: `Authentication required` on a
+401, `Device unreachable` when the fetch fails, `Session expired — reload the
+page` on a 403 the token retry could not heal — `tokenedFetch()` refetches the
+per-boot token and replays the request once, so an ordinary reboot never
+reaches this.
+
 `buildUpdateJson()` skips a context whose data is empty, `"{}"` or `"null"`, so
 a provider that answers any of the three contributes nothing to the payload — silently,
 which is the trade the sink guard makes for never emitting `"ctx":null`.

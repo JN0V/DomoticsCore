@@ -345,7 +345,7 @@ On a successful device name change:
 5. Resets `LazyState` to trigger immediate WebSocket push.
 6. Returns `{"success":true}`.
 
-Returns `{"success":false}` for unrecognised fields or non-POST methods.
+Returns `{"success":false,"error":"Unknown field"}` for an unrecognised field or a non-POST method, and `{"success":false,"error":"Device name cannot be empty"}` for a name that would blank the device.
 
 ### Device Name Persistence
 

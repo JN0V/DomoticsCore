@@ -180,6 +180,6 @@ These observations are provided for AI assistants planning future work:
 
 1. **Cache read-through for `get*` methods**: Write deduplication is already in place (`put*` checks the cache and skips unchanged writes), but `get*` methods still bypass the cache and always read from the backend. A cache-first read strategy could reduce HAL calls for frequently read keys.
 2. **getKeys scope**: `getKeys()` only returns registered keys that exist. Unregistered keys in the backend are invisible.
-3. **WebUI write support**: `StorageWebUI::handleWebUIRequest` currently returns `{"success":false}` for all requests. No CRUD operations are exposed through the WebUI.
+3. **WebUI write support**: `StorageWebUI::handleWebUIRequest` refuses every request with `Storage has no editable settings`. No CRUD operations are exposed through the WebUI.
 4. **File size of Storage.h**: At 655 lines it approaches the 800-line hard limit. If new features are added, consider extracting the cache or key-registration logic into separate headers.
 5. **Blob deduplication**: Unlike other `put*` methods, `putBlob` does not check the cache before writing. Adding blob comparison would reduce unnecessary flash writes for unchanged binary data.
