@@ -40,8 +40,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > success, which also cost a needless flash write on every such request; the
 > **NTP sync interval** was assigned only when positive but answered success
 > either way, so the page reported a save that had not happened — and it now
-> also refuses anything above **1193 hours**, the ceiling of the millisecond
-> conversion `begin()` hands to the SNTP client; and **RemoteConsole's port and
+> also refuses anything above the ceiling of the millisecond conversion
+> `begin()` hands to the SNTP client; and **RemoteConsole's port and
 > log level** read `"2424x"` as `2424`, because `String::toInt()` is `atol()`.
 > **LED brightness** changes too, though a slider cannot reach it: a hand-made
 > POST of `"abc"` used to darken the LED.
@@ -49,17 +49,34 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > A numeric settings field is now digits only, and what happens next is the
 > field's own: a port, a log level and a sync interval out of range are refused,
 > while a brightness that parses and overshoots is still clamped, as a slider
-> should be. **MQTT and NTP name their new refusals, and `app.js` shows a named
-> refusal as a blocking alert** — so two settings pages that never opened a
-> dialog now do, and the alert holds the page's own live updates until it is
-> dismissed. That is the shape, not an oversight: the seven providers that
-> refuse without naming a reason stay silent, because making all of them speak
-> is a frontend decision this release does not take. Tracked as BUG-51.
+> should be. How those refusals reach the person typing is the note below.
 >
 > `getWebUIData()` also answers `"{}"` rather than `"null"` for a context a
 > provider does not handle. `IWebUIProvider`'s default implementation always
 > returned `"{}"`; what is new is that the contract is written down and six
 > overrides now keep it.
+
+> **Every WebUI refusal now names its reason, and the page shows it on the field
+> instead of in a modal.** A settings POST that answered a bare
+> `{"success":false}` now answers `{"success":false,"error":"<reason>"}`:
+> twenty-six refusals across seven providers used to say nothing at all, and the
+> two that did name theirs popped an `alert()` that held the page's own live
+> updates until somebody dismissed it. A client driving `/api/ui/action` itself
+> gains a reason it can read, and nothing that was accepted becomes refused by
+> that change alone. Four providers already named some of their refusals — MQTT,
+> NTP, Wifi and the WebUI's own settings — and those fourteen answers no longer
+> raise a modal either.
+>
+> Four settings do change what they accept. **The NTP sync interval field is
+> denominated in seconds** — 3600 to 4294967, where it was hours; a stored
+> interval below an hour used to render as `0`, a value the field would then
+> refuse to save. If you post that field from a script, send seconds.
+> **An LED effect or LED name outside the list is refused**, where an unknown
+> effect used to become `Solid` and an unknown name used to leave the selection
+> where it was, both answering success. And **the telnet `level` command takes
+> 0-5** — the range its own WebUI field and `/api/console/loglevels` already
+> offered — and refuses what is not a number, where `level abc` set `0` and
+> silenced the log.
 
 > **A lost MQTT link is now announced, and HomeAssistant stops publishing during
 > one.** `mqtt/disconnected` used to fire only for a deliberate `disconnect()`;
@@ -102,8 +119,36 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > the queue holds and **not as a ceiling on it**: a full queue measures 2 to 3 %
 > above what the model charges, on both boards it was weighed on.
 
+### Added
+
+- `ComponentConfig::digitsOnly(const String&)` is public: the digits-only rule
+  the settings fields already used, now also the console's `level` command,
+  rather than a fourth copy of the same loop.
+
 ### Fixed
 
+- **WebUI: a refusal either shouted or said nothing** (BUG-51). `app.js` had one
+  way to report one: `alert(data.error)`. So a provider chose between a blocking
+  modal and silence, and seven of them chose silence — twenty-six bare refusals
+  a user never saw, since a refused field only redraws from the stored value at
+  the next tick, and outside edit mode only once it has lost focus. The reason
+  is now written under the field it belongs to, on the card when no field is in
+  cause, and cleared when the next attempt starts rather than by a redraw.
+  Measured on a board each side of the fix, on both paths: the Edit/Save card and
+  the one that posts on change.
+- **Three surfaces still accepted a value, discarded it, and answered success**
+  (BUG-52). The telnet `level` command read `abc` as `0` — logging off — and
+  `3x` as `3`, and stopped at 4 where its own WebUI route and
+  `/api/console/loglevels` go to 5. `LEDWebUI` turned any unknown effect name
+  into `Solid`, and any unknown LED name into no change at all.
+- **NTP: an interval below an hour could be stored, was shown as `0`, and could
+  not be saved back** (BUG-53). The field is now denominated in seconds, so what
+  the page shows is what the component holds.
+- **WebUI: Cancel restored nothing** (BUG-54). It looked up each field by its
+  bare name while fields render as `<contextId>_<name>`, so the baseline it
+  saved on entering edit mode was always empty. What was typed stayed on screen
+  until the next tick redrew it — and did not go at all while the field held
+  focus. Nothing was ever stored; the display was the whole defect.
 - **WebUI: the settings pages disagreed about what they refuse, and three of
   them stored values no device can use** (BUG-45). Found by writing the first
   native suites those providers had ever had: every divergence was visible by

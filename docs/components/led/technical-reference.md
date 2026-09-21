@@ -317,10 +317,10 @@ The provider registers two contexts:
 
 | Field ID | Type | Default | Description |
 |----------|------|---------|-------------|
-| `led_select` | Select | First LED name | Dropdown of all configured LED names |
+| `led_select` | Select | First LED name | Dropdown of all configured LED names. A name that matches none is refused, and the selection stays where it was |
 | `enabled_toggle` | Boolean | `false` | Enables or disables the selected LED |
 | `brightness` | Slider (0-255) | `128` | PWM brightness level |
-| `effect` | Select | `"Solid"` | Effect picker: Solid, Blink, Fade, Pulse, Rainbow, Breathing |
+| `effect` | Select | `"Solid"` | Effect picker: Solid, Blink, Fade, Pulse, Rainbow, Breathing. A name outside the six is refused, not read as Solid |
 
 ### Overridden Methods
 
@@ -342,7 +342,7 @@ Returns a JSON object with the current values for the requested context. Used by
 
 #### `String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params)`
 
-Processes POST requests from the dashboard. Expects `field` and `value` in `params`. Updates internal mirrored state and delegates to `LEDComponent` methods. Returns `{"success":true}` or `{"success":false}`.
+Processes POST requests from the dashboard. Expects `field` and `value` in `params`. Updates internal mirrored state and delegates to `LEDComponent` methods. Returns `{"success":true}`, or `{"success":false,"error":"<reason>"}` naming what it refused: an effect name outside the six, an LED name that matches none, a brightness that is not digits, an unknown field.
 
 ### Internal State
 

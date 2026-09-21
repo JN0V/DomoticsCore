@@ -186,7 +186,7 @@ All commands are case-insensitive. Arguments are separated from the command by a
 |-------------------|-------------------|--------------------------------------------------------------------------|
 | `help`            | (none)            | Lists all available commands, including registered custom commands.       |
 | `clear`           | (none)            | Clears the circular log buffer and releases memory.                      |
-| `level`           | `<0-4>`           | Sets the runtime log level. Without arguments, displays the current level. Levels: 0 = NONE, 1 = ERROR, 2 = WARN, 3 = INFO, 4 = DEBUG. |
+| `level`           | `<0-5>`           | Sets the runtime log level. Without arguments, displays the current level. Levels: 0 = NONE, 1 = ERROR, 2 = WARN, 3 = INFO, 4 = DEBUG, 5 = VERBOSE. Digits only, the same range the WebUI field and `/api/console/loglevels` offer — `abc` is refused rather than read as 0, which would have silenced the log, and so is a trailing argument (`level 3 verbose`). |
 | `filter`          | `<tag>` or empty  | Filters logs to show only the specified tag. Without arguments, clears the filter (shows all). |
 | `info`            | (none)            | Displays system information: uptime, free heap, chip model/revision, CPU frequency, WiFi SSID, IP, and RSSI. |
 | `heap`            | (none)            | Displays the current free heap in bytes.                                 |
@@ -334,8 +334,8 @@ The `console_settings` context exposes the following fields with a 5-second real
 
 POST requests to `console_settings` accept `field` and `value` parameters:
 
-- **`field=port`**: Calls `console->setPort()`. Returns `{"success":false}` for invalid or out-of-range values. The value is digits only and inside 1..65535 — `"2424x"` is refused, not read as 2424. The same rule and range 0..5 apply to `field=log_level`.
-- **`field=log_level`**: Calls `console->setLogLevel()`. Returns `{"success":false}` for values outside 0-5.
+- **`field=port`**: Calls `console->setPort()`. Returns `{"success":false,"error":"Invalid port"}` for a malformed or out-of-range value. The value is digits only and inside 1..65535 — `"2424x"` is refused, not read as 2424. The same rule and range 0..5 apply to `field=log_level`.
+- **`field=log_level`**: Calls `console->setLogLevel()`. Returns `{"success":false,"error":"Invalid log level"}` for values outside 0-5.
 
 The `hasDataChanged()` method tracks state via `LazyState<ConsoleUIState>` to avoid redundant JSON serialization when nothing has changed.
 

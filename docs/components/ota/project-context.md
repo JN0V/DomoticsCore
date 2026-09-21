@@ -253,3 +253,9 @@ All three implementations expose the same function set in `DomoticsCore::HAL::OT
 - **(Bug)** `OTAWebUI::getWebUIVersion()` returns hardcoded `"1.4.0"` instead of reading `metadata.version` (which is `"1.4.1"`). Should be updated to match.
 - **(Unreachable code)** The `loop()` method still checks `HAL::OTAUpdate::hasPendingData()` and calls `HAL::OTAUpdate::processBuffer()`, and two sites test `requiresBuffering()`; all three return false or zero unconditionally on every platform since the buffering strategy was removed, so the branch and its error handling never run.
 - `setConfig()` logs three of the nine `OTAConfig` fields (`updateUrl`, `autoReboot`, `enableWebUIUpload`); a runtime change to `maxDownloadSize`, `requireUploadHash` or `uploadIdleTimeoutSec` leaves no trace in the log. The ESP8266 log buffer (128 bytes) is the constraint a fuller line has to fit.
+- The four `toInt()` calls in `OTA.cpp:717-722` parse a version string from the
+  update manifest, so `"1.2x"` reads as a minor of 2 and a letter reads as 0.
+  No suite feeds them — every OTA test calls `beginUpload()` directly — and no
+  consequence has been demonstrated: a malformed manifest version compares
+  wrong, it does not flash anything. Recorded here rather than filed, since the
+  digits-only rule that covers every settings field does not reach a manifest.
