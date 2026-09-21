@@ -147,6 +147,15 @@ This is the most important platform-specific behavior to understand when modifyi
 
 ---
 
+## The Scan Summary Is the Room's Data
+
+`getLastScanSummary()` is the names of every network within range of the
+device, and the `wifi_scan` card serves it to whoever can reach the WebUI. In
+AP provisioning that is an open access point, and WebUI authentication is off
+by default. The board probe under `tools/on-device/probes/wifi-scan-ap` prints
+counts and lengths only, for the same reason. No decision was taken here beyond
+noting that the card exposes what the probe refuses to log.
+
 ## Constitution Compliance
 
 This section maps DomoticsCore-Wifi patterns to specific constitution principles.

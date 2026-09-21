@@ -121,12 +121,38 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **A WiFi scan card in the WebUI settings** (BUG-47). `wifi_scan` carries a
+  Scan button and the last scan's summary, and it is always interactive, so it
+  needs no Edit and redraws while you watch it. The scan action existed and was
+  handled, but it was a field of no context — no page could send it. A POST of
+  `scan_networks` now answers `{"success":false,"error":"Scan already running"}`
+  when one is in flight, where it always answered success.
 - `ComponentConfig::digitsOnly(const String&)` is public: the digits-only rule
   the settings fields already used, now also the console's `level` command,
   rather than a fourth copy of the same loop.
 
+### Changed
+
+- **`WifiComponent::startScanAsync()` returns `bool`** — `false` when a scan is
+  already running, where the second call was a silent no-op. Callers that ignore
+  the return are unaffected.
+- **`getLastScanSummary()` answers `No networks found` for a scan that completed
+  with none**, where it left the previous summary text empty. An empty summary
+  now means one thing only: no scan has run. A page that printed the empty
+  string printed nothing; it now prints the sentence.
+
 ### Fixed
 
+- **Wifi: a scan started while provisioning was never read back** (BUG-47).
+  `WifiComponent::loop()` returned at its empty-SSID check forty-six lines
+  before the scan poll, and AP provisioning is exactly the state with no SSID
+  configured — so the summary stayed `Scanning...` for good and, the flag never
+  clearing, every later scan was refused for the life of the component. The poll
+  now runs before that return. On an ESP32 in AP mode the *first* scan of a
+  process is still never delivered by the platform and reports `Scan failed`
+  within six seconds; a second click works. Tracked as BUG-59. A scan still in
+  flight is also released by `shutdown()`, which used to leave the SDK's result
+  list allocated and the next scan refused.
 - **WebUI: a refusal either shouted or said nothing** (BUG-51). `app.js` had one
   way to report one: `alert(data.error)`. So a provider chose between a blocking
   modal and silence, and seven of them chose silence — twenty-six bare refusals

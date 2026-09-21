@@ -26,3 +26,15 @@ recorded, and the two below stayed.
   figure depend on where the checkout lives (+864 bytes locally against the
   old `.pio/libdeps/...` paths). The flag makes the image path-independent,
   and changes what a crash log names. Parked by CI-15's lot, 2026-09-15.
+
+- **Whether a WebUI handler runs on the loop's task, and whether the code has
+  to say so.** On an ESP32, ESPAsyncWebServer dispatches in the AsyncTCP task,
+  so a provider handler writes component state while `loop()` reads and writes
+  it on the other task — `handleWebUIRequest()` calls `setSTACredentials()` and
+  `startScanAsync()`, and the latter assigns an Arduino `String` the scan poll
+  assigns too. The file's existing deferrals (`pendingModeUpdate_`,
+  `pendingConfigSave_`) were written for heap, not for that, and every provider
+  in the repository writes straight through. The decision is whether the
+  contract is "handlers run on another task, defer every write" or "handlers may
+  write", and it is repository-wide rather than one component's. Raised by
+  BUG-47's review, 2026-09-21.
