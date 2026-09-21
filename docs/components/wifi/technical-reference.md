@@ -134,14 +134,15 @@ The main event processing method, called every iteration. Handles (in order):
 2. **Deferred mode update**: Executes `updateWifiMode()` after HTTP response is sent and TCP buffers freed.
 3. **Deferred config save**: Writes NVS configuration deferred from HTTP handlers to avoid OOM.
 4. **STA fallback timer**: Monitors STA connection attempts during AP-to-STA transitions. On success, restarts AP if heap permits. On timeout, restores AP-only mode and saves config with `autoConnect=false`.
-5. **Connection polling**: Checks connection status for ongoing attempts; handles timeout (15s default).
-6. **Reconnection**: Triggers new connection attempt when disconnected and `shouldConnect` is true.
-7. **Status logging**: Periodic debug logging of connection state (every 30s).
-8. **Async scan polling**: Checks for completed scan results without blocking.
+5. **Async scan polling**: Checks for completed scan results without blocking.
+6. **AP-mode return**: with no configured SSID there is no connection to manage and `loop()` returns here, skipping the three steps below. The scan poll above runs first, which is why a scan started while provisioning completes.
+7. **Connection polling**: Checks connection status for ongoing attempts; handles timeout (15s default).
+8. **Reconnection**: Triggers new connection attempt when disconnected and `shouldConnect` is true.
+9. **Status logging**: Periodic debug logging of connection state (every 30s).
 
 #### `shutdown() -> ComponentStatus`
 
-Stops connection attempts, calls `HAL::WiFiHAL::disconnectAndOff()`, and returns `Success`.
+Stops connection attempts, releases a scan still in flight (`scanDelete()` and the in-progress flag), calls `HAL::WiFiHAL::disconnectAndOff()`, and returns `Success`.
 
 ### Connection Management
 
@@ -173,7 +174,7 @@ Stops connection attempts, calls `HAL::WiFiHAL::disconnectAndOff()`, and returns
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `scanNetworks()` | `bool scanNetworks(std::vector<String>& networks)` | Synchronous scan, fills vector with "SSID (RSSI dBm)" strings |
-| `startScanAsync()` | `void startScanAsync()` | Start non-blocking scan (returns immediately) |
+| `startScanAsync()` | `bool startScanAsync()` | Start non-blocking scan (returns immediately); `false` when one is already running |
 | `getLastScanSummary()` | `String getLastScanSummary() const` | Returns last scan results as comma-separated string |
 
 ### Status and Information
@@ -296,12 +297,12 @@ The reconnection system is entirely non-blocking, complying with Constitution pr
 
 Non-blocking network scanning avoids watchdog resets on ESP8266:
 
-1. Call `startScanAsync()` -- issues `HAL::WiFiHAL::scanNetworks(true)` and sets `scanInProgress = true`.
-2. `loop()` polls `HAL::WiFiHAL::scanComplete()`:
+1. Call `startScanAsync()` -- issues `HAL::WiFiHAL::scanNetworks(true)` and sets `scanInProgress = true`. It returns `false` if a scan is already running: the SDK holds a single result set.
+2. `loop()` polls `HAL::WiFiHAL::scanComplete()`, before the AP-mode return so the poll also runs with no configured SSID:
    - Returns `-2` on failure.
    - Returns `-1` while in progress.
    - Returns `>= 0` with network count when done.
-3. Results (up to 10 networks) are formatted as comma-separated "SSID (RSSI dBm)" and stored in `lastScanSummary_`.
+3. Results (up to 10 networks) are formatted as comma-separated "SSID (RSSI dBm)" and stored in `lastScanSummary_`. A scan that completes with no networks stores `No networks found`, so an empty summary means only that no scan has run.
 4. Retrieve results with `getLastScanSummary()`.
 
 A synchronous `scanNetworks(vector)` method is also available but should be avoided on ESP8266 due to blocking concerns.
@@ -363,6 +364,7 @@ Optional WebUI integration providing browser-based WiFi configuration.
 | `wifi_status` | Status Badge (Header) | Network status badge with icon and tooltip, polls every 2s |
 | `wifi_component` | Component Detail | Mode, connected network, and IP address card, polls every 2s |
 | `wifi_settings` | Settings | Unified STA/AP configuration card with toggle, SSID, password, polls every 5s |
+| `wifi_scan` | Settings (always interactive) | Scan button and the last scan summary, polls every 3s. Always interactive because a locked settings card cannot be clicked and receives no update while it is being edited |
 
 ### Settings Fields
 
@@ -374,6 +376,13 @@ Optional WebUI integration providing browser-based WiFi configuration.
 | `ap_enabled` | Boolean | Enable/disable access point |
 | `ap_ssid` | Text | Access point name |
 
+The `wifi_scan` card carries two more:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `scan_networks` | Button | Starts an asynchronous scan |
+| `scan_result` | Display | The component's last scan summary, `No networks found` for a scan that found none, or `No scan yet` before the first scan |
+
 ### Change Tracking
 
 `WifiWebUI` uses `LazyState<T>` helpers for efficient delta detection. Only changed contexts are pushed to the browser, minimizing bandwidth on constrained devices. Tracked states:
@@ -383,6 +392,7 @@ Optional WebUI integration providing browser-based WiFi configuration.
 - `staComponentState` (struct): connected, ssid, ip (for `wifi_component` card)
 - `staSettingsState` (struct): enabled, ssid (for `wifi_settings` STA section)
 - `apSettingsState` (struct): enabled, ssid (for `wifi_settings` AP section)
+- `scanSummaryState` (String): the component's scan summary (for `wifi_scan`)
 
 ### Additional Methods
 
@@ -401,17 +411,16 @@ Optional WebUI integration providing browser-based WiFi configuration.
 | `pendingSsid` | String | SSID typed in the UI, applied when `wifi_enabled` toggles on |
 | `pendingPassword` | String | Password from UI, cleared after applying credentials |
 | `pendingApSsid` | String | AP SSID typed while AP is disabled, applied on next AP enable |
-| `lastScanSummary` | String | Cached comma-separated scan results for display |
 
 ### POST Handling
 
-All settings changes go through `handleWebUIRequest()` with `contextId = "wifi_settings"` and `method = "POST"`. The legacy context ID `"wifi_sta_settings"` is also accepted for backward compatibility. Key behaviors:
+All settings changes go through `handleWebUIRequest()` with `contextId = "wifi_settings"`, `"wifi_scan"` or the legacy `"wifi_sta_settings"`, and `method = "POST"`. `wifi_scan` accepts `scan_networks` and refuses every other field: a card answers for what it declares. Key behaviors:
 
 - **wifi_enabled = true**: Validates SSID is not empty, uses lightweight `setSTACredentials()` path, schedules deferred mode update and config save.
 - **wifi_enabled = false**: Disables STA via `setSTACredentials()`.
 - **ap_enabled toggle**: Uses full Get/Override/Set pattern on `WifiConfig`.
 - **ap_ssid change**: Applied immediately if AP is running (Get/Override/Set pattern); stored as `pendingApSsid` if AP is disabled.
-- **scan_networks**: Triggers `startScanAsync()`.
+- **scan_networks**: Triggers `startScanAsync()`; answers `Scan already running` when one is in flight. The result is read back from the component by `getWebUIData("wifi_scan")`, which answers `No scan yet` until the first scan.
 
 ---
 
