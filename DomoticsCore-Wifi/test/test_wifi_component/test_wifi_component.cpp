@@ -535,11 +535,9 @@ void test_wifi_scan_networks_sync(void) {
 
 // A component whose loop() reaches the async scan poll and does nothing else.
 //
-// The SSID must be non-empty: WifiComponent::loop() returns early when it is
-// (`if (ssid.isEmpty()) return;`), forty lines before the poll — so a fixture
-// with the default empty config never reaches the loop under test at all.
-// autoConnect=false keeps shouldConnect false, so no connection is attempted
-// and no timer branch fires.
+// A configured SSID puts these cases on the station path; the AP-mode cases
+// below run the same poll with none. autoConnect=false keeps shouldConnect
+// false, so no connection is attempted and no timer branch fires.
 static void makeIdle(WifiComponent& wifi) {
     WifiConfig cfg;
     cfg.ssid = "scan-fixture";  // non-empty, never connected to
@@ -681,6 +679,7 @@ void test_wifi_async_summary_empty_scan(void) {
     TEST_ASSERT_EQUAL_STRING("", wifi.getLastScanSummary().c_str());
 }
 
+
 void test_wifi_async_summary_scan_failed(void) {
     HAL::WiFiImpl::setScanFailedForTest(-2);  // WIFI_SCAN_FAILED
 
@@ -691,6 +690,65 @@ void test_wifi_async_summary_scan_failed(void) {
     wifi.loop();
 
     TEST_ASSERT_EQUAL_STRING("Scan failed", wifi.getLastScanSummary().c_str());
+}
+
+// ============================================================================
+// AP-mode scan: the state an operator actually scans from
+// ============================================================================
+
+void test_wifi_scan_is_harvested_without_a_configured_ssid(void) {
+    // No STA SSID is configured — AP provisioning, the one state where the
+    // operator has a reason to scan. The poll must run before loop() gives up
+    // on the connection logic.
+    HAL::WiFiImpl::setScannedNetworksForTest({
+        {String("HomeNet"), -42},
+    });
+
+    WifiComponent wifi;  // default config: empty SSID
+
+    wifi.startScanAsync();
+    TEST_ASSERT_EQUAL_STRING("Scanning...", wifi.getLastScanSummary().c_str());
+
+    wifi.loop();
+
+    TEST_ASSERT_EQUAL_STRING("HomeNet (-42 dBm)", wifi.getLastScanSummary().c_str());
+}
+
+void test_wifi_second_scan_starts_without_a_configured_ssid(void) {
+    // A scan that is never harvested also never releases the flag, so every
+    // later scan is refused for the lifetime of the component.
+    HAL::WiFiImpl::setScannedNetworksForTest({
+        {String("First"), -50},
+    });
+
+    WifiComponent wifi;
+
+    TEST_ASSERT_TRUE(wifi.startScanAsync());
+    wifi.loop();
+
+    HAL::WiFiImpl::setScannedNetworksForTest({
+        {String("Second"), -60},
+    });
+
+    TEST_ASSERT_TRUE_MESSAGE(wifi.startScanAsync(), "the first scan never released the flag");
+    wifi.loop();
+
+    TEST_ASSERT_EQUAL_STRING("Second (-60 dBm)", wifi.getLastScanSummary().c_str());
+}
+
+void test_wifi_start_scan_async_refuses_a_second_scan(void) {
+    HAL::WiFiImpl::setScannedNetworksForTest({
+        {String("HomeNet"), -42},
+    });
+
+    WifiComponent wifi;
+
+    TEST_ASSERT_TRUE(wifi.startScanAsync());
+    TEST_ASSERT_FALSE_MESSAGE(wifi.startScanAsync(), "a scan is already running");
+
+    wifi.loop();
+
+    TEST_ASSERT_TRUE_MESSAGE(wifi.startScanAsync(), "the harvest releases the flag");
 }
 
 void test_wifi_network_info_contains_all_fields(void) {
@@ -826,6 +884,11 @@ int main(int argc, char **argv) {
     RUN_TEST(test_wifi_async_summary_caps_at_ten);
     RUN_TEST(test_wifi_async_summary_empty_scan);
     RUN_TEST(test_wifi_async_summary_scan_failed);
+
+    // AP-mode scan
+    RUN_TEST(test_wifi_scan_is_harvested_without_a_configured_ssid);
+    RUN_TEST(test_wifi_second_scan_starts_without_a_configured_ssid);
+    RUN_TEST(test_wifi_start_scan_async_refuses_a_second_scan);
 
     // Memory leak detection tests (HeapTracker)
     RUN_TEST(test_wifi_memory_stability_lifecycle);
