@@ -176,6 +176,7 @@ void test_brightness_on_a_disabled_led_stays_dark(void) {
 
 void test_each_effect_name_is_parsed(void) {
     struct { const char* name; const char* expected; } cases[] = {
+        {"Solid", "Effect: Solid"},
         {"Blink", "Effect: Blink"},
         {"Fade", "Effect: Fade"},
         {"Pulse", "Effect: Pulse"},
@@ -190,11 +191,17 @@ void test_each_effect_name_is_parsed(void) {
     }
 }
 
-void test_an_unknown_effect_name_falls_back_to_solid(void) {
+void test_an_unknown_effect_name_is_refused(void) {
     Fixture f;
     post(f.ui, "enabled_toggle", "true");
-    post(f.ui, "effect", "Strobe");
-    TEST_ASSERT_TRUE(contains(f.led.getLEDStatus(0), "Effect: Solid"));
+    post(f.ui, "effect", "Blink");
+
+    // Asserted from Blink, not from the default: the old fallback answered
+    // success and left Solid, which a test starting at Solid cannot tell apart.
+    String response = post(f.ui, "effect", "Strobe");
+    TEST_ASSERT_FALSE(succeeded(response));
+    TEST_ASSERT_TRUE(contains(response, "Unknown effect"));
+    TEST_ASSERT_TRUE(contains(f.led.getLEDStatus(0), "Effect: Blink"));
 }
 
 void test_selecting_solid_while_disabled_turns_the_led_off(void) {
@@ -221,14 +228,55 @@ void test_selecting_a_led_by_name_moves_the_target(void) {
     TEST_ASSERT_TRUE(contains(f.led.getLEDStatus(0), "Brightness: 0"));
 }
 
-void test_selecting_an_unknown_name_keeps_the_current_target(void) {
+void test_selecting_an_unknown_name_is_refused(void) {
     Fixture f;
     post(f.ui, "led_select", "Mood");
-    TEST_ASSERT_TRUE(succeeded(post(f.ui, "led_select", "Nope")));
-    post(f.ui, "enabled_toggle", "true");
+    String response = post(f.ui, "led_select", "Nope");
+    TEST_ASSERT_FALSE(succeeded(response));
+    TEST_ASSERT_TRUE(contains(response, "Unknown LED"));
 
+    // The target did not move: only Mood lights up.
+    post(f.ui, "enabled_toggle", "true");
     TEST_ASSERT_TRUE(contains(f.led.getLEDStatus(1), "Brightness: 128"));
     TEST_ASSERT_TRUE(contains(f.led.getLEDStatus(0), "Brightness: 0"));
+}
+
+// The dropdown's options and the parser's accepted names are two hand-written
+// lists. Since an unknown name is refused, a drift between them is a control that
+// offers a value the device will not take.
+void test_every_option_the_card_offers_is_accepted(void) {
+    Fixture f;
+    WebUIContext dash = f.ui.getWebUIContext(String("led_dashboard"));
+    size_t checked = 0;
+    for (const auto& field : dash.fields) {
+        if (field.options.empty()) continue;
+        for (const auto& option : field.options) {
+            const String response = post(f.ui, field.getNameCStr(), option.c_str());
+            TEST_ASSERT_TRUE_MESSAGE(succeeded(response),
+                                     (String(field.getNameCStr()) + " = " + option).c_str());
+            ++checked;
+        }
+    }
+    // Six effects and two LED names, so a silently emptied list cannot pass.
+    TEST_ASSERT_EQUAL_size_t(8, checked);
+}
+
+// A refusal that names nothing cannot be shown on the field it was refused for.
+void test_every_refusal_names_its_reason(void) {
+    Fixture f;
+    TEST_ASSERT_TRUE(contains(post(f.ui, "brightness", "abc"), "Invalid brightness"));
+    TEST_ASSERT_TRUE(contains(post(f.ui, "nosuchfield", "1"), "Unknown field"));
+
+    std::map<String, String> empty;
+    TEST_ASSERT_TRUE(contains(f.ui.handleWebUIRequest(String("led_dashboard"), String("/"),
+                                                     String("POST"), empty),
+                              "Invalid request"));
+    TEST_ASSERT_TRUE(contains(f.ui.handleWebUIRequest(String("led_dashboard"), String("/"),
+                                                     String("GET"), fieldValue("brightness", "10")),
+                              "Method not allowed"));
+
+    LEDWebUI orphan(nullptr);
+    TEST_ASSERT_TRUE(contains(post(orphan, "brightness", "10"), "Component not available"));
 }
 
 // ============================================================================
@@ -308,11 +356,13 @@ int main(int argc, char** argv) {
     RUN_TEST(test_brightness_on_a_disabled_led_stays_dark);
 
     RUN_TEST(test_each_effect_name_is_parsed);
-    RUN_TEST(test_an_unknown_effect_name_falls_back_to_solid);
+    RUN_TEST(test_an_unknown_effect_name_is_refused);
     RUN_TEST(test_selecting_solid_while_disabled_turns_the_led_off);
 
     RUN_TEST(test_selecting_a_led_by_name_moves_the_target);
-    RUN_TEST(test_selecting_an_unknown_name_keeps_the_current_target);
+    RUN_TEST(test_selecting_an_unknown_name_is_refused);
+    RUN_TEST(test_every_option_the_card_offers_is_accepted);
+    RUN_TEST(test_every_refusal_names_its_reason);
 
     RUN_TEST(test_status_context_reports_off_then_on);
     RUN_TEST(test_dashboard_context_mirrors_the_provider_state);

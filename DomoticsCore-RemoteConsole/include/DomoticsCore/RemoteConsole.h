@@ -5,6 +5,7 @@
  * @brief Telnet-based remote console for log streaming and command execution
  */
 
+#include <DomoticsCore/ComponentConfig.h>  // digitsOnly, shared with the WebUI fields
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/Platform_HAL.h>    // For restart()
@@ -427,7 +428,7 @@ private:
                 "\nAvailable commands:\n"
                 "  help              - Show this help\n"
                 "  clear             - Clear log buffer\n"
-                "  level <level>     - Set log level (0-4: NONE/ERROR/WARN/INFO/DEBUG)\n"
+                "  level <level>     - Set log level (0-5: NONE/ERROR/WARN/INFO/DEBUG/VERBOSE)\n"
                 "  filter <tag>      - Filter logs by tag (empty = show all)\n"
                 "  info              - System information\n"
                 "  heap              - Memory usage\n"
@@ -464,10 +465,13 @@ private:
                 return String(buf);
             }
 
-            int level = args.toInt();
-            if (level < 0 || level > 4) {
-                return String("Invalid level. Use 0-4 (NONE/ERROR/WARN/INFO/DEBUG)\n");
+            // Digits only, then the range: toInt() is atol(), which reads "3x"
+            // as 3 and "abc" as 0 — LOG_LEVEL_NONE, silencing the log on a typo.
+            // The range is the Logger's own, the one the WebUI route lists.
+            if (!ComponentConfig::digitsOnly(args) || args.toInt() > LOG_LEVEL_VERBOSE) {
+                return String("Invalid level. Use 0-5 (NONE/ERROR/WARN/INFO/DEBUG/VERBOSE)\n");
             }
+            int level = args.toInt();
 
             setLogLevel((LogLevel)level);
             snprintf(buf, sizeof(buf), "Log level set to: %d\n", level);

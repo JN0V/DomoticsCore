@@ -327,6 +327,34 @@ void test_a_custom_command_reaches_the_console(void) {
     TEST_ASSERT_TRUE(mentions(con.run(sys, "ping"), "pong"));
 }
 
+// The log level is reachable from two channels; a typo used to silence the log.
+void test_the_level_command_refuses_what_is_not_a_number(void) {
+    System sys(SystemConfig::minimal());
+    sys.begin();
+    Console con(sys);
+
+    con.run(sys, "level 3");
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "level"), "Current log level: 3"));
+
+    // "abc" read as 0 — NONE — and "3x" as 3, both answered as a success.
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "level abc"), "Invalid level"));
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "level 3x"), "Invalid level"));
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "level -1"), "Invalid level"));
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "level"), "Current log level: 3"));
+}
+
+// The WebUI route and /api/console/loglevels both go to VERBOSE; the command
+// stopped at DEBUG, so the same setting had two ranges.
+void test_the_level_command_reaches_verbose(void) {
+    System sys(SystemConfig::minimal());
+    sys.begin();
+    Console con(sys);
+
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "level 5"), "Log level set to: 5"));
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "level"), "Current log level: 5"));
+    TEST_ASSERT_TRUE(mentions(con.run(sys, "level 6"), "Invalid level"));
+}
+
 void test_registering_a_command_without_a_console_is_a_no_op(void) {
     SystemConfig cfg = SystemConfig::minimal();
     cfg.enableConsole = false;
@@ -990,6 +1018,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_bootdiag_command_without_systeminfo);
     RUN_TEST(test_bootdiag_command_reports_the_first_boot);
     RUN_TEST(test_a_custom_command_reaches_the_console);
+    RUN_TEST(test_the_level_command_refuses_what_is_not_a_number);
+    RUN_TEST(test_the_level_command_reaches_verbose);
     RUN_TEST(test_registering_a_command_without_a_console_is_a_no_op);
     RUN_TEST(test_console_runs_on_the_configured_port);
 

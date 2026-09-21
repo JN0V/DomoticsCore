@@ -129,15 +129,16 @@ public:
         auto clampIndex = [this](size_t idx){ size_t n = led->getLEDCount(); return (n == 0) ? (size_t)0 : (idx < n ? idx : n-1); };
 
         if (field == "led_select") {
-            // value is the LED name; map back to index
+            // The value is the LED name; one that matches none is refused
+            // rather than leaving the selection where it was.
             auto names = led->getLEDNames();
             for (size_t i = 0; i < names.size(); ++i) {
-                if (names[i] == value) { 
-                    selected = clampIndex(i); 
-                    break; 
+                if (names[i] == value) {
+                    selected = clampIndex(i);
+                    return "{\"success\":true}";
                 }
             }
-            return "{\"success\":true}";
+            return "{\"success\":false,\"error\":\"Unknown LED\"}";
         }
         if (field == "enabled_toggle") {
             enabled = (value == "true");
@@ -172,7 +173,9 @@ public:
             return "{\"success\":true}";
         }
         if (field == "effect") {
-            effect = stringToEffect(value);
+            LEDEffect parsed;
+            if (!parseEffect(value, parsed)) return "{\"success\":false,\"error\":\"Unknown effect\"}";
+            effect = parsed;
             // Ensure selected index is valid before using
             selected = clampIndex(selected);
             // Apply with default speed
@@ -199,13 +202,14 @@ private:
             default: return "Solid";
         }
     }
-    static LEDEffect stringToEffect(const String& s) {
-        if (s == "Blink") return LEDEffect::Blink;
-        if (s == "Fade") return LEDEffect::Fade;
-        if (s == "Pulse") return LEDEffect::Pulse;
-        if (s == "Rainbow") return LEDEffect::Rainbow;
-        if (s == "Breathing") return LEDEffect::Breathing;
-        return LEDEffect::Solid;
+    static bool parseEffect(const String& s, LEDEffect& out) {
+        if (s == "Solid")          { out = LEDEffect::Solid;     return true; }
+        if (s == "Blink")          { out = LEDEffect::Blink;     return true; }
+        if (s == "Fade")           { out = LEDEffect::Fade;      return true; }
+        if (s == "Pulse")          { out = LEDEffect::Pulse;     return true; }
+        if (s == "Rainbow")        { out = LEDEffect::Rainbow;   return true; }
+        if (s == "Breathing")      { out = LEDEffect::Breathing; return true; }
+        return false;
     }
 };
 
