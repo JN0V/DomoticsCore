@@ -1056,10 +1056,19 @@ class DomoticsApp {
                 }
                 // Pause polling to free heap for POST on ESP8266
                 this.stopPolling();
+                this.clearActionErrors(context.contextId, field.name);
                 await new Promise(r => setTimeout(r, 600));
+                const previous = e.target.type === 'checkbox' ? !value : e.target.dataset.lastAccepted;
                 const result = await this.sendUICommand(context.contextId, field.name, value);
-                // A refused toggle must not stay drawn as accepted (SEC-14)
-                if (e.target.type === 'checkbox' && (!result || result.success === false)) e.target.checked = !value;
+                // A refused control must not stay drawn as accepted (SEC-14). A
+                // select holding focus is skipped by the update tick, so it would
+                // otherwise show a value the device never took.
+                if (!result || result.success === false) {
+                    if (e.target.type === 'checkbox') e.target.checked = previous;
+                    else if (e.target.tagName === 'SELECT' && previous !== undefined) e.target.value = previous;
+                } else if (e.target.tagName === 'SELECT') {
+                    e.target.dataset.lastAccepted = value;
+                }
                 // Apply theme and primary color immediately on client side when changed from settings
                 if (context.contextId === 'webui_settings') {
                     if (field.name === 'theme') {
@@ -1085,6 +1094,7 @@ class DomoticsApp {
             if (card.dataset.editing === 'true') return;
             card.dataset.editing = 'true';
             this.editingContexts.add(context.contextId);
+            this.clearActionErrors(context.contextId);
             const baseline = {};
             context.fields.forEach(f => {
                 // Fields render as `${contextId}_${name}`; a bare name matches
@@ -1119,6 +1129,7 @@ class DomoticsApp {
             });
             // Stop polling to free TCP/heap for requests (ESP8266 has ~3KB free)
             this.stopPolling();
+            this.clearActionErrors(context.contextId);
             await new Promise(r => setTimeout(r, 600));
             for (const [fieldName, value] of entries) {
                 const result = await this.sendUICommand(context.contextId, fieldName, value);
@@ -1169,6 +1180,7 @@ class DomoticsApp {
                 el.dispatchEvent(new Event('change', { bubbles: true }));
             });
             card.dataset.pending = '{}';
+            this.clearActionErrors(context.contextId);
             exitEdit();
         };
 
@@ -1270,6 +1282,60 @@ class DomoticsApp {
         });
     }
 
+    // A refusal is drawn where the value was typed: under its field, or on the
+    // card when no field is in cause. Never cleared by a redraw — the card
+    // redraws every tick, which would wipe the message within a second.
+    showActionError(contextId, fieldName, message) {
+        const el = fieldName ? document.getElementById(`${contextId}_${fieldName}`) : null;
+        const row = el ? el.closest('.field-row') : null;
+        if (row) {
+            let msg = row.querySelector('.field-error');
+            if (!msg) {
+                msg = document.createElement('div');
+                msg.className = 'field-error';
+                msg.setAttribute('role', 'alert');
+                row.appendChild(msg);
+                row.classList.add('has-error');
+            }
+            msg.textContent = message;
+            return;
+        }
+        const card = document.querySelector(`.card[data-context-id='${contextId}']`);
+        if (!card) return;
+        let banner = card.querySelector('.card-error');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.className = 'card-error';
+            banner.setAttribute('role', 'alert');
+            const header = card.querySelector('.card-header');
+            if (header) header.insertAdjacentElement('afterend', banner);
+            else card.insertBefore(banner, card.firstChild);
+        }
+        banner.textContent = message;
+    }
+
+    // Cleared when the next attempt starts, on entering edit mode and on
+    // cancel. With a field name, only that field's message goes.
+    clearActionErrors(contextId, fieldName) {
+        const card = document.querySelector(`.card[data-context-id='${contextId}']`);
+        if (!card) return;
+        let messages;
+        if (fieldName) {
+            const el = document.getElementById(`${contextId}_${fieldName}`);
+            const row = el ? el.closest('.field-row') : null;
+            messages = row ? row.querySelectorAll('.field-error') : [];
+        } else {
+            messages = card.querySelectorAll('.field-error');
+        }
+        messages.forEach(msg => {
+            if (msg.parentElement) msg.parentElement.classList.remove('has-error');
+            msg.remove();
+        });
+        if (fieldName) return;
+        const banner = card.querySelector('.card-error');
+        if (banner) banner.remove();
+    }
+
     async sendUICommand(contextId, fieldName, value) {
         const params = new URLSearchParams({
             contextId: contextId,
@@ -1283,12 +1349,25 @@ class DomoticsApp {
                 const data = await resp.json();
                 if (data.error) {
                     console.warn('UI command error:', data.error);
-                    alert(data.error);
+                    this.showActionError(contextId, fieldName, data.error);
+                } else if (data.success === false) {
+                    // A provider that refuses without naming a reason still has to
+                    // reach the person typing.
+                    this.showActionError(contextId, fieldName, 'Refused');
                 }
                 return data;
             }
+            // A refusal the transport carries has no body to name it. A stale
+            // token heals itself above, so a 403 reaching here is one the retry
+            // could not fix.
+            console.warn('UI command refused:', resp.status);
+            this.showActionError(contextId, fieldName,
+                resp.status === 403 ? 'Session expired — reload the page'
+                : resp.status === 401 ? 'Authentication required'
+                : `Refused (HTTP ${resp.status})`);
         } catch(err) {
             console.error('UI command failed:', err);
+            this.showActionError(contextId, fieldName, 'Device unreachable');
         }
         return null;
     }
