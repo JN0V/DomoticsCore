@@ -160,7 +160,7 @@ namespace Timezones {
 - Fields:
   - Enable/disable sync
   - NTP servers (comma-separated)
-  - Sync interval (hours)
+  - Sync interval (seconds, 3600 minimum)
   - Timezone (dropdown + custom)
   - Manual sync button
 
@@ -294,7 +294,7 @@ bool synced = (now > 1000000000);  // After 2001
 ├─────────────────────────────────┤
 │ [x] Enable NTP Sync             │
 │ Servers: pool.ntp.org, ...      │
-│ Sync Interval: [1] hours        │
+│ Sync Interval: [3600] seconds   │
 │ Timezone: [CET dropdown ▼]      │
 │ [Sync Now] button               │
 └─────────────────────────────────┘
