@@ -59,7 +59,7 @@ if (webui && wifi) {
 - `bool enableAP(const String& ssid, const String& password="", bool enable=true)`
 - `bool disableAP()`
 - `void setCredentials(const String& ssid, const String& password, bool reconnectNow=true)`
-- `void startScanAsync()` and `String getLastScanSummary()`
+- `bool startScanAsync()` and `String getLastScanSummary()`
 
 Integration tips:
 - Combine with `DomoticsCore-Storage` to persist WiFi credentials; listen for storage events to reapply.

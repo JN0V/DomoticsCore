@@ -856,7 +856,7 @@ private:
                 // Copy, not move: the reservation above is a worst case, and the
                 // member is held for the component's lifetime. Assignment
                 // right-sizes it.
-                lastScanSummary_ = summary;
+                lastScanSummary_ = res ? summary : String("No networks found");
                 HAL::WiFiHAL::scanDelete();
                 scanInProgress = false;
                 DLOG_I(LOG_WIFI, "Async scan complete: %d networks", res);

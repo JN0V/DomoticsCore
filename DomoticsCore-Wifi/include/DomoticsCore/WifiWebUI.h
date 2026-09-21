@@ -20,8 +20,6 @@ class WifiWebUI : public CachingWebUIProvider {
     String pendingPassword;
     // Pending AP SSID typed while AP is disabled (applied on next enable)
     String pendingApSsid;
-    // Last scan results (comma-separated for simple display)
-    String lastScanSummary;
     
     // ============================================================================
     // State tracking using LazyState helper for timing-independent initialization
@@ -66,6 +64,9 @@ class WifiWebUI : public CachingWebUIProvider {
         bool operator!=(const APSettingsState& other) const { return !(*this == other); }
     };
     LazyState<APSettingsState> apSettingsState;
+
+    // SCAN CARD STATE (the component's summary, which this provider only reads)
+    LazyState<String> scanSummaryState;
     
 public:
     explicit WifiWebUI(WifiComponent* c) : wifi(c) {
@@ -85,8 +86,9 @@ public:
     String getWebUIVersion() const override { return wifi ? wifi->metadata.version : String("1.4.1"); }
 
 protected:
-    // CachingWebUIProvider: build contexts once, they're cached
-    // OPTIMIZED for ESP8266: reduced from 5 to 3 contexts
+    // CachingWebUIProvider: build contexts once, they're cached.
+    // Each one costs an entry and its fields on the heap, which is why the
+    // settings of both modes share a card.
     void buildContexts(std::vector<WebUIContext>& ctxs) override {
         DLOG_I(LOG_WIFI_WEBUI, "Building WiFi WebUI contexts, wifi=%p", (void*)wifi);
         if (!wifi) {
@@ -118,6 +120,18 @@ protected:
             .withAPI("/api/wifi")
             .withRealTime(5000)
         );
+
+        // The scan has its own always-interactive card: in a normal settings
+        // card every control is locked until Edit is pressed, and the update
+        // tick skips a card being edited — so the result could never be drawn
+        // at the moment it arrives.
+        ctxs.push_back(WebUIContext::settings("wifi_scan", "WiFi Networks", "dc-wifi")
+            .withAlwaysInteractive()
+            .withField(WebUIField("scan_networks", "Scan Networks", WebUIFieldType::Button, ""))
+            .withField(WebUIField("scan_result", "Networks", WebUIFieldType::Display, "No scan yet", "", true))
+            .withAPI("/api/wifi")
+            .withRealTime(3000)
+        );
     }
 
 public:
@@ -126,7 +140,8 @@ public:
         if (!wifi) return "{\"success\":false,\"error\":\"Component not available\"}";
         if (method != "POST") return "{\"success\":false,\"error\":\"Method not allowed\"}";
         // Backward compatibility: accept the legacy context id as STA settings
-        if (contextId != "wifi_settings" && contextId != "wifi_sta_settings") {
+        if (contextId != "wifi_settings" && contextId != "wifi_sta_settings" &&
+            contextId != "wifi_scan") {
             return "{\"success\":false,\"error\":\"Unknown context\"}";
         }
         {
@@ -134,6 +149,10 @@ public:
             auto v = params.find("value");
             if (f == params.end() || v == params.end()) return "{\"success\":false,\"error\":\"Invalid request\"}";
             String field = f->second; String value = v->second;
+            // The scan card declares one field and answers for that one only.
+            if (contextId == "wifi_scan" && field != "scan_networks") {
+                return "{\"success\":false,\"error\":\"Unknown field\"}";
+            }
             if (field == "ssid") {
                 DLOG_D(LOG_WIFI_WEBUI, "Updated SSID to: '%s'", value.c_str());
                 pendingSsid = value;
@@ -177,8 +196,9 @@ public:
                 
                 return "{\"success\":true}";
             } else if (field == "scan_networks") {
-                wifi->startScanAsync();
-                lastScanSummary = "Scanning...";
+                if (!wifi->startScanAsync()) {
+                    return "{\"success\":false,\"error\":\"Scan already running\"}";
+                }
                 return "{\"success\":true}";
             } else if (field == "ap_enabled") {
                 // AP fields now in unified wifi_settings context
@@ -266,6 +286,13 @@ public:
             doc["ap_ssid"] = wifi->getAPSSID().length() ? wifi->getAPSSID() : (pendingApSsid.length() ? pendingApSsid : String("DomoticsCore-AP"));
             String json; serializeJson(doc, json); return json;
         }
+        if (contextId == "wifi_scan") {
+            JsonDocument doc;
+            String summary = wifi->getLastScanSummary();
+            // Empty means no scan has run; a finished scan always says something.
+            doc["scan_result"] = summary.length() ? summary : String("No scan yet");
+            String json; serializeJson(doc, json); return json;
+        }
         if (contextId == "wifi_status") {
             JsonDocument doc;
             bool sta = wifi->isSTAConnected();
@@ -322,6 +349,9 @@ public:
             };
             bool apChanged = apSettingsState.hasChanged(apCurrent);
             return staChanged || apChanged;
+        }
+        else if (contextId == "wifi_scan") {
+            return scanSummaryState.hasChanged(wifi->getLastScanSummary());
         }
         else {
             // Unknown context, always send
