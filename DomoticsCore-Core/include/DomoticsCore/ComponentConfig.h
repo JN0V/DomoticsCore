@@ -136,6 +136,17 @@ private:
     std::vector<ConfigParam> parameters;
     
 public:
+    // Digits only: the shared rule for any decimal a user types, here and in the
+    // console. toInt() is atol(), which reads "4x" as 4 and "abc" as 0.
+    static bool digitsOnly(const String& s) {
+        const unsigned n = static_cast<unsigned>(s.length());
+        if (n == 0) return false;
+        for (unsigned i = 0; i < n; ++i) {
+            if (s[i] < '0' || s[i] > '9') return false;
+        }
+        return true;
+    }
+
     /**
      * Define a configuration parameter
      */
@@ -258,18 +269,10 @@ private:
         return ValidationResult();
     }
     
-    // BUG-40: a number is digits only — an optional sign for Integer and Float, a
-    // point and a decimal exponent for Float — and must fit the type. toInt() and
-    // toFloat() are atol()/atof(): they read "4x" as 4 and "1.5" printed back as "1.50".
-    static bool digitsOnly(const String& s) {
-        const unsigned n = static_cast<unsigned>(s.length());
-        if (n == 0) return false;
-        for (unsigned i = 0; i < n; ++i) {
-            if (s[i] < '0' || s[i] > '9') return false;
-        }
-        return true;
-    }
-
+    // A number is digits only — an optional sign for Integer and Float, a point
+    // and a decimal exponent for Float — and must fit the type. toInt() and
+    // toFloat() are atol()/atof(): they read "4x" as 4 and "1.5" printed back
+    // as "1.50".
     static bool parsesAsInt32(const String& s, long& out) {
         const unsigned n = static_cast<unsigned>(s.length());
         unsigned i = (n > 0 && (s[0] == '+' || s[0] == '-')) ? 1 : 0;
