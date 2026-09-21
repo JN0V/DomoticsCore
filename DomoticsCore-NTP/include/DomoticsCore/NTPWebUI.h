@@ -166,7 +166,7 @@ protected:
         contexts.push_back(WebUIContext::settings("ntp_settings", "NTP Configuration")
             .withField(WebUIField("enabled", "Enable NTP Sync", WebUIFieldType::Boolean, "true"))
             .withField(WebUIField("servers", "NTP Servers", WebUIFieldType::Text, "pool.ntp.org"))
-            .withField(WebUIField("sync_interval", "Sync Interval (hours)", WebUIFieldType::Number, "1"))
+            .withField(WebUIField("sync_interval", "Sync Interval (seconds)", WebUIFieldType::Number, "3600"))
             .withField(timezoneField)
             .withAPI("/api/ntp/settings"));
     }
@@ -194,7 +194,7 @@ public:
                 serversStr += cfg.servers[i];
             }
             doc["servers"] = serversStr;
-            doc["sync_interval"] = cfg.syncInterval / 3600;  // Hours
+            doc["sync_interval"] = cfg.syncInterval;  // seconds, as stored
             doc["timezone"] = cfg.timezone;
 
         }
@@ -264,16 +264,16 @@ public:
                         cfg.servers.push_back(server);
                     }
                 } else if (field == "sync_interval") {
-                    // Hours, at least one, and low enough that begin() can
-                    // hand the interval to the SNTP client as milliseconds in
-                    // a uint32_t — which caps it at 1193 hours, not at 2^32/3600.
-                    uint32_t hours = 0;
-                    if (!webUIParseUnsigned(value, hours) || hours < 1 ||
-                        hours > (UINT32_MAX / 3600000u)) {
+                    // Seconds, an hour at least, and low enough that begin() can
+                    // hand the interval to the SNTP client as milliseconds in a
+                    // uint32_t — which caps it at 4 294 967 s, not at 2^32.
+                    uint32_t seconds = 0;
+                    if (!webUIParseUnsigned(value, seconds) || seconds < 3600u ||
+                        seconds > (UINT32_MAX / 1000u)) {
                         DLOG_W(LOG_NTP, "[WebUI] invalid sync interval '%s'", value.c_str());
-                        return "{\"success\":false,\"error\":\"Invalid sync interval\"}";
+                        return "{\"success\":false,\"error\":\"Interval must be 3600-4294967 seconds\"}";
                     }
-                    cfg.syncInterval = hours * 3600u;
+                    cfg.syncInterval = seconds;
                 } else if (field == "timezone") {
                     cfg.timezone = value;
                 } else {

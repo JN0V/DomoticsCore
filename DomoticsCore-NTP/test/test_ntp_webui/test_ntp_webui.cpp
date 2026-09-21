@@ -108,21 +108,35 @@ void test_an_all_empty_server_list_leaves_no_server_at_all() {
     TEST_ASSERT_EQUAL_UINT32(0, f.ntp.getConfig().servers.size());
 }
 
-void test_the_sync_interval_is_read_in_hours_and_stored_in_seconds() {
+void test_the_sync_interval_is_read_and_stored_in_seconds() {
     Fixture f;
-    TEST_ASSERT_TRUE(succeeded(f.post("sync_interval", "6")));
-    TEST_ASSERT_EQUAL_UINT32(6 * 3600, f.ntp.getConfig().syncInterval);
+    TEST_ASSERT_TRUE(succeeded(f.post("sync_interval", "21600")));
+    TEST_ASSERT_EQUAL_UINT32(21600, f.ntp.getConfig().syncInterval);
 }
 
-void test_a_sync_interval_of_zero_is_refused() {
+void test_a_sync_interval_below_an_hour_is_refused_by_name() {
     Fixture f;
     const uint32_t before = f.ntp.getConfig().syncInterval;
-    // The hours > 0 guard used to skip the assignment while the handler still
-    // answered success, so the page reported a save that never happened.
-    const String response = f.post("sync_interval", "0");
-    TEST_ASSERT_FALSE(succeeded(response));
-    TEST_ASSERT_TRUE_MESSAGE(contains(response, "Invalid"), response.c_str());
-    TEST_ASSERT_EQUAL_UINT32(before, f.ntp.getConfig().syncInterval);
+    for (const char* tooShort : {"0", "1000", "3599"}) {
+        const String response = f.post("sync_interval", tooShort);
+        TEST_ASSERT_FALSE_MESSAGE(succeeded(response), tooShort);
+        TEST_ASSERT_TRUE_MESSAGE(contains(response, "3600"), response.c_str());
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(before, f.ntp.getConfig().syncInterval, tooShort);
+    }
+    TEST_ASSERT_TRUE(succeeded(f.post("sync_interval", "3600")));
+    TEST_ASSERT_EQUAL_UINT32(3600, f.ntp.getConfig().syncInterval);
+}
+
+// A value the page cannot type but the public config accepts: it is shown as
+// what it is, where dividing by 3600 rendered it as 0 the field then refused.
+void test_an_interval_below_an_hour_is_displayed_as_it_is_stored() {
+    Fixture f;
+    NTPConfig cfg = f.ntp.getConfig();
+    cfg.syncInterval = 1000;
+    f.ntp.setConfig(cfg);
+
+    const String data = f.ui.getWebUIData(String("ntp_settings"));
+    TEST_ASSERT_TRUE_MESSAGE(contains(data, "\"sync_interval\":1000"), data.c_str());
 }
 
 void test_a_sync_interval_that_is_not_a_number_is_refused() {
@@ -138,17 +152,16 @@ void test_a_sync_interval_the_sntp_client_cannot_hold_is_refused() {
     Fixture f;
     const uint32_t before = f.ntp.getConfig().syncInterval;
     // The ceiling is the SNTP client's, not this page's: begin() hands the
-    // interval over as milliseconds in a uint32_t, so 1194 hours would wrap to
-    // 57 minutes and a bound on the seconds alone lets 1 193 046 hours through.
-    // The conversion clamps as well, for the paths that never pass here.
-    TEST_ASSERT_FALSE(succeeded(f.post("sync_interval", "1194")));
+    // interval over as milliseconds in a uint32_t, so a second past 4 294 967
+    // wraps. A value past a uint32_t is refused by the parser, not by the range.
+    TEST_ASSERT_FALSE(succeeded(f.post("sync_interval", "4294968")));
     TEST_ASSERT_EQUAL_UINT32(before, f.ntp.getConfig().syncInterval);
 
-    TEST_ASSERT_FALSE(succeeded(f.post("sync_interval", "1193046")));
+    TEST_ASSERT_FALSE(succeeded(f.post("sync_interval", "4294967296")));
     TEST_ASSERT_EQUAL_UINT32(before, f.ntp.getConfig().syncInterval);
 
-    TEST_ASSERT_TRUE(succeeded(f.post("sync_interval", "1193")));
-    TEST_ASSERT_EQUAL_UINT32(1193u * 3600u, f.ntp.getConfig().syncInterval);
+    TEST_ASSERT_TRUE(succeeded(f.post("sync_interval", "4294967")));
+    TEST_ASSERT_EQUAL_UINT32(4294967u, f.ntp.getConfig().syncInterval);
     // Read from the config, not from the literal: an assertion over constants
     // would still hold if the handler's ceiling expression were edited wrong.
     TEST_ASSERT_TRUE_MESSAGE(
@@ -187,8 +200,8 @@ void test_an_unknown_field_is_named_in_the_refusal() {
 
 void test_every_field_the_settings_card_declares_is_accepted() {
     Fixture f;
-    // NTP names its refusals, so a field on the card with no dispatch arm pops
-    // a modal on every save. Nothing else relates the two lists.
+    // A field on the card with no dispatch arm is refused on every save, with
+    // "Unknown field" drawn under it. Nothing else relates the two lists.
     WebUIContext settings = f.ui.getWebUIContext(String("ntp_settings"));
     TEST_ASSERT_TRUE_MESSAGE(settings.fields.size() > 0, "the settings card declared no field");
 
@@ -203,6 +216,25 @@ void test_every_field_the_settings_card_declares_is_accepted() {
     }
     TEST_ASSERT_EQUAL_size_t_MESSAGE(4, posted,
                                      "the settings card no longer declares four editable fields");
+}
+
+// The card ships a default per field. A default its own handler refuses means the
+// page and the component disagree about the unit — which is what the interval did
+// while the field was denominated in hours and the component stored seconds.
+void test_no_field_ships_a_default_its_own_handler_refuses() {
+    Fixture f;
+    WebUIContext settings = f.ui.getWebUIContext(String("ntp_settings"));
+    size_t checked = 0;
+    for (const auto& field : settings.fields) {
+        if (field.readOnly) continue;
+        const char* name = field.getNameCStr();
+        const String declared = String(field.getValueCStr());
+        if (declared.length() == 0) continue;
+        const String response = f.post(name, declared.c_str());
+        TEST_ASSERT_TRUE_MESSAGE(succeeded(response), (String(name) + " = " + declared + " -> " + response).c_str());
+        ++checked;
+    }
+    TEST_ASSERT_TRUE_MESSAGE(checked >= 3, "no declared default was checked");
 }
 
 void test_a_refused_field_reaches_neither_the_config_nor_the_flash() {
@@ -239,13 +271,14 @@ void test_a_post_without_field_or_value_is_refused() {
 void test_the_settings_context_reports_what_was_saved() {
     Fixture f;
     f.post("timezone", "UTC0");
-    f.post("sync_interval", "3");
+    f.post("sync_interval", "10800");
 
     const String data = f.ui.getWebUIData(String("ntp_settings"));
     TEST_ASSERT_TRUE_MESSAGE(contains(data, "UTC0"), data.c_str());
-    // Emitted as a number and converted back to hours. Sibling providers emit
-    // the same kind of field as a string; the UI reads both.
-    TEST_ASSERT_TRUE_MESSAGE(contains(data, "\"sync_interval\":3"), data.c_str());
+    // Emitted as a number, in seconds. Sibling providers emit the same kind of
+    // field as a string; the UI reads both. Asserted with the closing brace, so
+    // a prefix of a longer number cannot pass for the value.
+    TEST_ASSERT_TRUE_MESSAGE(contains(data, "\"sync_interval\":10800,"), data.c_str());
 }
 
 void test_an_unknown_context_answers_an_empty_object() {
@@ -263,14 +296,16 @@ int main(int, char**) {
     RUN_TEST(test_empty_entries_in_the_server_list_are_dropped);
     RUN_TEST(test_a_single_server_needs_no_comma);
     RUN_TEST(test_an_all_empty_server_list_leaves_no_server_at_all);
-    RUN_TEST(test_the_sync_interval_is_read_in_hours_and_stored_in_seconds);
-    RUN_TEST(test_a_sync_interval_of_zero_is_refused);
+    RUN_TEST(test_the_sync_interval_is_read_and_stored_in_seconds);
+    RUN_TEST(test_a_sync_interval_below_an_hour_is_refused_by_name);
+    RUN_TEST(test_an_interval_below_an_hour_is_displayed_as_it_is_stored);
     RUN_TEST(test_a_sync_interval_that_is_not_a_number_is_refused);
     RUN_TEST(test_a_sync_interval_the_sntp_client_cannot_hold_is_refused);
     RUN_TEST(test_enabled_accepts_true_and_one_and_nothing_else);
     RUN_TEST(test_the_timezone_is_stored_verbatim);
     RUN_TEST(test_an_unknown_field_is_named_in_the_refusal);
     RUN_TEST(test_every_field_the_settings_card_declares_is_accepted);
+    RUN_TEST(test_no_field_ships_a_default_its_own_handler_refuses);
     RUN_TEST(test_a_refused_field_reaches_neither_the_config_nor_the_flash);
     RUN_TEST(test_a_method_other_than_get_or_post_is_refused);
     RUN_TEST(test_a_post_without_field_or_value_is_refused);

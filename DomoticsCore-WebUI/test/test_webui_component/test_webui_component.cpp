@@ -1992,7 +1992,7 @@ protected:
         ctxs.push_back(WebUIContext::settings("ntp_settings", "NTP Configuration")
             .withField(WebUIField("enabled", "Enable NTP Sync", WebUIFieldType::Boolean, "true"))
             .withField(WebUIField("servers", "NTP Servers", WebUIFieldType::Text, "pool.ntp.org"))
-            .withField(WebUIField("sync_interval", "Sync Interval (hours)", WebUIFieldType::Number, "1")));
+            .withField(WebUIField("sync_interval", "Sync Interval (seconds)", WebUIFieldType::Number, "3600")));
         
         // Simulate SystemInfoWebUI (3 contexts)
         ctxs.push_back(WebUIContext::dashboard("system_info", "Device Information")
