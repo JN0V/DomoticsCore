@@ -680,6 +680,16 @@ void test_wifi_async_summary_empty_scan(void) {
     TEST_ASSERT_EQUAL_STRING("No networks found", wifi.getLastScanSummary().c_str());
 }
 
+void test_wifi_shutdown_releases_a_scan_in_flight(void) {
+    HAL::WiFiImpl::setScannedNetworksForTest({{String("HomeNet"), -42}});
+
+    WifiComponent wifi;
+    TEST_ASSERT_TRUE(wifi.startScanAsync());
+    wifi.shutdown();
+
+    // The flag went with the component, so the next scan is not refused.
+    TEST_ASSERT_TRUE_MESSAGE(wifi.startScanAsync(), "shutdown kept the scan flag");
+}
 
 void test_wifi_async_summary_scan_failed(void) {
     HAL::WiFiImpl::setScanFailedForTest(-2);  // WIFI_SCAN_FAILED
@@ -885,6 +895,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_wifi_async_summary_caps_at_ten);
     RUN_TEST(test_wifi_async_summary_empty_scan);
     RUN_TEST(test_wifi_async_summary_scan_failed);
+    RUN_TEST(test_wifi_shutdown_releases_a_scan_in_flight);
 
     // AP-mode scan
     RUN_TEST(test_wifi_scan_is_harvested_without_a_configured_ssid);
