@@ -72,6 +72,15 @@ uv run --with playwright tools/on-device/webui_settings_refusal_check.py \
     --mode change --click http://<ip> ota_unified start_update clicked /tmp/out
 ```
 
+A button stores nothing of its own, so `--watch` names the field to read back
+instead — the action's result, wherever it lands:
+
+```
+uv run --with playwright tools/on-device/webui_settings_refusal_check.py \
+    --mode change --click --watch scan_result \
+    http://<ip> wifi_scan scan_networks clicked /tmp/out
+```
+
 The report says what the page showed: the message under the field
 (`field_error`), the card banner (`card_error`) and any modal (`dialogs`) —
 **that last one is the discriminator**, since a refusal drawn on the field
@@ -426,9 +435,10 @@ not decoded.
 
 ## `probes/` — the OBS session's board probes
 
-Not tests, not examples: throwaway sketches that produced the figures in the
-roadmap's Priority 11 entries and in `spec-obs-crash-observability.md`. Kept so
-the measurements can be repeated. Each has its own `platformio.ini` with
+Not tests, not examples: throwaway sketches that produced figures the roadmap
+cites — the Priority 11 entries, and later lots. Kept so the measurements can be
+repeated. Nothing compiles them: a probe that stops building is found the next
+time someone needs it. Each has its own `platformio.ini` with
 `symlink://` paths relative to the repository root, so an edited component is
 compiled on the next run without clearing `.pio`.
 
@@ -437,6 +447,8 @@ compiled on the next run without clearing `.pio`.
 | `obs-probe/` (`main-esp8266.cpp`, `main-esp32.cpp`, `main-esp32cam.cpp`, each with its `platformio-<target>.ini`; copy the pair to `platformio.ini` + `src/main.cpp` to run one) | the platform alone: what each death leaves for the next boot — abort, OOM in `new`, null dereference, soft/hardware WDT, restart, external reset; RTC survival; core dump presence; the failed-alloc hook. Steps advance through RTC; `START_STEP`/`PROBE_MAGIC` build flags pick where to start |
 | `obs-lota-probe/` | a real `System` (Storage + SystemInfo) from the working tree: what the boot diagnostics carry, the old keys removed, the loop watchdog at 5 s abating a hang and silent at 0. Its `boot_heap`/`boot_minheap` key check is inert since Lot B folded those keys into the `bootdiag` blob; the watchdog half still stands |
 | `obs-loopmax/` | FullStack with a stopwatch around `System::loop()`: the longest iteration idle and during an HTTP upload (OBS-7 residual 6); `LOOPMAX_WDT=0` disables the watchdog for a discriminating run; the upload it drives is what filed BUG-37 |
+| `allocator-shape/` | `HAL::Platform::AllocatorShape` on a board, one constant per series: the EventBus queue is filled without draining and then drained, so the fill measures occupancy and the drain says it was held. The slope across N is the per-event cost, the steps are the deque chunk |
+| `wifi-scan-ap/` | an async scan started with no configured SSID — the state an operator provisions from, which the native stub cannot speak for. Prints entry count, summary length and heap per second, never the summary itself; two rounds, so a flag that is never released shows as a refused second start. `nodemcuv2` and `esp32dev` |
 | `mqtt-link-loss/` | what a device sees when its broker link goes away: one line per `mqtt/connected` and `mqtt/disconnected` as the bus delivers them, with the MQTT state and `HomeAssistant::isReady()` beside them. Restart the broker under it. `-DDC_LINK_LOSS_BROKER=\"…\"` names a broker you can restart — a mosquitto on the bench machine, never a deployment |
 
 Credentials for `obs-loopmax` and `mqtt-link-loss` come from the repository's

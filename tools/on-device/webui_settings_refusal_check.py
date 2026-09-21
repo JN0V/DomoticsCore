@@ -16,6 +16,9 @@ Two paths, because a refusal travels differently on each:
                  declared alwaysInteractive — which posts on change; with
                  --click, the field is a button and the value is not typed
 
+--watch names a second field to read back, for an action whose result lands
+somewhere else: a button stores nothing of its own.
+
 Reports what the page shows for the refusal: the message under the field, the
 card banner, and any modal dialog — a dialog is what this used to be, and it
 stops the page's own polling until somebody dismisses it.
@@ -24,6 +27,7 @@ Exits non-zero when the measurement could not be taken, so a bench script can
 tell "refused" from "never ran".
 
 usage: webui_settings_refusal_check.py [--mode save|change] [--click]
+                                       [--watch FIELD]
                                        URL CONTEXT FIELD VALUE OUTDIR
 """
 import json
@@ -37,11 +41,13 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 args = sys.argv[1:]
-mode, click = "save", False
+mode, click, watch = "save", False, None
 while args and args[0].startswith("--"):
     flag = args.pop(0)
     if flag == "--mode" and args:
         mode = args.pop(0)
+    elif flag == "--watch" and args:
+        watch = args.pop(0)
     elif flag == "--click":
         click = True
     else:
@@ -52,6 +58,7 @@ if click and mode != "change":
     sys.exit("--click drives a button, which only the change mode reaches: add --mode change")
 url, context, field, value, outdir = args
 url = url.rstrip("/")
+watch = watch or field
 
 
 def stored(strict=True):
@@ -74,14 +81,14 @@ def stored(strict=True):
         if not strict:
             return None
         sys.exit(f"{url}/api/ui/updates unreachable: {e}")
-    return (payload.get("contexts") or {}).get(context, {}).get(field)
+    return (payload.get("contexts") or {}).get(context, {}).get(watch)
 
 
 os.makedirs(outdir, exist_ok=True)
 
 before = stored()
 if before is None and not click:
-    sys.exit(f"{context}.{field} is not in /api/ui/updates — check the context and field names")
+    sys.exit(f"{context}.{watch} is not in /api/ui/updates — check the context and field names")
 
 dialogs, console_errors = [], []
 
@@ -204,6 +211,7 @@ with sync_playwright() as p:
 
 print(json.dumps({
     "field": f"{context}.{field}",
+    "watched": f"{context}.{watch}",
     "mode": "click" if click else mode,
     "typed": None if click else value,
     "stored_before": before,
