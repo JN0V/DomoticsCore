@@ -108,6 +108,19 @@ says so at the top. The README's *Installation* gains the local-checkout
 recipe and an *Upgrading* pointer to the CHANGELOG's top notes; the
 observation page gains the first-boot checklist. Native 1070, read from CI.
 
+**The sixth ships as v2.6.0** (2026-09-21): BUG-41 with BUG-42, BUG-43,
+BUG-44, BUG-45, BUG-47, BUG-51 to BUG-55, TEST-8 and TEST-9, and the
+deferred-work purge. **Eleven components move**, all by a minor: every one of
+them changed what a client reads back from a settings POST, which is the
+release's headline — a bare `{"success":false}` now carries the reason, and the
+page draws it under the field instead of in a modal. Core (the queue bounded by
+bytes, `QueueCost`, `digitsOnly()`), WebUI (the refusal channel and the two
+parsing helpers), Wifi (the scan card), MQTT (the loss announced at the
+transition), HomeAssistant (the availability topic the will writes), NTP (the
+interval in seconds), RemoteConsole, LED, OTA, Storage, SystemInfo; System
+gained tests and examples only and stays at 1.8.0. Eight contract changes are
+named at the top of the entry. Native 1 197, read from CI.
+
 | WebUI | BUG-45 | 2026-09-20 — what five settings fields accept. A numeric field is digits only (BUG-40's rule on the WebUI surface) and the range policy stays the field's: refused where a range exists, clamped where a slider clamps. Six providers answer `"{}"` for a context they ignore and `UpdateBuilder` tolerates `"null"` at the sink. The refusal *shape* was left alone — it contradicts `ba901c4` — and became BUG-51; the adversarial review opened BUG-52 and BUG-53 and caught a vacuous width guard, an unpinned schema/dispatch coupling and a forced `String` copy on the broadcast path. Native 1 160 → 1 173; a browser on the WROOM-32D each side of two fixes; ESP8266 +164 B RAM, +580 B flash |
 | Docs | deferred-work purge | 2026-09-20 — `docs/deferred-work.md` had 62 entries and 5 ever closed, 42 of them added in fifteen days, none of them counted by the tracking summary. Read one by one: **34 became nineteen items** — SEC-15 and BUG-47 (MEDIUM); MEM-7, MEM-8, BUG-48, BUG-49, BUG-50, TEST-10, CI-16, CI-17, CI-18, DC-18, DC-19, OBS-8, DOC-2, LO-33 to LO-36 (LOW) — 5 folded into the entries that parked them (SEC-4, SEC-6, CI-11, BUG-45, LO-2), 6 became `project-context.md` or ADR notes, 15 deleted as done or already recorded, 2 kept as decisions. Rule in the file's header: a finding with a visible consequence takes an id when it is written. Docs only, no code |
 | Wifi | BUG-47 (+ BUG-59 filed) | 2026-09-21 — the scan an operator clicks while provisioning. Three halves, not the two filed: `loop()` returned before the poll whenever no SSID was configured, the provider kept a write-only copy of the summary, and the button was a field of no context. The scan now has its own always-interactive card, fed from the component, with a second scan refused by name; a locked settings card could not have drawn the result where it was clicked. Twelve tests, three removal checks — not one per half, but the display is proved with the harvest reverted — 1 185 → 1 197 `[PASSED]`; a board probe harvesting two scans on the nodemcuv2 and hanging for twenty seconds with the call moved back; ESP8266 +140 B RAM, +628 B flash; a browser on the WROOM-32D, where the button needs no Edit and the Display redraws 8.1 s after the click. Its own review found four defects in the lot, all fixed here, one of them the shape BUG-55 had closed elsewhere the day before. The WROOM-32D never delivers the first scan of a process in AP mode — BUG-59, surfaced and not caused |

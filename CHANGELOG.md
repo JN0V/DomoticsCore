@@ -26,7 +26,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
-## [Unreleased]
+## [2.6.0] - 2026-09-21
 
 > **Five WebUI settings fields now refuse values they used to accept and store,
 > a sixth refusal names a field that does not exist, and two of them say so with

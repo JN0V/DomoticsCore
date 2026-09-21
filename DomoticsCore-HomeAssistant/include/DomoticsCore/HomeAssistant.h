@@ -105,7 +105,7 @@ public:
         : config(config) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "HomeAssistant";
-        metadata.version = "2.1.0";
+        metadata.version = "2.2.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
         availabilityTopicNamed = (this->config.availabilityTopic[0] != '\0');
