@@ -162,16 +162,10 @@ static void onLog(LogLevel level, const char* tag, const char* message) {
 // A WifiComponent whose loop() reaches the async scan poll and does nothing
 // else on the way.
 //
-// **The SSID must be non-empty.** WifiComponent::loop() returns at
-// `Wifi.h:251-254` whenever `ssid.isEmpty()`, forty lines before the
-// `if (scanInProgress)` poll — so a fixture built on the default WifiConfig
-// never reaches the loop it was written to measure, and the async test below
-// would spin for its full timeout and die with "never completed" having
-// executed none of the code under test. That early return is also a live
-// product defect in its own right, recorded in
-// `docs/deferred-work.md`: the WebUI scan
-// button is pressed during AP provisioning, which is exactly when no SSID is
-// configured.
+// A configured SSID puts this fixture on the station path. The poll itself runs
+// in either mode — `loop()` calls it before the AP-mode return — and the
+// AP-mode case is covered natively and by
+// `tools/on-device/probes/wifi-scan-ap`.
 //
 // `autoConnect = false` leaves `shouldConnect` false, so no connection is
 // attempted and the reconnect branch never fires. It also leaves `wifiEnabled`

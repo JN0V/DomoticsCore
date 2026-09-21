@@ -249,6 +249,10 @@ public:
             }
         }
         
+        // Before the AP-mode return below: a scan started while provisioning has
+        // no configured SSID, and would otherwise never be harvested.
+        pollScanCompletion();
+
         // Skip Wifi connection logic if in AP mode (empty SSID)
         if (ssid.isEmpty()) {
             return; // AP-only mode handled; flags set in connectToWifi()
@@ -295,71 +299,6 @@ public:
             }
         }
 
-        // Poll async scan completion without blocking
-        if (scanInProgress) {
-            int res = HAL::WiFiHAL::scanComplete();
-            if (res == -2) {  // WIFI_SCAN_FAILED
-                DLOG_W(LOG_WIFI, "Wifi async scan failed");
-                lastScanSummary_ = "Scan failed";
-                scanInProgress = false;
-            } else if (res >= 0) {
-                // MEM-2. This used to be
-                //   summary += getScannedSSID(i) + " (" + String(getScannedRSSI(i)) + " dBm)";
-                // which built a three-deep chain of temporary Strings per network
-                // and grew the accumulator one 16-byte step at a time
-                // (WString.cpp:229 rounds capacity to a 16-byte multiple). One
-                // stack buffer and one reservation remove both.
-                //
-                // Residue, stated rather than hidden: getScannedSSID() returns a
-                // String by value (Wifi_HAL.h:92), so one allocation per network
-                // survives. On an ESP8266 the small-string buffer is 10
-                // characters (WString.h:309-316; it is 14 on the ESP32,
-                // WString.h:299-305), so every scan entry is above it — the
-                // shortest possible, "X (-70 dBm)", is 11. Removing that residue
-                // needs a char* HAL overload across three platform headers.
-                //
-                // On the reservation, and on the two cheaper-looking options that
-                // were not taken:
-                //
-                //   Reserving from the actual entry lengths would need the SSIDs
-                //   before the loop that formats them, so either a first pass
-                //   calling getScannedSSID() twice per network — doubling the one
-                //   allocation this code cannot avoid — or a second buffer to hold
-                //   them. Both cost more than the ~230 transient bytes saved.
-                //
-                //   Building straight into lastScanSummary_ would drop the copy at
-                //   the bottom, but the member would then keep the worst-case
-                //   capacity for the lifetime of the component instead of for the
-                //   length of this block. A permanent 480 bytes is worse than a
-                //   transient one on a board with ~40 KB, and the copy is one
-                //   memcpy of ~250 bytes once per scan.
-                //
-                // So: 48 bytes an entry covers a 32-character SSID, " (-100 dBm)"
-                // and the ", " separator; ten visible networks reserve 480 against
-                // a typical summary of ~250. A bounded over-reservation, freed at
-                // the end of this block, in exchange for no reallocation at all.
-                const int shown = (res < 10) ? res : 10;
-                char entry[64];  // 32-char SSID + " (-100 dBm)" + ", ", with headroom
-                String summary;
-                summary.reserve(static_cast<unsigned int>(shown) * 48);
-                for (int i = 0; i < shown; ++i) {
-                    // The String returned by getScannedSSID() lives until the end
-                    // of this full expression, so c_str() is valid throughout.
-                    snprintf(entry, sizeof(entry), "%s%s (%ld dBm)",
-                             (i ? ", " : ""),
-                             HAL::WiFiHAL::getScannedSSID(static_cast<uint8_t>(i)).c_str(),
-                             static_cast<long>(HAL::WiFiHAL::getScannedRSSI(static_cast<uint8_t>(i))));
-                    summary += entry;
-                }
-                // Copy, not move: `summary` carries the reserved worst-case
-                // capacity and lastScanSummary_ is held for the lifetime of the
-                // component. Assignment right-sizes it, as it did before.
-                lastScanSummary_ = summary;
-                HAL::WiFiHAL::scanDelete();
-                scanInProgress = false;
-                DLOG_I(LOG_WIFI, "Async scan complete: %d networks", res);
-            }
-        }
     }
     
     ComponentStatus shutdown() override {
@@ -589,13 +528,15 @@ public:
         return true;
     }
 
-    // Start non-blocking scan (returns immediately)
-    void startScanAsync() {
-        if (scanInProgress) return;
+    // Start a non-blocking scan. Returns false when one is already running:
+    // the SDK holds a single result set, so a second scan would be ignored.
+    bool startScanAsync() {
+        if (scanInProgress) return false;
         HAL::WiFiHAL::scanNetworks(true /* async */);
         scanInProgress = true;
         lastScanSummary_ = "Scanning...";
         DLOG_I(LOG_WIFI, "Started async WiFi scan");
+        return true;
     }
 
     String getLastScanSummary() const { return lastScanSummary_; }
@@ -886,6 +827,43 @@ public:
     }
 
 private:
+    // Read back an async scan once the SDK has results, and release the flag.
+    void pollScanCompletion() {
+        if (scanInProgress) {
+            int res = HAL::WiFiHAL::scanComplete();
+            if (res == -2) {  // WIFI_SCAN_FAILED
+                DLOG_W(LOG_WIFI, "Wifi async scan failed");
+                lastScanSummary_ = "Scan failed";
+                scanInProgress = false;
+            } else if (res >= 0) {
+                // One stack buffer and one reservation: 48 bytes an entry covers a
+                // 32-character SSID, " (-100 dBm)" and the separator. The String
+                // getScannedSSID() returns by value is the one allocation per
+                // network this cannot avoid.
+                const int shown = (res < 10) ? res : 10;
+                char entry[64];  // 32-char SSID + " (-100 dBm)" + ", ", with headroom
+                String summary;
+                summary.reserve(static_cast<unsigned int>(shown) * 48);
+                for (int i = 0; i < shown; ++i) {
+                    // The String returned by getScannedSSID() lives until the end
+                    // of this full expression, so c_str() is valid throughout.
+                    snprintf(entry, sizeof(entry), "%s%s (%ld dBm)",
+                             (i ? ", " : ""),
+                             HAL::WiFiHAL::getScannedSSID(static_cast<uint8_t>(i)).c_str(),
+                             static_cast<long>(HAL::WiFiHAL::getScannedRSSI(static_cast<uint8_t>(i))));
+                    summary += entry;
+                }
+                // Copy, not move: the reservation above is a worst case, and the
+                // member is held for the component's lifetime. Assignment
+                // right-sizes it.
+                lastScanSummary_ = summary;
+                HAL::WiFiHAL::scanDelete();
+                scanInProgress = false;
+                DLOG_I(LOG_WIFI, "Async scan complete: %d networks", res);
+            }
+        }
+    }
+
     /**
      * @brief Publish `network/ready` carrying the address as bytes.
      *
