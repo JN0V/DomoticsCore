@@ -1231,8 +1231,9 @@ class DomoticsApp {
             const newName = input.value.trim();
             if (newName && newName !== currentName) {
                 element.textContent = newName;
-                // Device name is now managed by System Info
-                this.sendUICommand('system_info', 'device_name', newName);
+                // system_settings is the only context SystemInfoWebUI takes a POST for
+                this.clearActionErrors('system_settings', 'device_name');
+                this.sendUICommand('system_settings', 'device_name', newName);
             } else {
                 element.textContent = currentName; // Revert if empty or unchanged
             }
