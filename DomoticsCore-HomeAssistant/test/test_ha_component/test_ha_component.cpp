@@ -1275,6 +1275,7 @@ void test_ha_node_id_processing() {
 // every test after it.
 static String g_capturedWarn;
 static String g_capturedError;
+static String g_capturedInfo;
 static bool g_captureActive = false;
 static LoggerCallbacks::CallbackId g_captureId = 0;
 
@@ -1282,6 +1283,7 @@ static void startLogCapture() {
     if (g_captureActive) LoggerCallbacks::removeCallback(g_captureId);
     g_capturedWarn = "";
     g_capturedError = "";
+    g_capturedInfo = "";
     g_captureId = LoggerCallbacks::addCallback(
         [](LogLevel level, const char* tag, const char* message) {
             if (strcmp(tag, LOG_HA) != 0) return;
@@ -1291,6 +1293,9 @@ static void startLogCapture() {
             } else if (level == LOG_LEVEL_ERROR) {
                 g_capturedError += message;
                 g_capturedError += "\n";
+            } else if (level == LOG_LEVEL_INFO) {
+                g_capturedInfo += message;
+                g_capturedInfo += "\n";
             }
         });
     g_captureActive = true;
@@ -1422,12 +1427,16 @@ void test_ha_command_payload_over_127_truncates_and_warns() {
     core.shutdown();
 }
 
-void test_ha_command_topic_without_slash_is_refused() {
+// Every message the shared client receives arrives here, most of them the host
+// application's own. A topic outside the discovery prefix is not this
+// component's business: it costs no parse and produces no line, at any level.
+void test_a_topic_outside_the_discovery_prefix_says_nothing() {
     Core core;
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
     ha->addSwitch("sw1", "Switch 1");
     core.addComponent(std::move(ha));
     core.begin();
@@ -1440,17 +1449,117 @@ void test_ha_command_topic_without_slash_is_refused() {
     simulateMqttConnect(core);
 
     startLogCapture();
-    simulateRawMessage(core, "homeassistant", "ON");
+    simulateRawMessage(core, "alarm/command", "arm");            // one slash, an application's own
+    simulateRawMessage(core, "sensors/kitchen/temperature", "21.5");  // two, so the parse would reach the lookup
+    simulateRawMessage(core, "homeassistant_other/switch/test_node/sw1/set", "ON");  // the prefix as a prefix of itself
     stopLogCapture();
     String err = g_capturedError;
+    String warn = g_capturedWarn;
+    String info = g_capturedInfo;
 
-    TEST_ASSERT_FALSE_MESSAGE(eventFired, "a topic with no slash at all produced a command event");
-    TEST_ASSERT_TRUE_MESSAGE(err.indexOf("Invalid topic format - no trailing slash") >= 0,
-        "the topic was discarded silently");
+    TEST_ASSERT_FALSE_MESSAGE(eventFired, "a foreign topic produced a command event");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, haPtr->getStatistics().commandsReceived,
+        "a foreign message was counted as a command");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("", err.c_str(),
+        "an application's own MQTT traffic is reported at error level");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("", warn.c_str(),
+        "a foreign topic with two slashes reaches the unknown-entity warning");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("", info.c_str(),
+        "a foreign topic is announced as a received command");
 
     core.shutdown();
 }
 
+// The escape hatch, pinned in the direction it actually goes: with no prefix
+// configured there is nothing to recognise the component's own traffic by, so
+// every message is parsed as before and a malformed one is reported.
+void test_an_empty_discovery_prefix_parses_everything_again() {
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+    config.discoveryPrefix[0] = '\0';
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addSwitch("sw1", "Switch 1");
+    core.addComponent(std::move(ha));
+    core.begin();
+    simulateMqttConnect(core);
+
+    startLogCapture();
+    simulateRawMessage(core, "no_slash_at_all", "ON");
+    stopLogCapture();
+
+    TEST_ASSERT_TRUE_MESSAGE(g_capturedError.indexOf("no trailing slash") >= 0,
+        "with no prefix to filter on, a malformed topic is no longer reported at all");
+
+    core.shutdown();
+}
+
+// The filter is built from the prefix at connect time, so a prefix changed
+// afterwards has to move it: otherwise the device listens where commands no
+// longer arrive, and the prefix check drops the ones that do.
+void test_a_prefix_changed_at_runtime_moves_the_command_filter() {
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addSwitch("sw1", "Switch 1");
+    core.addComponent(std::move(ha));
+    core.begin();
+    simulateMqttConnect(core);
+
+    String lastFilter;
+    core.on<MQTTSubscribeEvent>(DomoticsCore::MQTTEvents::EVENT_SUBSCRIBE,
+        [&](const MQTTSubscribeEvent& ev) { lastFilter = ev.topic; });
+
+    HAConfig moved = haPtr->getConfig();
+    HA::setField(moved.discoveryPrefix, "hass", sizeof(moved.discoveryPrefix));
+    haPtr->setConfig(moved);
+    for (int i = 0; i < 5; i++) core.loop();
+
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("hass/+/test_node/+/set", lastFilter.c_str(),
+        "the subscription still names the old prefix, so no command can arrive");
+
+    simulateRawMessage(core, "hass/switch/test_node/sw1/set", "ON");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, haPtr->getStatistics().commandsReceived,
+        "a command on the new prefix was dropped");
+
+    core.shutdown();
+}
+
+// Nothing looked at what shutdown publishes, and it publishes an empty retained
+// payload per entity — the message that deletes it from Home Assistant. The
+// component's own shutdown is called here rather than the Core's: the Core
+// stops dispatching before these reach the bus, which is filed separately.
+void test_shutdown_removes_the_discovery_it_published() {
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addSwitch("sw1", "Switch 1");
+    ha->addSensor("temp", "Temperature");
+    core.addComponent(std::move(ha));
+    core.begin();
+    simulateMqttConnect(core);
+
+    int removals = 0;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            if (strstr(ev.topic, "/config") && ev.payload[0] == '\0') removals++;
+        });
+
+    haPtr->shutdown();
+    for (int i = 0; i < 5; i++) core.loop();   // the removals cross the bus like any publish
+    TEST_ASSERT_EQUAL_INT_MESSAGE(2, removals,
+        "shutdown left the entities in Home Assistant");
+}
+
+// The other half of the prefix check: a malformed topic *under* the component's
+// own prefix is a genuine defect and keeps its error line.
 void test_ha_command_topic_with_one_slash_is_refused() {
     Core core;
     HAConfig config;
@@ -1798,35 +1907,6 @@ void test_a_topic_over_the_event_field_is_refused_and_counted() {
     core.shutdown();
 }
 
-// Nothing looked at what shutdown publishes, and it publishes an empty retained
-// payload per entity — the message that deletes it from Home Assistant. The
-// component's own shutdown is called here rather than the Core's: the Core
-// stops dispatching before these reach the bus, which is filed separately.
-void test_shutdown_removes_the_discovery_it_published() {
-    Core core;
-    HAConfig config;
-    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
-
-    auto ha = std::make_unique<HomeAssistantComponent>(config);
-    HomeAssistantComponent* haPtr = ha.get();
-    ha->addSwitch("sw1", "Switch 1");
-    ha->addSensor("temp", "Temperature");
-    core.addComponent(std::move(ha));
-    core.begin();
-    simulateMqttConnect(core);
-
-    int removals = 0;
-    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
-        [&](const MQTTPublishEvent& ev) {
-            if (strstr(ev.topic, "/config") && ev.payload[0] == '\0') removals++;
-        });
-
-    haPtr->shutdown();
-    for (int i = 0; i < 5; i++) core.loop();   // the removals cross the bus like any publish
-    TEST_ASSERT_EQUAL_INT_MESSAGE(2, removals,
-        "shutdown left the entities in Home Assistant");
-}
-
 void test_an_invalid_entity_category_is_left_out_and_warned() {
     static int warns; warns = 0;
     auto cb = LoggerCallbacks::addCallback([](LogLevel level, const char*, const char* msg) {
@@ -2035,7 +2115,6 @@ int runAllTests() {
     RUN_TEST(test_a_state_published_through_the_component_lands_on_the_overridden_topic);
     RUN_TEST(test_a_discovery_config_over_the_event_field_is_refused_aloud);
     RUN_TEST(test_a_topic_over_the_event_field_is_refused_and_counted);
-    RUN_TEST(test_shutdown_removes_the_discovery_it_published);
     RUN_TEST(test_an_invalid_entity_category_is_left_out_and_warned);
     RUN_TEST(test_publish_state_string_still_works);
     RUN_TEST(test_publish_state_string_literal);
@@ -2043,7 +2122,10 @@ int runAllTests() {
     // MEM-2 — command parse behaviours the char* rewrite could drop
     RUN_TEST(test_ha_command_entity_id_over_63_truncates_and_warns);
     RUN_TEST(test_ha_command_payload_over_127_truncates_and_warns);
-    RUN_TEST(test_ha_command_topic_without_slash_is_refused);
+    RUN_TEST(test_a_topic_outside_the_discovery_prefix_says_nothing);
+    RUN_TEST(test_an_empty_discovery_prefix_parses_everything_again);
+    RUN_TEST(test_a_prefix_changed_at_runtime_moves_the_command_filter);
+    RUN_TEST(test_shutdown_removes_the_discovery_it_published);
     RUN_TEST(test_ha_command_topic_with_one_slash_is_refused);
     RUN_TEST(test_ha_commands_received_counts_only_known_entities);
 
