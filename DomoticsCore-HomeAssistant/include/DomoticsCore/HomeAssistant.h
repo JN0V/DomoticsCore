@@ -534,6 +534,10 @@ public:
         // Persistence and the WebUI both land here after begin(), so the two
         // topics have to be reconciled again or they drift apart.
         if (__dc_registry) reconcileAvailabilityWithWill();
+        // The command filter was built from the prefix at connect time. A prefix
+        // changed here moves where commands arrive, so the subscription follows
+        // it now rather than at the next reconnection.
+        if (mqttConnected) subscribeToCommands();
     }
     
     /**
@@ -999,6 +1003,15 @@ private:
      * Private, so the parameter change is not a change to any published API.
      */
     void handleCommand(const char* topic, const char* payload) {
+        // Every message the shared client receives arrives here. A topic outside
+        // the discovery prefix belongs to the application, not to this component:
+        // it is dropped before the parse, and says nothing at any level.
+        const size_t prefixLen = strlen(config.discoveryPrefix);
+        if (prefixLen > 0 && (strncmp(topic, config.discoveryPrefix, prefixLen) != 0
+                              || topic[prefixLen] != '/')) {
+            return;
+        }
+
         DLOG_I(LOG_HA, "Received MQTT command - Topic: %s, Payload: %s", topic, payload);
 
         // Extract entity ID from topic
