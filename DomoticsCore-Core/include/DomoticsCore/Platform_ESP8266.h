@@ -516,6 +516,17 @@ private:
 #define LED_BUILTIN 2
 
 
+/** @brief A recursive lock, empty here: the SDK calls back into the one task. */
+class RecursiveLock {
+public:
+    RecursiveLock() = default;
+    RecursiveLock(const RecursiveLock&) = delete;
+    RecursiveLock& operator=(const RecursiveLock&) = delete;
+
+    void lock() {}
+    void unlock() {}
+};
+
 /**
  * @brief What this platform's allocator and String cost, for callers that size
  *        a buffer or a queue in bytes.
