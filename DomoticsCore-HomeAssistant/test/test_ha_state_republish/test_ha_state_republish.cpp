@@ -323,6 +323,49 @@ void test_a_payload_over_the_event_field_is_refused_not_held() {
                                      "the store was not released once the flush had drained it");
 }
 
+void test_a_state_whose_topic_cannot_leave_does_not_hold_the_store() {
+    // A refused publish keeps its slot, which is right for a broker that is
+    // away and wrong for a topic the event field cannot carry: that one will
+    // not fit on the next loop either, and the slot would stall every value
+    // behind it for the life of the process. The override is the way in — the
+    // generated state topic is shorter than the config topic, so an entity
+    // whose state topic is over has already had its discovery refused.
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    auto* haPtr = ha.get();
+    haPtr->addSensor("temp", "Temperature", "°C", "temperature");
+    haPtr->addSensor("hum", "Humidity", "%", "humidity");
+    String tooLong;
+    for (size_t i = 0; i < MQTT_EVENT_TOPIC_SIZE + 8; ++i) tooLong += 'x';
+    haPtr->entity("temp")->stateTopicOverride = tooLong;
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    connect(core);
+    disconnect(core);
+
+    recordPublishes(core);
+    haPtr->publishState("temp", "21.00");
+    haPtr->publishState("hum", "60.00");
+    pump(core);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, (uint32_t)haPtr->getPendingPublishCount(),
+        "a state whose topic can never be published was held anyway");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, haPtr->getStatistics().statesRefused,
+        "the refusal was not counted");
+
+    connect(core);
+    pump(core);
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, countTopicsEnding("/hum/state"),
+        "the publishable state behind the refused one never left");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, (uint32_t)haPtr->getPendingPublishCount(),
+        "the store still holds what it can never send");
+}
+
 void test_an_outage_during_the_flush_keeps_what_it_had_not_sent() {
     Core core;
     HAConfig config;
@@ -519,6 +562,7 @@ int runAllTests() {
     RUN_TEST(test_state_and_attributes_hold_separate_slots);
     RUN_TEST(test_the_flush_never_overruns_the_event_queue);
     RUN_TEST(test_a_payload_over_the_event_field_is_refused_not_held);
+    RUN_TEST(test_a_state_whose_topic_cannot_leave_does_not_hold_the_store);
     RUN_TEST(test_an_outage_during_the_flush_keeps_what_it_had_not_sent);
     RUN_TEST(test_nothing_is_held_while_the_link_is_up);
     RUN_TEST(test_a_live_publish_supersedes_what_the_outage_held);

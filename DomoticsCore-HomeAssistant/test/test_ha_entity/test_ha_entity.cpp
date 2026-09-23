@@ -11,6 +11,7 @@
 #include <unity.h>
 #include <DomoticsCore/Testing/HeapTracker.h>
 #include <DomoticsCore/HAEntity.h>
+#include <DomoticsCore/Logger.h>
 #include <cstring>
 #include <string>
 
@@ -85,12 +86,28 @@ void test_ha_topic_truncation_safety() {
     HAEntity entity(longId, "Test", "alarm_control_panel");
     char buf[HA_TOPIC_BUF_SIZE];
 
-    entity.getDiscoveryTopic(buf, sizeof(buf), longNodeId.c_str(), "homeassistant");
+    int needed = entity.getDiscoveryTopic(buf, sizeof(buf), longNodeId.c_str(), "homeassistant");
 
     // Must be truncated to 127 chars (null terminator at [127])
     TEST_ASSERT_EQUAL_UINT32(127, strlen(buf));
     // Must not overflow
     TEST_ASSERT_EQUAL_CHAR('\0', buf[127]);
+    // A cut topic is not a topic: Home Assistant never reads the config there,
+    // and two ids sharing a prefix cut to the same state topic. The builder is
+    // pure, so it reports what the topic needed and the publisher refuses it.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(162, needed,
+        "the builder does not report the length the topic needed");
+}
+
+// The complete case, which is what every caller actually gets: the return value
+// is the length written, so a caller can tell a fit from a cut with one compare.
+void test_ha_topic_builder_reports_the_length_it_wrote() {
+    HAEntity entity("front_door", "Front Door", "alarm_control_panel");
+    char buf[HA_TOPIC_BUF_SIZE];
+
+    int needed = entity.getDiscoveryTopic(buf, sizeof(buf), "mynode", "homeassistant");
+    TEST_ASSERT_EQUAL_INT((int)strlen(buf), needed);
+    TEST_ASSERT_EQUAL_INT(58, needed);
 }
 
 // ============================================================================
@@ -102,5 +119,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_ha_topic_methods_zero_heap);
     RUN_TEST(test_ha_topic_format_correctness);
     RUN_TEST(test_ha_topic_truncation_safety);
+    RUN_TEST(test_ha_topic_builder_reports_the_length_it_wrote);
     return UNITY_END();
 }
