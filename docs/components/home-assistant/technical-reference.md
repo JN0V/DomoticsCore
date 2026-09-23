@@ -366,7 +366,7 @@ void republishEntity(const String& id);  // Republish discovery for a single ent
 - `removeDiscovery()` publishes empty payloads to each entity's config topic, causing HA to remove them.
 - `republishEntity()` publishes discovery for a single entity. Called automatically when an entity is added while MQTT is already connected.
 
-Every message this component sends crosses the EventBus as an `MQTTPublishEvent`, whose payload field holds 699 characters; on ESP8266 the MQTT client's packet buffer is 768 bytes, 7 of them header, the topic included. A discovery document longer than the field is not published — it would be cut mid-JSON, sit retained on the broker and be discarded by Home Assistant at every restart — and the component logs a warning naming the topic and the size, counts it in `discoveryRefused`, and does not announce it as queued. The keys are abbreviated so that ordinary configs stay well under: an alarm control panel with two arm modes, a code and the default device block is 638 characters (774 with the long spellings). The device block (name, model, manufacturer, version, configuration URL, area) and the node id, which appears six times, are what make a config long; a panel with all six arm modes, a 32-character node id, a configuration URL and an area is 974 characters and is refused.
+Every message this component sends crosses the EventBus as an `MQTTPublishEvent`, whose payload field holds 699 characters; on ESP8266 the MQTT client's packet buffer is 768 bytes, 7 of them header, the topic included. A discovery document longer than the field is not published — it would be cut mid-JSON, sit retained on the broker and be discarded by Home Assistant at every restart — and the component logs a warning naming the topic and the size, counts it in `discoveryRefused`, and does not announce it as queued. The keys are abbreviated so that ordinary configs stay well under: an alarm control panel with two arm modes, a code and the default device block is 617 characters, where the long spellings put a comparable panel at 774. The device block (name, model, manufacturer, version, configuration URL, area) and the node id, which appears six times, are what make a config long; a panel with all six arm modes, a 32-character node id, a configuration URL and an area is 974 characters and is refused.
 
 ### Configuration
 
@@ -696,22 +696,38 @@ Combine with bitwise OR: `AlarmFeature::ArmAway | AlarmFeature::ArmHome | AlarmF
 |----------|------|---------|-------------|
 | `code` | `String` | `""` | PIN code sent to HA frontend for keypad display; the library does NOT validate it -- passthrough only |
 | `supportedFeatures` | `AlarmFeature` | `ArmAway` | Bitmask of supported arm modes |
-| `codeArmRequired` | `bool` | `false` | Require code for arm operations |
-| `codeDisarmRequired` | `bool` | `false` | Require code for disarm |
-| `codeTriggerRequired` | `bool` | `false` | Require code for trigger |
+| `codeArmRequired` | `bool` | `false` | Require code for arm operations; always published, since Home Assistant reads an absent key as `true` |
+| `codeDisarmRequired` | `bool` | `false` | Require code for disarm; always published, for the same reason |
+| `codeTriggerRequired` | `bool` | `false` | Require code for trigger; published on panels that declare the `Trigger` feature |
 | `lastCommand` | `char[64]` | `""` | Parsed command from last `handleCommand()` (e.g., `"ARM_AWAY"`) |
 | `lastCode` | `char[32]` | `""` | Parsed code from last `handleCommand()` (e.g., `"1234"`) |
 
 ### Discovery Fields Added
 
 - `cmd_t`
-- When code configuration is active (any of `code`, `codeArmRequired`, `codeDisarmRequired`, `codeTriggerRequired` is set):
-  - `code` (if non-empty)
-  - `cod_arm_req`, `cod_dis_req`, `cod_trig_req`
-  - `cmd_tpl`: `{{ action }}{% if code %} {{ code }}{% endif %}`
+- `cod_arm_req` and `cod_dis_req`, always. Home Assistant reads an **absent**
+  `code_arm_required` or `code_disarm_required` as `true`, and both default to
+  `false` here: an omitted key advertises the reverse of the entity's own
+  configuration. A panel published without `cod_arm_req` is created, reports its
+  state and disarms, and cannot be armed from the interface at all — Home
+  Assistant demands a code, and with no `code` configured `code_format` is null,
+  so the card cannot offer a keypad either.
+- `cod_trig_req`, on a panel whose `supportedFeatures` includes `Trigger`. The
+  trigger service requires that feature, so the key can change nothing on a panel
+  that does not declare it and is left out.
+- `code`, when one is configured.
+- `cmd_tpl` (`{{ action }}{% if code %} {{ code }}{% endif %}`), when a code
+  travels: one configured here, or one Home Assistant asks the user for.
 - Payload constants per supported feature: `pl_arm_home`, `pl_arm_away`, `pl_arm_nite`, `pl_arm_vacation`, `pl_arm_custom_b`, `pl_trig`
 - `pl_disarm` (always present)
 - `sup_feat` JSON array built from bitmask
+
+A code-less panel with two arm modes (`arm_away`, `arm_night`), the default
+device block, a 17-character node id and a 13-character entity id publishes a
+613-character document; the two requirement keys are 40 of those characters,
+against the 699-character field of the section above. The same panel with all six
+arm modes is over that field and is refused: stating the requirements is not what
+makes a document long, but it is what pushes the widest shapes over.
 
 ### Command Handling
 
@@ -879,6 +895,16 @@ All topics follow the Home Assistant MQTT Discovery convention.
 | Attributes | `{prefix}/{component}/{nodeId}/{entityId}/attributes` | Device -> Broker | Yes |
 | Availability | the MQTT component's `lwtTopic` — `{clientId}/status` by default | Device -> Broker and Broker -> HA (Last Will) | Yes |
 
+A topic also crosses the EventBus, in a 127-character field. A longer one is
+**not published**: the component logs a warning naming the entity and the length
+the topic needed, and counts a refused discovery in `discoveryRefused`. Published
+cut, the config would land on a topic Home Assistant never reads, and two entity
+ids sharing a prefix would cut to the same state topic and overwrite each other.
+The budget is `len(prefix) + len(component) + len(nodeId) + len(entityId) + 4`
+plus the suffix, so with a 32-character prefix and node id, `alarm_control_panel`
+leaves 34 characters for the entity id — 30 if the entity publishes attributes,
+`attributes` being the longest suffix.
+
 ### Command Subscription
 
 The component subscribes to a single wildcard topic to receive all commands:
@@ -889,13 +915,25 @@ The component subscribes to a single wildcard topic to receive all commands:
 
 Commands are routed internally to the appropriate entity based on the entity ID extracted from the topic.
 
+The filter is built from the discovery prefix when the broker connects, and a
+prefix changed afterwards — through the settings page or the persisted
+configuration — re-subscribes immediately rather than at the next reconnection.
+
+The MQTT client is shared, so **every** message the application subscribes to
+also reaches this component. A topic that does not begin with the discovery
+prefix followed by `/` belongs to the application: it is dropped before the
+topic is parsed and produces no log line at any level. A malformed topic *under*
+the prefix is a different matter and keeps its error line.
+
 ### Topic Generation (zero-heap)
 
-All topic methods use caller-provided `char*` buffers (v2.0.0):
+All topic methods use caller-provided `char*` buffers (v2.0.0) and return the
+length the topic needed, which is what a caller compares against the buffer to
+tell a fit from a cut:
 
 ```cpp
-char topic[HA_TOPIC_BUF_SIZE];  // HA_TOPIC_BUF_SIZE = 128
-entity->getStateTopic(topic, sizeof(topic), nodeId, discoveryPrefix);
+char topic[HA_TOPIC_BUF_SIZE];  // HA_TOPIC_BUF_SIZE = 128, matching the event field
+int needed = entity->getStateTopic(topic, sizeof(topic), nodeId, discoveryPrefix);
 ```
 
 ---
@@ -1023,7 +1061,7 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
 }
 ```
 
-Note: `code`, `cod_*_req`, and `cmd_tpl` fields are **only included** when code configuration is active. `pl_arm_*` and `pl_trig` fields are only included for features present in the `supportedFeatures` bitmask. `pl_disarm` is always included.
+Note: `cod_arm_req` and `cod_dis_req` are **always** included — Home Assistant defaults an absent `code_*_required` to `true`, the reverse of this component's default, so silence would make every code-less panel unarmable. `cod_trig_req` is included on panels declaring the `Trigger` feature. `code` and `cmd_tpl` are included when a code travels. `pl_arm_*` and `pl_trig` fields are only included for features present in the `supportedFeatures` bitmask. `pl_disarm` is always included.
 
 ---
 
