@@ -297,13 +297,15 @@ void loop() {
         
         if (shouldBeOn && !currentRelayState) {
             setRelay(true);
-            if (haPtr && haPtr->isMQTTConnected()) {
+            // No connectivity check: a state published while the broker is away
+            // is held by the component and sent when the link returns.
+            if (haPtr) {
                 haPtr->publishState("relay", true);
                 DLOG_I(LOG_APP, "🌡️ Auto control: Relay ON (temp=%.1f°C)", temp);
             }
         } else if (shouldBeOff && currentRelayState) {
             setRelay(false);
-            if (haPtr && haPtr->isMQTTConnected()) {
+            if (haPtr) {
                 haPtr->publishState("relay", false);
                 DLOG_I(LOG_APP, "🌡️ Auto control: Relay OFF (temp=%.1f°C)", temp);
             }
@@ -313,7 +315,7 @@ void loop() {
     // ========================================================================
     // MQTT STATE PUBLISHING (to Home Assistant)
     // ========================================================================
-    if (mqttPublishTimer.isReady() && haPtr && haPtr->isMQTTConnected()) {
+    if (mqttPublishTimer.isReady() && haPtr) {
         float temp = readTemperature();
         haPtr->publishState("temperature", temp);
         DLOG_D(LOG_APP, "📡 Published to HA: Temp=%.1f°C", temp);

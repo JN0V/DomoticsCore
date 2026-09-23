@@ -296,8 +296,10 @@ void loop() {
         DLOG_I(LOG_APP, "Published initial relay state: %s", currentRelayState ? "ON" : "OFF");
     }
     
-    // Publish relay state only when it changes (not on timer!)
-    if (haPtr && haPtr->isMQTTConnected()) {
+    // Publish relay state only when it changes (not on timer!). No connectivity
+    // check: a state published while the broker is away is held by the
+    // component and sent when the link returns.
+    if (haPtr) {
         bool currentRelayState = HAL::Platform::digitalRead(LED_BUILTIN) == HAL::ledBuiltinOn();
         
         // Publish only on state change
