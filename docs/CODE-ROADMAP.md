@@ -2274,6 +2274,88 @@ one worth a one-line change, and six rows that are not defects.
   carries its own command topic by design; MEM-2, which made this path
   allocation-free without changing what it logs.
 
+### BUG-63 — HomeAssistant: an alarm panel with no code is published as one that requires a code, and cannot be armed from Home Assistant [HIGH] — **NEW (2026-09-23, filed from AlarmControl's production panel on 2.6.1)**
+
+- **Files**: `HAAlarmControlPanel.h:102-111` (`buildDiscoveryPayload`, the
+  `hasCodeConfig` gate), against `HomeAssistant.h:336-343`
+  (`addAlarmControlPanel`, whose `codeArmRequired` / `codeDisarmRequired`
+  default to `false`).
+- **Problem**: the code keys are written to the discovery document **only** when
+  a code is set or some code flag is true:
+  ```cpp
+  bool hasCodeConfig = !code.isEmpty() || codeArmRequired || codeDisarmRequired
+                                       || codeTriggerRequired;
+  ```
+  So a panel configured with no code at all — the library's own defaults —
+  publishes **no `cod_arm_req` key**. **Home Assistant defaults
+  `code_arm_required` to `true` when the key is absent.** The library's default
+  and Home Assistant's default are opposites, and the wire cannot tell them
+  apart: `false` and `absent` are the same bytes and mean the reverse of each
+  other. A caller who wants "no code required" cannot express it.
+- **Consequence, measured on a live alarm panel**: the entity is created,
+  reports state correctly, shows as available, and **cannot be armed from the
+  Home Assistant UI at all**. Home Assistant refuses before publishing:
+  ```
+  Arming requires a code but none was given for
+  alarm_control_panel.gaia_alarmcontrol_alarm_control
+  ```
+  and because `code_format` is null — no code was configured, so there is
+  nothing to format — the card cannot even offer a keypad to enter the code it
+  insists on. There is no way through from the UI.
+- **Disarm is unaffected**, measured over the same path while arming was broken:
+  Home Assistant applies the `code_arm_required` guard to arming only, so
+  `DISARM` reached the device normally. The device therefore looks healthy from
+  every angle an operator checks — entities present, none unavailable, state
+  correct, disarm working — while the one action that matters is unreachable.
+- **HIGH.** It makes the alarm panel entity unusable for its primary purpose, on
+  the library's own default configuration, with no error anywhere on the device
+  and no clue in the discovery document that an operator would think to read.
+- **Fix**: always write `cod_arm_req` and `cod_dis_req`, outside the
+  `hasCodeConfig` gate, since omitting them cannot express the component's own
+  defaults. `cod_trig_req` and `cmd_tpl` can stay gated — `cmd_tpl` only matters
+  when a code is actually sent, and `Trigger` is opt-in per entity. Worth a test
+  that asserts the two keys are present in the payload of a panel configured with
+  no code, which is the case that has no coverage today.
+- **Found the hard way**: the consumer's first instinct was to force the keys out
+  by setting `codeTriggerRequired = true` — the only lever an application has.
+  That works and is what production ran for one flash, but it is a workaround in
+  the wrong repository and the consumer's PO rejected it on sight. Recorded here
+  because the lever exists and someone else will reach for it.
+- **Refs**: filed by AlarmControl (`jn0v/AlarmControl`, TD-017). See also BUG-64,
+  filed in the same session: the device-side console could not have shown this
+  either.
+
+### BUG-64 — RemoteConsole: ESP-IDF and Arduino core log lines never reach the remote console [MEDIUM] — **NEW (2026-09-23, measured on AlarmControl's bench and production)**
+
+- **Files**: `DomoticsCore-RemoteConsole` (the log sink), against the serial path
+  that Arduino's `log_e` / ESP-IDF's `ESP_LOGE` already reach.
+- **Problem**: the remote console carries the lines DomoticsCore itself emits
+  through `DLOG_*`, and **nothing else**. Log lines written by the Arduino core
+  and by ESP-IDF — `Preferences.cpp`, `Update.cpp`, `esp_ota_ops`, `esp_image` —
+  go to the UART only. A device without a serial line has no way to show them.
+- **Measured**, same firmware, comparable boots, one over the console and one
+  over the serial line:
+  ```
+  console (telnet, level 4) : 0 lines matching [E]
+  serial  (same build)      : 15 lines matching [E]
+  ```
+- **What it costs, concretely**: a production device that failed an OTA with
+  Arduino's `Could Not Activate The Firmware` — the string `UPDATE_ERROR_ACTIVATE`,
+  raised when `esp_ota_set_boot_partition()` fails — could not be diagnosed. That
+  call's own `ESP_LOGE` says *which* error it was (image validation, rollback
+  state, partition not found); on a device reachable only over the network, that
+  line does not exist. The operator sees a symptom with no cause, and the only
+  honest next step is to move the investigation to a board with a UART.
+- **MEDIUM**: nothing malfunctions because of it, but it removes the evidence at
+  exactly the moment something else has gone wrong, on exactly the devices that
+  cannot be opened up. An OTA-updated device is the normal case for this library.
+- **Fix**: hook `esp_log_set_vprintf()` and fan the core's output into the same
+  ring buffer the console already serves, alongside `DLOG_*`. The buffer is small
+  (~10 lines observed), which is a second limitation worth sizing deliberately if
+  the console is to be a diagnostic channel rather than a status window.
+- **Refs**: filed by AlarmControl (`jn0v/AlarmControl`), whose production panel
+  has no serial line. See BUG-63, filed the same session.
+
 ### BUG-45 — WebUI providers: the settings handlers disagree about what they refuse [MEDIUM] — **DONE (2026-09-20)**
 
 - **Problem**: four divergences between providers doing the same job, all
