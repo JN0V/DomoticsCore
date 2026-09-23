@@ -487,13 +487,32 @@ All endpoints are registered by `OTAWebUI::registerRoutes()` after `init()` is c
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/ota/unified` | Returns JSON with `state`, `message`, `progress`, `bytes`, `total`, `update_url`, `auto_reboot`. |
-| `POST` | `/api/ota/unified` | Returns current state (same fields as GET). |
-| `GET` | `/api/ota/status` | Returns JSON with `state`, `progress`, `downloaded`, `total`, `lastResult`, `lastVersion`, `autoReboot`. |
-| `POST` | `/api/ota/check` | Triggers an immediate manifest check. Returns `{"success": true}`. |
-| `POST` | `/api/ota/update` | Starts a firmware download. Accepts `url` and `force` parameters. Without parameters, returns current field values. |
+| `GET` | `/api/ota/unified` | Returns JSON with `state`, `message`, `progress`, `bytes`, `total`, `update_url`, `auto_reboot`. Requires the device credentials with `enableAuth` on. |
+| `POST` | `/api/ota/unified` | Returns current state (same fields as GET). Requires the device credentials with `enableAuth` on. |
+| `GET` | `/api/ota/status` | Returns JSON with `state`, `progress`, `downloaded`, `total`, `lastResult`, `lastVersion`, `autoReboot`. Requires the device credentials with `enableAuth` on. |
+| `POST` | `/api/ota/check` | Triggers an immediate manifest check. Returns `{"success": true}`. Requires the CSRF token and, with `enableAuth` on, the device credentials. |
+| `POST` | `/api/ota/update` | Starts a firmware download. Accepts `url` and `force` parameters in the **body**; with a parameter present it requires the CSRF token. Without parameters, returns current field values. Requires the device credentials with `enableAuth` on, either way. |
 | `GET` | `/ota/upload` | Serves a minimal HTML firmware upload page (only when `enableWebUIUpload` is `true`). |
 | `POST` | `/api/ota/upload` | Accepts `multipart/form-data` firmware upload (only when `enableWebUIUpload` is `true`). Returns `{"success": true/false}`. Optionally carries the expected digest as an `X-Firmware-SHA256` header, or a `?sha256=` query parameter for clients that cannot set headers. The connection is dropped, and the update aborted, after `uploadIdleTimeoutSec` seconds without a byte from the client (30 by default; the server's own 3 s applies until the first body chunk). |
+
+#### What each route requires
+
+The three routes that change something — `/api/ota/check`, `/api/ota/update`
+with a body parameter, and `/api/ota/upload` — take the WebUI's per-boot CSRF
+token (`X-DC-Token`, or `?token=`) and, when `WebUIConfig::enableAuth` is on,
+the device credentials. A request missing either is answered `403` or `401` and
+nothing is opened: no flash is erased and no download starts. The token proves
+the request came from the device's own page; the credentials prove who sent it,
+and a state change needs both.
+
+The read routes — `/api/ota/status`, `/api/ota/unified` and `/api/ota/update`
+called without a parameter — take no token, since they change nothing, but they
+answer only a client that authenticates: what they carry is the configured
+firmware URL, the running version and whether an update is in flight. With
+`enableAuth` off, every route answers as before.
+
+The built-in page does not use these endpoints: its OTA card is drawn from the
+WebUI's own update route. They are there for an application or a script.
 
 #### Supplying the upload digest (SEC-7)
 

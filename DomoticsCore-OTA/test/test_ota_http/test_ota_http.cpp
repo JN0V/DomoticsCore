@@ -55,6 +55,17 @@ struct Harness {
 
     RecordedRoute* uploadRoute() { return AsyncWebServer::findRouteAnywhere("/api/ota/upload"); }
     RecordedRoute* tokenRoute() { return AsyncWebServer::findRouteAnywhere("/api/ui/token"); }
+    RecordedRoute* checkRoute() { return AsyncWebServer::findRouteAnywhere("/api/ota/check"); }
+    RecordedRoute* statusRoute() { return AsyncWebServer::findRouteAnywhere("/api/ota/status"); }
+    RecordedRoute* unifiedRoute() { return AsyncWebServer::findRouteAnywhere("/api/ota/unified"); }
+    RecordedRoute* updateRoute() { return AsyncWebServer::findRouteAnywhere("/api/ota/update"); }
+
+    /// Wires the credentials the auth tests share, before build().
+    void withAuth(const char* user, const char* pass) {
+        webConfig.enableAuth = true;
+        strncpy(webConfig.username, user, sizeof(webConfig.username) - 1);
+        strncpy(webConfig.password, pass, sizeof(webConfig.password) - 1);
+    }
 
     /// The token the UI hands a browser, read back through its own route —
     /// which is itself behind the credentials check when auth is on.
@@ -276,6 +287,135 @@ void test_the_announced_envelope_is_narrowed_to_what_was_delivered() {
                                      "the reported total is the envelope, not the firmware");
 }
 
+// The trigger routes took the CSRF token and nothing else. loop() is what turns
+// a trigger into a state change, so it is what separates refused from accepted.
+
+void test_a_check_without_credentials_triggers_nothing() {
+    harness->withAuth("admin", "correct");
+    harness->build();
+    const String token = harness->csrfToken("admin", "correct");
+
+    AsyncWebServerRequest request;
+    request.addHeader("X-DC-Token", token);
+    harness->checkRoute()->handler(&request);
+
+    TEST_ASSERT_TRUE_MESSAGE(request.authenticationRequested,
+                             "a tokened request with no credentials was answered, not challenged");
+    harness->ota->loop();
+    TEST_ASSERT_TRUE_MESSAGE(harness->ota->getState() == OTAComponent::State::Idle,
+                             "an unauthenticated check moved the component");
+}
+
+void test_a_check_with_credentials_still_triggers() {
+    harness->withAuth("admin", "correct");
+    harness->build();
+    const String token = harness->csrfToken("admin", "correct");
+
+    AsyncWebServerRequest request;
+    request.addHeader("X-DC-Token", token);
+    request.setCredentials("admin", "correct");
+    harness->checkRoute()->handler(&request);
+
+    TEST_ASSERT_FALSE(request.authenticationRequested);
+    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("\"success\":true") >= 0,
+                             request.sentBody.c_str());
+    harness->ota->loop();
+    TEST_ASSERT_FALSE_MESSAGE(harness->ota->getState() == OTAComponent::State::Idle,
+                              "an authenticated check never reached the component");
+}
+
+void test_an_update_from_a_url_without_credentials_triggers_nothing() {
+    harness->withAuth("admin", "correct");
+    harness->build();
+    const String token = harness->csrfToken("admin", "correct");
+
+    // The action branch is taken only when a body parameter is present.
+    AsyncWebServerRequest request;
+    request.addHeader("X-DC-Token", token);
+    request.addParam("url", "http://attacker.invalid/fw.bin", true);
+    request.addParam("force", "true", true);
+    harness->updateRoute()->handler(&request);
+
+    TEST_ASSERT_TRUE_MESSAGE(request.authenticationRequested,
+                             "a tokened request with no credentials was answered, not challenged");
+    harness->ota->loop();
+    TEST_ASSERT_TRUE_MESSAGE(harness->ota->getState() == OTAComponent::State::Idle,
+                             "an unauthenticated URL install reached the component");
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("", harness->ota->getLastError().c_str(),
+                                     "the install path ran for a request that failed auth");
+}
+
+void test_an_update_from_a_url_with_credentials_still_triggers() {
+    harness->withAuth("admin", "correct");
+    harness->build();
+    const String token = harness->csrfToken("admin", "correct");
+
+    AsyncWebServerRequest request;
+    request.addHeader("X-DC-Token", token);
+    request.setCredentials("admin", "correct");
+    request.addParam("url", "http://example.invalid/fw.bin", true);
+    harness->updateRoute()->handler(&request);
+
+    TEST_ASSERT_FALSE(request.authenticationRequested);
+    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("\"success\":true") >= 0,
+                             request.sentBody.c_str());
+    // No downloader wired: refusing for that reason is the proof it got through.
+    harness->ota->loop();
+    TEST_ASSERT_EQUAL_STRING("No downloader set", harness->ota->getLastError().c_str());
+}
+
+// Auth off is the shipped default: every route answers.
+void test_with_auth_off_every_route_answers() {
+    harness->build();
+
+    AsyncWebServerRequest read;
+    harness->updateRoute()->handler(&read);
+    TEST_ASSERT_FALSE(read.authenticationRequested);
+    TEST_ASSERT_EQUAL_INT(200, read.sentCode);
+    TEST_ASSERT_TRUE_MESSAGE(read.sentBody.indexOf("update_url") >= 0, read.sentBody.c_str());
+
+    AsyncWebServerRequest status;
+    harness->statusRoute()->handler(&status);
+    TEST_ASSERT_FALSE(status.authenticationRequested);
+    TEST_ASSERT_EQUAL_INT(200, status.sentCode);
+}
+
+// The reads carry the firmware URL and the running version: not public under auth.
+void test_the_read_routes_are_gated_too() {
+    harness->withAuth("admin", "correct");
+    harness->build();
+
+    AsyncWebServerRequest status;
+    harness->statusRoute()->handler(&status);
+    TEST_ASSERT_TRUE_MESSAGE(status.authenticationRequested,
+                             "/api/ota/status answered a client with no credentials");
+    TEST_ASSERT_TRUE_MESSAGE(status.sentBody.indexOf("lastVersion") < 0,
+                             "the refusal carried the state it was refusing");
+
+    AsyncWebServerRequest unified;
+    harness->unifiedRoute()->handler(&unified);
+    TEST_ASSERT_TRUE_MESSAGE(unified.authenticationRequested,
+                             "/api/ota/unified answered a client with no credentials");
+
+    AsyncWebServerRequest poll;
+    harness->updateRoute()->handler(&poll);
+    TEST_ASSERT_TRUE_MESSAGE(poll.authenticationRequested,
+                             "the update route's read branch answered with no credentials");
+}
+
+void test_the_read_routes_answer_a_client_that_authenticates() {
+    harness->withAuth("admin", "correct");
+    harness->build();
+
+    AsyncWebServerRequest status;
+    status.setCredentials("admin", "correct");
+    harness->statusRoute()->handler(&status);
+    TEST_ASSERT_FALSE(status.authenticationRequested);
+    TEST_ASSERT_EQUAL_INT(200, status.sentCode);
+    TEST_ASSERT_TRUE_MESSAGE(status.sentBody.indexOf("lastVersion") >= 0,
+                             status.sentBody.c_str());
+}
+
 // The provider's action handler had never been called by anything. Its refusals
 // are what a person meets: the Start Update button with no URL configured is one
 // click on the OTA card.
@@ -335,6 +475,13 @@ int main(int, char**) {
     RUN_TEST(test_a_finished_uploads_own_disconnect_aborts_nothing);
     RUN_TEST(test_the_receive_idle_timeout_widens_only_once_the_gates_pass);
     RUN_TEST(test_the_announced_envelope_is_narrowed_to_what_was_delivered);
+    RUN_TEST(test_a_check_without_credentials_triggers_nothing);
+    RUN_TEST(test_a_check_with_credentials_still_triggers);
+    RUN_TEST(test_an_update_from_a_url_without_credentials_triggers_nothing);
+    RUN_TEST(test_an_update_from_a_url_with_credentials_still_triggers);
+    RUN_TEST(test_with_auth_off_every_route_answers);
+    RUN_TEST(test_the_read_routes_are_gated_too);
+    RUN_TEST(test_the_read_routes_answer_a_client_that_authenticates);
     RUN_TEST(test_every_refusal_of_the_action_handler_names_its_reason);
     RUN_TEST(test_a_configured_url_is_stored);
     return UNITY_END();
