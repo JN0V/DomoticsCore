@@ -239,7 +239,9 @@ Emits `ha/entity_added` with `HAEntityAddedEvent{id, "alarm_control_panel"}`.
 void publishState(const String& id, const String& state);
 ```
 
-Publishes a string state value to the entity's state topic. Skips silently if MQTT is not connected.
+Publishes a string state value to the entity's state topic. While the broker is
+unreachable the payload is **held** rather than dropped, and published once the
+link returns — see [Holding a state through an outage](#holding-a-state-through-an-outage).
 
 #### publishState (float)
 
@@ -279,7 +281,70 @@ Publishes a JSON document as state. Used primarily for lights that need `{"state
 void publishAttributes(const String& id, const JsonDocument& attributes);
 ```
 
-Publishes additional attributes as JSON to the entity's attributes topic. Always retained.
+Publishes additional attributes as JSON to the entity's attributes topic. Always
+retained, and held through an outage on the same terms as a state.
+
+### Holding a state through an outage
+
+A state is last-value-wins, and the broker keeps the last one it received. If the
+link drops, a state published meanwhile would otherwise be lost for good: Home
+Assistant marks the device unavailable through the Last Will, then reads the
+*retained* pre-outage value when the device comes back and displays it until the
+entity changes again.
+
+So `publishState()`, `publishStateJson()` and `publishAttributes()` hand the
+payload to a store when `isMQTTConnected()` is false:
+
+- **one slot per entity and topic**, overwritten — ten changes during one outage
+  cost one slot and republish one value, the last;
+- **a byte budget as well as a slot count.** A slot may hold up to
+  `MQTT_EVENT_PAYLOAD_SIZE - 1` characters, so the store also refuses — aloud,
+  and counted in `HAStatistics::statesRefused` — a payload that would take it
+  past 2 048 bytes. A payload over the event field is refused the same way,
+  since it could not have been published either;
+- the store is **empty while the link is up** and releases its buffer once
+  drained, so it costs the component a single vector rather than a field on
+  every entity. `shutdown()` releases it too;
+- **a publish made over a live link supersedes anything held for the same
+  topic**, so an application that republishes its own state on reconnection —
+  which the examples do on `isReady()` — is never overwritten by an older value
+  still waiting in the store;
+- the store is drained **four entries per `loop()`**, behind the reconnection's
+  discovery documents.
+
+`getPendingPublishCount()` reports what is waiting. It is non-zero during an
+outage *and* for the first loops after a reconnection, until the drain catches
+up.
+
+**Do not gate a publish on the link.** `if (mqtt connected) publishState(...)`
+is the pattern this store exists to make unnecessary, and it defeats it: the
+component never sees the value, so it cannot hold it.
+
+The store takes a recursive lock, so publishing a state from a task other than
+the loop — a web-server handler, say — is safe; the drain in `loop()` takes the
+same lock.
+
+#### What the pacing is for, and where it stops
+
+`publishDiscovery()` emits one `mqtt/publish` per entity inside a single
+EventBus handler, against a queue that holds about 32 of them and **evicts the
+oldest**. Draining the store in the same pass would take that burst from
+1 + N events to 1 + 2N. Pacing keeps the lossless connect at around thirty
+entities instead of halving it to fifteen; **above that, the discovery burst
+alone is what evicts**, with or without this store.
+
+Two orderings the store relies on and does not enforce:
+
+- a value that reached MQTT's own offline queue just before the component
+  noticed the link was down is drained by MQTT before the store's flush is
+  dispatched, so the older copy goes out first;
+- the topic is resolved when the payload is sent, not when it is held, so a
+  `nodeId` or `discoveryPrefix` changed during an outage republishes the held
+  value on the topic the *new* discovery document advertises.
+
+A state published with `retained = false` may reach the broker before Home
+Assistant has resubscribed after the reconnection; only a retained state is
+guaranteed to be read.
 
 ### Availability
 
@@ -320,6 +385,7 @@ Note: `setDeviceInfo()` takes `const char*` parameters (v2.0.0), not `const Stri
 bool isReady() const;           // True if MQTT connected AND availability published
 bool isMQTTConnected() const;   // True if MQTT connection is active
 const HAStatistics& getStatistics() const;
+size_t getPendingPublishCount() const;  // States and attributes an outage is holding
 ```
 
 ---

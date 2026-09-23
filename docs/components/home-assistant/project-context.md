@@ -280,9 +280,9 @@ This section maps component behavior to the [DomoticsCore Constitution](../../..
 | **IV. YAGNI** | 6 entity types implemented (sensor, binary_sensor, switch, light, button, alarm_control_panel). Future types added as needed. |
 | **V. Performance** | Fixed-size `char[]` config fields (zero heap). Zero-heap topic generation. Reuses device JSON across all entity discovery. Volatile publishing guard prevents re-entrancy. |
 | **VI. EventBus Architecture** | All MQTT communication via EventBus events. `ha/command` event replaces per-entity callbacks. No direct component references. Topic-based messaging with type-safe payload structs. |
-| **VII. File Size** | All header files are well under 800 lines. Largest file (`HomeAssistant.h`) is ~695 lines. |
+| **VII. File Size** | All header files are well under 800 lines. Largest file (`HomeAssistant.h`) is 652 code lines of 1030 raw — the principle counts neither blanks nor comments. |
 | **IX. HAL Isolation** | No `#ifdef` platform directives in any file. Fully platform-agnostic. |
-| **X. Non-Blocking** | `loop()` is a no-op. All operations are event-driven callbacks. |
+| **X. Non-Blocking** | `loop()` publishes at most four held states per call and does nothing else; everything else is an event-driven callback. |
 | **XII. Multi-Registry** | `library.json` present with proper PlatformIO structure. |
 | **XIII. Anti-Patterns** | No singletons. No circular dependencies. Event constants centralized in `HAEvents.h` and `MQTTEvents.h`. |
 | **XIV. Memory Leak Prevention** | Entities stored in `std::unique_ptr`. No raw `new`/`delete`. Fixed-size char buffers for MQTT events (`MQTT_EVENT_TOPIC_SIZE`, `MQTT_EVENT_PAYLOAD_SIZE`) and HAConfig. |
