@@ -233,6 +233,11 @@ private:
 
         // Unified API endpoint for OTA card (GET for current state, POST for updates)
         webui->registerApiRoute("/api/ota/unified", HTTP_GET, [this](AsyncWebServerRequest* request) {
+            // The page draws its card from /api/ui/updates, not from here.
+            if (!webui->authorize(request)) {
+                request->requestAuthentication();
+                return;
+            }
             respondJson(request, [this](JsonDocument& doc) {
                 if (!ota) return;
                 doc["state"] = stateToString(ota->getState());
@@ -246,6 +251,10 @@ private:
         });
 
         webui->registerApiRoute("/api/ota/unified", HTTP_POST, [this](AsyncWebServerRequest* request) {
+            if (!webui->authorize(request)) {
+                request->requestAuthentication();
+                return;
+            }
             if (!ota) {
                 respondJson(request, [](JsonDocument& doc) {
                     doc["success"] = false;
@@ -265,6 +274,10 @@ private:
         });
 
         webui->registerApiRoute("/api/ota/status", HTTP_GET, [this](AsyncWebServerRequest* request) {
+            if (!webui->authorize(request)) {
+                request->requestAuthentication();
+                return;
+            }
             respondJson(request, [this](JsonDocument& doc) {
                 if (!ota) return;
                 doc["state"] = stateToString(ota->getState());
@@ -278,10 +291,11 @@ private:
         });
 
         webui->registerApiRoute("/api/ota/check", HTTP_POST, [this](AsyncWebServerRequest* request) {
-            // SEC-10/SEC-11: triggering a check is a state change; gate it on the
-            // WebUI's per-boot CSRF token. This route previously had no auth
-            // check at all, even when enableAuth was on.
-            if (!webui || !webui->checkCsrf(request)) {
+            if (!webui->authorize(request)) {
+                request->requestAuthentication();
+                return;
+            }
+            if (!webui->checkCsrf(request)) {
                 request->send(403, "application/json", "{\"success\":false,\"error\":\"Bad or missing CSRF token\"}");
                 return;
             }
@@ -292,6 +306,11 @@ private:
         });
 
         webui->registerApiRoute("/api/ota/update", HTTP_POST, [this](AsyncWebServerRequest* request) {
+            // Above the branch: the read below answers with the configured URL.
+            if (!webui->authorize(request)) {
+                request->requestAuthentication();
+                return;
+            }
             if (!ota) {
                 respondJson(request, [](JsonDocument& doc){
                     doc["success"] = false;
@@ -315,10 +334,6 @@ private:
                 return;
             }
             
-            // Action request: trigger update — a state change. Gate on the
-            // WebUI's per-boot CSRF token (the no-param read branch above stays
-            // open, since the ota_manager card polls it). SEC-10/SEC-11: this
-            // route previously had no auth check at all.
             if (!webui || !webui->checkCsrf(request)) {
                 request->send(403, "application/json", "{\"success\":false,\"error\":\"Bad or missing CSRF token\"}");
                 return;
