@@ -97,15 +97,18 @@ public:
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
         doc["cmd_t"] = buf;
 
-        // Code configuration (only when code support is active)
-        bool hasCodeConfig = !code.isEmpty() || codeArmRequired || codeDisarmRequired || codeTriggerRequired;
-        if (hasCodeConfig) {
-            if (!code.isEmpty()) {
-                doc["code"] = code;
-            }
-            doc["cod_arm_req"] = codeArmRequired;
-            doc["cod_dis_req"] = codeDisarmRequired;
-            doc["cod_trig_req"] = codeTriggerRequired;
+        // Home Assistant reads an absent code_*_required as true where this
+        // component defaults to false, so each key is written where its value can
+        // act: arming and disarming always, triggering where the panel offers it.
+        doc["cod_arm_req"] = codeArmRequired;
+        doc["cod_dis_req"] = codeDisarmRequired;
+        if (supportedFeatures & AlarmFeature::Trigger) doc["cod_trig_req"] = codeTriggerRequired;
+
+        // The code itself, and the template that carries it, only matter when a
+        // code travels — configured here, or asked of the user by Home Assistant.
+        if (!code.isEmpty()) doc["code"] = code;
+        const bool triggerCodeApplies = codeTriggerRequired && (supportedFeatures & AlarmFeature::Trigger);
+        if (!code.isEmpty() || codeArmRequired || codeDisarmRequired || triggerCodeApplies) {
             doc["cmd_tpl"] = "{{ action }}{% if code %} {{ code }}{% endif %}";
         }
 
