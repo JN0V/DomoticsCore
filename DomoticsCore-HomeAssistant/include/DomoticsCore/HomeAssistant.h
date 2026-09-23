@@ -168,7 +168,25 @@ public:
     }
     
     void loop() override {
-        // Nothing to do in loop - all communication via EventBus
+        // A broker outage holds the states it stopped; they leave a few per
+        // loop, behind the discovery documents the reconnection queued, so the
+        // burst never outgrows the event queue.
+        if (!mqttConnected) return;
+        HAL::Platform::LockGuard guard(storeLock);
+        if (pendingPublishes.empty()) return;
+
+        size_t sent = 0;
+        while (sent < FLUSH_PER_LOOP && !pendingPublishes.empty()) {
+            const PendingPublish& held = pendingPublishes.front();
+            // Erase only what went out: a refused publish keeps its slot, or the
+            // store would lose the very value it exists to keep.
+            if (!sendToBroker(held.entity, held.payload, held.attributes)) break;
+            heldBytes -= static_cast<uint16_t>(held.payload.length());
+            pendingPublishes.erase(pendingPublishes.begin());
+            ++sent;
+        }
+        // Empty is where this costs nothing: erasing keeps the buffer.
+        if (pendingPublishes.empty()) pendingPublishes.shrink_to_fit();
     }
     
     /**
@@ -183,6 +201,16 @@ public:
         DLOG_I(LOG_HA, "Shutting down");
         setAvailable(false);
         removeDiscovery();
+        // Nothing will drain it after this, and the entities it points at are
+        // being withdrawn from Home Assistant anyway.
+        HAL::Platform::LockGuard guard(storeLock);
+        if (!pendingPublishes.empty()) {
+            DLOG_W(LOG_HA, "Discarding %u held payloads at shutdown",
+                   (unsigned)pendingPublishes.size());
+        }
+        pendingPublishes.clear();
+        pendingPublishes.shrink_to_fit();
+        heldBytes = 0;
         return ComponentStatus::Success;
     }
     
@@ -335,7 +363,10 @@ public:
     // ========== State Publishing ==========
 
     /**
-     * @brief Publish entity state (string) - INTERNAL IMPLEMENTATION
+     * @brief Publish entity state (string), or hold it until the broker is back.
+     *
+     * While the link is down the payload is stored, and loop() drains the store
+     * after the reconnection. Safe from any task: the store takes a lock.
      */
     void publishState(const String& id, const String& state) {
         HAEntity* entity = findEntity(id);
@@ -343,17 +374,8 @@ public:
             DLOG_W(LOG_HA, "Entity not found: %s", id.c_str());
             return;
         }
-        
-        if (!mqttConnected) {
-            DLOG_D(LOG_HA, "MQTT not connected, skipping publish for: %s", id.c_str());
-            return;
-        }
-        
-        char topic[HA_TOPIC_BUF_SIZE];
-        entity->getStateTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
-        DLOG_D(LOG_HA, "Publishing state: %s = %s", id.c_str(), state.c_str());
-        mqttPublish(topic, state, 0, entity->retained);
-        stats.stateUpdates++;
+
+        publishOrHold(entity, state, false);
     }
     
     /**
@@ -378,27 +400,23 @@ public:
     }
 
     /**
-     * @brief Publish entity state with JSON (for lights with brightness)
+     * @brief Publish entity state with JSON (for lights with brightness).
+     *
+     * Held through an outage like the string form.
      */
     void publishStateJson(const String& id, const JsonDocument& doc) {
         HAEntity* entity = findEntity(id);
         if (!entity) return;
         
-        if (!mqttConnected) {
-            DLOG_D(LOG_HA, "MQTT not connected, skipping JSON publish");
-            return;
-        }
-        
         String payload;
         serializeJson(doc, payload);
-        char topic[HA_TOPIC_BUF_SIZE];
-        entity->getStateTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
-        mqttPublish(topic, payload, 0, entity->retained);
-        stats.stateUpdates++;
+        publishOrHold(entity, payload, false);
     }
     
     /**
-     * @brief Publish entity attributes (additional metadata)
+     * @brief Publish entity attributes (additional metadata). Always retained.
+     *
+     * Held through an outage like a state.
      */
     void publishAttributes(const String& id, const JsonDocument& attributes) {
         HAEntity* entity = findEntity(id);
@@ -406,9 +424,7 @@ public:
         
         String payload;
         serializeJson(attributes, payload);
-        char topic[HA_TOPIC_BUF_SIZE];
-        entity->getAttributesTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
-        mqttPublish(topic, payload, 0, true);
+        publishOrHold(entity, payload, true);
     }
     
     // ========== Availability ==========
@@ -525,10 +541,24 @@ public:
         uint32_t discoveryCount = 0;
         uint32_t discoveryRefused = 0;  ///< Configs never handed to MQTT: over the event field (BUG-38)
         uint32_t stateUpdates = 0;
+        uint32_t statesRefused = 0;     ///< States and attributes never held: over the event field, or no heap
         uint32_t commandsReceived = 0;
     };
     
     const HAStatistics& getStatistics() const { return stats; }
+
+    /**
+     * @brief States and attributes a broker outage is holding.
+     *
+     * One slot per entity and topic, so it never exceeds twice the entity
+     * count however long the outage lasts, and never more than MAX_HELD_BYTES
+     * of payload. Non-zero during an outage and for the first loops after a
+     * reconnection, which drains four per loop(); zero once it has drained.
+     */
+    size_t getPendingPublishCount() { 
+        HAL::Platform::LockGuard guard(storeLock);
+        return pendingPublishes.size();
+    }
     
     /**
      * @brief Check if MQTT is connected
@@ -549,7 +579,126 @@ private:
     char adoptedFromWill_[HA::MAX_AVAIL_TOPIC] = {0};
     bool mqttConnected = false;  // Track MQTT connection state via EventBus
     char commandTopicFilter[HA_TOPIC_BUF_SIZE] = {};  // Stored to keep pointer valid for EventBus
-    
+
+    // What a broker outage stopped, one slot per entity and topic. Held here
+    // rather than on HAEntity: empty while the link is up, it costs the
+    // component one vector instead of a String on every entity.
+    struct PendingPublish {
+        HAEntity* entity;   // stable — entities are append-only unique_ptr
+        String payload;
+        bool attributes;    // the attributes topic rather than the state topic
+    };
+    std::vector<PendingPublish> pendingPublishes;
+    uint16_t heldBytes = 0;
+    // The web server's task publishes settings, so a consumer can reach a state
+    // publish from somewhere other than the loop. Taken around every touch of
+    // the store; the EventBus releases its own before dispatching a handler, so
+    // this one is only ever taken first and the two cannot deadlock.
+    HAL::Platform::RecursiveLock storeLock;
+    // Small enough that a reconnection's discovery documents and the states
+    // behind them never fill the event queue at once.
+    static constexpr size_t FLUSH_PER_LOOP = 4;
+    // A slot count is not a memory bound: each one may hold 699 characters, and
+    // an outage can hold two per entity. The budget is what the store is
+    // allowed on the smaller heap, and a hold over it is refused aloud.
+    static constexpr uint16_t MAX_HELD_BYTES = 2048;
+
+    // Publish now, or hold until the broker is back.
+    void publishOrHold(HAEntity* entity, const String& payload, bool attributes) {
+        if (mqttConnected) {
+            // This value is newer than anything the outage held for the same
+            // topic, and the drain may not have reached that slot yet: leaving
+            // it would republish the older one over this one, retained.
+            dropHeldSlot(entity, attributes);
+            sendToBroker(entity, payload, attributes);
+            return;
+        }
+        holdForReconnect(entity, payload, attributes);
+    }
+
+    void dropHeldSlot(HAEntity* entity, bool attributes) {
+        HAL::Platform::LockGuard guard(storeLock);
+        for (auto it = pendingPublishes.begin(); it != pendingPublishes.end(); ++it) {
+            if (it->entity == entity && it->attributes == attributes) {
+                heldBytes -= static_cast<uint16_t>(it->payload.length());
+                pendingPublishes.erase(it);
+                return;
+            }
+        }
+    }
+
+    bool sendToBroker(HAEntity* entity, const String& payload, bool attributes) {
+        char topic[HA_TOPIC_BUF_SIZE];
+        if (attributes) {
+            entity->getAttributesTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
+            return mqttPublish(topic, payload, 0, true);
+        }
+        entity->getStateTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
+        DLOG_D(LOG_HA, "Publishing state: %s = %s", entity->id.c_str(), payload.c_str());
+        if (!mqttPublish(topic, payload, 0, entity->retained)) return false;
+        stats.stateUpdates++;
+        return true;
+    }
+
+    uint16_t heldSlotBytes(HAEntity* entity, bool attributes) {
+        HAL::Platform::LockGuard guard(storeLock);
+        for (const auto& held : pendingPublishes) {
+            if (held.entity == entity && held.attributes == attributes) {
+                return static_cast<uint16_t>(held.payload.length());
+            }
+        }
+        return 0;
+    }
+
+    void holdForReconnect(HAEntity* entity, const String& payload, bool attributes) {
+        HAL::Platform::LockGuard guard(storeLock);
+        // The event field is the ceiling at send time, so refuse it here too
+        // rather than hold bytes that could never leave.
+        if (payload.length() >= MQTT_EVENT_PAYLOAD_SIZE) {
+            DLOG_W(LOG_HA, "Held payload for '%s' is %u bytes, over the %u-byte event field: dropped",
+                   entity->id.c_str(), (unsigned)payload.length(),
+                   (unsigned)(MQTT_EVENT_PAYLOAD_SIZE - 1));
+            stats.statesRefused++;
+            return;
+        }
+
+        // Against the budget, counting what this payload would replace rather
+        // than add: a slot that is overwritten costs only its difference.
+        const uint16_t replacing = heldSlotBytes(entity, attributes);
+        if (heldBytes - replacing + payload.length() > MAX_HELD_BYTES) {
+            DLOG_W(LOG_HA, "Held payloads are at %u B of %u: dropping the one for '%s'",
+                   (unsigned)heldBytes, (unsigned)MAX_HELD_BYTES, entity->id.c_str());
+            stats.statesRefused++;
+            return;
+        }
+
+        // A String whose allocation fails invalidates to empty, and an empty
+        // payload on a retained topic is a message of its own. Copy first, and
+        // take the slot only if the copy is whole.
+        String copy(payload);
+        if (copy.length() != payload.length()) {
+            DLOG_W(LOG_HA, "Out of memory holding a payload for '%s': dropped", entity->id.c_str());
+            stats.statesRefused++;
+            return;
+        }
+        // One slot per entity and topic, overwritten: a state is
+        // last-value-wins, so only the newest is worth sending when the link
+        // returns. The insertion order is kept, so entities come back in the
+        // order the application produced them.
+        for (auto& held : pendingPublishes) {
+            if (held.entity == entity && held.attributes == attributes) {
+                heldBytes -= static_cast<uint16_t>(held.payload.length());
+                held.payload = std::move(copy);
+                heldBytes += static_cast<uint16_t>(held.payload.length());
+                return;
+            }
+        }
+        heldBytes += static_cast<uint16_t>(copy.length());
+        pendingPublishes.push_back(PendingPublish{entity, std::move(copy), attributes});
+        DLOG_D(LOG_HA, "MQTT down, holding %s for '%s'",
+               attributes ? "attributes" : "state", entity->id.c_str());
+    }
+
     /**
      * @brief Find entity by ID
      */
