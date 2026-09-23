@@ -381,6 +381,61 @@ success (no wait). Every attempt is answered; nothing is refused or cut.
 python3 tools/on-device/console_auth_check.py 192.168.1.218 --password probe
 ```
 
+## `eventbus_race_check.py`
+
+A burst of WebUI settings writes from several connections at once, each of
+which publishes to the EventBus from the web server's task while the loop
+drains it. The verdict is the device's own uptime, read every second: a
+reboot means it died.
+
+```bash
+python3 tools/on-device/eventbus_race_check.py http://192.168.1.224 --writes 400 --workers 4
+```
+
+**It does not discriminate**: 303 writes against firmware with the race wide
+open survived, because a settings write spends its time in flash, not in the
+queue. It is a soak of the whole stack — deaths and heap drift under real
+requests. What reproduces the race on demand is the probe below. Each write
+persists, so it leaves NVS wear behind.
+
+## `probes/eventbus-race`
+
+Core alone, an ESP32, and the two calls that meet: a publisher pinned to core 0
+at the async web server's priority, `poll()` on the application core, sixteen
+topics so the pending map is a tree rather than one node.
+
+```bash
+cd tools/on-device/probes/eventbus-race && pio run -e esp32dev -t upload --upload-port /dev/serial/by-id/...
+```
+
+It prints a line a second with what it published, what was dispatched and the
+heap. Without the bus lock the WROOM-32D boot-loops before the first line, and
+the two backtraces decode to an insert from one task against an erase from the
+other; with it, 1.88 million publishes in 89 s and a flat heap. The ESP8266 has
+no second task to race against, which is why there is no environment for it.
+
+## `ota_trigger_auth_check.py`
+
+What the two OTA trigger routes accept from a client with no credentials.
+Enables authentication through `webui_settings`, then reads
+`/api/ota/check` and `/api/ota/update` without credentials and with — the
+token taken **before** auth was enabled, which is what an observer of one
+earlier request has — and restores the previous auth state before it exits.
+
+```bash
+python3 tools/on-device/ota_trigger_auth_check.py http://192.168.1.224 --user admin --password secret
+```
+
+Two shapes are easy to get wrong and the script fixes them: `/api/ui/action`
+reads its parameters from the **query string** while `/api/ota/update` reads
+`url`/`force` from the **body**, and the update route only takes its action
+branch when a body parameter is present. It prints `/api/ui/token` without
+credentials as its own witness, or a run against a device whose auth never
+came on reads as a pass. The HTTP codes do not show whether the component
+moved: with no downloader wired an accepted trigger ends at
+`[OTA] State -> error | No downloader set` on the serial, so read the port
+while it runs — that line, not the `200`, is the proof a request got through.
+
 ## `webui_auth_check.py`
 
 Which routes an unauthenticated client can read:
