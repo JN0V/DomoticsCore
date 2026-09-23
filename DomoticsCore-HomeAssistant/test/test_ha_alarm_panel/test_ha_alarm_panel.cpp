@@ -146,7 +146,8 @@ void test_alarm_panel_discovery_supported_features() {
 // ============================================================================
 
 void test_alarm_panel_discovery_code_fields() {
-    // No code config -> no code fields at all
+    // No code config -> no code and no template, but the two requirements are
+    // still stated: Home Assistant reads an absent key as true.
     {
         HAAlarmControlPanel panel("alarm", "Alarm");
         JsonDocument doc;
@@ -156,8 +157,11 @@ void test_alarm_panel_discovery_code_fields() {
 
         TEST_ASSERT_TRUE(doc["code"].isNull());
         TEST_ASSERT_TRUE(doc["cmd_tpl"].isNull());
-        TEST_ASSERT_TRUE(doc["cod_arm_req"].isNull());
-        TEST_ASSERT_TRUE(doc["cod_dis_req"].isNull());
+        TEST_ASSERT_FALSE(doc["cod_arm_req"].isNull());
+        TEST_ASSERT_FALSE(doc["cod_arm_req"].as<bool>());
+        TEST_ASSERT_FALSE(doc["cod_dis_req"].isNull());
+        TEST_ASSERT_FALSE(doc["cod_dis_req"].as<bool>());
+        // This panel offers no Trigger, so the key cannot change anything.
         TEST_ASSERT_TRUE(doc["cod_trig_req"].isNull());
     }
 
@@ -340,7 +344,9 @@ void test_alarm_panel_add_method() {
     // cut mid-JSON and published anyway for months — this test passed because
     // ArduinoJson yields the keys parsed before the cut, and it asserted only
     // those — then refused aloud since OBS Lot D. With the abbreviated keys it
-    // is 638 characters and reaches the bus whole.
+    // is 617 characters and reaches the bus whole: 638 until the trigger
+    // requirement started following the Trigger feature, which this panel does
+    // not declare.
     static char warn[160]; warn[0] = '\0';
     auto cb = LoggerCallbacks::addCallback([](LogLevel level, const char*, const char* msg) {
         if (level == LOG_LEVEL_WARN && strstr(msg, "not published")) snprintf(warn, sizeof(warn), "%s", msg);
@@ -371,7 +377,7 @@ void test_alarm_panel_add_method() {
         });
 
     simulateMqttConnect(core);
-    TEST_ASSERT_EQUAL_MESSAGE(638, published.length(), "BUG-38: the abbreviated panel config reaches the bus whole");
+    TEST_ASSERT_EQUAL_MESSAGE(617, published.length(), "BUG-38: the abbreviated panel config reaches the bus whole");
     TEST_ASSERT_EQUAL_STRING("", warn);
     TEST_ASSERT_EQUAL_UINT32(0, haPtr->getStatistics().discoveryRefused);
     LoggerCallbacks::removeCallback(cb);
@@ -528,6 +534,125 @@ void test_alarm_feature_type_safety() {
 }
 
 // ============================================================================
+// Test 16: a panel configured with no code — the case that had no coverage
+// ============================================================================
+
+void test_a_panel_with_no_code_says_no_code_is_required() {
+    // The library's own defaults: no code, nothing required. Home Assistant
+    // defaults every code_*_required to true when the key is absent, so an
+    // omitted key states the reverse of this configuration and the panel
+    // cannot be armed from the interface at all.
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "gaia_alarmcontrol", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    ha->addAlarmControlPanel("alarm_control", "Alarm Control", "mdi:shield-home",
+                             AlarmFeature::ArmAway | AlarmFeature::ArmNight);
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    String published;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            if (strstr(ev.topic, "alarm_control_panel") && strstr(ev.topic, "/config")) published = ev.payload;
+        });
+    simulateMqttConnect(core);
+
+    TEST_ASSERT_FALSE_MESSAGE(published.isEmpty(), "no discovery document was published");
+    JsonDocument doc;
+    TEST_ASSERT_EQUAL_MESSAGE(DeserializationError::Ok, deserializeJson(doc, published).code(),
+                              "the discovery document is not valid JSON");
+    TEST_ASSERT_FALSE_MESSAGE(doc["cod_arm_req"].isNull(),
+        "a panel with no code publishes no cod_arm_req, and Home Assistant then requires a code to arm");
+    TEST_ASSERT_FALSE(doc["cod_arm_req"].as<bool>());
+    TEST_ASSERT_FALSE_MESSAGE(doc["cod_dis_req"].isNull(),
+        "cod_dis_req is absent, which Home Assistant reads as true");
+    TEST_ASSERT_FALSE(doc["cod_dis_req"].as<bool>());
+    TEST_ASSERT_TRUE_MESSAGE(doc["code"].isNull(), "no code was configured, so none must be advertised");
+    TEST_ASSERT_TRUE_MESSAGE(doc["cmd_tpl"].isNull(), "the template only matters when a code travels");
+
+    // The document this panel publishes against the event field it crosses.
+    // The margin is the figure worth pinning, not the fact that it fits: the two
+    // requirements cost 40 of the 699 characters, and 86 are left.
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(613, published.length(),
+        "a two-mode code-less panel's document, against a 699-character field");
+
+    core.shutdown();
+}
+
+void test_the_trigger_requirement_follows_the_trigger_feature() {
+    // Home Assistant refuses the trigger service to a panel that does not
+    // declare the feature, so the key is written exactly where it can act.
+    auto build = [](AlarmFeature features) -> JsonDocument {
+        HAAlarmControlPanel panel("alarm", "Alarm");
+        panel.supportedFeatures = features;
+        JsonDocument doc, deviceDoc;
+        JsonObject device = deviceDoc.to<JsonObject>();
+        panel.buildDiscoveryPayload(doc, "n", "ha", device, "");
+        return doc;
+    };
+
+    {
+        JsonDocument doc = build(AlarmFeature::ArmAway | AlarmFeature::Trigger);
+        TEST_ASSERT_FALSE_MESSAGE(doc["cod_trig_req"].isNull(),
+            "a panel offering Trigger with no code cannot be triggered: the absent key reads as true");
+        TEST_ASSERT_FALSE(doc["cod_trig_req"].as<bool>());
+    }
+    {
+        JsonDocument doc = build(AlarmFeature::ArmAway);
+        TEST_ASSERT_TRUE_MESSAGE(doc["cod_trig_req"].isNull(),
+            "a panel with no Trigger feature spends no characters on a key Home Assistant cannot use");
+    }
+    // The value is the member's, not a constant: without this the key could be
+    // written `false` outright and every assertion above would still pass.
+    {
+        HAAlarmControlPanel panel("alarm", "Alarm");
+        panel.supportedFeatures = AlarmFeature::ArmAway | AlarmFeature::Trigger;
+        panel.codeTriggerRequired = true;
+        JsonDocument doc, deviceDoc;
+        JsonObject device = deviceDoc.to<JsonObject>();
+        panel.buildDiscoveryPayload(doc, "n", "ha", device, "");
+        TEST_ASSERT_TRUE_MESSAGE(doc["cod_trig_req"].as<bool>(),
+            "a panel that requires a code to trigger published that it does not");
+        TEST_ASSERT_FALSE_MESSAGE(doc["cmd_tpl"].isNull(),
+            "the code Home Assistant will ask for has no template to travel in");
+    }
+}
+
+// The cost of stating the requirements, at the shape where it bites: a
+// code-less panel offering every arm mode is over the event field and refused
+// entirely. It was unarmable before this and is absent after it — the keys are
+// not what makes it too long, but they are what pushes this shape over.
+void test_a_code_less_panel_with_every_arm_mode_is_over_the_field() {
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addAlarmControlPanel("alarm", "Alarm Panel", "mdi:shield-home",
+        AlarmFeature::ArmHome | AlarmFeature::ArmAway | AlarmFeature::ArmNight |
+        AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass | AlarmFeature::Trigger);
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    size_t length = 0;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            if (strstr(ev.topic, "alarm_control_panel") && strstr(ev.topic, "/config")) length = strlen(ev.payload);
+        });
+    simulateMqttConnect(core);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, (uint32_t)length,
+        "this shape now fits the field: re-derive the figures the reference states");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, haPtr->getStatistics().discoveryRefused,
+        "the refusal was not counted");
+
+    core.shutdown();
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -538,6 +663,9 @@ int runAllTests() {
     RUN_TEST(test_alarm_panel_discovery_payload);
     RUN_TEST(test_alarm_panel_discovery_supported_features);
     RUN_TEST(test_alarm_panel_discovery_code_fields);
+    RUN_TEST(test_a_panel_with_no_code_says_no_code_is_required);
+    RUN_TEST(test_the_trigger_requirement_follows_the_trigger_feature);
+    RUN_TEST(test_a_code_less_panel_with_every_arm_mode_is_over_the_field);
     RUN_TEST(test_alarm_panel_handle_command_basic);
     RUN_TEST(test_alarm_panel_handle_command_with_code);
     RUN_TEST(test_alarm_panel_handle_command_no_callback);
