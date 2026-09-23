@@ -532,6 +532,21 @@ private:
 #endif
 
 
+/** @brief A recursive lock. Statically allocated: no heap block per instance. */
+class RecursiveLock {
+public:
+    RecursiveLock() : handle_(xSemaphoreCreateRecursiveMutexStatic(&storage_)) {}
+    RecursiveLock(const RecursiveLock&) = delete;
+    RecursiveLock& operator=(const RecursiveLock&) = delete;
+
+    void lock() { xSemaphoreTakeRecursive(handle_, portMAX_DELAY); }
+    void unlock() { xSemaphoreGiveRecursive(handle_); }
+
+private:
+    StaticSemaphore_t storage_{};
+    SemaphoreHandle_t handle_;
+};
+
 /**
  * @brief What this platform's allocator and String cost, for callers that size
  *        a buffer or a queue in bytes.

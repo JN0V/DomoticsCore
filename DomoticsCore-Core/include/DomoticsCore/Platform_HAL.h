@@ -139,6 +139,18 @@
 
 #include <string.h>
 namespace DomoticsCore { namespace HAL { namespace Platform {
+/** @brief Holds a RecursiveLock for a scope. */
+class LockGuard {
+public:
+    explicit LockGuard(RecursiveLock& lock) : lock_(lock) { lock_.lock(); }
+    ~LockGuard() { lock_.unlock(); }
+    LockGuard(const LockGuard&) = delete;
+    LockGuard& operator=(const LockGuard&) = delete;
+
+private:
+    RecursiveLock& lock_;
+};
+
 /** @brief The crash kinds crashForTest() returns from (OBS-4): the console says "done:" for these. */
 inline bool crashKindSurvives(const char* kind) {
     return strcmp(kind, "nothrow") == 0 || strcmp(kind, "squeeze") == 0 || strcmp(kind, "release") == 0;

@@ -758,6 +758,60 @@ void test_an_event_costing_exactly_the_budget_is_accepted(void) {
         "the largest event that fits was refused, or did not evict what stood in its way");
 }
 
+
+// ---------------------------------------------------------------------------
+// The lock. The stub only counts, which is all a host test can observe of it.
+// ---------------------------------------------------------------------------
+
+static void resetLockCounters() {
+    HAL::Platform::s_stubLocksTaken = 0;
+    HAL::Platform::s_stubLockDepth = 0;
+    HAL::Platform::s_stubLockMaxDepth = 0;
+}
+
+void test_publishing_takes_the_lock(void) {
+    resetLockCounters();
+    testBus->publish(String("topic/one"), (uint32_t)7);
+    TEST_ASSERT_TRUE_MESSAGE(HAL::Platform::s_stubLocksTaken > 0,
+                             "a publish reached the queue without taking the lock");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, HAL::Platform::s_stubLockDepth,
+                                     "the lock was left held after publish()");
+}
+
+void test_dispatch_takes_the_lock_and_releases_it_before_the_handler(void) {
+    size_t depthInsideHandler = 999;
+    testBus->subscribe(String("topic/one"),
+                       [&depthInsideHandler](const void*) {
+                           depthInsideHandler = HAL::Platform::s_stubLockDepth;
+                       });
+    testBus->publish(String("topic/one"), (uint32_t)7);
+
+    resetLockCounters();
+    testBus->poll();
+    TEST_ASSERT_TRUE_MESSAGE(HAL::Platform::s_stubLocksTaken > 0,
+                             "poll() moved the queue without taking the lock");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, depthInsideHandler,
+                                     "the handler ran with the queue lock held");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, HAL::Platform::s_stubLockDepth,
+                                     "the lock was left held after poll()");
+}
+
+void test_a_handler_that_publishes_re_enters_the_lock(void) {
+    testBus->subscribe(String("topic/one"), [](const void*) {
+        testBus->publish(String("topic/two"), (uint32_t)1);
+    });
+    bool second = false;
+    testBus->subscribe(String("topic/two"), [&second](const void*) { second = true; });
+
+    testBus->publish(String("topic/one"), (uint32_t)7);
+    resetLockCounters();
+    testBus->poll();   // dispatches one, which publishes the other
+    testBus->poll();
+    TEST_ASSERT_TRUE_MESSAGE(second, "the event a handler published was never dispatched");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, HAL::Platform::s_stubLockDepth,
+                                     "a re-entrant publish left the lock held");
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
 
@@ -783,6 +837,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_an_oversized_typed_event_is_refused_and_named);
     RUN_TEST(test_an_event_costing_exactly_the_budget_is_accepted);
     RUN_TEST(test_entry_guard_rail_bounds_a_cheap_class);
+    RUN_TEST(test_publishing_takes_the_lock);
+    RUN_TEST(test_dispatch_takes_the_lock_and_releases_it_before_the_handler);
+    RUN_TEST(test_a_handler_that_publishes_re_enters_the_lock);
     RUN_TEST(test_publish_during_dispatch_safe);
     RUN_TEST(test_reset_clears_wildcard_subscriptions);
     RUN_TEST(test_reset_clears_sticky_events);

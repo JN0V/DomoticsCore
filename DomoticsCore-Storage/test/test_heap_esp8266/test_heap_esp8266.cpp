@@ -35,9 +35,11 @@ using namespace DomoticsCore::Components;
 
 // The two byte counters must stay in the padding that follows droppedEvents_;
 // declared after dispatching_ they land on an odd offset and the object grows.
+// The last four bytes are the queue lock: empty on this platform, which has one
+// execution context, but a member still costs a byte and its alignment.
 // Here rather than in the shipped header: a consumer on another toolchain must
 // not fail to build over our layout.
-static_assert(sizeof(DomoticsCore::Utils::EventBus) == 172, "EventBus layout moved");
+static_assert(sizeof(DomoticsCore::Utils::EventBus) == 176, "EventBus layout moved");
 
 void setUp() {}
 void tearDown() {}

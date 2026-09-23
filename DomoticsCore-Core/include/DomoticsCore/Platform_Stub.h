@@ -879,6 +879,25 @@ public:
 };
 
 
+// Counted, not held: a native test cannot otherwise see a mutation take the lock.
+inline size_t s_stubLocksTaken = 0;
+inline size_t s_stubLockDepth = 0;
+inline size_t s_stubLockMaxDepth = 0;
+
+/** @brief A recursive lock, empty here: nothing runs beside the test. */
+class RecursiveLock {
+public:
+    RecursiveLock() = default;
+    RecursiveLock(const RecursiveLock&) = delete;
+    RecursiveLock& operator=(const RecursiveLock&) = delete;
+
+    void lock() {
+        ++s_stubLocksTaken;
+        if (++s_stubLockDepth > s_stubLockMaxDepth) s_stubLockMaxDepth = s_stubLockDepth;
+    }
+    void unlock() { if (s_stubLockDepth) --s_stubLockDepth; }
+};
+
 /**
  * @brief What this platform's allocator and String cost, for callers that size
  *        a buffer or a queue in bytes.

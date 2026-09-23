@@ -64,6 +64,11 @@ inline void __attribute__((noinline)) logRefusedEvent(const char* topic, size_t 
            topic, (unsigned)cost, (unsigned)QueueCost::kBudgetBytes);
 }
 
+/**
+ * @brief Queued publish/subscribe, drained by the application loop.
+ *
+ * publish() is safe from any task; subscribing is the loop's alone.
+ */
 class EventBus {
 public:
     using Handler = std::function<void(const void* /*payload*/)>;
@@ -91,10 +96,11 @@ public:
     }
 
     // Subscribe to an event type. Returns a subscription id.
-    // WARNING: Must not be called during poll() dispatch (single-threaded assumption).
+    // WARNING: Must not be called during poll() dispatch.
     uint32_t subscribe(EventType type, Handler handler, void* owner = nullptr) {
         assert(!dispatching_ && "Cannot subscribe during EventBus dispatch");
         if (!handler) return 0;
+        HAL::Platform::LockGuard guard(lock_);
         uint32_t id = nextId++;
         subscriptions[type].push_back({id, owner, std::move(handler)});
         return id;
@@ -102,10 +108,11 @@ public:
 
     // Subscribe to a topic string (e.g., "wifi.connected"). Returns a subscription id.
     // If replayLast is true and a sticky event exists for this topic, the handler is invoked immediately once.
-    // WARNING: Must not be called during poll() dispatch (single-threaded assumption).
+    // WARNING: Must not be called during poll() dispatch.
     uint32_t subscribe(const String& topic, Handler handler, void* owner = nullptr, bool replayLast = false) {
         assert(!dispatching_ && "Cannot subscribe during EventBus dispatch");
         if (!handler || topic.length() == 0) return 0;
+        HAL::Platform::LockGuard guard(lock_);
         uint32_t id = nextId++;
         if (isWildcard(topic)) {
             wildcardTopicSubscriptions[topic].push_back({id, owner, std::move(handler)});
@@ -133,9 +140,10 @@ public:
     }
 
     // Unsubscribe by id
-    // WARNING: Must not be called during poll() dispatch (single-threaded assumption).
+    // WARNING: Must not be called during poll() dispatch.
     void unsubscribe(uint32_t id) {
         assert(!dispatching_ && "Cannot unsubscribe during EventBus dispatch");
+        HAL::Platform::LockGuard guard(lock_);
         auto pred = [id](const Subscription& s){ return s.id == id; };
         if (pruneMap(subscriptions, pred)) return;
         if (pruneMap(topicSubscriptions, pred)) return;
@@ -143,10 +151,11 @@ public:
     }
 
     // Unsubscribe all belonging to a given owner pointer
-    // WARNING: Must not be called during poll() dispatch (single-threaded assumption).
+    // WARNING: Must not be called during poll() dispatch.
     void unsubscribeOwner(void* owner) {
         assert(!dispatching_ && "Cannot unsubscribeOwner during EventBus dispatch");
         if (!owner) return;
+        HAL::Platform::LockGuard guard(lock_);
         auto pred = [owner](const Subscription& s){ return s.owner == owner; };
         pruneMap(subscriptions, pred);
         pruneMap(topicSubscriptions, pred);
@@ -217,33 +226,48 @@ public:
         if (topic.length() == 0) return;
         if (refuseOversized(topic.c_str(), topic.length(), sizeof(PayloadT))) return;
         const uint8_t* p = reinterpret_cast<const uint8_t*>(&payload);
-        lastByTopic[topic] = std::vector<uint8_t>(p, p + sizeof(PayloadT));
+        {
+            HAL::Platform::LockGuard guard(lock_);
+            lastByTopic[topic] = std::vector<uint8_t>(p, p + sizeof(PayloadT));
+        }
         publish(topic, payload);
     }
     void publishSticky(const String& topic, const void* payload, size_t payloadSize) {
         if (topic.length() == 0 || payload == nullptr || payloadSize == 0) return;
         if (refuseOversized(topic.c_str(), topic.length(), payloadSize)) return;
         const uint8_t* p = static_cast<const uint8_t*>(payload);
-        lastByTopic[topic] = std::vector<uint8_t>(p, p + payloadSize);
+        {
+            HAL::Platform::LockGuard guard(lock_);
+            lastByTopic[topic] = std::vector<uint8_t>(p, p + payloadSize);
+        }
         publish(topic, payload, payloadSize);
     }
     void publishSticky(const String& topic) {
         if (topic.length() == 0) return;
-        lastByTopic[topic].clear();
-        lastByTopic[topic].shrink_to_fit();
+        {
+            HAL::Platform::LockGuard guard(lock_);
+            lastByTopic[topic].clear();
+            lastByTopic[topic].shrink_to_fit();
+        }
         publish(topic);
     }
 
-    // Dispatch queued events; call from main loop.
-    // Single-threaded assumption: handlers must NOT call subscribe/unsubscribe
-    // during dispatch. The dispatching_ flag guards this in debug builds.
+    // Dispatch queued events; call from main loop. Handlers must NOT call
+    // subscribe/unsubscribe during dispatch; dispatching_ guards that in debug
+    // builds. The lock is released before a handler runs: a publisher on
+    // another task must not wait behind one.
     void poll(size_t maxPerPoll = 8) {
         size_t processed = 0;
         dispatching_ = true;
-        while (!queue.empty() && processed < maxPerPoll) {
-            QueuedEvent qe = std::move(queue.front());
-            queue.pop();
-            queuedBytes_ -= static_cast<uint16_t>(QueueCost::of(qe.data.size(), qe.topic.length()));
+        while (processed < maxPerPoll) {
+            QueuedEvent qe;
+            {
+                HAL::Platform::LockGuard guard(lock_);
+                if (queue.empty()) break;
+                qe = std::move(queue.front());
+                queue.pop();
+                queuedBytes_ -= static_cast<uint16_t>(QueueCost::of(qe.data.size(), qe.topic.length()));
+            }
             processed++;
 
             const void* payloadPtr = nullptr;
@@ -267,7 +291,10 @@ public:
                         }
                     }
                 }
-                releasePending(qe.topic);
+                {
+                    HAL::Platform::LockGuard guard(lock_);
+                    releasePending(qe.topic);
+                }
             } else {
                 auto it = subscriptions.find(qe.type);
                 if (it != subscriptions.end()) {
@@ -293,6 +320,7 @@ public:
     // Note: dispatching_ is not reset because the assert guarantees it is already false.
     void reset() {
         assert(!dispatching_ && "Cannot reset during EventBus dispatch");
+        HAL::Platform::LockGuard guard(lock_);
         queue = std::queue<QueuedEvent>();
         subscriptions.clear();
         topicSubscriptions.clear();
@@ -310,13 +338,18 @@ private:
     // is still visible in getDroppedCount() and in the log.
     bool refuseOversized(const char* topic, size_t topicLen, size_t payloadBytes) {
         if (!exceedsBudget(payloadBytes, topicLen)) return false;
-        ++droppedEvents_;
+        {
+            HAL::Platform::LockGuard guard(lock_);
+            ++droppedEvents_;
+        }
+        // Logged outside the lock: it writes to a port.
         logRefusedEvent(topicLen ? topic : "<typed event>",
                         QueueCost::of(payloadBytes, topicLen));
         return true;
     }
 
     void enqueue(QueuedEvent&& qe) {
+        HAL::Platform::LockGuard guard(lock_);
         const size_t cost = QueueCost::of(qe.data.size(), qe.topic.length());
         // An event larger than the whole budget can never be queued: evicting
         // for it would empty the queue and still fail. Name it instead.
@@ -406,6 +439,8 @@ private:
     uint16_t queuedBytes_ = 0;
     uint8_t highWaterPct_ = 0;
     bool dispatching_ = false;
+    // Recursive: a handler that publishes re-enters through enqueue().
+    mutable HAL::Platform::RecursiveLock lock_;
 };
 
 } // namespace Utils
