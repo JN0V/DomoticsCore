@@ -28,6 +28,11 @@ namespace DomoticsCore {
 namespace Components {
 namespace HomeAssistant {
 
+// HAEntity's topic buffer is sized to the event field every topic crosses; the
+// refusal below compares against the field, so the two must not drift apart.
+static_assert(HA_TOPIC_BUF_SIZE == DomoticsCore::Components::MQTT_EVENT_TOPIC_SIZE,
+              "the topic buffer and the event field it crosses must be one size");
+
 namespace HA {
 constexpr size_t MAX_NODE_ID         = 33;   // 32 chars + null (MQTT client ID limit)
 constexpr size_t MAX_DEVICE_NAME     = 65;   // 64 chars + null (HA device registry)
@@ -178,6 +183,15 @@ public:
         size_t sent = 0;
         while (sent < FLUSH_PER_LOOP && !pendingPublishes.empty()) {
             const PendingPublish& held = pendingPublishes.front();
+            // A topic that cannot leave never will — a prefix or node id changed
+            // under the store — so it is dropped rather than kept, or it would
+            // hold every value behind it for the life of the process.
+            if (!heldTopicFits(held.entity, held.attributes)) {
+                heldBytes -= static_cast<uint16_t>(held.payload.length());
+                pendingPublishes.erase(pendingPublishes.begin());
+                stats.statesRefused++;
+                continue;
+            }
             // Erase only what went out: a refused publish keeps its slot, or the
             // store would lose the very value it exists to keep.
             if (!sendToBroker(held.entity, held.payload, held.attributes)) break;
@@ -438,6 +452,7 @@ public:
         DLOG_I(LOG_HA, "  Topic: %s", config.availabilityTopic);
         DLOG_I(LOG_HA, "  Payload: %s", payload.c_str());
         
+        if (!topicFitsTheWire((int)strlen(config.availabilityTopic), "availability")) return;
         mqttPublish(config.availabilityTopic, payload, 0, true);
         DLOG_I(LOG_HA, "  Availability published");
         availabilityPublished = available;
@@ -474,7 +489,8 @@ public:
         
         for (const auto& entity : entities) {
             char topic[HA_TOPIC_BUF_SIZE];
-            entity->getDiscoveryTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
+            if (!topicFitsTheWire(entity->getDiscoveryTopic(topic, sizeof(topic), config.nodeId,
+                                                            config.discoveryPrefix), entity->id.c_str())) continue;
             mqttPublish(topic, "", 0, config.retainDiscovery);  // Empty payload removes entity
         }
     }
@@ -627,13 +643,32 @@ private:
         }
     }
 
+    // A topic that does not fit today will not fit on the next loop either, so
+    // the held store checks it on the way in and the flush drops rather than
+    // keeps: a kept slot would stall every value behind it for good.
+    bool heldTopicFits(HAEntity* entity, bool attributes) {
+        char topic[HA_TOPIC_BUF_SIZE];
+        const int needed = attributes
+            ? entity->getAttributesTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix)
+            : entity->getStateTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
+        return topicFitsTheWire(needed, entity->id.c_str());
+    }
+
     bool sendToBroker(HAEntity* entity, const String& payload, bool attributes) {
         char topic[HA_TOPIC_BUF_SIZE];
         if (attributes) {
-            entity->getAttributesTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
+            if (!topicFitsTheWire(entity->getAttributesTopic(topic, sizeof(topic), config.nodeId,
+                                                             config.discoveryPrefix), entity->id.c_str())) {
+                stats.statesRefused++;
+                return false;
+            }
             return mqttPublish(topic, payload, 0, true);
         }
-        entity->getStateTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
+        if (!topicFitsTheWire(entity->getStateTopic(topic, sizeof(topic), config.nodeId,
+                                                    config.discoveryPrefix), entity->id.c_str())) {
+            stats.statesRefused++;
+            return false;
+        }
         DLOG_D(LOG_HA, "Publishing state: %s = %s", entity->id.c_str(), payload.c_str());
         if (!mqttPublish(topic, payload, 0, entity->retained)) return false;
         stats.stateUpdates++;
@@ -658,6 +693,11 @@ private:
             DLOG_W(LOG_HA, "Held payload for '%s' is %u bytes, over the %u-byte event field: dropped",
                    entity->id.c_str(), (unsigned)payload.length(),
                    (unsigned)(MQTT_EVENT_PAYLOAD_SIZE - 1));
+            stats.statesRefused++;
+            return;
+        }
+
+        if (!heldTopicFits(entity, attributes)) {
             stats.statesRefused++;
             return;
         }
@@ -828,6 +868,18 @@ private:
     /**
      * @brief Publish MQTT message via EventBus
      */
+    // A topic longer than the event field arrives cut at the broker: Home
+    // Assistant never reads a config there, and two ids sharing a prefix cut to
+    // the same state topic and overwrite each other.
+    bool topicFitsTheWire(int needed, const char* entityId) {
+        // A negative return leaves the buffer indeterminate, so it is a refusal
+        // like any other rather than a length to compare.
+        if (needed >= 0 && needed < (int)MQTT_EVENT_TOPIC_SIZE) return true;
+        DLOG_W(LOG_HA, "Topic for '%s' needs %d chars, over the %u-char event field: not published",
+               entityId, needed, (unsigned)(MQTT_EVENT_TOPIC_SIZE - 1));
+        return false;
+    }
+
     bool mqttPublish(const char* topic, const String& payload, uint8_t qos = 0, bool retain = false) {
         using namespace DomoticsCore::Components;
         MQTTPublishEvent ev{};
@@ -888,7 +940,14 @@ private:
         String payload;
         serializeJson(doc, payload);
         char topic[HA_TOPIC_BUF_SIZE];
-        entity->getDiscoveryTopic(topic, sizeof(topic), config.nodeId, config.discoveryPrefix);
+        char stateTopic[HA_TOPIC_BUF_SIZE];
+        if (!topicFitsTheWire(entity->getDiscoveryTopic(topic, sizeof(topic), config.nodeId,
+                                                        config.discoveryPrefix), entity->id.c_str())
+            || !topicFitsTheWire(entity->getStateTopic(stateTopic, sizeof(stateTopic), config.nodeId,
+                                                       config.discoveryPrefix), entity->id.c_str())) {
+            stats.discoveryRefused++;
+            return;
+        }
 
         DLOG_I(LOG_HA, "Publishing discovery for '%s':", entity->id.c_str());
         DLOG_I(LOG_HA, "  Topic: %s", topic);

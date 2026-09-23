@@ -15,6 +15,8 @@ namespace HomeAssistant {
  * - Device information
  * - Availability
  */
+// Matches MQTTPublishEvent::topic, the field every topic crosses on its way to
+// the broker. A larger buffer here would only move the cut one step later.
 static constexpr size_t HA_TOPIC_BUF_SIZE = 128;
 
 class HAEntity {
@@ -41,25 +43,27 @@ public:
     String jsonAttributesTopic; // a JSON payload that becomes the entity's attributes
     bool useAvailability = true;
     
-    // Topic generation (zero-heap: snprintf into caller-provided buffer)
-    void getDiscoveryTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
-        buildTopic(buf, len, discoveryPrefix, nodeId, "config");
+    // Topic generation (zero-heap: snprintf into caller-provided buffer).
+    // Each returns the length the topic needed, so a caller can tell a fit from
+    // a cut with one compare — a cut topic is never the topic that was meant.
+    int getDiscoveryTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
+        return buildTopic(buf, len, discoveryPrefix, nodeId, "config");
     }
 
     // The override wins here too, so a state published through the component
     // lands where the discovery config told Home Assistant to read.
-    void getStateTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
-        if (!stateTopicOverride.isEmpty()) { snprintf(buf, len, "%s", stateTopicOverride.c_str()); return; }
-        buildTopic(buf, len, discoveryPrefix, nodeId, "state");
+    int getStateTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
+        if (!stateTopicOverride.isEmpty()) return snprintf(buf, len, "%s", stateTopicOverride.c_str());
+        return buildTopic(buf, len, discoveryPrefix, nodeId, "state");
     }
 
-    void getCommandTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
-        buildTopic(buf, len, discoveryPrefix, nodeId, "set");
+    int getCommandTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
+        return buildTopic(buf, len, discoveryPrefix, nodeId, "set");
     }
 
-    void getAttributesTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
-        if (!jsonAttributesTopic.isEmpty()) { snprintf(buf, len, "%s", jsonAttributesTopic.c_str()); return; }
-        buildTopic(buf, len, discoveryPrefix, nodeId, "attributes");
+    int getAttributesTopic(char* buf, size_t len, const char* nodeId, const char* discoveryPrefix = "homeassistant") const {
+        if (!jsonAttributesTopic.isEmpty()) return snprintf(buf, len, "%s", jsonAttributesTopic.c_str());
+        return buildTopic(buf, len, discoveryPrefix, nodeId, "attributes");
     }
 
     /** @brief Home Assistant accepts two categories; anything else makes it reject the whole config. */
@@ -118,8 +122,8 @@ public:
     virtual bool handleCommand(const String& payload) { return true; }
 
 protected:
-    void buildTopic(char* buf, size_t len, const char* discoveryPrefix, const char* nodeId, const char* suffix) const {
-        snprintf(buf, len, "%s/%s/%s/%s/%s", discoveryPrefix, component.c_str(), nodeId, id.c_str(), suffix);
+    int buildTopic(char* buf, size_t len, const char* discoveryPrefix, const char* nodeId, const char* suffix) const {
+        return snprintf(buf, len, "%s/%s/%s/%s/%s", discoveryPrefix, component.c_str(), nodeId, id.c_str(), suffix);
     }
 };
 

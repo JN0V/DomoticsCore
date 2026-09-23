@@ -1758,6 +1758,75 @@ void test_a_discovery_config_over_the_event_field_is_refused_aloud() {
     core.shutdown();
 }
 
+// A topic the event field cannot carry is refused, not cut. The shape matters:
+// a long prefix and node on a SENSOR keeps the document well under the payload
+// ceiling, so the payload guard cannot fire and take the credit — the discovery
+// is refused for its topic or not at all.
+void test_a_topic_over_the_event_field_is_refused_and_counted() {
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "abcdefghijklmnopqrstuvwxyz012345", sizeof(config.nodeId));
+    HA::setField(config.discoveryPrefix, "homeassistant_with_a_long_prefix", sizeof(config.discoveryPrefix));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    // 50 characters: prefix 32 + "/sensor/" + node 32 + the id + "/config" = 130.
+    ha->addSensor("a_sensor_id_of_exactly_fifty_characters_0123456789", "Sensor");
+    core.addComponent(std::move(ha));
+    core.begin();
+
+    bool publishedAnything = false;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            // The cut loses "/config", so matching on it would be vacuous.
+            if (strstr(ev.topic, "a_sensor_id_of_exactly_fifty")) publishedAnything = true;
+        });
+
+    startLogCapture();
+    simulateMqttConnect(core);
+    stopLogCapture();
+    String warn = g_capturedWarn;
+
+    TEST_ASSERT_FALSE_MESSAGE(publishedAnything,
+        "a document whose topic does not fit the event field was published on a cut topic");
+    TEST_ASSERT_TRUE_MESSAGE(warn.indexOf("Topic for 'a_sensor_id_of_exactly_fifty_characters_0123456789' needs 130 chars, over the 127-char event field: not published") >= 0,
+        "the topic was cut in silence");
+    TEST_ASSERT_TRUE_MESSAGE(warn.indexOf("event field: not published") == warn.lastIndexOf("event field: not published"),
+        "the payload guard fired too: this shape no longer isolates the topic");
+    TEST_ASSERT_EQUAL_UINT32(1, haPtr->getStatistics().discoveryRefused);
+
+    core.shutdown();
+}
+
+// Nothing looked at what shutdown publishes, and it publishes an empty retained
+// payload per entity — the message that deletes it from Home Assistant. The
+// component's own shutdown is called here rather than the Core's: the Core
+// stops dispatching before these reach the bus, which is filed separately.
+void test_shutdown_removes_the_discovery_it_published() {
+    Core core;
+    HAConfig config;
+    HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
+
+    auto ha = std::make_unique<HomeAssistantComponent>(config);
+    HomeAssistantComponent* haPtr = ha.get();
+    ha->addSwitch("sw1", "Switch 1");
+    ha->addSensor("temp", "Temperature");
+    core.addComponent(std::move(ha));
+    core.begin();
+    simulateMqttConnect(core);
+
+    int removals = 0;
+    core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
+        [&](const MQTTPublishEvent& ev) {
+            if (strstr(ev.topic, "/config") && ev.payload[0] == '\0') removals++;
+        });
+
+    haPtr->shutdown();
+    for (int i = 0; i < 5; i++) core.loop();   // the removals cross the bus like any publish
+    TEST_ASSERT_EQUAL_INT_MESSAGE(2, removals,
+        "shutdown left the entities in Home Assistant");
+}
+
 void test_an_invalid_entity_category_is_left_out_and_warned() {
     static int warns; warns = 0;
     auto cb = LoggerCallbacks::addCallback([](LogLevel level, const char*, const char* msg) {
@@ -1965,6 +2034,8 @@ int runAllTests() {
     RUN_TEST(test_a_duplicate_entity_id_warns_and_registers_both);
     RUN_TEST(test_a_state_published_through_the_component_lands_on_the_overridden_topic);
     RUN_TEST(test_a_discovery_config_over_the_event_field_is_refused_aloud);
+    RUN_TEST(test_a_topic_over_the_event_field_is_refused_and_counted);
+    RUN_TEST(test_shutdown_removes_the_discovery_it_published);
     RUN_TEST(test_an_invalid_entity_category_is_left_out_and_warned);
     RUN_TEST(test_publish_state_string_still_works);
     RUN_TEST(test_publish_state_string_literal);
