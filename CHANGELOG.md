@@ -26,6 +26,107 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.6.1] - 2026-09-23
+
+> **A corrective release, and the reason is SEC-16.** With authentication on,
+> `POST /api/ota/update` and `/api/ota/check` were gated by the per-boot CSRF
+> token alone: telling a device to fetch and install firmware from a URL needed
+> no password, while uploading the same bytes did. Every 2.6.0 device with
+> `enableAuth` on has that hole. Four OTA read routes answered a stranger with
+> the firmware URL, the running version and the update state in the same
+> breath (SEC-17). All six now take the WebUI's `authorize()` gate, measured on
+> a board: 0 of 2 routes refused before, 2 of 2 after.
+
+> **This release adds public API and is numbered as a patch.** `2.6.1` says
+> what it is for — the security fix above — rather than what it contains.
+> `HomeAssistantComponent::getPendingPublishCount()` and
+> `HAStatistics::statesRefused` are new, which under strict SemVer would make
+> it a minor; the component versions do carry the minor (HomeAssistant 2.2.0 →
+> 2.3.0, Core 1.9.0 → 1.10.0). Nothing is removed and nothing is renamed, so
+> no consumer breaks either way. Pin an exact version if you need the
+> guarantee.
+
+> **2.6.0 told you to republish entity states from your own `mqtt/connected`
+> handler. That advice is now unnecessary — and it was the symptom of a
+> defect.** A state published while the broker was unreachable was skipped and
+> nothing sent it afterwards, so Home Assistant kept showing the *retained*
+> pre-outage value, with confidence, until the entity changed again. A door
+> contact that opened during an outage read closed. The component now holds
+> the payload and publishes it when the link returns (BUG-46). If you took the
+> workaround, keep it or drop it: it publishes the same value twice, and the
+> last one wins. `publishStateJson()` and `publishAttributes()` are covered on
+> the same terms — every `HALight` lost its state to the same guard, and
+> attributes used to reach MQTT's offline queue instead.
+
+> **Publishing an event from a task other than the application loop is now
+> supported on ESP32.** The EventBus said in its own header that it assumed one
+> thread, and a WebUI settings write publishes a Storage event from the
+> `async_tcp` task while `Core::loop()` drains the same queue from `loopTask` —
+> an intermittent panic on core 0 (BUG-60). The bus now serialises the two with
+> a recursive lock, handlers dispatched outside it: 1.88 million publishes in
+> 89 s on a WROOM-32D, +1 336 B of flash, nothing on ESP8266. HomeAssistant's
+> new state store takes the same lock, so `publishState()` is safe from a web
+> handler.
+
+### Added
+
+- **`HomeAssistantComponent::getPendingPublishCount()`** — states and
+  attributes a broker outage is holding. One slot per entity and topic, so it
+  never exceeds twice the entity count; non-zero during an outage and for the
+  first loops after a reconnection, which drains four per `loop()`.
+- **`HAStatistics::statesRefused`** — payloads never held, because they were
+  over the MQTT event field or over the store's 2 048-byte budget. The
+  counterpart of `discoveryRefused`, which exists because a refusal nobody
+  counts is a refusal nobody sees.
+
+### Changed
+
+- **`publishAttributes()` now takes the same connectivity policy as a state.**
+  It had no guard at all, so an attributes document published during an outage
+  went into MQTT's offline queue and arrived stale; it is now held and
+  coalesced like a state. One policy where the component had two.
+- **The three Home Assistant examples no longer gate an entity publish on
+  `isMQTTConnected()`.** That pattern is what the store makes unnecessary, and
+  it defeats it — the component never sees the value, so it cannot hold it.
+
+### Fixed
+
+- **OTA: a URL install needed no password** (SEC-16, HIGH). `/api/ota/update`
+  and `/api/ota/check` took the CSRF token alone. Both now take `authorize()`,
+  like the upload route beside them. Five native cases and a removal check;
+  the WROOM-32D read 0 of 2 routes refused before the fix and 2 of 2 after.
+- **OTA: the read routes served device state to an unauthenticated client**
+  (SEC-17). `/api/ota/status` and `/api/ota/unified` answered `200` with the
+  firmware URL, the running version and the update state to a client
+  `/api/ui/token` refused in the same run. Reading `app.js` settled the
+  question the finding had parked: nothing in the page fetches them.
+- **Core: the EventBus was mutated from two tasks** (BUG-60, HIGH). See the
+  note above. A probe that keeps only the two calls that meet turns an
+  intermittent crash into a boot loop on demand; an application-level soak over
+  303 settings writes had survived the unfixed firmware.
+- **HomeAssistant: an entity state published during a broker outage was lost**
+  (BUG-46). See the note above. Measured on a WROOM-32D against a broker
+  stopped and started under it: six held payloads across all three publish
+  paths, drained 6 → 2 → 0 at the reconnection and all six received by the
+  broker; with the fix removed, nothing at all in 125 s.
+
+### Internal
+
+- The examples and the reference say in as many words not to gate a publish on
+  the link, and the reference documents where the paced drain stops: above
+  about thirty entities the reconnection's discovery burst alone overruns the
+  event queue, with or without the store.
+- Filed, not fixed: **BUG-61** — `HASwitch::state` and `HALight::state` are
+  public and documented as the current state, but written only by
+  `handleCommand()`, so they follow what Home Assistant commanded rather than
+  what the device published. **CI-19** — HomeAssistant's `esp32dev` test
+  environment declares a suite that calls a native-stub-only helper, so it has
+  never built.
+
+**Component versions**: Core 1.9.0 → 1.10.0, HomeAssistant 2.2.0 → 2.3.0,
+OTA 1.9.0 → 1.9.1. The other nine do not move — Storage and System changed only
+a test and an example respectively.
+
 ## [2.6.0] - 2026-09-21
 
 > **Five WebUI settings fields now refuse values they used to accept and store,
