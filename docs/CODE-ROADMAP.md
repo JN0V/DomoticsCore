@@ -121,6 +121,20 @@ interval in seconds), RemoteConsole, LED, OTA, Storage, SystemInfo; System
 gained tests and examples only and stays at 1.8.0. Eight contract changes are
 named at the top of the entry. Native 1 197, read from CI.
 
+**The seventh ships as v2.6.1** (2026-09-23), and it is corrective rather than
+the close of a series: SEC-16 was a HIGH left unreleased, with `/api/ota/update`
+gated by the CSRF token alone, so a URL install needed no password where an
+upload did. It carries SEC-17, BUG-60 and BUG-46 with it. **Three components
+move** — Core 1.10.0 (the EventBus serialised between the two tasks that use
+it), HomeAssistant 2.3.0 (the outage store, and two new public symbols), OTA
+1.9.1 (the six routes behind `authorize()`); Storage and System changed only a
+test and an example. **The root takes a patch while two components take a
+minor**: the number says what the release is *for*. Its top note also reverses
+2.6.0's, which had told consumers to republish entity states from their own
+handler. Native 1 220, read from CI. The release gate — every open MEDIUM
+arbitrated — is **not** met and was not claimed: 3 of 23 open MEDIUM headings
+carry an arbitration, and that is the work the next series starts from.
+
 | WebUI | BUG-45 | 2026-09-20 — what five settings fields accept. A numeric field is digits only (BUG-40's rule on the WebUI surface) and the range policy stays the field's: refused where a range exists, clamped where a slider clamps. Six providers answer `"{}"` for a context they ignore and `UpdateBuilder` tolerates `"null"` at the sink. The refusal *shape* was left alone — it contradicts `ba901c4` — and became BUG-51; the adversarial review opened BUG-52 and BUG-53 and caught a vacuous width guard, an unpinned schema/dispatch coupling and a forced `String` copy on the broadcast path. Native 1 160 → 1 173; a browser on the WROOM-32D each side of two fixes; ESP8266 +164 B RAM, +580 B flash |
 | HomeAssistant, three examples | BUG-46, BUG-61 (filed) | **PR #83** — 2026-09-23: the decision memo went through the adversarial lens before any code, and the diff went through it after — which found the fix reintroducing its own defect (a live publish not invalidating the slot the outage still held) and the three examples gating the event-driven publish on `isMQTTConnected()`, which would have made it inert. A coalescing store in the component, 12 bytes standing and a 2 048-byte budget, drained four per `loop()`. Native 1 217 → 1 220 locally, eight removal checks; WROOM-32D `pending` 0 → 6 → 2 → 0 against a broker stopped and started, and nothing at all with the hold removed. **BUG-46 closed, BUG-61 filed**: 28 → 27 M, 53 → 54 L, 183 → 184 items, 115 → 116 resolved |
 | Docs | deferred-work purge | 2026-09-20 — `docs/deferred-work.md` had 62 entries and 5 ever closed, 42 of them added in fifteen days, none of them counted by the tracking summary. Read one by one: **34 became nineteen items** — SEC-15 and BUG-47 (MEDIUM); MEM-7, MEM-8, BUG-48, BUG-49, BUG-50, TEST-10, CI-16, CI-17, CI-18, DC-18, DC-19, OBS-8, DOC-2, LO-33 to LO-36 (LOW) — 5 folded into the entries that parked them (SEC-4, SEC-6, CI-11, BUG-45, LO-2), 6 became `project-context.md` or ADR notes, 15 deleted as done or already recorded, 2 kept as decisions. Rule in the file's header: a finding with a visible consequence takes an id when it is written. Docs only, no code |
