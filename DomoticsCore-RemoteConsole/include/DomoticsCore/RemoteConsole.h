@@ -193,7 +193,9 @@ public:
             DLOG_I(LOG_CONSOLE, "Core log capture installed (%u slots)", (unsigned)HAL::CoreLog::SLOTS);
         }
 
-        // Start telnet server (doesn't require WiFi to be connected yet)
+        // The server opens before any connection, which ESP8266 allows from a cold
+        // start and ESP32 does not: there the network stack must have been brought
+        // up at least once, or lwIP aborts the firmware on an invalid mbox.
         telnetServer = new HAL::WiFiServer(config.port);
         telnetServer->begin();
         telnetServer->setNoDelay(true);
