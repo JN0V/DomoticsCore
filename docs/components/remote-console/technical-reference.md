@@ -130,7 +130,7 @@ These methods are called by the DomoticsCore `Core` engine and should not be inv
 
 | Method                                                  | Description                                                                                  |
 |---------------------------------------------------------|----------------------------------------------------------------------------------------------|
-| `ComponentStatus begin()`                               | Registers the logger callback, creates the `WiFiServer`, and begins listening.               |
+| `ComponentStatus begin()`                               | Registers the logger callback, installs the core-log capture, and opens the `WiFiServer` — or defers it when there is no IP stack yet (see below). |
 | `void onComponentsReady(const ComponentRegistry&)`      | Called after all components are initialized. Displays the connection info (IP + port) if WiFi is connected. |
 | `void loop()`                                           | Processes pending reboot requests (non-blocking, 100 ms after flag set), accepts new clients (with IP whitelist and max-client checks), enforces authentication timeouts for unauthenticated clients, handles input from existing clients, and cleans up disconnected clients. Calls `clients.shrink_to_fit()` after any client disconnection to release memory. |
 | `ComponentStatus shutdown()`                            | Sends a shutdown message to all connected clients, stops the server, and releases resources.  |
@@ -143,7 +143,18 @@ Returns the currently configured Telnet port.
 
 #### `HAL::WiFiServer* getServer() const`
 
-Returns a pointer to the underlying `WiFiServer` instance, or `nullptr` if the server has not been started yet (i.e., before `begin()` is called or when the component is disabled).
+Returns a pointer to the underlying `WiFiServer` instance, or `nullptr` when the server has not been opened: before `begin()`, when the component is disabled, or while it is waiting for an IP stack.
+
+#### Waiting for an IP stack
+
+A listening socket needs lwIP. ESP8266 has it from boot; on ESP32 it appears with
+the first network interface, whichever transport creates one. A console whose
+`begin()` runs before that — registered without a WiFi component, or ahead of it —
+opens nothing, says so once at INFO, and keeps `getServer()` at `nullptr`; `loop()`
+opens the server on the first iteration where the platform reports a stack. The
+port a `setPort()` chose meanwhile is the one it opens. Nothing else in the
+component's behaviour changes: everything that does not need a socket — the log
+buffer, the core-log capture, the commands — runs from `begin()` as before.
 
 #### `LogLevel getLogLevel() const`
 
