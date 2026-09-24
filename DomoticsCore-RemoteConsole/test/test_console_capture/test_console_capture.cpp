@@ -18,6 +18,7 @@
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/RemoteConsole.h>
 #include <DomoticsCore/Wifi_HAL.h>
+#include <DomoticsCore/WiFiServer_HAL.h>
 
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
@@ -31,12 +32,8 @@ static Core* testCore = nullptr;
 static RemoteConsoleComponent* console = nullptr;
 
 void setUp(void) {
-    // The console opens its telnet server in begin(). On ESP32 that reaches lwIP,
-    // which does not exist until the radio has been brought up at least once, and
-    // the firmware aborts on an invalid mbox before a line can be captured. No
-    // network is joined: station mode is what starts the stack.
-    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
-
+    // No radio is brought up here, deliberately: the console has to start with no
+    // network stack at all, which is the shape that used to abort an ESP32.
     testCore = new Core();
     RemoteConsoleConfig config;
     config.enabled = true;
@@ -230,8 +227,24 @@ void test_the_intake_is_the_size_the_platform_declared() {
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32_MESSAGE(slots * line, (uint32_t)sizeof(HAL::CoreLog::Ring), note);
 }
 
+// The console starts here with nothing under it: no radio, no interface, no
+// stack. It must reach this line at all — the firmware used to stop inside lwIP
+// — and it must open its server once a transport appears.
+void test_a_console_started_before_the_stack_waits_for_one() {
+    const bool openedWithoutAStack = console->getServer() != nullptr;
+    TEST_ASSERT_EQUAL_MESSAGE(HAL::canOpenServer(), openedWithoutAStack,
+        "the server's state disagrees with what the platform says it can open");
+
+    HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);   // joins nothing; starts the stack
+    testCore->loop();
+
+    TEST_ASSERT_NOT_NULL_MESSAGE(console->getServer(),
+        "no server once a network interface existed");
+}
+
 int runAllTests() {
     UNITY_BEGIN();
+    RUN_TEST(test_a_console_started_before_the_stack_waits_for_one);
     RUN_TEST(test_a_line_the_platform_printed_reaches_the_console);
     RUN_TEST(test_the_level_is_read_from_the_shape_on_the_board);
     RUN_TEST(test_a_line_over_a_slot_keeps_its_head);

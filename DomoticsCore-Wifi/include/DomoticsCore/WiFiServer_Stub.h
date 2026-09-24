@@ -116,6 +116,14 @@ public:
     void simulateDisconnect() { _s->connected = false; }
 };
 
+/** @brief Whether a listening socket can be opened; scriptable for tests. */
+inline bool& canOpenServerState() {
+    static bool ready = true;
+    return ready;
+}
+inline bool canOpenServer() { return canOpenServerState(); }
+inline void setCanOpenServerForTest(bool ready) { canOpenServerState() = ready; }
+
 /**
  * @class WiFiServer
  * @brief Stub WiFi server for native tests

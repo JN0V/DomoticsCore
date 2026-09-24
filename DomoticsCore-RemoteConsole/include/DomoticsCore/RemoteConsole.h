@@ -155,11 +155,7 @@ public:
         delete telnetServer;
         telnetServer = nullptr;
 
-        telnetServer = new HAL::WiFiServer(config.port);
-        telnetServer->begin();
-        telnetServer->setNoDelay(true);
-
-        DLOG_I(LOG_CONSOLE, "RemoteConsole restarted on port %d", config.port);
+        openServer();
         return true;
     }
     
@@ -194,14 +190,15 @@ public:
             DLOG_I(LOG_CONSOLE, "Core log capture installed (%u slots)", (unsigned)HAL::CoreLog::SLOTS);
         }
 
-        // The server opens before any connection, which ESP8266 allows from a cold
-        // start and ESP32 does not: there the network stack must have been brought
-        // up at least once, or lwIP aborts the firmware on an invalid mbox.
-        telnetServer = new HAL::WiFiServer(config.port);
-        telnetServer->begin();
-        telnetServer->setNoDelay(true);
-        
-        DLOG_I(LOG_CONSOLE, "RemoteConsole started on port %d", config.port);
+        // A listening socket needs an IP stack, which ESP8266 has from boot and
+        // ESP32 gets with its first network interface. Opening before that stops
+        // the firmware inside lwIP, so a console that starts first waits for one.
+        if (HAL::canOpenServer()) {
+            openServer();
+        } else {
+            DLOG_I(LOG_CONSOLE, "RemoteConsole waiting for a network stack to listen on port %d",
+                   config.port);
+        }
         
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
@@ -222,6 +219,10 @@ public:
         // Before the client work: a line the platform wrote is worth as much as
         // one of ours, and it has been waiting in a buffer that cannot grow.
         drainCoreLog();
+
+        // A stack that appeared after begin() — the radio coming up, or another
+        // transport — is when a deferred server opens.
+        if (!telnetServer && config.enabled && HAL::canOpenServer()) openServer();
 
         if (getLastStatus() != ComponentStatus::Success || !telnetServer) return;
         
@@ -329,6 +330,14 @@ public:
      * as one: ESP-IDF writes "E (1591) gpio: …" and the Arduino core writes
      * "[  1638][E][Preferences.cpp:50] begin(): …". Anything else is information.
      */
+    /** @brief Open the telnet server. Only where canOpenServer() is true. */
+    void openServer() {
+        telnetServer = new HAL::WiFiServer(config.port);
+        telnetServer->begin();
+        telnetServer->setNoDelay(true);
+        DLOG_I(LOG_CONSOLE, "RemoteConsole started on port %d", config.port);
+    }
+
     void drainCoreLog() {
         if (!HAL::CoreLog::captureInstalled()) return;   // nothing takes the lock for nothing
 
