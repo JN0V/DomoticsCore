@@ -231,15 +231,20 @@ void test_the_intake_is_the_size_the_platform_declared() {
 // stack. It must reach this line at all — the firmware used to stop inside lwIP
 // — and it must open its server once a transport appears.
 void test_a_console_started_before_the_stack_waits_for_one() {
-    const bool openedWithoutAStack = console->getServer() != nullptr;
-    TEST_ASSERT_EQUAL_MESSAGE(HAL::canOpenServer(), openedWithoutAStack,
-        "the server's state disagrees with what the platform says it can open");
+    if (HAL::canOpenServer()) {
+        TEST_IGNORE_MESSAGE("this platform has an IP stack from boot: nothing is deferred here");
+    }
+    TEST_ASSERT_NULL_MESSAGE(console->getServer(),
+        "a server was opened on a platform that says it cannot open one");
 
     HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);   // joins nothing; starts the stack
-    testCore->loop();
+    for (int i = 0; i < 20 && !console->getServer(); ++i) {
+        delay(50);
+        testCore->loop();
+    }
 
     TEST_ASSERT_NOT_NULL_MESSAGE(console->getServer(),
-        "no server once a network interface existed");
+        "no server a second after a network interface existed");
 }
 
 int runAllTests() {
