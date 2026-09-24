@@ -179,9 +179,9 @@ public:
         DLOG_I(LOG_STORAGE, "Shutting down...");
 
         // F10: Shrink blobs and clear cache BEFORE storage.end() per spec
-        for (auto& [k, entry] : cache) {
-            entry.blobValue.clear();
-            entry.blobValue.shrink_to_fit(); // Constitution XIV — release blob capacity
+        for (auto& cached : cache) {
+            cached.second.blobValue.clear();
+            cached.second.blobValue.shrink_to_fit(); // Constitution XIV — release blob capacity
         }
         cache.clear();
 
@@ -552,9 +552,9 @@ public:
         
         bool success = storage.clear();
         if (success) {
-            for (auto& [k, entry] : cache) {
-                entry.blobValue.clear();
-                entry.blobValue.shrink_to_fit(); // Constitution XIV
+            for (auto& cached : cache) {
+                cached.second.blobValue.clear();
+                cached.second.blobValue.shrink_to_fit(); // Constitution XIV
             }
             cache.clear();
 
