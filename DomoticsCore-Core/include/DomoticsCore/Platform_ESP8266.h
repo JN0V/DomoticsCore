@@ -14,7 +14,12 @@
 #if DOMOTICS_PLATFORM_ESP8266
 
 // ESP8266-specific resource limits (must be defined before Platform_HAL.h fallback)
-#define DOMOTICS_LOG_BUFFER_SIZE 5  // Minimal buffer due to limited RAM (~80KB total)
+// Measured on a nodemcuv2: an 80-character line costs 137 B in this ring, so 20
+// entries hold ~2.7 KB of the ~20 KB a stack with WiFi and MQTT leaves free.
+#define DOMOTICS_LOG_BUFFER_SIZE 20  // Limited RAM (~80KB total)
+// The intake the platform's own log lines land in before loop() drains them.
+#define DOMOTICS_CORE_LOG_SLOTS 4
+#define DOMOTICS_CORE_LOG_LINE 128
 
 #include "Platform_Arduino.h"
 #include <bearssl/bearssl_hash.h>
@@ -432,6 +437,13 @@ inline bool takeLastFailedAlloc(uint32_t& addr, uint32_t& size) {
     return true;
 }
 inline uint32_t getMillisAnyContext() { return millis(); }
+
+// The core-log intake is written from the character sink, which the SDK may call
+// from a context that had already masked interrupts. ets_intr_unlock() lowers the
+// level unconditionally, so this saves and restores it the way takeLastFailedAlloc()
+// above does — a caller's mask survives the section.
+inline uint32_t ICACHE_RAM_ATTR enterCoreLogCritical() { return xt_rsil(15); }
+inline void ICACHE_RAM_ATTR leaveCoreLogCritical(uint32_t state) { xt_wsr_ps(state); }
 
 /** @brief No loop watchdog to arm: the SDK's soft WDT already resets a stuck loop in about 3 s (OBS-7). */
 inline constexpr bool supportsLoopWatchdog() { return false; }
