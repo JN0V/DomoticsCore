@@ -14,7 +14,15 @@
 #if DOMOTICS_PLATFORM_ESP32
 
 // ESP32-specific resource limits (must be defined before Platform_HAL.h fallback)
-#define DOMOTICS_LOG_BUFFER_SIZE 50  // ESP32 has plenty of RAM (~320KB)
+// Measured on a WROOM-32D: an 80-character line costs 152 B in this ring, so 150
+// entries hold ~23 KB of a 350 KB heap — a console that can show a whole boot.
+#define DOMOTICS_LOG_BUFFER_SIZE 150  // ESP32 has plenty of RAM (~320KB)
+// The intake the platform's own log lines land in before loop() drains them.
+#define DOMOTICS_CORE_LOG_SLOTS 16
+#define DOMOTICS_CORE_LOG_LINE 128
+// ARDUHAL writes this framework's own lines through ets_printf, which is the
+// sink the capture holds: without this guard the console shows every one twice.
+#define DOMOTICS_LOG_OWN_OUTPUT_GUARD DomoticsCore::HAL::CoreLog::SuppressOwnOutput _dlog_own;
 
 #include "Platform_Arduino.h"
 #include <mbedtls/sha256.h>
@@ -358,6 +366,16 @@ inline bool takeLastFailedAlloc(uint32_t&, uint32_t&) { return false; }   // no 
 inline uint32_t getMillisAnyContext() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 
 inline constexpr bool tracksMinFreeHeap() { return true; }
+
+// The core-log intake is written from whichever task or interrupt the platform's
+// logger ran in, so its indices are bracketed by a spinlock rather than a mutex:
+// a mutex cannot be taken from an interrupt.
+inline portMUX_TYPE& coreLogMux() {
+    static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+    return mux;
+}
+inline uint32_t enterCoreLogCritical() { portENTER_CRITICAL_ISR(&coreLogMux()); return 0; }
+inline void leaveCoreLogCritical(uint32_t /*state*/) { portEXIT_CRITICAL_ISR(&coreLogMux()); }
 
 /**
  * @brief Whether a `coredump` partition exists and whether a dump is waiting in it.

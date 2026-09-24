@@ -179,6 +179,12 @@ inline bool crashKindSurvives(const char* kind) {
 #ifndef DOMOTICS_DLOG_BUF_SIZE
     #define DOMOTICS_DLOG_BUF_SIZE 256
 #endif
+// Platforms whose own logger writes through a sink the core-log capture holds
+// define this to a guard, so a line this framework prints is not captured and
+// shown twice. Everywhere else it costs nothing.
+#ifndef DOMOTICS_LOG_OWN_OUTPUT_GUARD
+    #define DOMOTICS_LOG_OWN_OUTPUT_GUARD
+#endif
 // The Arduino cores define these; nothing does on the host, so headers that
 // place literals in flash could not be compiled by a native test at all.
 #ifndef PROGMEM

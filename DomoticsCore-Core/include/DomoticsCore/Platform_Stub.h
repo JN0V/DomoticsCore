@@ -529,6 +529,10 @@ inline bool takeLastFailedAlloc(uint32_t& addr, uint32_t& size) {
 }
 inline void failGroupEnter() {}
 inline void failGroupLeave() {}
+// A host build has one thread of its own and no interrupts to guard against.
+inline uint32_t enterCoreLogCritical() { return 0; }
+inline void leaveCoreLogCritical(uint32_t /*state*/) {}
+
 inline uint32_t getMillisAnyContext() { return static_cast<uint32_t>(getMillis()); }
 inline void resetFailedAllocForTest() {
     failedAllocHookForTest = nullptr;

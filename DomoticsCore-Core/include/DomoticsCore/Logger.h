@@ -2,6 +2,7 @@
 #define DOMOTICS_CORE_LOGGER_H
 
 #include "Platform_HAL.h"
+#include "CoreLog_HAL.h"   // the capture this framework's own output must not feed
 #include <vector>
 #include <functional>
 #include <algorithm>
@@ -72,7 +73,7 @@ private:
     do { \
         char _log_buf[DOMOTICS_DLOG_BUF_SIZE]; \
         DLOG_SNPRINTF(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
-        log_e("[%s] %s", tag, _log_buf); \
+        { DOMOTICS_LOG_OWN_OUTPUT_GUARD log_e("[%s] %s", tag, _log_buf); } \
         LoggerCallbacks::broadcast(LOG_LEVEL_ERROR, tag, _log_buf); \
     } while(0)
 
@@ -80,7 +81,7 @@ private:
     do { \
         char _log_buf[DOMOTICS_DLOG_BUF_SIZE]; \
         DLOG_SNPRINTF(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
-        log_w("[%s] %s", tag, _log_buf); \
+        { DOMOTICS_LOG_OWN_OUTPUT_GUARD log_w("[%s] %s", tag, _log_buf); } \
         LoggerCallbacks::broadcast(LOG_LEVEL_WARN, tag, _log_buf); \
     } while(0)
 
@@ -88,7 +89,7 @@ private:
     do { \
         char _log_buf[DOMOTICS_DLOG_BUF_SIZE]; \
         DLOG_SNPRINTF(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
-        log_i("[%s] %s", tag, _log_buf); \
+        { DOMOTICS_LOG_OWN_OUTPUT_GUARD log_i("[%s] %s", tag, _log_buf); } \
         LoggerCallbacks::broadcast(LOG_LEVEL_INFO, tag, _log_buf); \
     } while(0)
 
@@ -96,7 +97,7 @@ private:
     do { \
         char _log_buf[DOMOTICS_DLOG_BUF_SIZE]; \
         DLOG_SNPRINTF(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
-        log_d("[%s] %s", tag, _log_buf); \
+        { DOMOTICS_LOG_OWN_OUTPUT_GUARD log_d("[%s] %s", tag, _log_buf); } \
         LoggerCallbacks::broadcast(LOG_LEVEL_DEBUG, tag, _log_buf); \
     } while(0)
 
@@ -104,7 +105,7 @@ private:
     do { \
         char _log_buf[DOMOTICS_DLOG_BUF_SIZE]; \
         DLOG_SNPRINTF(_log_buf, sizeof(_log_buf), format, ##__VA_ARGS__); \
-        log_v("[%s] %s", tag, _log_buf); \
+        { DOMOTICS_LOG_OWN_OUTPUT_GUARD log_v("[%s] %s", tag, _log_buf); } \
         LoggerCallbacks::broadcast(LOG_LEVEL_VERBOSE, tag, _log_buf); \
     } while(0)
 
@@ -129,6 +130,10 @@ private:
 #define LOG_STORAGE  "STORAGE"
 #define LOG_NTP      "NTP"
 #define LOG_CONSOLE  "CONSOLE"
+// The lines the platform writes itself (the Arduino core, the SDK, ESP-IDF),
+// captured rather than emitted: a tag of their own so a filter can separate them
+// from this framework's CORE.
+#define LOG_PLATFORM "PLATFORM"
 
 // Log levels (for reference - controlled by CORE_DEBUG_LEVEL):
 // 0 = None
