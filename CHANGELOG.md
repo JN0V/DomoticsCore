@@ -26,6 +26,89 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.7.0] - 2026-09-24
+
+> **A device in the field can now read what the platform itself wrote.** The
+> remote console carried this framework's `DLOG_*` lines and nothing else, so
+> the Arduino core's, the vendor SDK's and ESP-IDF's own messages went to a UART
+> nobody is holding — which is how a production OTA failure lost its cause. A
+> `CoreLog` HAL captures them into a fixed intake, drained in `loop()` and served
+> under a `PLATFORM` tag. Two sinks are needed on ESP32 and they carry different
+> lines; on ESP8266 the SDK's narration is off at the source, because
+> `HardwareSerial::begin()` turns it off, and `core on` is what makes those lines
+> exist at all.
+
+> **`RemoteConsoleComponent::getServer()` can return `nullptr` after a successful
+> `begin()`.** A listening socket needs lwIP, which ESP8266 has from boot and
+> ESP32 gets with its first network interface. Opening before that stopped an
+> ESP32 inside `tcpip_send_msg_wait_sem` and boot-looped it, so `begin()` now
+> asks `HAL::canOpenServer()` and `loop()` opens the server when a stack appears.
+> Code that reads `getServer()` straight after `Core::begin()` sees the
+> difference; nothing that waits for the port does.
+
+> **An alarm panel's discovery document lost seven keys, and no behaviour changes
+> with it.** `pl_arm_home`, `pl_disarm` and the five others carried the values
+> Home Assistant already assumes when the key is absent — 188 characters at six
+> arm modes, which is exactly the headroom a code-less panel lacked. A code-less
+> panel with every arm mode was 740 characters against a 699-character field and
+> was refused whole; it is 552 now. A native test holds the seven
+> `AlarmPanelCommand` constants equal to the payloads Home Assistant documents,
+> which is where the agreement lives now.
+
+### Added
+
+- **The platform's own log lines reach console clients** — `CoreLog_HAL.h` in
+  Core, with a mechanism per platform, and `RemoteConsoleComponent` draining it
+  in `loop()` under the `PLATFORM` tag. The level is read from the shape of the
+  line, so an ESP-IDF or Arduino core error stays greppable as one. A full
+  intake refuses the newest line and counts it; the drops are reported once a
+  minute.
+- **The `core` console command** — reports the capture's slots, drops and skips,
+  and on ESP8266 `core on` / `core off` switches the SDK's narration, which
+  costs about a line a second while a join fails.
+- **`HAL::canOpenServer()`** in `WiFiServer_HAL.h` — whether a listening socket
+  can be opened yet, answered by each platform: always on ESP8266, and on ESP32
+  the count of network interfaces, so a device on a transport other than WiFi
+  counts as well.
+
+### Changed
+
+- **The telnet server may open from `loop()` rather than from `begin()`.** See
+  the note above. A console shut down at runtime keeps its port closed.
+- **The alarm panel publishes no `pl_*` key.** See the note above.
+- **A discovery topic too long for the MQTT event field is refused, not cut**
+  (BUG-13). The builders report the length they needed and the publish sites
+  refuse what does not fit, counted like a refused payload. Raising the
+  component's own buffer would have been inert — the ceiling is MQTT's
+  128-byte topic field.
+
+### Fixed
+
+- **HomeAssistant: a code-less alarm panel could not be armed at all** (BUG-63,
+  HIGH), filed from a consumer's production panel. `cod_arm_req` was omitted
+  when it was `false`, and Home Assistant reads an absent `code_*_required` as
+  `true` — the library's default and Home Assistant's were opposites, and the
+  wire could not tell `false` from missing. The entity was created, reported
+  state, showed available, disarmed normally, and could not be armed from the
+  interface, with `code_format` null so the card could not even offer a keypad.
+  Both requirement keys now leave the gate and `cod_trig_req` follows the
+  `Trigger` feature.
+- **HomeAssistant: a foreign MQTT topic was reported as an error, twice per
+  message** (BUG-62). A shared client hands the component everything it
+  receives; topics outside the discovery prefix are now dropped before the
+  parse.
+- **RemoteConsole: an ESP32 console started before the network stack aborted the
+  board** (BUG-67). See the note above. Red-then-green on a WROOM-32D.
+- **ESP8266: the core-log capture asked for IRAM by a spelling the Arduino core
+  deprecated**, which warned at every use and buried anything real in the build
+  output.
+
+### Component versions
+
+Core 1.10.0 → 1.11.0, HomeAssistant 2.3.0 → 2.4.0, RemoteConsole 1.6.0 → 1.7.0,
+Wifi 1.5.0 → 1.6.0. LED, MQTT, NTP, OTA, Storage, System, SystemInfo and WebUI
+are unchanged.
+
 ## [2.6.1] - 2026-09-23
 
 > **A corrective release, and the reason is SEC-16.** With authentication on,
