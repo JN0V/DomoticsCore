@@ -414,6 +414,56 @@ the two backtraces decode to an insert from one task against an erase from the
 other; with it, 1.88 million publishes in 89 s and a flat heap. The ESP8266 has
 no second task to race against, which is why there is no environment for it.
 
+## `console_watch.py`
+
+Watches a RemoteConsole over telnet, sending commands first when asked, and
+counts patterns in the stream so a capture is a figure rather than an impression.
+
+```bash
+uv run tools/on-device/console_watch.py <device-ip> --send "core on" --send clear \
+    --reset-on "buffer cleared" --count PLATFORM --for 45
+```
+
+`--reset-on` exists because the console replays its recent buffer to a new
+client: counting from the connection counts history, and two runs then differ by
+what was already there. Lines carrying the network name are dropped unless
+`--show-ssid` is given, since these captures get quoted in pull requests.
+
+## `probes/core-log-sinks`
+
+Which sink carries which line, one source file per platform. On ESP32 it emits an
+ESP-IDF line, an ARDUHAL line and a line from inside a precompiled library, with
+`esp_log_set_vprintf` and `ets_install_putc1` installed in turn: the hook sees
+only the library's, and the character sink only the core's. On ESP8266 it asks
+whether the SDK narrates at all — it does not, until `system_set_os_print(1)`,
+because `HardwareSerial::begin()` turned it off.
+
+## `probes/console-ring-cost`
+
+What one line costs in the console's ring, measured with the real `LogEntry`
+against the free heap at three line lengths. The figures the ring sizes were
+chosen from: 137 bytes on a nodemcuv2 and 152 on a WROOM-32D at eighty
+characters.
+
+## `probes/console-platform-lines`
+
+The console leg: an ESP32 that provokes one line of each shape every five
+seconds, an ESP8266 that runs a scan every twenty. Read it with
+`console_watch.py`. `PLATFORMIO_BUILD_FLAGS='-DPROBE_RELEASE_CAPTURE=1'` is the
+red run — it calls `removeCapture()` right after `begin()`, so the state before
+the capture existed is reached through public API rather than an edit.
+
+## `probes/ha-codeless-panel`
+
+An alarm panel configured with no code, on the shape a real one carries: two arm
+modes and nothing else. Read the retained discovery document off the broker to
+see whether it states that no code is required.
+
+```bash
+uv run tools/on-device/mqtt_watch.py <broker> --for 20 \
+    --topic 'homeassistant/alarm_control_panel/+/+/config'
+```
+
 ## `ota_trigger_auth_check.py`
 
 What the two OTA trigger routes accept from a client with no credentials.
