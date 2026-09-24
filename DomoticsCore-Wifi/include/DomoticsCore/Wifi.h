@@ -119,7 +119,7 @@ public:
         rebootTimer_.disable();       // Only enabled when reboot-to-STA is pending
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "Wifi";
-        metadata.version = "1.5.0";
+        metadata.version = "1.6.0";
         metadata.author = "DomoticsCore";
         metadata.description = "Wifi connectivity management component";
     }
