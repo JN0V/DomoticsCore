@@ -718,16 +718,22 @@ Combine with bitwise OR: `AlarmFeature::ArmAway | AlarmFeature::ArmHome | AlarmF
 - `code`, when one is configured.
 - `cmd_tpl` (`{{ action }}{% if code %} {{ code }}{% endif %}`), when a code
   travels: one configured here, or one Home Assistant asks the user for.
-- Payload constants per supported feature: `pl_arm_home`, `pl_arm_away`, `pl_arm_nite`, `pl_arm_vacation`, `pl_arm_custom_b`, `pl_trig`
-- `pl_disarm` (always present)
 - `sup_feat` JSON array built from bitmask
+
+No `pl_*` key is published. Every command payload this panel accepts — `ARM_HOME`,
+`DISARM`, the seven of `AlarmPanelCommand` — is the value Home Assistant assumes
+for an absent key, so stating them spends the field to assert nothing: 188
+characters on a panel offering every arm mode. The agreement rests on those
+constants, which a native test holds equal to the payloads Home Assistant
+documents; a consumer that compares against its own literals rather than the
+constants is on its own.
 
 A code-less panel with two arm modes (`arm_away`, `arm_night`), the default
 device block, a 17-character node id and a 13-character entity id publishes a
-613-character document; the two requirement keys are 40 of those characters,
+541-character document; the two requirement keys are 40 of those characters,
 against the 699-character field of the section above. The same panel with all six
-arm modes is over that field and is refused: stating the requirements is not what
-makes a document long, but it is what pushes the widest shapes over.
+arm modes fits as well, at 552 characters on a 9-character node id — it did not
+while the payload constants were written out.
 
 ### Command Handling
 
@@ -1049,10 +1055,6 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
   "cod_dis_req": true,
   "cod_trig_req": false,
   "cmd_tpl": "{{ action }}{% if code %} {{ code }}{% endif %}",
-  "pl_arm_home": "ARM_HOME",
-  "pl_arm_away": "ARM_AWAY",
-  "pl_disarm": "DISARM",
-  "pl_trig": "TRIGGER",
   "sup_feat": ["arm_home", "arm_away", "trigger"],
   "dev": { "..." : "..." },
   "avty_t": "ESP32-0000a1b2c3d4/status",
@@ -1061,7 +1063,7 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
 }
 ```
 
-Note: `cod_arm_req` and `cod_dis_req` are **always** included — Home Assistant defaults an absent `code_*_required` to `true`, the reverse of this component's default, so silence would make every code-less panel unarmable. `cod_trig_req` is included on panels declaring the `Trigger` feature. `code` and `cmd_tpl` are included when a code travels. `pl_arm_*` and `pl_trig` fields are only included for features present in the `supportedFeatures` bitmask. `pl_disarm` is always included.
+Note: `cod_arm_req` and `cod_dis_req` are **always** included — Home Assistant defaults an absent `code_*_required` to `true`, the reverse of this component's default, so silence would make every code-less panel unarmable. `cod_trig_req` is included on panels declaring the `Trigger` feature. `code` and `cmd_tpl` are included when a code travels. No `pl_*` key is published at all: each would restate the payload Home Assistant already assumes.
 
 ---
 

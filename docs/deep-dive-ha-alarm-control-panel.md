@@ -28,7 +28,7 @@ The alarm panel entity is deliberately a **thin MQTT plumbing layer**. The libra
 | **Discovery payload** | Generates the JSON that tells Home Assistant the alarm panel exists, which arm modes are available, and whether a keypad should be shown. |
 | **Command parsing** | Receives `"COMMAND"` or `"COMMAND CODE"` payloads from MQTT, splits them, and forwards `(command, codeValue)` to the consumer callback. |
 | **Topic management** | Generates discovery, state, and command MQTT topics following the HA convention. |
-| **Feature bitmask** | Translates `supportedFeatures` into the `sup_feat` JSON array and conditionally emits `pl_arm_*` constants. |
+| **Feature bitmask** | Translates `supportedFeatures` into the `sup_feat` JSON array. |
 
 ### What the library does NOT do
 
@@ -219,9 +219,8 @@ MQTT broker → mqtt/connected event
                  └─> HAAlarmControlPanel::buildDiscoveryPayload()
                       ├─> Base: name, uniq_id, stat_t, icon, device, availability
                       ├─> cmd_t
-                      ├─> [if code config active] code, cod_*_req, cmd_tpl
-                      ├─> payload_arm_* (per supportedFeatures bitmask)
-                      ├─> pl_disarm (always)
+                      ├─> cod_arm_req, cod_dis_req (always), cod_trig_req (with Trigger)
+                      ├─> [if a code travels] code, cmd_tpl
                       └─> sup_feat[] array
 ```
 
@@ -293,10 +292,6 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
   "cod_dis_req": true,
   "cod_trig_req": false,
   "cmd_tpl": "{{ action }}{% if code %} {{ code }}{% endif %}",
-  "pl_arm_home": "ARM_HOME",
-  "pl_arm_away": "ARM_AWAY",
-  "pl_disarm": "DISARM",
-  "pl_trig": "TRIGGER",
   "sup_feat": ["arm_home", "arm_away", "trigger"]
 }
 ```
