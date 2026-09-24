@@ -2728,6 +2728,42 @@ one worth a one-line change, and six rows that are not defects.
 - **Refs**: BUG-64, which built the mechanisms; BUG-67, which this found;
   CI-11 and CI-19, closed in the same lot.
 
+### BUG-65 — Free heap declines steadily on 2.7.0 where 2.6.1 was flat [MEDIUM, HIGH if it holds] — **NEW (2026-09-24, measured on a consumer's production device over 5 h)**
+
+- **Files**: unknown. The suspects are 2.7.0's new work in `loop()` — the `CoreLog`
+  intake and its drain in `RemoteConsoleComponent`, and the deferred telnet server
+  open that consults `HAL::canOpenServer()` from `loop()`.
+- **Problem**: on a device whose application code did not change behaviourally, free
+  heap goes from flat to a steady decline across the 2.6.1 → 2.7.0 upgrade.
+- **Measured** on one production ESP32, one metric, the same telemetry sensor read
+  back from Home Assistant's recorder. Windows exclude the observer's own console
+  sessions, which allocate:
+  ```
+  2.6.1   19.6 h, 114 points    -33 B/h    65/113 steps decreasing
+  2.7.0    4.8 h,  79 points   -639 B/h    67/78  steps decreasing, R2 = 0.864
+  ```
+  The 2.6.1 series is a random walk about a flat line — half its steps go up. The
+  2.7.0 series is monotonic in 67 of 78 steps and fits a straight line at R² 0.864.
+- **Nothing has failed yet**: `allocation_failures` 0, no panic, no reboot, uptime
+  5.3 h and counting. At -639 B/h the 89 844 bytes free are about **5.9 days**, and
+  fragmentation would bite before that — `largest_free_block` is 77 812.
+- **Separately, the baseline moved**: 2.6.1 sat at 107-109 KB free, 2.7.0 starts at
+  ~94 KB. Static RAM grew only 2 240 bytes (17.3 % → 18.0 % on this application), so
+  about 12 KB of that is heap-resident. That part is expected of new runtime
+  structures and is not in itself a defect — it is reported so the two effects are not
+  confused.
+- **The idle case is the interesting one**: the `core` command reports *"16 intake
+  slots, 0 dropped, 0 ours ignored"*, so nothing was being captured during the window.
+  If the intake is the source, it leaks while it has nothing to do.
+- **Honest limits**: 4.8 h against a 19.6 h baseline. A structure filling to its cap
+  would look identical for the first hours. The window contains no MQTT reconnection,
+  no OTA and no command traffic, so no specific allocation site is implicated.
+- **What would settle it**: a second window of comparable length to the baseline, and
+  a heap watch across an idle device with the console never connected — the intake
+  drains regardless of clients, so an unattended device isolates it from console
+  buffers.
+- **Refs**: filed from a production ESP32 running 2.7.0 since 2026-09-24.
+
 ### BUG-45 — WebUI providers: the settings handlers disagree about what they refuse [MEDIUM] — **DONE (2026-09-20)**
 
 - **Problem**: four divergences between providers doing the same job, all
