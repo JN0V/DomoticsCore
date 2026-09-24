@@ -140,7 +140,8 @@ public:
             return true;
         }
 
-        for (auto& [cid, client] : clients) {
+        for (auto& entry : clients) {
+            auto& client = entry.second;
             if (client.connected()) {
                 client.println("\nRemoteConsole port changed - disconnecting...");
                 client.stop();
@@ -299,9 +300,9 @@ public:
         HAL::CoreLog::removeCapture();   // a no-op when begin() never took a sink
         if (telnetServer) {
             // Disconnect all clients
-            for (auto& [cid, client] : clients) {
-                client.println("\nRemoteConsole shutting down...");
-                client.stop();
+            for (auto& entry : clients) {
+                entry.second.println("\nRemoteConsole shutting down...");
+                entry.second.stop();
             }
             clients.clear();
             clientState.clear();
@@ -415,8 +416,9 @@ public:
         // Send to connected clients (only authenticated ones when auth required)
         if (!clients.empty()) {
             String formatted = formatLogEntry(entry);
-            for (auto& [cid, client] : clients) {
-                auto st = clientState.find(cid);
+            for (auto& entry : clients) {
+                auto& client = entry.second;
+                auto st = clientState.find(entry.first);
                 if (client.connected() && st != clientState.end() && st->second.authenticated) {
                     client.print(formatted);
                 }
@@ -636,8 +638,8 @@ private:
         
         // Reboot command
         registerCommand("reboot", [this](const String& args) {
-            for (auto& [cid, client] : clients) {
-                client.println("Rebooting...");
+            for (auto& entry : clients) {
+                entry.second.println("Rebooting...");
             }
             rebootRequestedAt = HAL::Platform::getMillis();
             rebootPending = true;
