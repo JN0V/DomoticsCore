@@ -132,7 +132,7 @@ These methods are called by the DomoticsCore `Core` engine and should not be inv
 |---------------------------------------------------------|----------------------------------------------------------------------------------------------|
 | `ComponentStatus begin()`                               | Registers the logger callback, installs the core-log capture, and opens the `WiFiServer` — or defers it when there is no IP stack yet (see below). |
 | `void onComponentsReady(const ComponentRegistry&)`      | Called after all components are initialized. Displays the connection info (IP + port) if WiFi is connected. |
-| `void loop()`                                           | Processes pending reboot requests (non-blocking, 100 ms after flag set), accepts new clients (with IP whitelist and max-client checks), enforces authentication timeouts for unauthenticated clients, handles input from existing clients, and cleans up disconnected clients. Calls `clients.shrink_to_fit()` after any client disconnection to release memory. |
+| `void loop()`                                           | Drains the core-log intake, opens a deferred server once an IP stack exists, processes pending reboot requests (non-blocking, 100 ms after flag set), accepts new clients (with IP whitelist and max-client checks), enforces authentication timeouts for unauthenticated clients, handles input from existing clients, and cleans up disconnected clients. Calls `clients.shrink_to_fit()` after any client disconnection to release memory. |
 | `ComponentStatus shutdown()`                            | Sends a shutdown message to all connected clients, stops the server, and releases resources.  |
 
 ### Public Methods
