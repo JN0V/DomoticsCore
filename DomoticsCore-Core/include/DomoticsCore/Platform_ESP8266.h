@@ -442,8 +442,8 @@ inline uint32_t getMillisAnyContext() { return millis(); }
 // from a context that had already masked interrupts. ets_intr_unlock() lowers the
 // level unconditionally, so this saves and restores it the way takeLastFailedAlloc()
 // above does — a caller's mask survives the section.
-inline uint32_t ICACHE_RAM_ATTR enterCoreLogCritical() { return xt_rsil(15); }
-inline void ICACHE_RAM_ATTR leaveCoreLogCritical(uint32_t state) { xt_wsr_ps(state); }
+inline uint32_t IRAM_ATTR enterCoreLogCritical() { return xt_rsil(15); }
+inline void IRAM_ATTR leaveCoreLogCritical(uint32_t state) { xt_wsr_ps(state); }
 
 /** @brief No loop watchdog to arm: the SDK's soft WDT already resets a stuck loop in about 3 s (OBS-7). */
 inline constexpr bool supportsLoopWatchdog() { return false; }
