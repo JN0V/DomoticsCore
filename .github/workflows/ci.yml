@@ -253,6 +253,7 @@ jobs:
             DomoticsCore-OTA
             DomoticsCore-HomeAssistant
             DomoticsCore-Wifi
+            DomoticsCore-RemoteConsole
           "
           failed=""
           for project in $projects; do
@@ -275,6 +276,13 @@ jobs:
           echo "::group::DomoticsCore-OTA (esp32cam)"
           (cd DomoticsCore-OTA && pio test -e esp32cam --without-uploading --without-testing) \
             || failed="${failed} DomoticsCore-OTA(esp32cam)"
+          echo "::endgroup::"
+
+          # The console's capture has a half per platform and one suite for both,
+          # so the ESP32 environment carries coverage the esp8266dev loop cannot.
+          echo "::group::DomoticsCore-RemoteConsole (esp32dev)"
+          (cd DomoticsCore-RemoteConsole && pio test -e esp32dev --without-uploading --without-testing) \
+            || failed="${failed} DomoticsCore-RemoteConsole(esp32dev)"
           echo "::endgroup::"
 
           if [ -n "$failed" ]; then
