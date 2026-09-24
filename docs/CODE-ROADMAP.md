@@ -2377,7 +2377,7 @@ one worth a one-line change, and six rows that are not defects.
   against the bench broker, the retained document a code-less two-mode panel
   publishes went from **527 characters with no `cod_arm_req` at all** to **567
   with `cod_arm_req: false` and `cod_dis_req: false`** — the +40 measured
-  natively, on silicon. Probe: `tools/on-device/probes/bug63-codeless-panel`.
+  natively, on silicon. Probe: `tools/on-device/probes/ha-codeless-panel`.
 - **The oracle, and it is not this repository's to run.** The key in the document
   is only the cause; the measurement that matters is Home Assistant arming the
   panel. The maintainer rebuilt the consumer's panel on this branch and armed it
@@ -2522,8 +2522,8 @@ one worth a one-line change, and six rows that are not defects.
   the serial port the core had silenced.
 - **Refs**: filed by AlarmControl (`jn0v/AlarmControl`), whose production panel
   has no serial line. See BUG-63, filed the same session. Probes:
-  `tools/on-device/probes/bug64-core-logs` (which sink carries what) and
-  `tools/on-device/probes/bug64-console-core` (the console leg), with
+  `tools/on-device/probes/core-log-sinks` (which sink carries what) and
+  `tools/on-device/probes/console-platform-lines` (the console leg), with
   `tools/on-device/console_watch.py`.
 
 ### BUG-65 — HomeAssistant: an alarm panel's discovery document spends 188 characters restating Home Assistant's own defaults [MEDIUM] — **NEW (2026-09-23, filed by BUG-63's lot)**
@@ -2598,7 +2598,7 @@ one worth a one-line change, and six rows that are not defects.
 - **Fix**: one `[env:esp8266dev]` and one `[env:esp32dev]` with a suite that
   asserts those five, on the pattern Storage and OTA already use, then add the
   project to the workflow's on-device list. The probes
-  `tools/on-device/probes/bug64-console-core` and `bug64-ring-cost` are the
+  `tools/on-device/probes/console-platform-lines` and `console-ring-cost` are the
   measurements to fold into it.
 - **Refs**: BUG-64, which built the mechanisms; CI-11 and CI-19, the same kind of
   manifest gap read from the other direction.
