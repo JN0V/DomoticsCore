@@ -29,7 +29,7 @@ namespace DomoticsCore {
 namespace HAL {
 namespace CoreLog {
 
-inline void ICACHE_RAM_ATTR putcHook(char c) {
+inline void IRAM_ATTR putcHook(char c) {
     // Forward first, cooked the way the core's sink cooks it: a newline carries
     // its carriage return, and a full FIFO is waited on rather than overrun. The
     // UART is the one the core prints its own debug on, UART0 when it has none —
