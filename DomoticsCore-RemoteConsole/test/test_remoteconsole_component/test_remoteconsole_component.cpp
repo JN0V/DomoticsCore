@@ -20,6 +20,7 @@ void setUp(void) {
 
 void tearDown(void) {
     HAL::Platform::resetMillisForTest();
+    HAL::setCanOpenServerForTest(true);
     if (testCore) {
         testCore->shutdown();
         delete testCore;
@@ -27,6 +28,52 @@ void tearDown(void) {
     }
     // Clear static logger callbacks to prevent dangling pointers from deleted components
     // Note: callbacks are now properly removed via ID in shutdown()
+}
+
+// ============================================================================
+// A console that starts before the network stack
+// ============================================================================
+
+// ESP8266 has lwIP from boot and ESP32 gets it with its first network
+// interface, so a console registered before any transport has nowhere to
+// listen. It must wait rather than open a socket the stack cannot serve.
+void test_a_console_started_before_the_stack_opens_nothing(void) {
+    HAL::setCanOpenServerForTest(false);
+
+    RemoteConsoleConfig config;
+    config.enabled = true;
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* ptr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+
+    TEST_ASSERT_NULL_MESSAGE(ptr->getServer(),
+        "the server was opened with no stack to open it on");
+    TEST_ASSERT_EQUAL_MESSAGE(ComponentStatus::Success, ptr->getLastStatus(),
+        "waiting for a stack is not a failure of the component");
+}
+
+// And it opens as soon as one appears, which is a radio coming up or any other
+// transport creating the first interface.
+void test_the_server_opens_when_a_stack_appears(void) {
+    HAL::setCanOpenServerForTest(false);
+
+    RemoteConsoleConfig config;
+    config.enabled = true;
+    config.port = 2323;
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* ptr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+    TEST_ASSERT_NULL(ptr->getServer());
+
+    HAL::setCanOpenServerForTest(true);
+    testCore->loop();
+
+    TEST_ASSERT_NOT_NULL_MESSAGE(ptr->getServer(),
+        "the deferred server never opened once a stack existed");
+    TEST_ASSERT_TRUE_MESSAGE(ptr->getServer()->isListening(), "the server is not listening");
+    TEST_ASSERT_EQUAL_UINT16(2323, ptr->getServer()->getPort());
 }
 
 // ============================================================================
@@ -849,6 +896,8 @@ int main(int argc, char **argv) {
     UNITY_BEGIN();
 
     // Component creation tests
+    RUN_TEST(test_a_console_started_before_the_stack_opens_nothing);
+    RUN_TEST(test_the_server_opens_when_a_stack_appears);
     RUN_TEST(test_remoteconsole_component_creation_default);
     RUN_TEST(test_remoteconsole_component_creation_with_config);
 
