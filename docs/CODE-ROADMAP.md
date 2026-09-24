@@ -2728,7 +2728,7 @@ one worth a one-line change, and six rows that are not defects.
 - **Refs**: BUG-64, which built the mechanisms; BUG-67, which this found;
   CI-11 and CI-19, closed in the same lot.
 
-### BUG-65 — Free heap declines steadily on 2.7.0 where 2.6.1 was flat [MEDIUM, HIGH if it holds] — **NEW (2026-09-24, measured on a consumer's production device over 5 h)**
+### BUG-70 — Free heap declines steadily on 2.7.0 where 2.6.1 was flat [MEDIUM, HIGH if it holds] — **NEW (2026-09-24, measured on a consumer's production device over 5 h)**
 
 - **Files**: unknown. The suspects are 2.7.0's new work in `loop()` — the `CoreLog`
   intake and its drain in `RemoteConsoleComponent`, and the deferred telnet server
