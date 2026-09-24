@@ -223,7 +223,8 @@ jobs:
   build-device-tests:
     name: Build on-device suites
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Three ESP32 framework builds now, against eight ESP8266 ones
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -242,6 +243,42 @@ jobs:
       # pip install platformio does not supply it.
       - name: Install PlatformIO
         run: pip install platformio==6.1.19 intelhex
+
+      # A test_filter naming a suite that no longer exists is not an error to
+      # PlatformIO: it builds nothing, runs nothing and exits 0. That is the
+      # shape this job was created to catch — suites that had quietly stopped
+      # compiling — so the filters are checked before anything is built.
+      - name: Every test_filter names a suite that exists
+        run: |
+          python3 - <<'PYEOF'
+          import configparser, pathlib, sys
+
+          missing = []
+          for ini in sorted(pathlib.Path('.').rglob('platformio.ini')):
+              if '.pio' in ini.parts:
+                  continue
+              parser = configparser.ConfigParser(strict=False, inline_comment_prefixes=(';', '#'))
+              try:
+                  parser.read(ini)
+              except configparser.Error as exc:
+                  print(f'::error::{ini} cannot be parsed: {exc}')
+                  sys.exit(1)
+              for section in parser.sections():
+                  if not section.startswith('env:'):
+                      continue
+                  raw = parser.get(section, 'test_filter', fallback='')
+                  for name in (n.strip() for chunk in raw.splitlines() for n in chunk.split(',')):
+                      if not name or any(c in name for c in '*?['):
+                          continue
+                      if not (ini.parent / 'test' / name).is_dir():
+                          missing.append(f'{ini} [{section}] test_filter names {name}, which has no directory')
+
+          if missing:
+              for line in missing:
+                  print(f'::error::{line}')
+              sys.exit(1)
+          print('every test_filter names a suite that exists')
+          PYEOF
 
       - name: Build every on-device suite
         run: |
@@ -282,6 +319,10 @@ jobs:
           # above does not reach: the console's capture has a half per platform,
           # and the discovery documents are measured to the byte on both.
           for esp32_project in DomoticsCore-RemoteConsole DomoticsCore-HomeAssistant; do
+            if [ ! -f "$esp32_project/platformio.ini" ]; then
+              echo "::error::$esp32_project has no platformio.ini — the list in this workflow is stale"
+              exit 1
+            fi
             echo "::group::${esp32_project} (esp32dev)"
             (cd "$esp32_project" && pio test -e esp32dev --without-uploading --without-testing) \
               || failed="${failed} ${esp32_project}(esp32dev)"
