@@ -15,6 +15,7 @@
 - [Built-in Commands](#built-in-commands)
 - [Custom Command Registration](#custom-command-registration)
 - [Circular Buffer](#circular-buffer)
+- [The lines the platform writes itself](#the-lines-the-platform-writes-itself)
 - [ANSI Color Codes](#ansi-color-codes)
 - [Log Format](#log-format)
 - [WebUI Integration](#webui-integration)
@@ -61,7 +62,7 @@ struct RemoteConsoleConfig {
 | `port`           | `uint16_t`                    | `23`                         | TCP port for the Telnet server.                                   |
 | `requireAuth`    | `bool`                        | `false`                      | When `true`, new clients must authenticate with `auth <password>` before executing commands (except `help` and `quit`). Unauthenticated clients do not receive log output. |
 | `password`       | `String`                      | `""`                         | The password required for authentication when `requireAuth` is `true`. Must be non-empty: `begin()` clears `requireAuth` and warns otherwise, and an empty `auth` line never authenticates. |
-| `bufferSize`     | `uint32_t`                    | `DOMOTICS_LOG_BUFFER_SIZE`   | Maximum number of log entries in the circular buffer. Platform-specific: ESP32 = 100, ESP8266 = 5. |
+| `bufferSize`     | `uint32_t`                    | `DOMOTICS_LOG_BUFFER_SIZE`   | Maximum number of log entries in the circular buffer. Platform-specific: ESP32 = 150, ESP8266 = 20. |
 | `allowCommands`  | `bool`                        | `true`                       | When `false`, all commands except `help` and `quit` are blocked with a "Commands are disabled" message. Useful for log-only monitoring sessions. |
 | `authTimeoutMs`  | `uint32_t`                    | `10000`                      | Time in milliseconds an unauthenticated client has to authenticate before being disconnected. Only applies when `requireAuth` is `true`. Set to `0` to disable the timeout. |
 | `allowedIPs`     | `std::vector<HAL::IPAddress>` | `{}` (empty = all allowed)   | IP whitelist. An empty vector permits all IPs.                    |
@@ -192,6 +193,7 @@ All commands are case-insensitive. Arguments are separated from the command by a
 | `heap`            | (none)            | Displays the current free heap in bytes.                                 |
 | `auth`            | `<password>`      | Authenticates the client session. If `requireAuth` is `false`, responds with "Authentication not required." If the password matches, the client becomes authenticated and receives log output. Otherwise responds with "Authentication failed." |
 | `reboot`          | (none)            | Sends "Rebooting..." to all clients, then sets a non-blocking reboot flag. The device restarts via `HAL::restart()` on the next `loop()` iteration after a 100 ms delay, allowing the message to flush. |
+| `core`            | `on`, `off` or empty | Without arguments, reports the platform-line capture: how many intake slots it has and how many lines it has dropped, and whether the platform's SDK narrates. `on` and `off` switch that narration where the platform has a switch for it (ESP8266); elsewhere they answer that there is nothing to switch, because the platform's lines are captured either way. |
 | `quit`            | (none)            | Sends "Goodbye!" and closes the client connection.                       |
 
 Custom commands registered via `registerCommand()` also appear in the `help` output.
@@ -257,6 +259,79 @@ Behavior:
 
 This design eliminates the memory leak that was previously observed with `std::deque`, where `pop_front()` did not reliably release memory on embedded platforms.
 
+`bufferSize` defaults to `DOMOTICS_LOG_BUFFER_SIZE`: **150 entries on ESP32, 20 on
+ESP8266**. Measured with the real `LogEntry`, which holds two `String`s, so a line
+longer than the small-string threshold takes a heap block of its own: an
+80-character line costs **152 bytes on ESP32** and **137 on ESP8266**, and a
+120-character one 184 and 169. A full ESP32 ring is therefore about 23 KB of a
+350 KB heap and a full ESP8266 ring about 2.7 KB of the roughly 20 KB a stack
+with WiFi and MQTT leaves free, at 80 characters a line; at the 127 the intake
+admits, 27.6 KB and 3.4 KB. Platform lines share this buffer with the
+framework's own, and evict them at the same rate.
+
+---
+
+## The lines the platform writes itself
+
+The console carries what `DLOG_*` emits. The Arduino core, the vendor SDK and
+ESP-IDF write their own lines straight to the UART, so a device reachable only
+over the network could not show them — and that is where a failed OTA says
+*which* error it hit. Those lines are now captured, drained in `loop()` and
+shown like any other, under the tag `PLATFORM`.
+
+There is no single sink to capture them from. Measured on a WROOM-32D and a
+nodemcuv2:
+
+| line | what writes it | where it is captured |
+|---|---|---|
+| `E (1591) gpio: io_num=99 can only be input` | a precompiled ESP-IDF library, through `esp_log_write` | `esp_log_set_vprintf`, chained to the handler it replaced |
+| `[ 1638][E][Preferences.cpp:50] begin(): …` | the Arduino core, through `log_printf` and `ets_printf` | the character sink, `ets_install_putc1`, which writes each character on before counting it |
+| `scandone` | the ESP8266 SDK | the same character sink, and only while SDK printing is on |
+
+The two ESP32 sinks are disjoint: a line written through one is never seen by the
+other, and an Arduino build remaps `ESP_LOGx` onto the core's path, so the
+vprintf hook alone captures nothing the application itself writes. Both sinks
+keep the serial port exactly as it was.
+
+**On ESP8266 the SDK narrates nothing by default, and not by accident.**
+`HardwareSerial::begin()` calls `end()`, which calls `uart_set_debug(UART_NO)`
+and `system_set_os_print(0)`: a full failed join prints not one line. `core on`
+switches it back on — for the console *and* the serial port — and costs about a
+line a second while a join keeps failing, which is why the default is off and the
+switch is a command rather than a setting. An application that calls
+`Serial.setDebugOutput()` afterwards takes the character sink back; enabling
+again reinstalls it.
+
+### The intake
+
+A captured line arrives in whatever context the platform's logger ran in — a
+task, or an interrupt — so the sink neither allocates nor writes to a client. It
+copies the line into a fixed ring (`DOMOTICS_CORE_LOG_SLOTS` × 128 bytes: 16
+slots on ESP32, 4 on ESP8266), and `loop()` moves up to four lines per pass into
+the console's own buffer. A line longer than a slot keeps its 127-character head,
+where its level and subject are. A ring nobody has drained refuses the newest
+line and counts it; the count is reported once a minute and by the `core`
+command, which also reports the lines skipped because the framework was printing
+its own.
+
+The capture starts when the component does, so the bootloader's own output and
+anything ESP-IDF writes before `begin()` are not in it. On ESP8266 a gdbstub
+session owns the same character sink; this capture does not check for one.
+
+The level comes from the shape of the line, so an error stays greppable as one:
+`E (…)` from ESP-IDF, `[ …][E][…]` from the Arduino core, and anything else —
+the SDK's own narration, which carries no level — is information.
+
+This framework's own lines are excluded at the source. On ESP32 `DLOG_*` goes out
+through the Arduino core's logger, so the character sink would see every one of
+them and the console would carry each twice, once under its component's tag and
+once as a platform line; `Logger` brackets its own output with a suppression the
+sink honours, through a HAL macro that costs nothing on a platform whose logger
+writes elsewhere. The suppression is one flag for the whole process: a line
+another context writes inside that window is lost with ours — a whole one counted
+apart, as "ours ignored", and one caught mid-assembly dropped and counted with
+the rest, because its middle would be missing.
+
 ---
 
 ## ANSI Color Codes
@@ -290,7 +365,12 @@ Example:
 [12345][I][MQTT] Connected to broker
 [12890][W][WIFI] Signal weak: -72 dBm
 [13001][E][APP] Sensor read failed
+[20010][E][PLATFORM] E (19972) gpio: io_num=99 can only be input
 ```
+
+The tag `PLATFORM` marks a line the platform wrote and this component captured,
+rather than one the framework emitted; `filter PLATFORM` shows only those, and
+`filter CORE` still means this framework's own core.
 
 ---
 
