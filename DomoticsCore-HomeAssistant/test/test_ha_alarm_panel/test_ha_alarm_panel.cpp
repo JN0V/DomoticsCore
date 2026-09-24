@@ -82,14 +82,14 @@ void test_alarm_panel_discovery_payload() {
     TEST_ASSERT_EQUAL_STRING("{{ action }}{% if code %} {{ code }}{% endif %}",
                              doc["cmd_tpl"].as<String>().c_str());
 
-    // Command payload constants (only for supported features + always disarm)
-    TEST_ASSERT_EQUAL_STRING("ARM_HOME", doc["pl_arm_home"].as<String>().c_str());
-    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", doc["pl_arm_away"].as<String>().c_str());
-    TEST_ASSERT_TRUE(doc["pl_arm_nite"].isNull());       // Not in supportedFeatures
-    TEST_ASSERT_TRUE(doc["pl_arm_vacation"].isNull());    // Not in supportedFeatures
-    TEST_ASSERT_TRUE(doc["pl_arm_custom_b"].isNull()); // Not in supportedFeatures
-    TEST_ASSERT_EQUAL_STRING("DISARM", doc["pl_disarm"].as<String>().c_str());  // Always present
-    TEST_ASSERT_EQUAL_STRING("TRIGGER", doc["pl_trig"].as<String>().c_str());
+    // The command vocabulary is Home Assistant's own default, so no key states it
+    TEST_ASSERT_TRUE(doc["pl_arm_home"].isNull());
+    TEST_ASSERT_TRUE(doc["pl_arm_away"].isNull());
+    TEST_ASSERT_TRUE(doc["pl_arm_nite"].isNull());
+    TEST_ASSERT_TRUE(doc["pl_arm_vacation"].isNull());
+    TEST_ASSERT_TRUE(doc["pl_arm_custom_b"].isNull());
+    TEST_ASSERT_TRUE(doc["pl_disarm"].isNull());
+    TEST_ASSERT_TRUE(doc["pl_trig"].isNull());
 
     // Supported features array
     JsonArray features = doc["sup_feat"].as<JsonArray>();
@@ -377,7 +377,7 @@ void test_alarm_panel_add_method() {
         });
 
     simulateMqttConnect(core);
-    TEST_ASSERT_EQUAL_MESSAGE(617, published.length(), "BUG-38: the abbreviated panel config reaches the bus whole");
+    TEST_ASSERT_EQUAL_MESSAGE(546, published.length(), "the abbreviated panel config reaches the bus whole");
     TEST_ASSERT_EQUAL_STRING("", warn);
     TEST_ASSERT_EQUAL_UINT32(0, haPtr->getStatistics().discoveryRefused);
     LoggerCallbacks::removeCallback(cb);
@@ -390,11 +390,10 @@ void test_alarm_panel_add_method() {
 // ============================================================================
 
 void test_alarm_panel_over_the_event_field_is_refused_and_counted() {
-    // The shape the abbreviations do not rescue: six arm modes, a 32-character
-    // node id, a configuration URL and an area — 974 characters against the
-    // 699-character field (and a 1060-byte packet against PubSubClient's 768 on
-    // ESP8266). Refused before the bus, named in one warning, counted, and not
-    // announced as queued (BUG-38).
+    // The shape no abbreviation rescues: six arm modes, a 32-character node id, a
+    // configuration URL and an area — 786 characters against the 699-character
+    // field. Refused before the bus, named in one warning, counted, and not
+    // announced as queued.
     Core core;
     HAConfig config;
     HA::setField(config.nodeId, "abcdefghijklmnopqrstuvwxyz012345", sizeof(config.nodeId));
@@ -426,7 +425,7 @@ void test_alarm_panel_over_the_event_field_is_refused_and_counted() {
 
     simulateMqttConnect(core);
     TEST_ASSERT_FALSE_MESSAGE(discoveryPublished, "BUG-38: a document over the event field must be refused, not cut");
-    TEST_ASSERT_EQUAL_STRING("Payload for 'homeassistant/alarm_control_panel/abcdefghijklmnopqrstuvwxyz012345/alarm/config' is 974 bytes, over the 699-byte event field: not published", warn);
+    TEST_ASSERT_EQUAL_STRING("Payload for 'homeassistant/alarm_control_panel/abcdefghijklmnopqrstuvwxyz012345/alarm/config' is 786 bytes, over the 699-byte event field: not published", warn);
     TEST_ASSERT_EQUAL_UINT32(1, haPtr->getStatistics().discoveryRefused);
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, queuedInfo, "a refused config must not be announced as queued");
     LoggerCallbacks::removeCallback(cb);
@@ -574,8 +573,8 @@ void test_a_panel_with_no_code_says_no_code_is_required() {
 
     // The document this panel publishes against the event field it crosses.
     // The margin is the figure worth pinning, not the fact that it fits: the two
-    // requirements cost 40 of the 699 characters, and 86 are left.
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(613, published.length(),
+    // requirements cost 40 of the 699 characters, and 158 are left.
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(541, published.length(),
         "a two-mode code-less panel's document, against a 699-character field");
 
     core.shutdown();
@@ -620,11 +619,26 @@ void test_the_trigger_requirement_follows_the_trigger_feature() {
     }
 }
 
-// The cost of stating the requirements, at the shape where it bites: a
-// code-less panel offering every arm mode is over the event field and refused
-// entirely. It was unarmable before this and is absent after it — the keys are
-// not what makes it too long, but they are what pushes this shape over.
-void test_a_code_less_panel_with_every_arm_mode_is_over_the_field() {
+// The one thing the pl_* keys stated before they were dropped: the payloads this
+// panel answers to. The literals here are the defaults Home Assistant documents,
+// so a change on this side fails the build rather than the wire. A change on
+// Home Assistant's side cannot be seen from this repository at all, and
+// handleCommand() echoes whatever it is handed, so nothing else compares them.
+void test_the_command_vocabulary_is_home_assistants_own_default() {
+    TEST_ASSERT_EQUAL_STRING("ARM_HOME", AlarmPanelCommand::ARM_HOME);
+    TEST_ASSERT_EQUAL_STRING("ARM_AWAY", AlarmPanelCommand::ARM_AWAY);
+    TEST_ASSERT_EQUAL_STRING("ARM_NIGHT", AlarmPanelCommand::ARM_NIGHT);
+    TEST_ASSERT_EQUAL_STRING("ARM_VACATION", AlarmPanelCommand::ARM_VACATION);
+    TEST_ASSERT_EQUAL_STRING("ARM_CUSTOM_BYPASS", AlarmPanelCommand::ARM_CUSTOM_BYPASS);
+    TEST_ASSERT_EQUAL_STRING("DISARM", AlarmPanelCommand::DISARM);
+    TEST_ASSERT_EQUAL_STRING("TRIGGER", AlarmPanelCommand::TRIGGER);
+}
+
+// The shape those keys pushed over the field: a code-less panel offering every
+// arm mode. Its document was refused whole, so Home Assistant never created the
+// entity; without the 188 characters that restated Home Assistant's defaults it
+// fits, and the panel exists.
+void test_a_code_less_panel_with_every_arm_mode_now_fits_the_field() {
     Core core;
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
@@ -644,10 +658,10 @@ void test_a_code_less_panel_with_every_arm_mode_is_over_the_field() {
         });
     simulateMqttConnect(core);
 
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, (uint32_t)length,
-        "this shape now fits the field: re-derive the figures the reference states");
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, haPtr->getStatistics().discoveryRefused,
-        "the refusal was not counted");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(552, (uint32_t)length,
+        "the document moved: re-derive the figures the reference states");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, haPtr->getStatistics().discoveryRefused,
+        "this shape is over the field again");
 
     core.shutdown();
 }
@@ -665,7 +679,8 @@ int runAllTests() {
     RUN_TEST(test_alarm_panel_discovery_code_fields);
     RUN_TEST(test_a_panel_with_no_code_says_no_code_is_required);
     RUN_TEST(test_the_trigger_requirement_follows_the_trigger_feature);
-    RUN_TEST(test_a_code_less_panel_with_every_arm_mode_is_over_the_field);
+    RUN_TEST(test_the_command_vocabulary_is_home_assistants_own_default);
+    RUN_TEST(test_a_code_less_panel_with_every_arm_mode_now_fits_the_field);
     RUN_TEST(test_alarm_panel_handle_command_basic);
     RUN_TEST(test_alarm_panel_handle_command_with_code);
     RUN_TEST(test_alarm_panel_handle_command_no_callback);

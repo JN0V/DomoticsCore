@@ -112,14 +112,10 @@ public:
             doc["cmd_tpl"] = "{{ action }}{% if code %} {{ code }}{% endif %}";
         }
 
-        // Command payload constants (only for supported features + always disarm)
-        if (supportedFeatures & AlarmFeature::ArmHome)         doc["pl_arm_home"] = AlarmPanelCommand::ARM_HOME;
-        if (supportedFeatures & AlarmFeature::ArmAway)         doc["pl_arm_away"] = AlarmPanelCommand::ARM_AWAY;
-        if (supportedFeatures & AlarmFeature::ArmNight)        doc["pl_arm_nite"] = AlarmPanelCommand::ARM_NIGHT;
-        if (supportedFeatures & AlarmFeature::ArmVacation)     doc["pl_arm_vacation"] = AlarmPanelCommand::ARM_VACATION;
-        if (supportedFeatures & AlarmFeature::ArmCustomBypass) doc["pl_arm_custom_b"] = AlarmPanelCommand::ARM_CUSTOM_BYPASS;
-        doc["pl_disarm"] = AlarmPanelCommand::DISARM;  // Always available
-        if (supportedFeatures & AlarmFeature::Trigger)         doc["pl_trig"] = AlarmPanelCommand::TRIGGER;
+        // No pl_* key: every command payload this panel accepts is the value Home
+        // Assistant already assumes when the key is absent, so writing them spends
+        // the discovery field to assert nothing. A native test holds the two sides
+        // equal; a divergence there fails the build rather than the wire.
 
         // Supported features array (built from bitmask)
         JsonArray features = doc["sup_feat"].to<JsonArray>();
