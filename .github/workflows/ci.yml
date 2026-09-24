@@ -278,12 +278,15 @@ jobs:
             || failed="${failed} DomoticsCore-OTA(esp32cam)"
           echo "::endgroup::"
 
-          # The console's capture has a half per platform and one suite for both,
-          # so the ESP32 environment carries coverage the esp8266dev loop cannot.
-          echo "::group::DomoticsCore-RemoteConsole (esp32dev)"
-          (cd DomoticsCore-RemoteConsole && pio test -e esp32dev --without-uploading --without-testing) \
-            || failed="${failed} DomoticsCore-RemoteConsole(esp32dev)"
-          echo "::endgroup::"
+          # Two more ESP32 environments, each carrying a suite the esp8266dev loop
+          # above does not reach: the console's capture has a half per platform,
+          # and the discovery documents are measured to the byte on both.
+          for esp32_project in DomoticsCore-RemoteConsole DomoticsCore-HomeAssistant; do
+            echo "::group::${esp32_project} (esp32dev)"
+            (cd "$esp32_project" && pio test -e esp32dev --without-uploading --without-testing) \
+              || failed="${failed} ${esp32_project}(esp32dev)"
+            echo "::endgroup::"
+          done
 
           if [ -n "$failed" ]; then
             echo "::error::on-device suites failed to build:${failed}"
