@@ -725,8 +725,10 @@ No `pl_*` key is published. Every command payload this panel accepts — `ARM_HO
 for an absent key, so stating them spends the field to assert nothing: 188
 characters on a panel offering every arm mode. The agreement rests on those
 constants, which a native test holds equal to the payloads Home Assistant
-documents; a consumer that compares against its own literals rather than the
-constants is on its own.
+documents. They exist for the consumer's state machine to compare against —
+nothing inside the component reads them, and `handleCommand()` passes on
+whatever arrives — so a consumer comparing against its own literals is on its
+own.
 
 A code-less panel with two arm modes (`arm_away`, `arm_night`), the default
 device block, a 17-character node id and a 13-character entity id publishes a

@@ -112,10 +112,9 @@ public:
             doc["cmd_tpl"] = "{{ action }}{% if code %} {{ code }}{% endif %}";
         }
 
-        // No pl_* key: every command payload this panel accepts is the value Home
-        // Assistant already assumes when the key is absent, so writing them spends
-        // the discovery field to assert nothing. A native test holds the two sides
-        // equal; a divergence there fails the build rather than the wire.
+        // No pl_* key: each would carry the payload Home Assistant assumes for an
+        // absent key, spending the discovery field to state what it already knows.
+        // The constants above are the agreement, and a native test holds them to it.
 
         // Supported features array (built from bitmask)
         JsonArray features = doc["sup_feat"].to<JsonArray>();
