@@ -15,6 +15,7 @@ static Core* testCore = nullptr;
 
 void setUp(void) {
     HAL::Platform::setMillisForTest(1000);   // SEC-4: the auth wait is measured, not slept
+    HAL::setCanOpenServerForTest(true);      // each test states its own precondition
     testCore = new Core();
 }
 
@@ -74,6 +75,26 @@ void test_the_server_opens_when_a_stack_appears(void) {
         "the deferred server never opened once a stack existed");
     TEST_ASSERT_TRUE_MESSAGE(ptr->getServer()->isListening(), "the server is not listening");
     TEST_ASSERT_EQUAL_UINT16(2323, ptr->getServer()->getPort());
+}
+
+// A console shut down at runtime — which is what disabling it in the web UI
+// does — must stay shut. The component is still active and still looped, so the
+// deferred open has to know the difference between "no stack yet" and "stopped".
+void test_a_console_shut_down_does_not_reopen_its_port(void) {
+    RemoteConsoleConfig config;
+    config.enabled = true;
+    auto console = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* ptr = console.get();
+    testCore->addComponent(std::move(console));
+    testCore->begin();
+    TEST_ASSERT_NOT_NULL(ptr->getServer());
+
+    ptr->shutdown();
+    TEST_ASSERT_NULL(ptr->getServer());
+    testCore->loop();
+
+    TEST_ASSERT_NULL_MESSAGE(ptr->getServer(),
+        "the telnet port came back after the component was shut down");
 }
 
 // ============================================================================
@@ -897,6 +918,7 @@ int main(int argc, char **argv) {
 
     // Component creation tests
     RUN_TEST(test_a_console_started_before_the_stack_opens_nothing);
+    RUN_TEST(test_a_console_shut_down_does_not_reopen_its_port);
     RUN_TEST(test_the_server_opens_when_a_stack_appears);
     RUN_TEST(test_remoteconsole_component_creation_default);
     RUN_TEST(test_remoteconsole_component_creation_with_config);

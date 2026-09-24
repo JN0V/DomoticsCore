@@ -13,6 +13,7 @@
 #include <DomoticsCore/Wifi_HAL.h>        // For WiFi functions
 #include <DomoticsCore/WiFiServer_HAL.h>  // For WiFiServer and WiFiClient
 // Platform_HAL.h provides: getFreeHeap(), getChipModel(), getChipRevision(), getCpuFreqMHz()
+#include <new>      // std::nothrow
 #include <vector>
 #include <map>
 #include <functional>
@@ -70,6 +71,7 @@ private:
     HAL::WiFiServer* telnetServer = nullptr;
     LoggerCallbacks::CallbackId loggerCallbackId_ = 0;
     bool sdkOutputEnabled_ = false;   // off is the default: see the SDK note in CoreLog_ESP8266.h
+    bool serverWanted_ = false;       // begin() wants one, shutdown() does not: loop() reads this
     uint32_t coreLogDroppedReported_ = 0;
     uint32_t coreLogDropReportedAt_ = 0;
     bool coreLogDropEverReported_ = false;   // millis() == 0 is a timestamp, not a sentinel
@@ -155,7 +157,7 @@ public:
         delete telnetServer;
         telnetServer = nullptr;
 
-        openServer();
+        openServer("restarted");
         return true;
     }
     
@@ -193,9 +195,9 @@ public:
         // A listening socket needs an IP stack, which ESP8266 has from boot and
         // ESP32 gets with its first network interface. Opening before that stops
         // the firmware inside lwIP, so a console that starts first waits for one.
-        if (HAL::canOpenServer()) {
-            openServer();
-        } else {
+        serverWanted_ = true;
+        openServer();
+        if (!telnetServer) {
             DLOG_I(LOG_CONSOLE, "RemoteConsole waiting for a network stack to listen on port %d",
                    config.port);
         }
@@ -221,8 +223,9 @@ public:
         drainCoreLog();
 
         // A stack that appeared after begin() — the radio coming up, or another
-        // transport — is when a deferred server opens.
-        if (!telnetServer && config.enabled && HAL::canOpenServer()) openServer();
+        // transport — is when a deferred server opens. Never after shutdown():
+        // a console disabled at runtime keeps its port closed.
+        if (!telnetServer && serverWanted_) openServer();
 
         if (getLastStatus() != ComponentStatus::Success || !telnetServer) return;
         
@@ -314,6 +317,7 @@ public:
             telnetServer = nullptr;
         }
         
+        serverWanted_ = false;
         DLOG_I(LOG_CONSOLE, "RemoteConsole shut down");
         setStatus(ComponentStatus::Success);
         return ComponentStatus::Success;
@@ -330,14 +334,6 @@ public:
      * as one: ESP-IDF writes "E (1591) gpio: …" and the Arduino core writes
      * "[  1638][E][Preferences.cpp:50] begin(): …". Anything else is information.
      */
-    /** @brief Open the telnet server. Only where canOpenServer() is true. */
-    void openServer() {
-        telnetServer = new HAL::WiFiServer(config.port);
-        telnetServer->begin();
-        telnetServer->setNoDelay(true);
-        DLOG_I(LOG_CONSOLE, "RemoteConsole started on port %d", config.port);
-    }
-
     void drainCoreLog() {
         if (!HAL::CoreLog::captureInstalled()) return;   // nothing takes the lock for nothing
 
@@ -498,6 +494,25 @@ public:
     }
 
 private:
+    /**
+     * @brief Open the telnet server, when the platform says a socket can be.
+     *
+     * Self-guarded: a caller that asks too early is deferred, not aborted, and
+     * loop() tries again. An allocation that fails leaves the pointer null, so
+     * the same retry covers it.
+     */
+    void openServer(const char* what = "started") {
+        if (telnetServer || !HAL::canOpenServer()) return;
+        telnetServer = new (std::nothrow) HAL::WiFiServer(config.port);
+        if (!telnetServer) {
+            DLOG_E(LOG_CONSOLE, "No heap for the telnet server; will try again");
+            return;
+        }
+        telnetServer->begin();
+        telnetServer->setNoDelay(true);
+        DLOG_I(LOG_CONSOLE, "RemoteConsole %s on port %d", what, config.port);
+    }
+
     void registerBuiltInCommands() {
         // Help command
         registerCommand("help", [this](const String& args) {
