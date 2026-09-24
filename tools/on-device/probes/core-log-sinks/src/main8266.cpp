@@ -14,7 +14,7 @@ int uart_get_debug();
 static volatile int p1Lines = 0;
 static volatile int p1Chars = 0;
 
-static void ICACHE_RAM_ATTR capturePutc1(char c) {
+static void IRAM_ATTR capturePutc1(char c) {
     p1Chars++;
     if (c == '\n') p1Lines++;
     while (((USS(0) >> USTXC) & 0xff) >= 0x7e) { }
