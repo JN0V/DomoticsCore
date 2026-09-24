@@ -66,7 +66,7 @@ struct RemoteConsoleConfig {
     uint16_t port = 23;                               // Telnet port
     bool requireAuth = false;                         // Password authentication
     String password = "";                             // Auth password
-    uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;   // Platform-specific (ESP32=100, ESP8266=5)
+    uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;   // Platform-specific (ESP32=150, ESP8266=20)
     bool allowCommands = true;                        // Enable commands
     uint32_t authTimeoutMs = 10000;                   // Auth timeout (10s, 0 = no timeout)
     std::vector<HAL::IPAddress> allowedIPs;           // IP whitelist (empty = all)
@@ -240,8 +240,9 @@ When `colorOutput = true`:
 
 - **Flash:** ~60KB (component + WiFiServer)
 - **RAM:** ~5KB base + (bufferSize * ~100 bytes per entry)
-- **Default ESP32 buffer (100 entries):** ~10KB RAM
-- **Default ESP8266 buffer (5 entries):** ~500 bytes RAM
+- **Default ESP32 buffer (150 entries):** ~23KB heap when full, measured at 152 bytes for an 80-character line
+- **Default ESP8266 buffer (20 entries):** ~2.7KB heap when full, measured at 137 bytes a line
+- **The platform-line intake:** 2KB of static RAM on ESP32, 512 bytes on ESP8266
 
 ## Use Cases
 

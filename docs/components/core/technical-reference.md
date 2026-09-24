@@ -814,6 +814,37 @@ enum class ResetReason : uint8_t {
 | `Brownout` | Supply voltage dropped below threshold |
 | `SDIO` | SDIO reset |
 
+### Core-log HAL
+
+**Header:** `DomoticsCore/CoreLog_HAL.h`
+**Namespace:** `DomoticsCore::HAL::CoreLog`
+
+Capture of the log lines the platform writes itself — the Arduino core's, the
+vendor SDK's, ESP-IDF's — which otherwise reach the UART and nothing else. Like
+the Platform HAL it routes to the implementation for the target
+(`CoreLog_ESP32.h`, `CoreLog_ESP8266.h`, `CoreLog_Stub.h`); the ring and its
+indices are platform-independent and bracketed by the platform's own critical
+section, because a captured line can arrive from a task or from an interrupt.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| **installCapture** | `bool installCapture()` | Takes the platform's log sinks — on ESP32 both the `esp_log_set_vprintf` hook and the `ets_install_putc1` character sink, on ESP8266 the character sink — and empties the ring. `true` on every platform this library supports; `false` is reserved for one with no sink at all. A second install changes nothing — on ESP32 it would otherwise chain the vprintf hook to itself. Both sinks keep the serial output they intercept, and the character sink is taken only when the core has a UART console (`uartGetDebug()`), so a USB-CDC build does not have the core's lines pushed to pins nobody reads. |
+| **removeCapture** | `void removeCapture()` | Gives the sinks back to the platform. Lines already in the ring stay there. |
+| **drainLine** | `size_t drainLine(char* buf, size_t len)` | Copies the oldest line out, oldest first; `0` when the ring is empty. Called from `loop()`. |
+| **droppedLines** | `uint32_t droppedLines()` | Lines the ring refused: it was full, or one was cut in the middle by the framework's own output. |
+| **ignoredLines** | `uint32_t ignoredLines()` | Whole lines skipped because the framework was printing its own. |
+| **supportsSdkOutputSwitch** | `bool supportsSdkOutputSwitch()` | Whether the platform's SDK printing can be switched at all. True on ESP8266 only. |
+| **setSdkOutput** | `bool setSdkOutput(bool)` | Switches the SDK's own printing, and reinstalls the character sink when enabling. On ESP8266 this is what makes the SDK narrate at all: `HardwareSerial::begin()` turns it off. |
+| **SuppressOwnOutput** | *scope guard* | Holds the capture off while this framework prints its own line, which `Logger`'s `DLOG_*` macros do: on ESP32 those lines pass through the same character sink and would otherwise be captured and shown twice. |
+
+| Constant | ESP32 | ESP8266 | Host |
+|---|---|---|---|
+| `DOMOTICS_CORE_LOG_SLOTS` | 16 | 4 | 8 |
+| `DOMOTICS_CORE_LOG_LINE` | 128 | 128 | 128 |
+
+The stub adds `feedLineForTest()` and `feedCharsForTest()`, so a native suite can
+deliver the lines a board's logger would have produced.
+
 ### Filesystem HAL
 
 **Header:** `DomoticsCore/Filesystem_HAL.h`
