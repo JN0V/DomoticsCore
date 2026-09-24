@@ -8,6 +8,7 @@
 #include <DomoticsCore/ComponentConfig.h>  // digitsOnly, shared with the WebUI fields
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
+#include <DomoticsCore/CoreLog_HAL.h>
 #include <DomoticsCore/Platform_HAL.h>    // For restart()
 #include <DomoticsCore/Wifi_HAL.h>        // For WiFi functions
 #include <DomoticsCore/WiFiServer_HAL.h>  // For WiFiServer and WiFiClient
@@ -37,7 +38,7 @@ struct RemoteConsoleConfig {
     uint16_t port = 23;                    // Telnet port
     bool requireAuth = false;              // Password authentication
     String password = "";                  // Auth password
-    uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;  // Platform-specific (ESP8266=5, ESP32=100)
+    uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;  // Platform-specific (ESP8266=20, ESP32=150)
     bool allowCommands = true;             // Enable command execution
     uint32_t authTimeoutMs = 10000;        // Auth timeout (10s default, 0 = no timeout)
     uint32_t authDelayMaxMs = 8000;        // SEC-4: cap of the doubling wait before the next auth attempt is read (0 = none)
@@ -68,6 +69,10 @@ private:
     RemoteConsoleConfig config;
     HAL::WiFiServer* telnetServer = nullptr;
     LoggerCallbacks::CallbackId loggerCallbackId_ = 0;
+    bool sdkOutputEnabled_ = false;   // off is the default: see the SDK note in CoreLog_ESP8266.h
+    uint32_t coreLogDroppedReported_ = 0;
+    uint32_t coreLogDropReportedAt_ = 0;
+    bool coreLogDropEverReported_ = false;   // millis() == 0 is a timestamp, not a sentinel
     uint32_t nextClientId = 1;
     std::vector<std::pair<uint32_t, HAL::WiFiClient>> clients;
     
@@ -181,6 +186,13 @@ public:
             this->log(level, tag, msg);
         });
         
+        // The lines the platform writes itself — the Arduino core's, ESP-IDF's —
+        // never reached a client: they go to the UART, which a device in the
+        // field does not have. loop() drains them out of the HAL's intake.
+        if (HAL::CoreLog::installCapture()) {
+            DLOG_I(LOG_CONSOLE, "Core log capture installed (%u slots)", (unsigned)HAL::CoreLog::SLOTS);
+        }
+
         // Start telnet server (doesn't require WiFi to be connected yet)
         telnetServer = new HAL::WiFiServer(config.port);
         telnetServer->begin();
@@ -203,6 +215,10 @@ public:
             rebootPending = false;
             HAL::restart();
         }
+
+        // Before the client work: a line the platform wrote is worth as much as
+        // one of ours, and it has been waiting in a buffer that cannot grow.
+        drainCoreLog();
 
         if (getLastStatus() != ComponentStatus::Success || !telnetServer) return;
         
@@ -278,6 +294,7 @@ public:
     
     ComponentStatus shutdown() override {
         LoggerCallbacks::removeCallback(loggerCallbackId_);
+        HAL::CoreLog::removeCapture();   // a no-op when begin() never took a sink
         if (telnetServer) {
             // Disconnect all clients
             for (auto& [cid, client] : clients) {
@@ -298,6 +315,67 @@ public:
         return ComponentStatus::Success;
     }
     
+    // At most this many platform lines per loop: a boot burst must not hold the
+    // loop, and what it leaves behind is drained on the next pass.
+    static constexpr size_t CORE_LOG_PER_LOOP = 4;
+
+    /**
+     * @brief Move what the platform logged into the console's own buffer.
+     *
+     * The level is read from the shape of the line, so an error stays greppable
+     * as one: ESP-IDF writes "E (1591) gpio: …" and the Arduino core writes
+     * "[  1638][E][Preferences.cpp:50] begin(): …". Anything else is information.
+     */
+    void drainCoreLog() {
+        if (!HAL::CoreLog::captureInstalled()) return;   // nothing takes the lock for nothing
+
+        char line[HAL::CoreLog::MAX_LINE];
+        for (size_t i = 0; i < CORE_LOG_PER_LOOP; ++i) {
+            if (HAL::CoreLog::drainLine(line, sizeof(line)) == 0) break;
+            log(coreLogLevelOf(line), LOG_PLATFORM, line);
+        }
+
+        // A burst the intake could not hold is said once a minute, the way the
+        // event queue says its own drops. A reinstall zeroes the counter, so the
+        // delta is clamped rather than wrapped through four billion.
+        const uint32_t dropped = HAL::CoreLog::droppedLines();
+        if (dropped < coreLogDroppedReported_) coreLogDroppedReported_ = 0;
+        const uint32_t now = HAL::Platform::getMillis();
+        if (dropped != coreLogDroppedReported_ &&
+            (!coreLogDropEverReported_ || now - coreLogDropReportedAt_ >= 60000)) {
+            DLOG_W(LOG_CONSOLE, "Core log intake dropped %u lines (%u slots)",
+                   (unsigned)(dropped - coreLogDroppedReported_), (unsigned)HAL::CoreLog::SLOTS);
+            coreLogDroppedReported_ = dropped;
+            coreLogDropReportedAt_ = now;
+            coreLogDropEverReported_ = true;
+        }
+    }
+
+    /** @brief The level a platform line carries, read from its two known shapes. */
+    static LogLevel coreLogLevelOf(const char* line) {
+        char letter = '\0';
+        // With the core's log colours on, every line opens with an escape
+        // sequence; the shape that carries the level is behind it.
+        if (line[0] == '\033') {
+            const char* end = line;
+            while (*end && *end != 'm') ++end;
+            if (*end == 'm') line = end + 1;
+        }
+        if (line[0] && line[1] == ' ' && line[2] == '(') {
+            letter = line[0];                      // ESP-IDF: "E (1591) tag: …"
+        } else if (line[0] == '[') {
+            const char* mark = strstr(line, "][");
+            if (mark && mark[2] && mark[3] == ']') letter = mark[2];   // ARDUHAL: "[  12][E][…"
+        }
+        switch (letter) {
+            case 'E': return LOG_LEVEL_ERROR;
+            case 'W': return LOG_LEVEL_WARN;
+            case 'D': return LOG_LEVEL_DEBUG;
+            case 'V': return LOG_LEVEL_VERBOSE;
+            default:  return LOG_LEVEL_INFO;
+        }
+    }
+
     /**
      * @brief Log a message to the buffer and connected clients
      */
@@ -432,6 +510,7 @@ private:
                 "  filter <tag>      - Filter logs by tag (empty = show all)\n"
                 "  info              - System information\n"
                 "  heap              - Memory usage\n"
+                "  core [on|off]     - The platform's own log lines: state, or the SDK narration\n"
                 "  reboot            - Restart device\n"
                 "  auth <password>   - Authenticate (if auth required)\n"
                 "  quit              - Disconnect\n";
@@ -443,7 +522,8 @@ private:
                 if (cmd.first != "help" && cmd.first != "clear" && 
                     cmd.first != "level" && cmd.first != "filter" &&
                     cmd.first != "info" && cmd.first != "heap" && 
-                    cmd.first != "reboot" && cmd.first != "quit") {
+                    cmd.first != "reboot" && cmd.first != "quit" &&
+                    cmd.first != "core") {
                     help += "  " + cmd.first + "\n";
                 }
             }
@@ -451,6 +531,39 @@ private:
             return help;
         });
         
+        // The platform's own lines: what is captured, and — where the platform
+        // has a switch for it — whether its SDK narrates at all.
+        registerCommand("core", [this](const String& args) -> String {
+            char buf[224];
+            const bool wantsChange = !args.isEmpty();
+            const bool enable = args == "on";
+            if (wantsChange && !enable && args != "off") {
+                return "Usage: core [on|off]\n";
+            }
+            if (wantsChange) {
+                if (!HAL::CoreLog::supportsSdkOutputSwitch()) {
+                    return "This platform has nothing to switch: its core and SDK lines are already captured\n";
+                }
+                HAL::CoreLog::setSdkOutput(enable);
+                sdkOutputEnabled_ = enable;
+                if (enable) {
+                    return "SDK narration on. It reaches the serial port as well, and costs about a "
+                           "line a second while a join fails\n";
+                }
+                return "SDK narration off\n";
+            }
+            snprintf(buf, sizeof(buf),
+                     "Platform lines: %s, %u intake slots, %u dropped, %u ours ignored\n"
+                     "SDK narration: %s\n",
+                     HAL::CoreLog::captureInstalled() ? "captured" : "not captured",
+                     (unsigned)HAL::CoreLog::SLOTS, (unsigned)HAL::CoreLog::droppedLines(),
+                     (unsigned)HAL::CoreLog::ignoredLines(),
+                     HAL::CoreLog::supportsSdkOutputSwitch()
+                         ? (sdkOutputEnabled_ ? "on (set here)" : "off (set here)")
+                         : "not a switch on this platform");
+            return String(buf);
+        });
+
         // Clear command
         registerCommand("clear", [this](const String& args) {
             clearBuffer();
