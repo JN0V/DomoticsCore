@@ -3,9 +3,9 @@
  * @brief The discovery documents a board actually builds, measured on the board.
  *
  * The host suites measure these documents against a String and an ArduinoJson
- * the host provides; a panel that fits by fourteen characters is a claim about
- * the board's. No broker is needed: the component publishes on the connect event
- * and the documents cross the EventBus, where the field that refuses them lives.
+ * the host provides; whether a panel fits is a claim about the board's. No broker
+ * is needed: the component publishes on the connect event and the documents cross
+ * the EventBus, where the field that refuses them lives.
  */
 
 #include <Arduino.h>
@@ -21,11 +21,13 @@ using namespace DomoticsCore::Components::HomeAssistant;
 static Core* testCore = nullptr;
 static String capturedConfig;
 static size_t capturedLength = 0;
+static int publishes = 0;
 
 void setUp(void) {
     testCore = new Core();
     capturedConfig = "";
     capturedLength = 0;
+    publishes = 0;
 }
 
 void tearDown(void) {
@@ -65,6 +67,7 @@ static HomeAssistantComponent* publishPanel(const char* nodeId, const char* enti
 
     testCore->on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
         [](const MQTTPublishEvent& ev) {
+            publishes++;
             if (strstr(ev.topic, "alarm_control_panel") && strstr(ev.topic, "/config")) {
                 capturedLength = strlen(ev.payload);
                 capturedConfig = ev.payload;
@@ -103,7 +106,11 @@ void test_the_requirement_keys_are_on_the_wire() {
     TEST_ASSERT_TRUE_MESSAGE(capturedConfig.indexOf("\"cod_dis_req\":false") >= 0,
         "a code-less panel published no cod_dis_req");
     TEST_ASSERT_TRUE_MESSAGE(capturedConfig.indexOf("pl_arm") < 0,
-        "a payload key restating Home Assistant's default is back in the document");
+        "an arm payload key is back in the document");
+    TEST_ASSERT_TRUE_MESSAGE(capturedConfig.indexOf("pl_disarm") < 0,
+        "pl_disarm is back in the document");
+    TEST_ASSERT_TRUE_MESSAGE(capturedConfig.indexOf("pl_trig") < 0,
+        "pl_trig is back in the document");
 }
 
 // The widest shape a panel can take, and the one the payload keys used to push
@@ -129,6 +136,8 @@ void test_a_document_over_the_field_is_refused_on_the_board() {
         AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass | AlarmFeature::Trigger,
         "5678");
 
+    TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, publishes,
+        "nothing was published at all, so a length of zero says nothing");
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, (uint32_t)capturedLength,
         "a document over the event field reached the bus, cut");
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, ha->getStatistics().discoveryRefused,
@@ -141,11 +150,15 @@ void test_republishing_discovery_leaves_the_heap_where_it_was() {
     publishConsumerPanel();
 
     const uint32_t before = HAL::Platform::getFreeHeap();
+    capturedLength = 0;
     for (int round = 0; round < 5; ++round) {
         testCore->emit<bool>(DomoticsCore::MQTTEvents::EVENT_CONNECTED, true);
         for (int i = 0; i < 8; i++) testCore->loop();
     }
     const uint32_t after = HAL::Platform::getFreeHeap();
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(541, (uint32_t)capturedLength,
+        "nothing was republished, so the heap below is measuring an idle loop");
 
     char note[80];
     snprintf(note, sizeof(note), "five republishes cost %d bytes", (int)(before - after));
