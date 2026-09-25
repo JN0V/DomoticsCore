@@ -79,7 +79,7 @@ Constructs the component with the given configuration. Sets `metadata.name = "We
 
 WebUIComponent is itself a provider, exposing:
 - **`webui_uptime`** -- Header info context showing device uptime (1 s real-time refresh).
-- **`webui_settings`** -- Settings context for theme, primary color, authentication, username, password.
+- **`webui_settings`** -- Settings context for theme, primary color, authentication, username, password. `theme` must be `dark`, `light` or `auto`, and an empty primary color or username is refused: stored, an empty value would win over the configured one at every boot.
 
 ---
 

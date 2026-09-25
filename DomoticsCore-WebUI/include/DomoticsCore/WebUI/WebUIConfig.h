@@ -101,9 +101,25 @@ struct WebUIConfig {
      */
     bool applySetting(const String& field, const String& value, const char*& error) {
         error = nullptr;
-        if (field == "theme") { setTheme(value.c_str()); return true; }
-        if (field == "primary_color") { setPrimaryColor(value.c_str()); return true; }
-        if (field == "username") { setUsername(value.c_str()); return true; }
+        // A stored empty value would win over the default at every boot.
+        if (field == "theme") {
+            if (value != "dark" && value != "light" && value != "auto") {
+                error = "Theme must be dark, light or auto";
+                return false;
+            }
+            setTheme(value.c_str());
+            return true;
+        }
+        if (field == "primary_color") {
+            if (value.length() == 0) { error = "Primary color cannot be empty"; return false; }
+            setPrimaryColor(value.c_str());
+            return true;
+        }
+        if (field == "username") {
+            if (value.length() == 0) { error = "Username cannot be empty"; return false; }
+            setUsername(value.c_str());
+            return true;
+        }
         if (field == "enable_auth") {
             const bool on = (value == "true" || value == "1");
             if (on && password[0] == '\0') { error = "Set a password before enabling authentication"; return false; }
