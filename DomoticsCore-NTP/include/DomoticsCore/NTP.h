@@ -130,6 +130,7 @@ public:
 
     ComponentStatus begin() override {
         DLOG_I(LOG_NTP, "Starting component...");
+        begun_ = true;
         
         if (!config.enabled) {
             DLOG_W(LOG_NTP, "Component disabled");
@@ -152,6 +153,7 @@ public:
     }
 
     ComponentStatus shutdown() override {
+        begun_ = false;
         clientWanted_ = false;
         if (clientStarted_) {
             HAL::NTP::stop();
@@ -491,7 +493,10 @@ public:
             setTimezone(config.timezone);
         }
 
-        if (needsRestart && config.enabled) {
+        // Only a component begun and not shut down is restarted, and a disabled
+        // one is then left stopped by begin(); before begin() the config is simply
+        // what begin() will read.
+        if (needsRestart && begun_) {
             if (clientStarted_) HAL::NTP::stop();
             clientStarted_ = false;
             begin();
@@ -548,6 +553,7 @@ private:
     NTPStatistics stats;
     bool synced;
     bool syncInProgress;
+    bool begun_ = false;          // between begin() and shutdown()
     bool clientWanted_ = false;   // begin() wants the client, shutdown() does not: loop() reads this
     bool clientStarted_ = false;
     /// @note On ESP32/ESP8266, unsigned long is 32-bit and wraps at ~49.7 days

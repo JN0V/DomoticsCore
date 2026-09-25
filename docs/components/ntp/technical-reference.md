@@ -235,7 +235,7 @@ Applies a new configuration. Behavior:
 
 1. Computes diffs between old and new config **before** mutating state.
 2. If `timezone` changed, calls `setTimezone()` immediately.
-3. If `enabled`, `servers`, or `syncInterval` changed and the component is enabled, stops and restarts the SNTP client.
+3. If `enabled`, `servers`, or `syncInterval` changed and the component is between `begin()` and `shutdown()`, stops the SNTP client and runs `begin()` again — which leaves it stopped when `enabled` is now `false`. Before `begin()` or after `shutdown()` nothing is started: the new config is what the next `begin()` reads.
 
 ### Callbacks
 
