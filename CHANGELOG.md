@@ -61,8 +61,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > arrive, so the cost appears hours after boot rather than at it: about 22 KB
 > more resident heap on a full ESP32 buffer of platform-length lines, measured on
 > a board, and seen in production as a free heap settling 23 KB below 2.6.1's.
-> It is not a leak. `RemoteConsoleConfig::bufferSize = 50` restores 2.6.1's
-> figure today; the next release lowers the ESP32 default to 64.
+> It is not a leak, and it is roughly 2.5 KB on ESP8266. `bufferSize = 50` on
+> ESP32, or `5` on ESP8266, restores 2.6.1's figure today; the next release lowers
+> the ESP32 default to 64.
 
 ### Added
 

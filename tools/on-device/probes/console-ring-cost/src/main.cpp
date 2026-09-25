@@ -31,27 +31,31 @@ static void measure(size_t entries, size_t lineLen) {
 }
 
 // The component's own path, which the reserved vector above is not: lines go
-// through log(), the vector grows by push_back with no reserve, and the figure
-// is the allocatable heap, which is what a device running out would run out of.
+// through log(), and the figure is the allocatable heap, which is what a device
+// running out would run out of. The last mark writes short lines over long ones,
+// which shows whether an overwritten slot gives its larger buffer back.
 static void measureComponent(size_t lineLen) {
     String message;
     for (size_t i = 0; i < lineLen; ++i) message += 'x';
 
     RemoteConsoleConfig config;
-    config.enabled = false;   // the ring does not need a server, and begin() is not called
+    config.enabled = false;   // the history does not need a server, and begin() is not called
     RemoteConsoleComponent console(config);
-    const uint32_t start = HAL::Platform::getAllocatableFreeHeap();
-    const size_t marks[] = {50, 64, 65, 128, 129, (size_t)DOMOTICS_LOG_BUFFER_SIZE, 2 * (size_t)DOMOTICS_LOG_BUFFER_SIZE};
+    const size_t cap = config.bufferSize;
+    const int32_t start = (int32_t)HAL::Platform::getAllocatableFreeHeap();
+    const size_t marks[] = {cap / 2, cap, cap + 1, 2 * cap};
     size_t written = 0;
     for (size_t mark : marks) {
         while (written < mark) {
             console.log(LOG_LEVEL_INFO, "PLATFORM", message.c_str());
             ++written;
         }
-        Serial.printf("RINGC %u chars, %u lines written: %u B held\n",
-                      (unsigned)lineLen, (unsigned)written,
-                      (unsigned)(start - HAL::Platform::getAllocatableFreeHeap()));
+        Serial.printf("RINGC %u chars, %u lines written: %d B held\n", (unsigned)lineLen,
+                      (unsigned)written, (int)(start - (int32_t)HAL::Platform::getAllocatableFreeHeap()));
     }
+    for (size_t i = 0; i < cap; ++i) console.log(LOG_LEVEL_INFO, "PLATFORM", "short");
+    Serial.printf("RINGC %u chars, then %u short lines: %d B held\n", (unsigned)lineLen, (unsigned)cap,
+                  (int)(start - (int32_t)HAL::Platform::getAllocatableFreeHeap()));
 }
 
 void setup() {
