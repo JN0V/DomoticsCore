@@ -81,6 +81,21 @@
 
 namespace DomoticsCore {
 
+#if __has_include(<DomoticsCore/NTP.h>)
+namespace SystemHelpers {
+/** @brief The NTP configuration a System builds from its own config. */
+inline Components::NTPConfig systemNtpConfig(const SystemConfig& config) {
+    Components::NTPConfig ntp;
+    if (!config.ntpServer.isEmpty()) {
+        if (ntp.servers.empty()) ntp.servers.push_back(config.ntpServer);
+        else ntp.servers[0] = config.ntpServer;
+    }
+    if (!config.ntpTimezone.isEmpty()) ntp.timezone = config.ntpTimezone;
+    return ntp;
+}
+} // namespace SystemHelpers
+#endif
+
 /**
  * @brief Complete ready-to-use system
  * 
@@ -379,7 +394,7 @@ private:
     void registerNTPComponent() {
 #if __has_include(<DomoticsCore/NTP.h>)
         if (!config.enableNTP) return;
-        core.addComponent(std::make_unique<Components::NTPComponent>());
+        core.addComponent(std::make_unique<Components::NTPComponent>(SystemHelpers::systemNtpConfig(config)));
         DLOG_I(LOG_SYSTEM, "✓ NTP component added");
 #else
         if (config.enableNTP) DLOG_W(LOG_SYSTEM, "⚠️  NTP requested but library not installed");

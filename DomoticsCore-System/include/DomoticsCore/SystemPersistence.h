@@ -49,10 +49,27 @@
 #include <DomoticsCore/SystemInfo.h>
 #endif
 
+#if __has_include(<DomoticsCore/OTA.h>)
+#include <DomoticsCore/OTA.h>
+#endif
+
 #define LOG_PERSISTENCE "PERSIST"
 
 namespace DomoticsCore {
 namespace SystemHelpers {
+
+#if SYSTEM_HAS_STORAGE
+/**
+ * @brief The stored value, or `fallback` when the key is absent or empty.
+ *
+ * For a field where empty means nothing: a stored empty value would otherwise
+ * replace what the firmware was built with at every boot.
+ */
+inline String storedOr(Components::StorageComponent* storage, const char* key, const String& fallback) {
+    String value = storage->getString(key, fallback);
+    return value.isEmpty() ? fallback : value;
+}
+#endif
 
 /**
  * @brief Register all known storage keys with the Storage component
@@ -116,7 +133,11 @@ inline void registerStorageKeys(Core& core, const SystemConfig& config) {
             KeyDef("mqtt_port", 'i', "Broker port"),
             KeyDef("mqtt_user", 's', "Username"),
             KeyDef("mqtt_pass", 's', "Password"),
-            KeyDef("mqtt_clientid", 's', "Client ID")
+            KeyDef("mqtt_clientid", 's', "Client ID"),
+            KeyDef("mqtt_tls", 'b', "TLS"),
+            KeyDef("mqtt_lwt_en", 'b', "Last Will enabled"),
+            KeyDef("mqtt_lwt_topic", 's', "Last Will topic"),
+            KeyDef("mqtt_lwt_msg", 's', "Last Will message")
         });
     }
 #endif
@@ -130,7 +151,18 @@ inline void registerStorageKeys(Core& core, const SystemConfig& config) {
             KeyDef("ha_disc_prefix", 's', "Discovery prefix"),
             KeyDef("ha_mfg", 's', "Manufacturer"),
             KeyDef("ha_model", 's', "Model"),
-            KeyDef("ha_sw_ver", 's', "Software version")
+            KeyDef("ha_sw_ver", 's', "Software version"),
+            KeyDef("ha_area", 's', "Suggested area")
+        });
+    }
+#endif
+
+    // OTA keys
+#if __has_include(<DomoticsCore/OTA.h>)
+    if (config.enableOTA) {
+        storage->registerKeys("OTA", {
+            KeyDef("ota_url", 's', "Firmware URL"),
+            KeyDef("ota_reboot", 'b', "Reboot after update")
         });
     }
 #endif
@@ -216,12 +248,12 @@ inline void loadWebUIConfig(Core& core, const SystemConfig& config) {
     
     Components::WebUIConfig webuiConfig = webui->getConfig();
     
-    webuiConfig.setTheme(storage->getString("webui_theme", webuiConfig.getTheme()).c_str());
-    webuiConfig.setDeviceName(storage->getString("device_name", webuiConfig.getDeviceName()).c_str());
-    webuiConfig.setPrimaryColor(storage->getString("webui_color", webuiConfig.getPrimaryColor()).c_str());
+    webuiConfig.setTheme(storedOr(storage, "webui_theme", webuiConfig.getTheme()).c_str());
+    webuiConfig.setDeviceName(storedOr(storage, "device_name", config.deviceName).c_str());
+    webuiConfig.setPrimaryColor(storedOr(storage, "webui_color", webuiConfig.getPrimaryColor()).c_str());
     webuiConfig.enableAuth = storage->getBool("webui_auth", webuiConfig.enableAuth);
-    webuiConfig.setUsername(storage->getString("webui_user", webuiConfig.getUsername()).c_str());
-    webuiConfig.setPassword(storage->getString("webui_pass", webuiConfig.getPassword()).c_str());
+    webuiConfig.setUsername(storedOr(storage, "webui_user", webuiConfig.getUsername()).c_str());
+    webuiConfig.setPassword(storedOr(storage, "webui_pass", webuiConfig.getPassword()).c_str());
     
     webui->setConfig(webuiConfig);
     DLOG_I(LOG_PERSISTENCE, "Loaded WebUI config: theme=%s", webuiConfig.theme);
@@ -242,7 +274,7 @@ inline void loadNTPConfig(Core& core, const SystemConfig& config) {
     Components::NTPConfig ntpConfig = ntp->getConfig();
     
     ntpConfig.enabled = storage->getBool("ntp_enabled", ntpConfig.enabled);
-    ntpConfig.timezone = storage->getString("ntp_timezone", ntpConfig.timezone);
+    ntpConfig.timezone = storedOr(storage, "ntp_timezone", ntpConfig.timezone);
     ntpConfig.syncInterval = (uint32_t)storage->getInt("ntp_interval", ntpConfig.syncInterval);
     
     // Load servers from comma-separated string
@@ -281,11 +313,17 @@ inline void loadMQTTConfig(Core& core, const SystemConfig& config) {
     Components::MQTTConfig mqttConfig = mqtt->getConfig();
     
     mqttConfig.enabled = storage->getBool("mqtt_enabled", mqttConfig.enabled);
+    // An empty broker or username is a choice (MQTT off, an anonymous broker);
+    // an empty client id or will topic only ever means the default.
     mqttConfig.broker = storage->getString("mqtt_broker", mqttConfig.broker);
     mqttConfig.port = (uint16_t)storage->getInt("mqtt_port", mqttConfig.port);
     mqttConfig.username = storage->getString("mqtt_user", mqttConfig.username);
     mqttConfig.password = storage->getString("mqtt_pass", mqttConfig.password);
-    mqttConfig.clientId = storage->getString("mqtt_clientid", mqttConfig.clientId);
+    mqttConfig.clientId = storedOr(storage, "mqtt_clientid", mqttConfig.clientId);
+    mqttConfig.useTLS = storage->getBool("mqtt_tls", mqttConfig.useTLS);
+    mqttConfig.enableLWT = storage->getBool("mqtt_lwt_en", mqttConfig.enableLWT);
+    mqttConfig.lwtTopic = storedOr(storage, "mqtt_lwt_topic", mqttConfig.lwtTopic);
+    mqttConfig.lwtMessage = storage->getString("mqtt_lwt_msg", mqttConfig.lwtMessage);
     
     mqtt->setConfig(mqttConfig);
     DLOG_I(LOG_PERSISTENCE, "Loaded MQTT config: enabled=%d, broker=%s:%d", 
@@ -307,15 +345,35 @@ inline void loadHomeAssistantConfig(Core& core, const SystemConfig& config) {
     using namespace Components::HomeAssistant;
     HAConfig haConfig = ha->getConfig();
 
-    HA::setField(haConfig.nodeId, storage->getString("ha_nodeid", haConfig.nodeId).c_str(), HA::MAX_NODE_ID);
-    HA::setField(haConfig.deviceName, storage->getString("ha_device_name", haConfig.deviceName).c_str(), HA::MAX_DEVICE_NAME);
+    HA::setField(haConfig.nodeId, storedOr(storage, "ha_nodeid", haConfig.nodeId).c_str(), HA::MAX_NODE_ID);
+    HA::setField(haConfig.deviceName, storedOr(storage, "ha_device_name", haConfig.deviceName).c_str(), HA::MAX_DEVICE_NAME);
     HA::setField(haConfig.manufacturer, storage->getString("ha_mfg", haConfig.manufacturer).c_str(), HA::MAX_MANUFACTURER);
     HA::setField(haConfig.model, storage->getString("ha_model", haConfig.model).c_str(), HA::MAX_MODEL);
     HA::setField(haConfig.swVersion, storage->getString("ha_sw_ver", haConfig.swVersion).c_str(), HA::MAX_SW_VERSION);
-    HA::setField(haConfig.discoveryPrefix, storage->getString("ha_disc_prefix", haConfig.discoveryPrefix).c_str(), HA::MAX_DISCOVERY_PREFIX);
+    HA::setField(haConfig.discoveryPrefix, storedOr(storage, "ha_disc_prefix", haConfig.discoveryPrefix).c_str(), HA::MAX_DISCOVERY_PREFIX);
+    // The descriptive fields may be cleared on purpose: an empty stored value stands.
+    HA::setField(haConfig.suggestedArea, storage->getString("ha_area", haConfig.suggestedArea).c_str(), HA::MAX_SUGGESTED_AREA);
 
     ha->setConfig(haConfig);
     DLOG_I(LOG_PERSISTENCE, "Loaded HomeAssistant config: nodeId=%s", haConfig.nodeId);
+#endif
+}
+
+/**
+ * @brief Load OTA configuration from Storage
+ */
+inline void loadOTAConfig(Core& core, const SystemConfig& config) {
+#if SYSTEM_HAS_STORAGE && __has_include(<DomoticsCore/OTA.h>)
+    if (!config.enableOTA || !config.enableStorage) return;
+
+    auto* storage = core.getComponent<Components::StorageComponent>("Storage");
+    auto* ota = core.getComponent<Components::OTAComponent>("OTA");
+    if (!storage || !ota) return;
+
+    Components::OTAConfig otaConfig = ota->getConfig();
+    otaConfig.updateUrl = storage->getString("ota_url", otaConfig.updateUrl);
+    otaConfig.autoReboot = storage->getBool("ota_reboot", otaConfig.autoReboot);
+    ota->setConfig(otaConfig);
 #endif
 }
 
@@ -464,6 +522,7 @@ inline void loadAllConfigs(Core& core, SystemConfig& config, Components::WifiCom
     loadNTPConfig(core, config);
     loadMQTTConfig(core, config);
     loadHomeAssistantConfig(core, config);
+    loadOTAConfig(core, config);
 }
 
 } // namespace SystemHelpers
