@@ -21,9 +21,20 @@ class WebServerManager {
 private:
     WebUIConfig config;
     AsyncWebServer* server = nullptr;
+    bool wanted_ = false;   // start() wants the server open, stop() does not: poll() reads this
+    bool running_ = false;
     
     // Helper for authentication
     std::function<bool(AsyncWebServerRequest*)> authHandler;
+
+    // On ESP32, lwIP does not exist before the first network interface, and
+    // listening before then aborts the firmware.
+    void open() {
+        if (!server || running_ || !HAL::canOpenServer()) return;
+        server->begin();
+        running_ = true;
+        DLOG_I(LOG_WEB, "Web server listening on port %d", config.port);
+    }
 
 public:
     WebServerManager(const WebUIConfig& cfg) : config(cfg) {}
@@ -40,12 +51,22 @@ public:
         setupStaticRoutes();
     }
 
+    /** @brief Open the server now, or from poll() once a socket can be opened. */
     void start() {
-        if (server) server->begin();
+        wanted_ = true;
+        open();
+        if (!running_) DLOG_I(LOG_WEB, "No network interface yet; web server deferred");
+    }
+
+    /** @brief Open a deferred server; called from the component's loop(). */
+    void poll() {
+        if (wanted_ && !running_) open();
     }
 
     void stop() {
-        if (server) server->end();
+        wanted_ = false;
+        if (running_) server->end();
+        running_ = false;
     }
 
     AsyncWebServer* getServer() {

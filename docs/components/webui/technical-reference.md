@@ -46,9 +46,9 @@ Constructs the component with the given configuration. Sets `metadata.name = "We
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `begin()` | `ComponentStatus begin()` | Adapts WS client limits from `MemoryManager`, initializes server and socket handler, sets up API routes, and starts listening. |
-| `loop()` | `void loop()` | Pumps SSE/polling updates, runs schema memory probes, and calls `sendWebSocketUpdates()` when the interval elapses. |
-| `shutdown()` | `ComponentStatus shutdown()` | Stops the web server. |
+| `begin()` | `ComponentStatus begin()` | Adapts WS client limits from `MemoryManager`, initializes server and socket handler, sets up API routes, and starts listening — or, when `HAL::canOpenServer()` answers false (an ESP32 with no network interface yet), defers listening and logs `No network interface yet; web server deferred`. |
+| `loop()` | `void loop()` | Opens a deferred server once a socket can be opened, pumps SSE/polling updates, runs schema memory probes, and calls `sendWebSocketUpdates()` when the interval elapses. |
+| `shutdown()` | `ComponentStatus shutdown()` | Stops the web server and cancels a deferred start. |
 | `onComponentsReady()` | `void onComponentsReady(const ComponentRegistry&)` | Discovers all providers via the registry, subscribes to `wifi/ap/enabled` to close connections when the AP goes down, and registers as a lifecycle listener for future add/remove events. |
 
 ### Provider Management
@@ -531,8 +531,9 @@ Manages the `AsyncWebServer` instance and static asset serving.
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `begin` | `void begin()` | Create the `AsyncWebServer` on the configured port and set up static routes. |
-| `start` | `void start()` | Call `server->begin()` to start listening. |
-| `stop` | `void stop()` | Call `server->end()`. |
+| `start` | `void start()` | Call `server->begin()` to start listening, when `HAL::canOpenServer()` allows it; otherwise leave it to `poll()`. |
+| `poll` | `void poll()` | Start a deferred server once a socket can be opened; does nothing after `stop()`. |
+| `stop` | `void stop()` | Call `server->end()` if listening, and cancel a deferred start. |
 | `getServer` | `AsyncWebServer* getServer()` | Return the raw server pointer. |
 | `setAuthHandler` | `void setAuthHandler(std::function<bool(AsyncWebServerRequest*)> handler)` | Set the authentication handler. |
 | `registerRoute` | `void registerRoute(const String& uri, WebRequestMethod method, ArRequestHandlerFunction handler)` | Register an HTTP route. |
