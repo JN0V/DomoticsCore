@@ -88,7 +88,6 @@ void setup() {
     RemoteConsoleConfig config;
     config.enabled = true;
     config.port = 23;
-    config.bufferSize = 500;
     config.colorOutput = true;
     config.defaultLogLevel = LOG_LEVEL_INFO;
     

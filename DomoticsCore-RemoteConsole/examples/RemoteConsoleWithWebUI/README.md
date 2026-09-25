@@ -136,7 +136,7 @@ config.enabled = true;              // Enable/disable console
 config.port = 23;                   // Telnet port
 config.requireAuth = false;         // Password authentication
 config.password = "";               // Auth password (if requireAuth=true)
-config.bufferSize = 500;            // Circular buffer size
+config.bufferSize = 64;             // Lines of history (the ESP32 default)
 config.allowCommands = true;        // Enable built-in commands
 config.colorOutput = true;          // ANSI color codes
 config.maxClients = 3;              // Max concurrent connections
