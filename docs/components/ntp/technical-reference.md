@@ -129,7 +129,7 @@ virtual ~NTPComponent();
 ```
 
 - **Constructor**: Initializes component metadata (`name = "NTP"`, `version = "1.3.0"`), stores the configuration, records boot time, and prepares the sync timeout timer in a disabled state.
-- **Destructor**: Calls `HAL::NTP::stop()` if the component is enabled, ensuring the SNTP client is shut down cleanly.
+- **Destructor**: Calls `HAL::NTP::stop()` if the SNTP client was started, ensuring it is shut down cleanly.
 
 ### IComponent Lifecycle
 
@@ -139,21 +139,21 @@ Starts the NTP client. Steps performed:
 
 1. If `config.enabled` is `false`, returns `ComponentStatus::Success` immediately.
 2. Sets the timezone via `HAL::NTP::setTimezone()`.
-3. Passes up to three server hostnames to `HAL::NTP::init()`.
-4. Sets the sync interval via `HAL::NTP::setSyncInterval()`.
+3. Starts the SNTP client when `HAL::canOpenServer()` allows it: sets the sync interval via `HAL::NTP::setSyncInterval()`, then passes up to three server hostnames to `HAL::NTP::init()`.
+4. Otherwise — on ESP32, before any network interface exists — defers the client and logs `No network interface yet; SNTP client deferred`. The client reaches lwIP, which does not exist yet, and starting it would abort the firmware.
 
 Returns `ComponentStatus::Success` in all cases.
 
 #### `void loop()`
 
-Called every main loop iteration. Performs two checks:
+Called every main loop iteration. First starts a deferred SNTP client once `HAL::canOpenServer()` answers true — never after `shutdown()`. Then performs two checks:
 
 1. **Sync detection**: Reads `time(nullptr)` and considers the clock synced when the value exceeds `1000000000` (approximately 2001-09-09). On the first sync detection, increments `syncCount`, records the timestamp, emits `NTPEvents::EVENT_SYNCED`, and invokes the sync callback with `true`.
 2. **Timeout detection**: If a sync is in progress and the `syncTimeoutTimer` fires, increments `syncErrors` and `consecutiveFailures`, emits `NTPEvents::EVENT_SYNC_FAILED`, and invokes the sync callback with `false`.
 
 #### `ComponentStatus shutdown()`
 
-Stops the SNTP client via `HAL::NTP::stop()` if enabled. Returns `ComponentStatus::Success`.
+Stops the SNTP client via `HAL::NTP::stop()` if it was started, and cancels a deferred start. Returns `ComponentStatus::Success`.
 
 ### Time Synchronization
 
@@ -161,7 +161,7 @@ Stops the SNTP client via `HAL::NTP::stop()` if enabled. Returns `ComponentStatu
 
 Triggers an immediate NTP synchronization request.
 
-- Returns `false` if the component is disabled or a sync is already in progress.
+- Returns `false` if the component is disabled, the SNTP client has not started yet (no network interface), or a sync is already in progress.
 - Returns `true` after requesting a non-blocking sync via `HAL::NTP::forceSync()`.
 - Starts the timeout timer with `config.timeoutMs`.
 
@@ -472,7 +472,7 @@ The internal buffer is 128 bytes. Formats producing output exceeding this length
 
 ## Test Coverage
 
-The component ships with 33 native unit tests in `DomoticsCore-NTP/test/test_ntp_component/test_ntp_component.cpp`, using the Unity test framework. Test categories:
+The component ships with native unit tests in two suites, using the Unity test framework. `test_ntp_client_gate` pins when the SNTP client starts: in `begin()` when a socket can be opened, otherwise from `loop()` once one can; never after `shutdown()`; `syncNow()` refused before it; never stopped unless started; config changes while deferred and while running. `test_ntp_component` covers the rest. Test categories:
 
 | Category | Tests | What They Cover |
 |---|---|---|
