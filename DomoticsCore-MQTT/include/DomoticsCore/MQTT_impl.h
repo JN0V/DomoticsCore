@@ -11,6 +11,7 @@ inline MQTTComponent* MQTTComponent::instance = nullptr;
 inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
     : config(cfg)
     , mqttClient(new HAL::MQTT::MQTTClientImpl(config.useTLS))
+    , clientTLS_(config.useTLS)
     , state(MQTTState::Disconnected)
     , reconnectTimer(cfg.reconnectDelay)
     , stateChangeTime(0)
@@ -19,19 +20,7 @@ inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
 {
     instance = this;
 
-    // Generate client ID if not provided
-    if (config.clientId.isEmpty()) {
-        config.clientId = generateClientId();
-    }
-
-    // Set default LWT topic if not provided
-    if (config.enableLWT && config.lwtTopic.isEmpty()) {
-        config.lwtTopic = config.clientId + "/status";
-    }
-    if (config.lwtQoS > 2) {
-        DLOG_W(LOG_MQTT, "Invalid lwtQoS %u, clamping to 2", config.lwtQoS);
-        config.lwtQoS = 2;
-    }
+    normalizeConfig(String());
 
     // Initialize metadata
     metadata.name = "MQTT";
@@ -94,8 +83,7 @@ inline ComponentStatus MQTTComponent::begin() {
         DLOG_I(LOG_MQTT, "Component disabled in configuration");
         return ComponentStatus::Success;  // Success but inactive
     }
-    mqttClient->setKeepAlive(config.keepAlive);
-    // Buffer size is now set at connection
+    // Keep-alive and buffer size are set at connection
     
     // Auto-connect if enabled (components must work independently)
     // System.h can ALSO trigger via WiFi events for better orchestration
@@ -128,6 +116,12 @@ inline void MQTTComponent::loop() {
     }
 
     if (isConnected()) {
+        if (reopenPending_) {
+            disconnect();
+            rebuildClientIfNeeded();
+            connect();
+            return;
+        }
         // Always process an active connection even if config.enabled was
         // cleared after connection (e.g. by a config reload from flash).
         mqttClient->loop();
@@ -141,6 +135,7 @@ inline void MQTTComponent::loop() {
     // before a reconnection attempt can announce its own success.
     if (state == MQTTState::Connected) announceConnectionLost();
 
+    rebuildClientIfNeeded();
     if (config.enabled && config.autoReconnect) {
         // Only attempt reconnection when explicitly enabled
         handleReconnection();
@@ -178,7 +173,9 @@ inline bool MQTTComponent::connect() {
     
     state = MQTTState::Connecting;
     stateChangeTime = HAL::Platform::getMillis();
-    
+    // Cleared before the attempt: a setConfig() while it blocks marks it again.
+    reopenPending_ = false;
+
     bool success = connectInternal();
     
     if (success) {
@@ -429,7 +426,16 @@ inline void MQTTComponent::setConfig(const MQTTConfig& cfg) {
     // Preserve enabled flag if we already have an active connection.
     // A config reload from flash must not silently disable message processing.
     bool preserveEnabled = (state == MQTTState::Connected && !cfg.enabled);
+    const MQTTConfig previous = config;
     config = cfg;
+    normalizeConfig(previous.clientId);
+    // The session carries these from CONNECT on; loop() reopens it rather than
+    // this caller, which may run on the web server's task.
+    const bool sessionLive = (state == MQTTState::Connected || state == MQTTState::Connecting);
+    if (sessionLive && !sameSession(previous, config)) {
+        DLOG_I(LOG_MQTT, "Session settings changed: reopening the connection");
+        reopenPending_ = true;
+    }
     if (preserveEnabled) {
         DLOG_W(LOG_MQTT, "setConfig: preserving enabled=true for active connection");
         config.enabled = true;
@@ -478,7 +484,8 @@ inline bool MQTTComponent::connectInternal() {
     }
     mqttClient->setServer(brokerBuffer_, config.port);
 
-    // Ensure buffer size is preserved across reconnections
+    // Taken from the config at each connection: persistence applies it after begin().
+    mqttClient->setKeepAlive(config.keepAlive);
     mqttClient->setBufferSize(MQTT_MAX_PACKET_SIZE);
     DLOG_D(LOG_MQTT, "MQTT buffer size set to %d bytes", MQTT_MAX_PACKET_SIZE);
     
@@ -609,6 +616,42 @@ inline void MQTTComponent::updateStatistics() {
     if (isConnected()) {
         stats.uptime = (HAL::Platform::getMillis() - stateChangeTime) / 1000;
     }
+}
+
+// TLS is chosen when the client is built, so a changed flag needs a new one.
+// Called from loop() only, with no session open: connect() may run on another task.
+inline void MQTTComponent::rebuildClientIfNeeded() {
+    if (clientTLS_ == config.useTLS || isConnected()) return;
+    delete mqttClient;
+    mqttClient = new HAL::MQTT::MQTTClientImpl(config.useTLS);
+    mqttClient->setCallback(mqttCallback);
+    clientTLS_ = config.useTLS;
+}
+
+// An empty client id or will topic means the generated one; a will topic that
+// was the previous id's default follows a new id.
+inline void MQTTComponent::normalizeConfig(const String& previousClientId) {
+    if (config.clientId.isEmpty()) {
+        config.clientId = generateClientId();
+    }
+    const bool wasDefaultWill = !previousClientId.isEmpty() &&
+                                config.lwtTopic == previousClientId + "/status";
+    if (config.enableLWT && (config.lwtTopic.isEmpty() || wasDefaultWill)) {
+        config.lwtTopic = config.clientId + "/status";
+    }
+    if (config.lwtQoS > 2) {
+        DLOG_W(LOG_MQTT, "Invalid lwtQoS %u, clamping to 2", config.lwtQoS);
+        config.lwtQoS = 2;
+    }
+}
+
+inline bool MQTTComponent::sameSession(const MQTTConfig& a, const MQTTConfig& b) {
+    return a.broker == b.broker && a.port == b.port && a.useTLS == b.useTLS &&
+           a.keepAlive == b.keepAlive && a.username == b.username &&
+           a.password == b.password && a.clientId == b.clientId &&
+           a.enableLWT == b.enableLWT && a.lwtTopic == b.lwtTopic &&
+           a.lwtMessage == b.lwtMessage && a.lwtQoS == b.lwtQoS &&
+           a.lwtRetain == b.lwtRetain;
 }
 
 inline String MQTTComponent::generateClientId() {

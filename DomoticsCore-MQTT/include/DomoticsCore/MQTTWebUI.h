@@ -253,10 +253,11 @@ public:
                 }
 
                 mqtt->setConfig(cfg);
-                
-                // Invoke persistence callback if set
+
+                // Persist what the component applied: setConfig() may have filled
+                // the client id or moved the default will topic.
                 if (onConfigSaved) {
-                    onConfigSaved(cfg);
+                    onConfigSaved(mqtt->getConfig());
                 }
                 
                 return "{\"success\":true}";

@@ -384,6 +384,8 @@ private:
 
     // MQTT client (using HAL for platform independence)
     HAL::MQTT::MQTTClientImpl* mqttClient;
+    bool clientTLS_;              ///< The TLS flag mqttClient was built with
+    bool reopenPending_ = false;  ///< A session setting changed while connected
 
     // State management
     MQTTState state;
@@ -447,6 +449,9 @@ private:
     void handleIncomingMessage(char* topic, byte* payload, unsigned int length);
     void updateStatistics();
     String generateClientId();
+    void normalizeConfig(const String& previousClientId);
+    void rebuildClientIfNeeded();
+    static bool sameSession(const MQTTConfig& a, const MQTTConfig& b);
     
     // Accepted deviation from Constitution XIII (no singleton abuse):
     // PubSubClient's C-style callback (void(*)(char*, byte*, unsigned int)) does not support
