@@ -514,19 +514,11 @@ enum class Mode   { Off, Station, AccessPoint, StationAndAP };
 
 **Header:** `DomoticsCore/WiFiServer_HAL.h`
 
-Provides platform-independent `WiFiServer`, `WiFiClient`, and `IPAddress` types for TCP server operations, and one question about the stack underneath them:
+Provides platform-independent `WiFiServer`, `WiFiClient`, and `IPAddress` types for TCP server operations. Whether a socket can be opened yet is asked of `HAL::canOpenServer()`, which the Core platform HAL supplies (see the Core reference):
 
 | File | Platform | Implementation |
 |------|----------|---------------|
-| `WiFiServer_ESP32.h` | ESP32 | Type aliases to `::WiFiServer`, `::WiFiClient`, `::IPAddress`; `canOpenServer()` answers `esp_netif_get_nr_of_ifs() > 0` |
-| `WiFiServer_ESP8266.h` | ESP8266 | Type aliases to `::WiFiServer`, `::WiFiClient`, `::IPAddress`; `canOpenServer()` is always true |
-| `WiFiServer_Stub.h` | Native | Full stub implementations with test helpers (`simulateClient()`, `simulateIncomingData()`, `setCanOpenServerForTest()`) |
+| `WiFiServer_ESP32.h` | ESP32 | Type aliases to `::WiFiServer`, `::WiFiClient`, `::IPAddress` |
+| `WiFiServer_ESP8266.h` | ESP8266 | Type aliases to `::WiFiServer`, `::WiFiClient`, `::IPAddress` |
+| `WiFiServer_Stub.h` | Native | Full stub implementations with test helpers (`simulateClient()`, `simulateIncomingData()`) |
 | `IPAddress_Stub.h` | Native | Stub IP address class for native tests |
-
-#### `bool canOpenServer()`
-
-Whether a listening socket can be opened yet. lwIP starts with the first network
-interface, whichever transport creates one, and binding before that stops an
-ESP32 inside `tcpip_send_msg_wait_sem`. A component that opens a socket in
-`begin()` asks first and retries from `loop()`; every platform header supplies
-the answer, so no caller tests a platform macro.

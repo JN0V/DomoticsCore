@@ -732,7 +732,16 @@ The HAL routing header detects the platform at compile time and includes the app
 
 ### HAL Functions (`DomoticsCore::HAL::`)
 
-`initializeLogging`, `isLoggerReady`, `getMillis`, `delay`, `formatChipIdHex`, `toUpperCase`, `substring`, `indexOf`, `startsWith`, `endsWith`, `getPlatformName`, `getChipModel`, `getChipRevision`, `getChipId`, `getFreeHeap`, `getTotalRAM_KB`, `getCpuFreqMHz`, `restart`, `ledBuiltinOn`, `ledBuiltinOff`, `isInternalLEDInverted`, `digitalWrite`, `pinMode`, `analogWrite`, `digitalRead`, `map`
+`initializeLogging`, `isLoggerReady`, `getMillis`, `delay`, `formatChipIdHex`, `toUpperCase`, `substring`, `indexOf`, `startsWith`, `endsWith`, `getPlatformName`, `getChipModel`, `getChipRevision`, `getChipId`, `getFreeHeap`, `getTotalRAM_KB`, `getCpuFreqMHz`, `restart`, `ledBuiltinOn`, `ledBuiltinOff`, `isInternalLEDInverted`, `digitalWrite`, `pinMode`, `analogWrite`, `digitalRead`, `map`, `canOpenServer`
+
+#### `bool canOpenServer()`
+
+Whether a socket can be opened yet. On ESP32, lwIP starts with the first network
+interface, whichever transport creates one, and reaching it before that stops the
+firmware on an invalid mbox — a listening server and the SNTP client alike. A
+component that needs a socket asks in `begin()` and retries from `loop()`. ESP32
+answers `esp_netif_get_nr_of_ifs() > 0`; ESP8266 is always true, its SDK starting
+lwIP before the sketch; the stub is scripted with `setCanOpenServerForTest()`.
 
 ### HAL Type Aliases and Constants
 

@@ -916,6 +916,14 @@ struct AllocatorShape {
 };
 
 } // namespace Platform
+
+/** @brief Whether a socket can be opened yet; scriptable for tests. */
+inline bool& canOpenServerState() {
+    static bool ready = true;
+    return ready;
+}
+inline bool canOpenServer() { return canOpenServerState(); }
+inline void setCanOpenServerForTest(bool ready) { canOpenServerState() = ready; }
 } // namespace HAL
 } // namespace DomoticsCore
 

@@ -33,6 +33,7 @@
 #include <esp_idf_version.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
+#include <esp_netif.h>
 
 namespace DomoticsCore {
 namespace HAL {
@@ -589,6 +590,15 @@ struct AllocatorShape {
 #endif
 
 } // namespace Platform
+
+/**
+ * @brief Whether a socket can be opened yet.
+ *
+ * lwIP is started with the first network interface, whatever creates it — the
+ * radio, or an Ethernet driver. Reaching it before that stops the firmware on an
+ * invalid mbox, so a server or a network client asks first.
+ */
+inline bool canOpenServer() { return esp_netif_get_nr_of_ifs() > 0; }
 } // namespace HAL
 } // namespace DomoticsCore
 
