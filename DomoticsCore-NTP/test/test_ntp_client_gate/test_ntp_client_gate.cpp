@@ -126,6 +126,58 @@ void test_a_client_never_started_is_never_stopped() {
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, HAL::NTPImpl::stopCalls(), "stop() reached a client that never started");
 }
 
+void test_disabling_through_set_config_stops_the_client() {
+    NTPComponent ntp;
+    ntp.begin();
+    TEST_ASSERT_TRUE(clientRunning());
+
+    NTPConfig off = ntp.getConfig();
+    off.enabled = false;
+    ntp.setConfig(off);
+    TEST_ASSERT_FALSE_MESSAGE(clientRunning(), "the clock keeps syncing with NTP turned off");
+
+    NTPConfig on = ntp.getConfig();
+    on.enabled = true;
+    ntp.setConfig(on);
+    TEST_ASSERT_TRUE(clientRunning());
+}
+
+void test_enabling_a_component_begun_disabled_starts_the_client() {
+    NTPConfig cfg;
+    cfg.enabled = false;
+    NTPComponent ntp(cfg);
+    ntp.begin();
+    TEST_ASSERT_FALSE(clientRunning());
+
+    NTPConfig on = ntp.getConfig();
+    on.enabled = true;
+    ntp.setConfig(on);
+    TEST_ASSERT_TRUE(clientRunning());
+}
+
+void test_set_config_does_not_restart_a_shut_down_component() {
+    NTPComponent ntp;
+    ntp.begin();
+    ntp.shutdown();
+
+    NTPConfig changed = ntp.getConfig();
+    changed.syncInterval = 7200;
+    ntp.setConfig(changed);
+    TEST_ASSERT_FALSE_MESSAGE(clientRunning(), "setConfig() undid shutdown()");
+}
+
+void test_set_config_before_begin_starts_nothing() {
+    NTPComponent ntp;
+    NTPConfig changed = ntp.getConfig();
+    changed.syncInterval = 7200;
+    ntp.setConfig(changed);
+    TEST_ASSERT_FALSE(clientRunning());
+
+    ntp.begin();
+    TEST_ASSERT_TRUE(clientRunning());
+    TEST_ASSERT_EQUAL_UINT32(7200u * 1000u, HAL::NTPImpl::lastSyncIntervalMs());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_the_client_starts_in_begin_when_a_socket_can_be_opened);
@@ -137,5 +189,9 @@ int main(int, char**) {
     RUN_TEST(test_a_config_change_while_deferred_does_not_start_the_client);
     RUN_TEST(test_a_config_change_restarts_a_running_client);
     RUN_TEST(test_a_client_never_started_is_never_stopped);
+    RUN_TEST(test_disabling_through_set_config_stops_the_client);
+    RUN_TEST(test_enabling_a_component_begun_disabled_starts_the_client);
+    RUN_TEST(test_set_config_does_not_restart_a_shut_down_component);
+    RUN_TEST(test_set_config_before_begin_starts_nothing);
     return UNITY_END();
 }
