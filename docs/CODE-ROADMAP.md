@@ -2728,7 +2728,7 @@ one worth a one-line change, and six rows that are not defects.
 - **Refs**: BUG-64, which built the mechanisms; BUG-67, which this found;
   CI-11 and CI-19, closed in the same lot.
 
-### BUG-70 — Free heap declines steadily on 2.7.0 where 2.6.1 was flat [MEDIUM, HIGH if it holds] — **NEW (2026-09-24, measured on a consumer's production device over 5 h)**
+### BUG-70 — 2.7.0's steady-state heap footprint is about 23 KB larger than 2.6.1's [LOW] — **CORRECTED 2026-09-25: this was filed as a leak and it is not one**
 
 - **Files**: unknown. The suspects are 2.7.0's new work in `loop()` — the `CoreLog`
   intake and its drain in `RemoteConsoleComponent`, and the deferred telnet server
@@ -2762,6 +2762,29 @@ one worth a one-line change, and six rows that are not defects.
   a heap watch across an idle device with the console never connected — the intake
   drains regardless of clients, so an unattended device isolates it from console
   buffers.
+- **CORRECTED 2026-09-25 — it is not a leak, and this entry was filed too early.** The
+  same device, watched to 15.6 h of uptime across 42 samples, shows the slope decaying
+  to nothing:
+  ```
+  23:00-02:00    -231 B/h
+  02:00-05:00    -196 B/h
+  05:00-07:00    -112 B/h
+  06:06-07:06       0 B/h    85 064 on five consecutive samples
+  ```
+  A curve converging on a floor, not a line. The -639 B/h above was measured on the
+  steep part of a settling curve, over 4.8 h — which is precisely the limit this entry
+  warned about in its own "honest limits" note, and the warning turned out to be the
+  right one. **No exhaustion date, no countdown.** `allocation_failures` stayed 0
+  throughout and the device has not rebooted.
+- **What survives, and why the entry stays open at LOW**: the **steady-state
+  footprint**. 2.6.1 sat at 107-109 KB allocatable free on this application; 2.7.0
+  settles at 85 064 — about **23 KB more resident**, where static RAM grew only
+  2 240 bytes. Worth understanding, since the release note accounts for a 16-slot
+  intake and not for 23 KB. It is a footprint question, not a stability one.
+- **Note for anyone measuring this**: `ESP.getFreeHeap()` and
+  `getAllocatableFreeHeap()` differ by about 44 KB on this chip — the former counts
+  32-bit-only IRAM, as `Platform_ESP32.h:293` already documents. Every figure here is
+  the allocatable one. Mixing the two series invents a mystery that is not there.
 - **Refs**: filed from a production ESP32 running 2.7.0 since 2026-09-24.
 
 ### BUG-45 — WebUI providers: the settings handlers disagree about what they refuse [MEDIUM] — **DONE (2026-09-20)**
