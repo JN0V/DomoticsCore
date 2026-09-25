@@ -1103,6 +1103,42 @@ void test_ota_check_interval_config() {
     TEST_ASSERT_EQUAL_UINT32(60000, cfg.checkIntervalMs);
 }
 
+// An interval set after begin() is counted from the change: a periodic check
+// switched on does not fire at once, and a shorter one does not wait out the old.
+void test_ota_interval_switched_on_after_begin_waits_its_period() {
+    HAL::Platform::setMillisForTest(1000);
+    OTAConfig config;
+    config.checkIntervalMs = 0;
+    OTAComponent ota(config);
+    ota.begin();
+
+    OTAConfig on = ota.getConfig();
+    on.checkIntervalMs = 60000;
+    ota.setConfig(on);
+    HAL::Platform::advanceMillisForTest(10);
+    ota.loop();
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("Idle", ota.getLastResult().c_str(),
+        "the check fired the moment the interval was switched on");
+    HAL::Platform::resetMillisForTest();
+}
+
+void test_ota_interval_shortened_after_begin_takes_effect() {
+    HAL::Platform::setMillisForTest(1000);
+    OTAConfig config;
+    config.checkIntervalMs = 3600000;
+    OTAComponent ota(config);
+    ota.begin();
+
+    OTAConfig shorter = ota.getConfig();
+    shorter.checkIntervalMs = 60000;
+    ota.setConfig(shorter);
+    HAL::Platform::advanceMillisForTest(60001);
+    ota.loop();
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("No update URL configured", ota.getLastResult().c_str(),
+        "the shorter interval waited out the old one");
+    HAL::Platform::resetMillisForTest();
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -1197,6 +1233,8 @@ int main(int argc, char** argv) {
     // Check interval tests
     RUN_TEST(test_ota_check_interval_disabled);
     RUN_TEST(test_ota_check_interval_config);
+    RUN_TEST(test_ota_interval_switched_on_after_begin_waits_its_period);
+    RUN_TEST(test_ota_interval_shortened_after_begin_takes_effect);
 
     return UNITY_END();
 }

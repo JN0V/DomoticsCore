@@ -91,7 +91,10 @@ public:
     // Standard config accessors (matching other components)
     const OTAConfig& getConfig() const { return config; }
     void setConfig(const OTAConfig& cfg) {
+        // A changed interval counts from now, as it did from begin().
+        const bool intervalChanged = (cfg.checkIntervalMs != config.checkIntervalMs);
         config = cfg;
+        if (intervalChanged) scheduleNextCheck();
         DLOG_I(LOG_OTA, "OTA config updated: updateUrl='%s', autoReboot=%d, enableWebUIUpload=%d",
                config.updateUrl.c_str(), config.autoReboot, config.enableWebUIUpload);
     }
