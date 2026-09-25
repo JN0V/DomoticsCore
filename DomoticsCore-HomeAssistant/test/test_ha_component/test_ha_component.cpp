@@ -713,6 +713,33 @@ void test_moving_the_will_does_not_strand_a_component_that_never_reconnects() {
     core.shutdown();
 }
 
+// A client id changed at runtime moves the default will with it; availability
+// has to follow, or avty_t names a topic the broker never writes offline to.
+void test_availability_follows_a_will_moved_by_a_new_client_id() {
+    Core core;
+    addConnectableMqtt(core, "ESP32-first");
+    HAConfig hcfg;
+    HA::setField(hcfg.nodeId, "test_node", sizeof(hcfg.nodeId));
+    core.addComponent(std::make_unique<HomeAssistantComponent>(hcfg));
+    core.begin();
+    auto* mqtt = core.getComponent<MQTTComponent>("MQTT");
+    auto* ha = core.getComponent<HomeAssistantComponent>("HomeAssistant");
+    TEST_ASSERT_TRUE_MESSAGE(mqtt->isConnected(), "the fixture never connected");
+    TEST_ASSERT_EQUAL_STRING("ESP32-first/status", ha->getConfig().availabilityTopic);
+
+    MQTTConfig renamed = mqtt->getConfig();
+    renamed.clientId = "kitchen-panel";
+    mqtt->setConfig(renamed);
+    core.loop();
+    core.loop();
+
+    TEST_ASSERT_TRUE(mqtt->isConnected());
+    TEST_ASSERT_EQUAL_STRING("kitchen-panel/status", willTopicTheBrokerGot(core).c_str());
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("kitchen-panel/status", ha->getConfig().availabilityTopic,
+        "availability stayed on a topic the broker no longer corrects");
+    core.shutdown();
+}
+
 // A will asked for with no topic gets the default one, and availability follows
 // it: an empty avty_t would be dropped from every document.
 void test_an_empty_will_topic_does_not_blank_availability() {
@@ -2144,6 +2171,7 @@ int runAllTests() {
     RUN_TEST(test_a_session_opened_before_the_move_is_reopened_with_the_new_will);
     RUN_TEST(test_moving_the_will_does_not_strand_a_component_that_never_reconnects);
     RUN_TEST(test_an_empty_will_topic_does_not_blank_availability);
+    RUN_TEST(test_availability_follows_a_will_moved_by_a_new_client_id);
     RUN_TEST(test_without_a_will_the_generated_topic_is_kept);
     RUN_TEST(test_naming_the_topic_after_begin_moves_the_will_too);
 

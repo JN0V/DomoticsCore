@@ -1117,7 +1117,7 @@ A `volatile bool publishing` flag prevents re-entrant state publishing. This pro
 
 Home Assistant watches exactly **one** topic per device, the one `avty_t` names, and it is the only signal that tells it a device has gone. The device can publish `"online"` itself; it cannot publish `"offline"` when it has crashed or lost the link. Only the broker can, through the MQTT Last Will — so the topic Home Assistant is told to watch must be the topic the Last Will is set on, or entities stay available for ever after the device disappears.
 
-The component enforces that at `begin()`, and again on every `setConfig()`:
+The component enforces that at `begin()`, on every `setConfig()`, and at every MQTT connection:
 
 - **`availabilityTopic` left empty** — it becomes the MQTT component's effective `lwtTopic`, `{clientId}/status` by default. Nothing else has to be configured.
 - **`availabilityTopic` set by the application** — `MQTTConfig::lwtTopic` is moved onto it. A session already open is reopened, because the Last Will is sent in the CONNECT packet and cannot be changed afterwards.
@@ -1130,7 +1130,7 @@ What the component publishes itself:
 - **On MQTT connect**: `"online"` to the availability topic (retained).
 - **On shutdown**: `"offline"` (retained).
 
-Moving `MQTTConfig::lwtTopic` from the MQTT side afterwards — through the MQTT settings page, for instance — is not observed: the discovery documents keep pointing at the previous topic until the next reconciliation. Configure the pair from one side.
+Moving `MQTTConfig::lwtTopic` from the MQTT side afterwards — through the MQTT settings page, or by changing the client id the default topic follows — reopens the MQTT session, and the reconciliation at that connection moves availability onto the new will before the discovery documents are republished. The retained `"online"` on the previous topic is left where it was.
 
 The `isReady()` method returns `true` only when both conditions are met:
 1. MQTT is connected (`mqttConnected == true`)
