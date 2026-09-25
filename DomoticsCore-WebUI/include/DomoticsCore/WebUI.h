@@ -82,7 +82,7 @@ public:
         : config(cfg) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "WebUI";
-        metadata.version = "1.10.0";
+        metadata.version = "1.10.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Web dashboard and API component";
 
