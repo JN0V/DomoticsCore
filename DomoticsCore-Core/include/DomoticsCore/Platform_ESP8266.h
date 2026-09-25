@@ -14,9 +14,9 @@
 #if DOMOTICS_PLATFORM_ESP8266
 
 // ESP8266-specific resource limits (must be defined before Platform_HAL.h fallback)
-// Measured on a nodemcuv2: an 80-character line costs 137 B in this ring, so 20
-// entries hold ~2.7 KB of the ~20 KB a stack with WiFi and MQTT leaves free.
-#define DOMOTICS_LOG_BUFFER_SIZE 20  // Console history: 150-190 B of heap per line, so ~3-4 KB when full
+// Console history, in lines: 20 lines of 120 characters hold 3.4 KB on a nodemcuv2,
+// of the ~20 KB a stack with WiFi and MQTT leaves free.
+#define DOMOTICS_LOG_BUFFER_SIZE 20
 // The intake the platform's own log lines land in before loop() drains them.
 #define DOMOTICS_CORE_LOG_SLOTS 4
 #define DOMOTICS_CORE_LOG_LINE 128

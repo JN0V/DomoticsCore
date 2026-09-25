@@ -14,9 +14,9 @@
 #if DOMOTICS_PLATFORM_ESP32
 
 // ESP32-specific resource limits (must be defined before Platform_HAL.h fallback)
-// Measured on a WROOM-32D: an 80-character line costs 152 B in this ring, so 150
-// entries hold ~23 KB of a 350 KB heap — a console that can show a whole boot.
-#define DOMOTICS_LOG_BUFFER_SIZE 64   // Console history: 150-190 B of heap per line, so ~10-12 KB when full
+// Console history, in lines: 64 lines of 120 characters hold 11.8 KB on a WROOM-32D,
+// taken as lines arrive, so it shows as free heap settling over the first hours.
+#define DOMOTICS_LOG_BUFFER_SIZE 64
 // The intake the platform's own log lines land in before loop() drains them.
 #define DOMOTICS_CORE_LOG_SLOTS 16
 #define DOMOTICS_CORE_LOG_LINE 128

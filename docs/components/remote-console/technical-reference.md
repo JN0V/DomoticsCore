@@ -263,25 +263,25 @@ The log buffer is a `std::vector<LogEntry>` whose slots are allocated once, at e
 
 Behavior:
 
-1. The first line reserves `bufferSize` slots — one allocation, where growing by doubling would hold up to twice the slots and move the whole vector on the way.
-2. While `logBufferCount < bufferSize`, entries are appended.
-3. Once the buffer is full, the oldest entry is overwritten in place at `logBufferHead`, which advances as `(logBufferHead + 1) % bufferSize`.
-4. `clearBuffer()` releases the slots with `shrink_to_fit()`; the next line reserves them again.
+1. The first line reserves `bufferSize` slots — one allocation of `bufferSize × sizeof(LogEntry)` (40 bytes on ESP32), where growing by doubling would hold up to twice the slots and move the whole vector on the way. A large `bufferSize` is therefore one large block, taken at the first line.
+2. While `logBufferCount < bufferSize`, entries are moved in.
+3. Once the buffer is full, the oldest slot is destroyed and rebuilt from the new line, so it holds a block sized to that line. Assigning over it would not: an ESP32 `String` keeps its larger buffer through an assignment, even a move, and every slot would settle at the longest line it ever held.
+4. `logBufferHead` advances as `(logBufferHead + 1) % bufferSize`.
+5. `clearBuffer()` releases the slots with `shrink_to_fit()`; the next line reserves them again.
 
 This design eliminates the memory leak that was previously observed with `std::deque`, where `pop_front()` did not reliably release memory on embedded platforms.
 
-`bufferSize` defaults to `DOMOTICS_LOG_BUFFER_SIZE`: **64 entries on ESP32, 20 on
+`bufferSize` defaults to `DOMOTICS_LOG_BUFFER_SIZE`: **64 lines on ESP32, 20 on
 ESP8266**. `LogEntry` holds two `String`s, so a line longer than the small-string
-threshold takes a heap block of its own: an 80-character line costs about 152
-bytes on ESP32 and 137 on ESP8266, a 120-character one 184 and 169. Measured
-through the component on a board, a full ESP32 buffer of 120-character lines
-holds **11.8 KB**, and a full ESP8266 buffer 3.1 to 3.8 KB of the roughly 20 KB
-a stack with WiFi and MQTT leaves free. That is heap a device pays hours after
-boot, once enough lines have arrived, and not before — so it is budgeted: the
-console's device suite fails if the default cap, at 200 bytes a line, would cost
-more than 16 KB. Platform lines share this buffer with the framework's own, and
-evict them at the same rate. An application that wants more history, or less,
-sets `bufferSize`.
+threshold takes a heap block of its own. Measured through the component, a full
+history of 120-character lines holds **11 796 bytes on a WROOM-32D** and **3 368 on
+a nodemcuv2**, and the same history rewritten with 20-character lines holds 5 656
+and 1 448. The messages are taken as lines arrive, so a device's free heap settles
+over its first hours rather than at boot. The worst case — every line as long as
+a `DLOG_*` line can be formatted — is held under 20 KB for the default, at compile
+time. Platform lines share this history with the framework's own, and evict them
+at the same rate. An application that wants more history, or less, sets
+`bufferSize`.
 
 ---
 
