@@ -356,7 +356,7 @@ public:
 
     void addHandler(AsyncWebHandler* handler) { handlers.push_back(handler); }
     void begin() { running = true; }
-    void end() { running = false; }
+    void end() { running = false; endCalls++; }
     uint16_t port() const { return port_; }
 
     /// nullptr when no route was registered under that uri.
@@ -370,6 +370,7 @@ public:
     std::vector<RecordedRoute> routes;
     std::vector<AsyncWebHandler*> handlers;
     bool running = false;
+    int endCalls = 0;
 
 private:
     uint16_t port_;

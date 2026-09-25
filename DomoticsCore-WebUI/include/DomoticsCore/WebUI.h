@@ -156,6 +156,7 @@ public:
             lastLoopLog = now;
         }
 
+        webServer->poll();
         webSocket->loop();
 
         schemaProbes_.tick();
