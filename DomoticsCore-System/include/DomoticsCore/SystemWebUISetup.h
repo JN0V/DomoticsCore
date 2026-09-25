@@ -350,6 +350,10 @@ inline void setupWebUIProviders(
                 storage->putString("mqtt_pass", cfg.password);
                 storage->putString("mqtt_clientid", cfg.clientId);
                 storage->putBool("mqtt_enabled", cfg.enabled);
+                storage->putBool("mqtt_tls", cfg.useTLS);
+                storage->putBool("mqtt_lwt_en", cfg.enableLWT);
+                storage->putString("mqtt_lwt_topic", cfg.lwtTopic);
+                storage->putString("mqtt_lwt_msg", cfg.lwtMessage);
             });
         }
 #endif
@@ -367,6 +371,15 @@ inline void setupWebUIProviders(
     auto* otaComponent = core.getComponent<Components::OTAComponent>("OTA");
     if (otaComponent) {
         providers.ota = new Components::WebUI::OTAWebUI(otaComponent);
+#if WEBUI_SETUP_HAS_STORAGE
+        if (storage) {
+            providers.ota->setConfigSaveCallback([storage](const Components::OTAConfig& cfg) {
+                DLOG_I(LOG_WEBUI_SETUP, "Saving OTA config");
+                storage->putString("ota_url", cfg.updateUrl);
+                storage->putBool("ota_reboot", cfg.autoReboot);
+            });
+        }
+#endif
         webuiComponent->registerProviderWithComponent(providers.ota, otaComponent);
         providers.ota->init(webuiComponent);
         DLOG_I(LOG_WEBUI_SETUP, "✓ OTA WebUI provider registered");
@@ -385,13 +398,17 @@ inline void setupWebUIProviders(
         
 #if WEBUI_SETUP_HAS_STORAGE
         if (storage) {
-            providers.sysInfo->setDeviceNameCallback([storage, &config, sysInfoComponent](const String& deviceName) {
+            providers.sysInfo->setDeviceNameCallback([storage, &config, sysInfoComponent, webuiComponent](const String& deviceName) {
                 DLOG_I(LOG_WEBUI_SETUP, "Saving device name: '%s'", deviceName.c_str());
                 storage->putString("device_name", deviceName);
                 config.deviceName = deviceName;
                 Components::SystemInfoConfig siCfg = sysInfoComponent->getConfig();
                 siCfg.deviceName = deviceName;
                 sysInfoComponent->setConfig(siCfg);
+                // The page header reads the WebUI's copy of the name.
+                Components::WebUIConfig webCfg = webuiComponent->getConfig();
+                webCfg.setDeviceName(deviceName.c_str());
+                webuiComponent->setConfig(webCfg);
             });
         }
 #endif
@@ -431,6 +448,9 @@ inline void setupWebUIProviders(
                 storage->putString("ha_nodeid", cfg.nodeId);
                 storage->putString("ha_device_name", cfg.deviceName);
                 storage->putString("ha_disc_prefix", cfg.discoveryPrefix);
+                storage->putString("ha_mfg", cfg.manufacturer);
+                storage->putString("ha_model", cfg.model);
+                storage->putString("ha_area", cfg.suggestedArea);
             });
         }
 #endif

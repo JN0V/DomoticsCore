@@ -461,6 +461,8 @@ The card includes the following fields:
 
 When `enableWebUIUpload` is `false`, the card omits the file upload field and uses a remote-only layout.
 
+`setConfigSaveCallback(std::function<void(const OTAConfig&)>)` registers a callback invoked with the new config after `update_url` or `auto_reboot` is changed, for persistence; the System composition stores both.
+
 ### Change Detection
 
 `OTAWebUI` uses `LazyState<OTAState>` to track `(state, progress, bytes)`. WebSocket updates are only pushed when these values change, reducing unnecessary traffic.

@@ -78,7 +78,7 @@ void test_default_storage_namespace_and_ntp_server(void) {
     SystemConfig config;
     TEST_ASSERT_EQUAL_STRING("domotics", config.storageNamespace.c_str());
     TEST_ASSERT_EQUAL_STRING("pool.ntp.org", config.ntpServer.c_str());
-    TEST_ASSERT_EQUAL_STRING("UTC", config.ntpTimezone.c_str());
+    TEST_ASSERT_EQUAL_STRING("UTC0", config.ntpTimezone.c_str());
 }
 
 // ============================================================================

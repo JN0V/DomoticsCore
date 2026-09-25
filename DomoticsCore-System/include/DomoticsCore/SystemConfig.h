@@ -94,7 +94,7 @@ struct SystemConfig {
     // NTP (optional)
     bool enableNTP = false;
     String ntpServer = "pool.ntp.org";
-    String ntpTimezone = "UTC";
+    String ntpTimezone = "UTC0";   // POSIX TZ: a zone name and its offset
     
     // OTA (optional)
     bool enableOTA = false;

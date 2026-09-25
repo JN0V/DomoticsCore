@@ -162,8 +162,8 @@ See [Telemetry](#telemetry-1) for the payloads.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enableNTP` | `bool` | `false` | Enable time synchronization |
-| `ntpServer` | `String` | `"pool.ntp.org"` | NTP server address |
-| `ntpTimezone` | `String` | `"UTC"` | Timezone string |
+| `ntpServer` | `String` | `"pool.ntp.org"` | First NTP server; the component's other defaults follow it |
+| `ntpTimezone` | `String` | `"UTC0"` | POSIX timezone string handed to the NTP component |
 
 ### OTA
 
@@ -402,16 +402,27 @@ Keys are organized by component group:
 | | `mqtt_user` | `s` | Username |
 | | `mqtt_pass` | `s` | Password |
 | | `mqtt_clientid` | `s` | Client ID |
+| | `mqtt_tls` | `b` | TLS |
+| | `mqtt_lwt_en` | `b` | Last Will enabled |
+| | `mqtt_lwt_topic` | `s` | Last Will topic |
+| | `mqtt_lwt_msg` | `s` | Last Will message |
 | **HomeAssistant** | `ha_nodeid` | `s` | Node ID |
 | | `ha_device_name` | `s` | Device name |
 | | `ha_disc_prefix` | `s` | Discovery prefix |
 | | `ha_mfg` | `s` | Manufacturer |
 | | `ha_model` | `s` | Model |
 | | `ha_sw_ver` | `s` | Software version |
+| | `ha_area` | `s` | Suggested area |
+| **OTA** | `ota_url` | `s` | Firmware URL |
+| | `ota_reboot` | `b` | Reboot after update |
 | **Boot Diag** (not registered*) | `boot_count` | `i` | Persisted boot counter |
 | | `bootdiag` | blob | `SystemHelpers::BootDiagRecord`, 64 bytes: this boot's reset reason, heap at boot and tracked minimum, plus the last recorded death (promotion, phase, build id, uptime, reason, epc1, failed allocation, heap minimum, dedup key, count of identical deaths). Replaces `last_reset`, `boot_heap` and `boot_minheap` since OBS-3, so a boot costs two Storage writes; those keys, and OBS-6's `last_heap`/`last_minheap`, are removed on the first boot of a build carrying it. |
 
 \* Boot Diag keys are used directly via `storage->getInt()`/`storage->putBlob()` in `initBootDiagnosticsPersistence()` but are **not** registered with `storage->registerKeys()`. They will not appear in Storage key enumeration.
+
+### Empty Stored Values
+
+Where empty can only mean "the default", a string key stored empty does not replace what the firmware was built with: the MQTT client id and Last Will topic, the Home Assistant node id, device name and discovery prefix, the WebUI theme, colour, username and password, the NTP timezone, and the device name. Where empty is a choice, the stored value stands: an empty MQTT broker (MQTT off), username or password (an anonymous broker), Last Will message, and the Home Assistant manufacturer, model, software version and area.
 
 ### WiFi Config Loading Note
 
@@ -489,9 +500,14 @@ The image is the partition's own bytes from offset 0 — length word, version, t
 
 The **NTP**, **OTA** and **RemoteConsole** WebUI providers require an additional `.init(webuiComponent)` call after `registerProviderWithComponent()`. This call registers provider-specific API routes on the WebUI web server (`/api/ntp/timezones` for NTP, `/api/console/loglevels` for RemoteConsole, the upload route for OTA). The System makes these calls; the routes themselves are described in each component's reference. Other providers do not require this extra step.
 
-### Home Assistant Save Callback Asymmetry
+### What Each Card Persists
 
-The HA WebUI save callback only persists **3 of the 6** HAConfig fields to Storage: `nodeId`, `deviceName`, and `discoveryPrefix`. The remaining fields (`manufacturer`, `model`, `swVersion`) are **not saved** by the WebUI callback. However, all 6 fields are **loaded** from Storage on boot (see `loadHomeAssistantConfig()` in SystemPersistence.h). This means that `manufacturer`, `model`, and `swVersion` can only be set via direct Storage writes or through initial `SystemConfig` values -- they cannot be changed from the WebUI.
+Every field a settings card edits is saved and loaded back at the next boot:
+
+- **MQTT**: broker, port, username, password, client id, enabled, TLS, and the Last Will's enabled flag, topic and message.
+- **Home Assistant**: node id, device name, discovery prefix, manufacturer, model and suggested area. `swVersion` has no field on the card; it is loaded from `ha_sw_ver` when present.
+- **OTA**: firmware URL and auto-reboot.
+- **SystemInfo**: the device name, which also updates the WebUI's copy so the page header follows it at once.
 
 ### WebUI Self-Persistence
 

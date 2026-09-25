@@ -29,6 +29,11 @@ public:
     explicit OTAWebUI(OTAComponent* component)
         : ota(component) {}
 
+    /** @brief Called with the new config after a settings edit, for persistence. */
+    void setConfigSaveCallback(std::function<void(const OTAConfig&)> callback) {
+        onConfigSaved = callback;
+    }
+
     /**
      * @brief Initialize routes after construction. Call this once WebUI component is available.
      * @param webuiComponent Pointer to the WebUI component for registering custom upload routes.
@@ -156,6 +161,7 @@ public:
                 OTAConfig cfg = ota->getConfig();
                 cfg.updateUrl = value;
                 ota->setConfig(cfg);
+                if (onConfigSaved) onConfigSaved(cfg);
                 return "{\"success\":true}";
             }
             if (field == "check_now") {
@@ -176,6 +182,7 @@ public:
                 OTAConfig cfg = ota->getConfig();
                 cfg.autoReboot = enable;
                 ota->setConfig(cfg);
+                if (onConfigSaved) onConfigSaved(cfg);
                 return "{\"success\":true}";
             }
         }
@@ -185,6 +192,7 @@ public:
 
 private:
     OTAComponent* ota = nullptr;      //!< Non-owning pointer to the OTA component
+    std::function<void(const OTAConfig&)> onConfigSaved;
     WebUIComponent* webui = nullptr;  //!< Non-owning pointer to the WebUI component (set via init())
 
     struct UploadState {
