@@ -97,8 +97,12 @@ void test_a_console_shut_down_does_not_reopen_its_port(void) {
         "the telnet port came back after the component was shut down");
 }
 
+// ============================================================================
+// The history's allocation
+// ============================================================================
+
 // The history is reserved once, at its cap. Grown by doubling instead, a
-// 100-line history holds 128 slots and moves the whole vector six times on the way.
+// 100-line history holds 128 slots and moves the whole vector seven times on the way.
 void test_the_history_is_allocated_once_at_its_cap(void) {
     RemoteConsoleConfig config;
     config.bufferSize = 100;   // not a power of two, or doubling would land on it too
@@ -119,6 +123,8 @@ void test_a_cleared_history_is_reallocated_at_its_cap(void) {
     for (int i = 0; i < 10; ++i) console.log(LOG_LEVEL_INFO, "TEST", "before the clear");
 
     console.clearBuffer();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, (uint32_t)console.logBufferCapacityForTest(),
+        "a cleared history kept its slots");
     console.log(LOG_LEVEL_INFO, "TEST", "after the clear");
 
     TEST_ASSERT_EQUAL_UINT32(100, (uint32_t)console.logBufferCapacityForTest());

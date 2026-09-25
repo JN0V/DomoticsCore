@@ -403,34 +403,36 @@ public:
             if (!tagMatch) return;
         }
         
-        // Create entry on stack first (no heap allocation)
         LogEntry entry(HAL::Platform::getMillis(), level, tag, message);
-        
-        // Add to circular buffer - grow lazily up to max size
+
+        // Clients first: the entry is moved into the history below.
+        if (!clients.empty()) {
+            String formatted = formatLogEntry(entry);
+            for (auto& peer : clients) {
+                auto& client = peer.second;
+                auto st = clientState.find(peer.first);
+                if (client.connected() && st != clientState.end() && st->second.authenticated) {
+                    client.print(formatted);
+                }
+            }
+        }
+
         if (config.bufferSize > 0) {
             if (logBufferCount < config.bufferSize) {
                 // One allocation of exactly the cap: growing by doubling leaves dead
                 // slots at most sizes and reallocates the whole vector on the way.
                 if (logBuffer.capacity() < config.bufferSize) logBuffer.reserve(config.bufferSize);
-                logBuffer.push_back(entry);
+                logBuffer.push_back(std::move(entry));
                 logBufferCount++;
             } else {
-                // Buffer full - overwrite oldest (circular)
-                logBuffer[logBufferHead] = entry;
+                // Destroyed, then rebuilt: assigning, even by move, lets an ESP32 String
+                // keep a larger buffer than the new line needs, so every slot would
+                // ratchet up to the longest line it ever held.
+                LogEntry* slot = &logBuffer[logBufferHead];
+                slot->~LogEntry();
+                new (slot) LogEntry(std::move(entry));
             }
             logBufferHead = (logBufferHead + 1) % config.bufferSize;
-        }
-        
-        // Send to connected clients (only authenticated ones when auth required)
-        if (!clients.empty()) {
-            String formatted = formatLogEntry(entry);
-            for (auto& entry : clients) {
-                auto& client = entry.second;
-                auto st = clientState.find(entry.first);
-                if (client.connected() && st != clientState.end() && st->second.authenticated) {
-                    client.print(formatted);
-                }
-            }
         }
     }
     

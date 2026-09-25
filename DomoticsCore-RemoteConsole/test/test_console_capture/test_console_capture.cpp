@@ -247,36 +247,45 @@ void test_a_console_started_before_the_stack_waits_for_one() {
         "no server a second after a network interface existed");
 }
 
-// The history is heap a device pays for once it has run long enough to fill it,
-// which is hours after any test and long after a release note is read. So its
-// cost at the default cap is a budget, measured here with lines as long as the
-// platform's own, and a history that keeps growing past its cap is a leak.
-void test_the_default_history_stays_within_its_budget() {
-    constexpr size_t kLine = 120;              // the length of a typical core line
-    constexpr uint32_t kPerLine = 200;         // measured 150-190 B on both boards
-    constexpr uint32_t kBudget = 16 * 1024;    // what the default may cost, full, anywhere
-    char line[kLine + 1];
-    memset(line, 'x', kLine);
-    line[kLine] = '\0';
+// The default history's worst case — every line as long as a DLOG line can be
+// formatted, with its slot and allocator overhead — is held to a ceiling at
+// compile time, so the required build of this suite fails before a board runs.
+static_assert(DOMOTICS_LOG_BUFFER_SIZE * (DOMOTICS_DLOG_BUF_SIZE + 56) <= 20 * 1024,
+              "the default console history can cost more than 20 KB: raise it knowingly");
+
+static int32_t heapTakenSince(uint32_t start) {
+    return (int32_t)start - (int32_t)HAL::Platform::getAllocatableFreeHeap();
+}
+
+// What the history costs on the board, full of lines as long as the platform's
+// own; that it stops growing at its cap; and that a slot overwritten with a
+// shorter line gives the difference back instead of keeping its longest line.
+void test_the_default_history_holds_what_its_lines_need() {
+    char longLine[121];
+    memset(longLine, 'x', 120);
+    longLine[120] = '\0';
+    const char* shortLine = "twenty characters...";
 
     RemoteConsoleConfig config;                // the default cap, and no server needed
     config.enabled = false;
     RemoteConsoleComponent history(config);
-    const uint32_t cap = config.bufferSize;
+    const int32_t cap = (int32_t)config.bufferSize;
     const uint32_t start = HAL::Platform::getAllocatableFreeHeap();
 
-    for (uint32_t i = 0; i < cap; ++i) history.log(LOG_LEVEL_INFO, "PLATFORM", line);
-    const uint32_t full = start - HAL::Platform::getAllocatableFreeHeap();
-    for (uint32_t i = 0; i < cap; ++i) history.log(LOG_LEVEL_INFO, "PLATFORM", line);
-    const uint32_t wrapped = start - HAL::Platform::getAllocatableFreeHeap();
+    for (int32_t i = 0; i < cap; ++i) history.log(LOG_LEVEL_INFO, "PLATFORM", longLine);
+    const int32_t full = heapTakenSince(start);
+    for (int32_t i = 0; i < cap; ++i) history.log(LOG_LEVEL_INFO, "PLATFORM", longLine);
+    const int32_t wrapped = heapTakenSince(start);
+    for (int32_t i = 0; i < cap; ++i) history.log(LOG_LEVEL_INFO, "PLATFORM", shortLine);
+    const int32_t shortened = heapTakenSince(start);
 
-    char note[112];
-    snprintf(note, sizeof(note), "%u lines of %u chars hold %u B, then %u B after another %u",
-             (unsigned)cap, (unsigned)kLine, (unsigned)full, (unsigned)wrapped, (unsigned)cap);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(cap * kPerLine, full, note);
-    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(kBudget, cap * kPerLine,
-        "the default history's budget grew: say so in the release notes, then here");
-    TEST_ASSERT_UINT32_WITHIN_MESSAGE(64, full, wrapped, note);
+    char note[120];
+    snprintf(note, sizeof(note), "%d lines: %d B full, %d B after another round, %d B of short lines",
+             (int)cap, (int)full, (int)wrapped, (int)shortened);
+    TEST_MESSAGE(note);
+    TEST_ASSERT_LESS_OR_EQUAL_INT32_MESSAGE(cap * 200, full, note);
+    TEST_ASSERT_INT32_WITHIN_MESSAGE(64, full, wrapped, note);
+    TEST_ASSERT_LESS_OR_EQUAL_INT32_MESSAGE(cap * 100, shortened, note);
 }
 
 int runAllTests() {
@@ -289,7 +298,7 @@ int runAllTests() {
     RUN_TEST(test_a_full_intake_refuses_and_counts);
     RUN_TEST(test_the_sdk_switch_takes_the_sink_back);
     RUN_TEST(test_the_intake_is_the_size_the_platform_declared);
-    RUN_TEST(test_the_default_history_stays_within_its_budget);
+    RUN_TEST(test_the_default_history_holds_what_its_lines_need);
     return UNITY_END();
 }
 
