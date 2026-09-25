@@ -34,7 +34,7 @@ Defined in `DomoticsCore/OTA.h` within `DomoticsCore::Components`.
 |-------|------|---------|-------------|
 | `updateUrl` | `String` | `""` | Direct firmware binary URL. Used when no manifest is configured. |
 | `manifestUrl` | `String` | `""` | Optional JSON manifest endpoint providing version, URL, SHA-256, and signature. |
-| `checkIntervalMs` | `uint32_t` | `3600000` | Automatic periodic check interval in milliseconds. Set to `0` to disable periodic checks. |
+| `checkIntervalMs` | `uint32_t` | `3600000` | Automatic periodic check interval in milliseconds. Set to `0` to disable periodic checks. Counted from `begin()`, and from the `setConfig()` that changes it. |
 | `allowDowngrades` | `bool` | `false` | When `true`, permit installing firmware with a lower semantic version. |
 | `autoReboot` | `bool` | `true` | When `true`, reboot automatically 2 seconds after a successful update. |
 | `maxDownloadSize` | `size_t` | `0` | Ceiling on an incoming firmware image, in bytes. `0` means unlimited. Applies to **downloads and uploads alike** since SEC-8, and is checked twice on each: once against the size the sender announces, and again against the bytes that actually arrive — the announced figure is one the sender chose, and on an upload it is optional. On the upload path the announced-size refusal lands before flash is erased. |
