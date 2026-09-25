@@ -242,6 +242,11 @@ public:
         return new AsyncResponseStream(contentType);
     }
 
+    AsyncWebServerResponse* beginResponse(const String& contentType, size_t len, AwsResponseFiller filler) {
+        (void)len;
+        return beginChunkedResponse(contentType, std::move(filler));
+    }
+
     AsyncWebServerResponse* beginChunkedResponse(const String& contentType, AwsResponseFiller filler) {
         auto* response = new AsyncWebServerResponse(200, contentType);
         response->filler = std::move(filler);

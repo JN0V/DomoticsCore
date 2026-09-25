@@ -361,7 +361,7 @@ Stores each namespace as a JSON file at `/<namespace>.json` on LittleFS. Uses Ar
 
 ### Stub -- RAMOnlyStorage
 
-A fixed-size array of 32 entries stored in RAM. Keys are prefixed with `namespace:` for isolation. No persistence. Intended for native unit tests. `freeEntries()` returns `MAX_ENTRIES - count`.
+A fixed-size array of 32 entries stored in RAM. Keys are prefixed with `namespace:` for isolation. No persistence: every instance starts empty. Intended for native unit tests. `freeEntries()` returns `MAX_ENTRIES - count`. A test that needs what one component instance stored to be read by the next — a reboot — sets `RAMOnlyStorage::persistAcrossInstancesForTest`, which keeps each namespace's contents across instances until `forgetPersistedForTest()`.
 
 ---
 
