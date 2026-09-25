@@ -26,6 +26,52 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.7.1] - 2026-09-25
+
+> **Corrective: the ESP32 console history goes back down, from 150 lines to
+> 64.** 2.7.0 tripled it without saying so, and because the buffer fills as lines
+> arrive, a device upgraded to 2.7.0 showed its free heap settling about 23 KB
+> lower over the following hours — measured in production, not a leak. The
+> history now holds 11.8 KB full instead of about 32 KB, is allocated once, at the
+> first line, and a line that replaces a longer one no longer keeps the longer
+> one's buffer. `RemoteConsoleConfig::bufferSize` still overrides the default;
+> a large value is now one block taken early rather than a vector grown by
+> doubling. ESP8266 stays at 20.
+
+> **On ESP32, the WebUI and NTP no longer abort a device started with no network
+> interface.** Both reached lwIP from `begin()`, which ESP32 only has once a
+> network interface exists, so a firmware with either of them and no WiFi
+> component boot-looped. Every shipped composition registers WiFi first and never
+> saw it. Both now ask `HAL::canOpenServer()` and start from `loop()` when an
+> interface appears, as the console has since 2.7.0. Two consequences, visible only
+> on such a device: the WebUI may not be listening yet when `begin()` returns,
+> and `NTPComponent::syncNow()` returns `false` until the SNTP client has started.
+
+### Changed
+
+- **`HAL::canOpenServer()` moves from Wifi's `WiFiServer_HAL.h` to Core's
+  `Platform_HAL.h`**, same name and namespace. `WiFiServer_HAL.h` includes
+  `Platform_HAL.h`, so existing callers compile unchanged.
+- **ESP32 console history default 150 → 64 lines**, reserved once at the cap
+  (BUG-70). See the note above.
+
+### Fixed
+
+- **RemoteConsole: an overwritten history line kept its predecessor's larger
+  buffer**, so a history tended towards its capacity times the longest line each
+  slot ever held. On ESP32 a moved-into `String` keeps its buffer when the new
+  content fits, so the slot is now rebuilt.
+- **WebUI: the HTTP server started before any network interface aborted an
+  ESP32** (BUG-69). See the note above.
+- **NTP: the SNTP client started before any network interface aborted an ESP32**
+  (BUG-71). See the note above.
+
+### Component versions
+
+Core 1.11.0 → 1.11.1, NTP 1.4.0 → 1.4.1, RemoteConsole 1.7.0 → 1.7.1, WebUI
+1.10.0 → 1.10.1, Wifi 1.6.0 → 1.6.1. HomeAssistant, LED, MQTT, OTA, Storage,
+System and SystemInfo are unchanged.
+
 ## [2.7.0] - 2026-09-24
 
 > **A device in the field can now read what the platform itself wrote.** The
