@@ -39,7 +39,7 @@ struct RemoteConsoleConfig {
     uint16_t port = 23;                    // Telnet port
     bool requireAuth = false;              // Password authentication
     String password = "";                  // Auth password
-    uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;  // Platform-specific (ESP8266=20, ESP32=150)
+    uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;  // Lines of history: ESP8266 20, ESP32 64
     bool allowCommands = true;             // Enable command execution
     uint32_t authTimeoutMs = 10000;        // Auth timeout (10s default, 0 = no timeout)
     uint32_t authDelayMaxMs = 8000;        // SEC-4: cap of the doubling wait before the next auth attempt is read (0 = none)
@@ -125,6 +125,7 @@ public:
     uint16_t getPort() const { return config.port; }
     HAL::WiFiServer* getServer() const { return telnetServer; }
     size_t clientStateEntriesForTest() const { return clientState.size(); }
+    size_t logBufferCapacityForTest() const { return logBuffer.capacity(); }
 
     LogLevel getLogLevel() const { return currentLogLevel; }
 
@@ -408,7 +409,9 @@ public:
         // Add to circular buffer - grow lazily up to max size
         if (config.bufferSize > 0) {
             if (logBufferCount < config.bufferSize) {
-                // Buffer not full yet - just append
+                // One allocation of exactly the cap: growing by doubling leaves dead
+                // slots at most sizes and reallocates the whole vector on the way.
+                if (logBuffer.capacity() < config.bufferSize) logBuffer.reserve(config.bufferSize);
                 logBuffer.push_back(entry);
                 logBufferCount++;
             } else {
