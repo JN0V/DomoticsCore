@@ -126,6 +126,22 @@ void test_node_id_is_saved(void) {
     TEST_ASSERT_EQUAL_STRING("lab01", f.ha.getConfig().nodeId);
 }
 
+// An empty identity field would be stored and would win at every boot: no
+// discovery prefix means no discovery, no node id means an empty topic level.
+void test_an_empty_identity_field_is_refused(void) {
+    Fixture f;
+    for (const char* field : {"node_id", "discovery_prefix", "device_name"}) {
+        const HAConfig before = f.ha.getConfig();
+        assertRefused(f.post(field, ""));
+        TEST_ASSERT_EQUAL_STRING(before.nodeId, f.ha.getConfig().nodeId);
+        TEST_ASSERT_EQUAL_STRING(before.discoveryPrefix, f.ha.getConfig().discoveryPrefix);
+        TEST_ASSERT_EQUAL_STRING(before.deviceName, f.ha.getConfig().deviceName);
+    }
+    TEST_ASSERT_EQUAL_INT(0, f.saveCount);
+    // The descriptive fields may be cleared.
+    TEST_ASSERT_TRUE(succeeded(f.post("suggested_area", "")));
+}
+
 // FAILS without the fix: none of the six values reaches the config.
 void test_every_settings_field_is_saved(void) {
     Fixture f;
@@ -365,6 +381,7 @@ int runAllTests(void) {
     RUN_TEST(test_the_discovery_counter_is_a_usable_observable);
 
     RUN_TEST(test_node_id_is_saved);
+    RUN_TEST(test_an_empty_identity_field_is_refused);
     RUN_TEST(test_every_settings_field_is_saved);
     RUN_TEST(test_only_the_named_field_moves);
     RUN_TEST(test_saving_fires_the_persistence_callback_once_with_the_new_config);
