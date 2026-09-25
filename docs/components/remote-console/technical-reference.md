@@ -62,7 +62,7 @@ struct RemoteConsoleConfig {
 | `port`           | `uint16_t`                    | `23`                         | TCP port for the Telnet server.                                   |
 | `requireAuth`    | `bool`                        | `false`                      | When `true`, new clients must authenticate with `auth <password>` before executing commands (except `help` and `quit`). Unauthenticated clients do not receive log output. |
 | `password`       | `String`                      | `""`                         | The password required for authentication when `requireAuth` is `true`. Must be non-empty: `begin()` clears `requireAuth` and warns otherwise, and an empty `auth` line never authenticates. |
-| `bufferSize`     | `uint32_t`                    | `DOMOTICS_LOG_BUFFER_SIZE`   | Maximum number of log entries in the circular buffer. Platform-specific: ESP32 = 150, ESP8266 = 20. |
+| `bufferSize`     | `uint32_t`                    | `DOMOTICS_LOG_BUFFER_SIZE`   | Maximum number of log entries in the circular buffer. Platform-specific: ESP32 = 64, ESP8266 = 20. |
 | `allowCommands`  | `bool`                        | `true`                       | When `false`, all commands except `help` and `quit` are blocked with a "Commands are disabled" message. Useful for log-only monitoring sessions. |
 | `authTimeoutMs`  | `uint32_t`                    | `10000`                      | Time in milliseconds an unauthenticated client has to authenticate before being disconnected. Only applies when `requireAuth` is `true`. Set to `0` to disable the timeout. |
 | `allowedIPs`     | `std::vector<HAL::IPAddress>` | `{}` (empty = all allowed)   | IP whitelist. An empty vector permits all IPs.                    |
@@ -259,26 +259,29 @@ core.addComponent(std::move(console));
 
 ## Circular Buffer
 
-The log buffer uses a `std::vector<LogEntry>` that grows lazily up to `config.bufferSize`. This avoids a large upfront heap allocation that could cause an OOM crash on startup (especially on ESP8266).
+The log buffer is a `std::vector<LogEntry>` whose slots are allocated once, at exactly `config.bufferSize`, when the first line arrives. The messages themselves are allocated as the lines come, so a device fills the buffer over its first hours and holds it steady from then on.
 
 Behavior:
 
-1. While `logBufferCount < bufferSize`, entries are appended with `push_back()`.
-2. Once the buffer reaches capacity, the oldest entry is overwritten in-place at `logBufferHead`.
-3. `logBufferHead` always advances as `(logBufferHead + 1) % bufferSize`.
-4. `clearBuffer()` calls `shrink_to_fit()` to return memory to the heap.
+1. The first line reserves `bufferSize` slots — one allocation, where growing by doubling would hold up to twice the slots and move the whole vector on the way.
+2. While `logBufferCount < bufferSize`, entries are appended.
+3. Once the buffer is full, the oldest entry is overwritten in place at `logBufferHead`, which advances as `(logBufferHead + 1) % bufferSize`.
+4. `clearBuffer()` releases the slots with `shrink_to_fit()`; the next line reserves them again.
 
 This design eliminates the memory leak that was previously observed with `std::deque`, where `pop_front()` did not reliably release memory on embedded platforms.
 
-`bufferSize` defaults to `DOMOTICS_LOG_BUFFER_SIZE`: **150 entries on ESP32, 20 on
-ESP8266**. Measured with the real `LogEntry`, which holds two `String`s, so a line
-longer than the small-string threshold takes a heap block of its own: an
-80-character line costs **152 bytes on ESP32** and **137 on ESP8266**, and a
-120-character one 184 and 169. A full ESP32 ring is therefore about 23 KB of a
-350 KB heap and a full ESP8266 ring about 2.7 KB of the roughly 20 KB a stack
-with WiFi and MQTT leaves free, at 80 characters a line; at the 127 the intake
-admits, 27.6 KB and 3.4 KB. Platform lines share this buffer with the
-framework's own, and evict them at the same rate.
+`bufferSize` defaults to `DOMOTICS_LOG_BUFFER_SIZE`: **64 entries on ESP32, 20 on
+ESP8266**. `LogEntry` holds two `String`s, so a line longer than the small-string
+threshold takes a heap block of its own: an 80-character line costs about 152
+bytes on ESP32 and 137 on ESP8266, a 120-character one 184 and 169. Measured
+through the component on a board, a full ESP32 buffer of 120-character lines
+holds **11.8 KB**, and a full ESP8266 buffer 3.1 to 3.8 KB of the roughly 20 KB
+a stack with WiFi and MQTT leaves free. That is heap a device pays hours after
+boot, once enough lines have arrived, and not before — so it is budgeted: the
+console's device suite fails if the default cap, at 200 bytes a line, would cost
+more than 16 KB. Platform lines share this buffer with the framework's own, and
+evict them at the same rate. An application that wants more history, or less,
+sets `bufferSize`.
 
 ---
 
