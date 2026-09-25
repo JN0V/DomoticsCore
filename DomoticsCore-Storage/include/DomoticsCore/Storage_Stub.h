@@ -11,6 +11,9 @@
 #include <cstring>  // strlen, strncpy
 #include <cstdlib>  // strtoull
 #include <cstdio>   // snprintf
+#include <map>
+#include <string>
+#include <vector>
 
 namespace DomoticsCore {
 namespace HAL {
@@ -20,6 +23,11 @@ public:
     // OBS-3: backend writes since the counter was last reset — what a
     // LittleFS backend would turn into whole-file rewrites.
     static inline unsigned writesForTest = 0;
+
+    /// Off by default: every instance starts empty. On, a namespace keeps its
+    /// contents across instances, the way flash outlives a reboot.
+    static inline bool persistAcrossInstancesForTest = false;
+    static void forgetPersistedForTest() { shelf().clear(); }
 private:
     struct Entry {
         String key;
@@ -30,6 +38,15 @@ private:
     size_t count = 0;
     String currentNamespace;
     bool opened = false;
+
+    static std::map<std::string, std::vector<Entry>>& shelf() {
+        static std::map<std::string, std::vector<Entry>> contents;
+        return contents;
+    }
+    void shelve() {
+        if (!persistAcrossInstancesForTest) return;
+        shelf()[currentNamespace.c_str()].assign(entries, entries + count);
+    }
 
     // Create namespaced key for proper isolation
     String makeKey(const char* key) const {
@@ -48,6 +65,13 @@ public:
     bool begin(const char* namespace_name, bool = false) override {
         currentNamespace = namespace_name;
         opened = true;
+        if (persistAcrossInstancesForTest) {
+            auto it = shelf().find(currentNamespace.c_str());
+            if (it != shelf().end()) {
+                count = it->second.size() < MAX_ENTRIES ? it->second.size() : MAX_ENTRIES;
+                for (size_t i = 0; i < count; i++) entries[i] = it->second[i];
+            }
+        }
         return true;
     }
 
@@ -73,6 +97,7 @@ public:
         } else {
             return false;
         }
+        shelve();
         return true;
     }
     
@@ -189,11 +214,13 @@ public:
             entries[i] = entries[i + 1];
         }
         count--;
+        shelve();
         return true;
     }
     
     bool clear() override {
         count = 0;
+        shelve();
         return true;
     }
     
