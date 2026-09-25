@@ -870,7 +870,7 @@ Set a callback that fires when the user saves HA settings via the web interface.
 
 ### Settings API
 
-POST to `ha_settings` with parameters: `node_id`, `device_name`, `manufacturer`, `model`, `discovery_prefix`, `suggested_area`. The handler updates the config using `HA::setField()`, invokes the save callback, and republishes discovery.
+POST to `ha_settings` with parameters: `node_id`, `device_name`, `manufacturer`, `model`, `discovery_prefix`, `suggested_area`. The handler updates the config using `HA::setField()`, invokes the save callback, and republishes discovery. An empty `node_id`, `discovery_prefix` or `device_name` is refused with `This field cannot be empty` and stores nothing: stored, it would win over the configured value at every boot, and an empty prefix or node id leaves the device undiscoverable. The descriptive fields may be cleared.
 
 ### Registration
 

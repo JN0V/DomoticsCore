@@ -202,6 +202,13 @@ public:
             return "{\"success\":false,\"error\":\"Unknown field\"}";   // nothing touched
         }
 
+        // Stored, an empty identity would win at every boot: no prefix means no
+        // discovery, no node id an empty topic level.
+        if (value.length() == 0 && (field == "node_id" || field == "discovery_prefix" ||
+                                    field == "device_name")) {
+            return "{\"success\":false,\"error\":\"This field cannot be empty\"}";
+        }
+
         // HA::setField is the only validation these fields have: a truncation with
         // a warning. Comparing after it means an over-long value that truncates to
         // what is already stored counts as unchanged, as it should.
