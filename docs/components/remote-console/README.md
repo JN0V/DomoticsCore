@@ -42,7 +42,6 @@ void setup() {
     // Connect WiFi first, then:
     RemoteConsoleConfig config;
     config.port = 23;
-    config.bufferSize = 500;
     config.colorOutput = true;
 
     auto console = std::make_unique<RemoteConsoleComponent>(config);

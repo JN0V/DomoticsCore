@@ -44,7 +44,6 @@ void setup() {
     // Configure RemoteConsole
     RemoteConsoleConfig config;
     config.port = 23;
-    config.bufferSize = 500;
     config.colorOutput = true;
     
     auto console = std::make_unique<RemoteConsoleComponent>(config);
@@ -66,7 +65,7 @@ struct RemoteConsoleConfig {
     uint16_t port = 23;                               // Telnet port
     bool requireAuth = false;                         // Password authentication
     String password = "";                             // Auth password
-    uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;   // Platform-specific (ESP32=150, ESP8266=20)
+    uint32_t bufferSize = DOMOTICS_LOG_BUFFER_SIZE;   // Lines of history (ESP32=64, ESP8266=20)
     bool allowCommands = true;                        // Enable commands
     uint32_t authTimeoutMs = 10000;                   // Auth timeout (10s, 0 = no timeout)
     std::vector<HAL::IPAddress> allowedIPs;           // IP whitelist (empty = all)
@@ -239,9 +238,9 @@ When `colorOutput = true`:
 ## Memory Usage
 
 - **Flash:** ~60KB (component + WiFiServer)
-- **RAM:** ~5KB base + (bufferSize * ~100 bytes per entry)
-- **Default ESP32 buffer (150 entries):** ~23KB heap when full, measured at 152 bytes for an 80-character line
-- **Default ESP8266 buffer (20 entries):** ~2.7KB heap when full, measured at 137 bytes a line
+- **RAM:** ~5KB base + the history: `bufferSize` slots allocated at the first line, then one heap block per line as lines arrive
+- **Default ESP32 history (64 lines):** 11.8KB when full of 120-character lines, measured on a WROOM-32D
+- **Default ESP8266 history (20 lines):** 3.4KB when full of 120-character lines, measured on a nodemcuv2
 - **The platform-line intake:** 2KB of static RAM on ESP32, 512 bytes on ESP8266
 
 ## Use Cases
