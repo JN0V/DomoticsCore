@@ -28,6 +28,7 @@ namespace MQTT {
 class MQTTClientImpl : public MQTTClient {
 private:
     bool isConnected = false;
+    bool tls = false;
     std::string serverDomain;
     uint16_t serverPort = 0;
     uint16_t bufferSize = 256;
@@ -51,9 +52,7 @@ private:
     uint32_t loopCallCount = 0;
 
 public:
-    MQTTClientImpl(bool useTLS = false) {
-        (void)useTLS;  // Unused in stub
-    }
+    MQTTClientImpl(bool useTLS = false) : tls(useTLS) {}
 
     bool connect(const char* id,
                 const char* user = nullptr,
@@ -177,6 +176,9 @@ public:
     uint32_t getSubscribeCount() const { return subscribeCount; }
     uint32_t getUnsubscribeCount() const { return unsubscribeCount; }
     const std::string& getClientId() const { return clientId; }
+    uint16_t getKeepAlive() const { return keepAliveSeconds; }
+    uint8_t getLWTQoS() const { return lwtQoS; }
+    bool usesTLS() const { return tls; }
     const std::string& getUsername() const { return username; }
     const std::string& getLWTTopic() const { return lwtTopic; }
     const std::string& getLWTMessage() const { return lwtMessage; }

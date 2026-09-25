@@ -59,7 +59,7 @@ ComponentStatus shutdown() override;
 1. Registers EventBus listeners for `mqtt/publish` and `mqtt/subscribe` (always, even if broker is unconfigured).
 2. Sets the PubSubClient message callback.
 3. If `config.broker` is empty or `config.enabled` is false, returns `ComponentStatus::Success` without connecting (inactive but ready).
-4. Configures the HAL client (server, keep-alive). Buffer size is set later, at connection time.
+4. Configures the HAL client's server. Keep-alive and buffer size are set at each connection, from the config as it is then.
 5. If `config.autoReconnect` is true, calls `connect()`.
 
 **Note on buffer size**: The buffer is set to `MQTT_MAX_PACKET_SIZE` inside `connectInternal()` before every connection attempt, not in `begin()`. This ensures the buffer is always correctly sized after reconnections, since PubSubClient may reset it internally on disconnect.
@@ -166,7 +166,15 @@ Returns a list of all currently tracked subscription topic strings.
 void setConfig(const MQTTConfig& cfg);
 ```
 
-Replaces the current configuration. **Critical behavior**: if the component is currently `Connected` and the new config has `enabled = false`, the `enabled` flag is forcibly preserved to `true` to prevent silently dropping messages on an active connection. Also refreshes the PubSubClient server pointer after config change.
+Replaces the current configuration, normalised the way the constructor normalises it:
+
+- An empty `clientId` means the generated one, so a stored empty value never reaches the broker as an empty id (the broker would invent a new id at every connection, and a reconnection would never take over the previous session).
+- An empty `lwtTopic` means `{clientId}/status`, and a `lwtTopic` that was the previous id's default follows a new `clientId`. A topic the application named stays.
+- `lwtQoS` above 2 is clamped to 2.
+
+Everything the connection carries — broker, port, TLS, keep-alive, credentials, client id and the Last Will fields — is read at connect time, so a configuration applied after `begin()` (which is when persistence applies it) reaches the next session. If one of those fields changes while `Connected` — or while a connection attempt is under way — the next `loop()` closes the session cleanly and opens a new one; other fields change nothing on the wire. A changed `useTLS` rebuilds the client in `loop()` before that reconnection, never from `connect()`, which may run on the web server's task.
+
+**Critical behavior**: if the component is currently `Connected` and the new config has `enabled = false`, the `enabled` flag is forcibly preserved to `true` to prevent silently dropping messages on an active connection. Also refreshes the PubSubClient server pointer after config change.
 
 ```cpp
 const MQTTConfig& getConfig() const;
@@ -344,7 +352,7 @@ The HAL implementations select the transport at construction time:
 - **ESP8266**: Uses `WiFiClientSecure` (BearSSL-based) when TLS is enabled.
 - **Native stub**: Ignores TLS flag (no real network).
 
-Certificate validation, pinning, and custom CA configuration must be done at the HAL level before connection. The component constructor passes `config.useTLS` to the `MQTTClientImpl` constructor.
+Certificate validation, pinning, and custom CA configuration must be done at the HAL level before connection. The component constructor passes `config.useTLS` to the `MQTTClientImpl` constructor; a `useTLS` changed later through `setConfig()` rebuilds the client before the next connection.
 
 ---
 
@@ -423,6 +431,8 @@ if (webui && mqtt) {
 - **API endpoint**: `/api/mqtt/settings`
 - **Editable fields**: `enabled`, `broker`, `port`, `username`, `password`, `client_id`, `use_tls`, `lwt_enabled`, `lwt_topic`, `lwt_message`
 - **POST handling**: Updates config field-by-field; calls `setConfig()`, optionally invokes `onConfigSaved` callback. Toggling `enabled` triggers `connect()` or `disconnect()`.
+- **Persistence**: the save callback receives the configuration the component applied (`getConfig()` after `setConfig()`), so a generated client id or a will topic that followed a new id is what gets stored.
+- **TLS**: `use_tls` switches the transport, which only connects when the HAL client has been given what the broker's certificate needs (a CA, or an insecure mode); without it the device stays off the broker until the field is turned back off.
 - **Refusals**: `port` is digits only and inside 1..65535 — anything else answers `Invalid port` and stores nothing. A field not in the list above answers `Unknown field` and stores nothing, invoking neither `setConfig()` nor the persistence callback. An empty `password` means "leave the stored one alone"; an empty `username` clears it.
 
 #### `mqtt_detail` -- Component Detail Card

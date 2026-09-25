@@ -713,8 +713,8 @@ void test_moving_the_will_does_not_strand_a_component_that_never_reconnects() {
     core.shutdown();
 }
 
-// A will with no topic must not blank the availability topic: an empty avty_t
-// is dropped from every document, which is the same symptom by another road.
+// A will asked for with no topic gets the default one, and availability follows
+// it: an empty avty_t would be dropped from every document.
 void test_an_empty_will_topic_does_not_blank_availability() {
     Core core;
     MQTTConfig mcfg;
@@ -733,9 +733,10 @@ void test_an_empty_will_topic_does_not_blank_availability() {
     core.begin();
 
     auto* ha = core.getComponent<HomeAssistantComponent>("HomeAssistant");
-    TEST_ASSERT_EQUAL_STRING_MESSAGE("homeassistant/test_node/availability",
+    TEST_ASSERT_EQUAL_STRING("ESP32-bug43f/status", mqtt->getConfig().lwtTopic.c_str());
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("ESP32-bug43f/status",
                                      ha->getConfig().availabilityTopic,
-        "an empty will topic was adopted: avty_t is now absent from every document");
+        "availability does not follow the will the broker holds");
 
     core.shutdown();
 }

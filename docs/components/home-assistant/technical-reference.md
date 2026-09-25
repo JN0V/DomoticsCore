@@ -1123,7 +1123,7 @@ The component enforces that at `begin()`, and again on every `setConfig()`:
 - **`availabilityTopic` set by the application** — `MQTTConfig::lwtTopic` is moved onto it. A session already open is reopened, because the Last Will is sent in the CONNECT packet and cannot be changed afterwards.
 - **`lwtRetain` false** — forced to `true`. Availability is published retained; a transient Last Will would leave that retained `"online"` standing after the device is gone.
 
-Three configurations cannot be reconciled and are reported in the log instead of being advertised as if they worked: **no MQTT component**, **`enableLWT` false**, and **a `lwtTopic` set to an empty string**. In all three the generated topic is kept and no Last Will corrects it. A **`lwtMessage` other than `"offline"`** is also reported: entities declare `pl_not_avail: "offline"`, so a will saying anything else lands on the right topic and still never marks the device unavailable.
+Two configurations cannot be reconciled and are reported in the log instead of being advertised as if they worked: **no MQTT component** and **`enableLWT` false**. In both the generated topic is kept and no Last Will corrects it. (An empty `lwtTopic` is not one of them: the MQTT component reads it as `{clientId}/status`.) A **`lwtMessage` other than `"offline"`** is also reported: entities declare `pl_not_avail: "offline"`, so a will saying anything else lands on the right topic and still never marks the device unavailable.
 
 What the component publishes itself:
 
