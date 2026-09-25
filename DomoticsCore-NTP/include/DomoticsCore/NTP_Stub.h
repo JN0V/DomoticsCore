@@ -21,11 +21,25 @@ inline uint32_t& lastSyncIntervalMs() {
     return value;
 }
 
-inline void init(const char*, const char*, const char*) {}
+/// Whether the client is started, and how many stops and syncs were requested of it.
+inline bool& clientRunning() {
+    static bool value = false;
+    return value;
+}
+inline uint32_t& stopCalls() {
+    static uint32_t value = 0;
+    return value;
+}
+inline uint32_t& forceSyncCalls() {
+    static uint32_t value = 0;
+    return value;
+}
+
+inline void init(const char*, const char*, const char*) { clientRunning() = true; }
 inline void setTimezone(const char*) {}
 inline void setSyncInterval(uint32_t intervalMs) { lastSyncIntervalMs() = intervalMs; }
-inline void stop() {}
-inline void forceSync() {}
+inline void stop() { clientRunning() = false; stopCalls()++; }
+inline void forceSync() { forceSyncCalls()++; }
 
 } // namespace NTPImpl
 } // namespace HAL

@@ -120,7 +120,7 @@ public:
     }
 
     virtual ~NTPComponent() {
-        if (config.enabled) {
+        if (clientStarted_) {
             HAL::NTP::stop();
         }
         DLOG_D(LOG_NTP, "Component destroyed");
@@ -140,40 +140,30 @@ public:
         HAL::NTP::setTimezone(config.timezone.c_str());
         DLOG_I(LOG_NTP, "Timezone set to: %s", config.timezone.c_str());
 
-        // Configure NTP servers via HAL
-        const char* srv1 = config.servers.size() > 0 ? config.servers[0].c_str() : "pool.ntp.org";
-        const char* srv2 = config.servers.size() > 1 ? config.servers[1].c_str() : nullptr;
-        const char* srv3 = config.servers.size() > 2 ? config.servers[2].c_str() : nullptr;
-        
         for (size_t i = 0; i < config.servers.size() && i < 3; i++) {
             DLOG_I(LOG_NTP, "NTP server %zu: %s", i, config.servers[i].c_str());
         }
-        
-        // The client takes milliseconds in a uint32_t, so an interval past
-        // ~49.7 days is held at the ceiling rather than wrapped into a value
-        // that would resync several times a second.
-        const uint32_t intervalMs = (config.syncInterval > UINT32_MAX / 1000u)
-                                        ? UINT32_MAX
-                                        : config.syncInterval * 1000u;
-        HAL::NTP::setSyncInterval(intervalMs);
-        
-        // Initialize NTP client via HAL
-        HAL::NTP::init(srv1, srv2, srv3);
-        DLOG_I(LOG_NTP, "SNTP client started via HAL");
+
+        clientWanted_ = true;
+        startClient();
+        if (!clientStarted_) DLOG_I(LOG_NTP, "No network interface yet; SNTP client deferred");
 
         return ComponentStatus::Success;
     }
 
     ComponentStatus shutdown() override {
-        if (config.enabled) {
+        clientWanted_ = false;
+        if (clientStarted_) {
             HAL::NTP::stop();
             DLOG_I(LOG_NTP, "SNTP client stopped via HAL");
         }
+        clientStarted_ = false;
         return ComponentStatus::Success;
     }
 
     void loop() override {
         if (!config.enabled) return;
+        if (clientWanted_ && !clientStarted_) startClient();
 
         // Check if time has been synced. Delegates to the HAL so the threshold
         // lives in exactly one place.
@@ -255,6 +245,11 @@ public:
         
         if (!config.enabled) {
             DLOG_W(LOG_NTP, "Component disabled, cannot sync");
+            return false;
+        }
+
+        if (!clientStarted_) {
+            DLOG_W(LOG_NTP, "No network interface yet, cannot sync");
             return false;
         }
         
@@ -497,7 +492,8 @@ public:
         }
 
         if (needsRestart && config.enabled) {
-            HAL::NTP::stop();
+            if (clientStarted_) HAL::NTP::stop();
+            clientStarted_ = false;
             begin();
         }
     }
@@ -523,10 +519,37 @@ public:
     }
 
 private:
+    /**
+     * @brief Start the SNTP client, when the platform says a socket can be used.
+     *
+     * On ESP32 the client reaches lwIP, which does not exist before the first
+     * network interface; a caller that asks too early is deferred to loop().
+     */
+    void startClient() {
+        if (clientStarted_ || !HAL::canOpenServer()) return;
+
+        const char* srv1 = config.servers.size() > 0 ? config.servers[0].c_str() : "pool.ntp.org";
+        const char* srv2 = config.servers.size() > 1 ? config.servers[1].c_str() : nullptr;
+        const char* srv3 = config.servers.size() > 2 ? config.servers[2].c_str() : nullptr;
+
+        // The client takes milliseconds in a uint32_t, so an interval past
+        // ~49.7 days is held at the ceiling rather than wrapped into a value
+        // that would resync several times a second.
+        const uint32_t intervalMs = (config.syncInterval > UINT32_MAX / 1000u)
+                                        ? UINT32_MAX
+                                        : config.syncInterval * 1000u;
+        HAL::NTP::setSyncInterval(intervalMs);
+        HAL::NTP::init(srv1, srv2, srv3);
+        clientStarted_ = true;
+        DLOG_I(LOG_NTP, "SNTP client started via HAL");
+    }
+
     NTPConfig config;
     NTPStatistics stats;
     bool synced;
     bool syncInProgress;
+    bool clientWanted_ = false;   // begin() wants the client, shutdown() does not: loop() reads this
+    bool clientStarted_ = false;
     /// @note On ESP32/ESP8266, unsigned long is 32-bit and wraps at ~49.7 days
     /// (inherent millis() limitation). On 64-bit native test platforms, unsigned long
     /// is 64-bit and does not wrap. This difference is acceptable for testing purposes
