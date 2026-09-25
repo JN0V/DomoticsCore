@@ -138,6 +138,8 @@ public:
         // Subscribe to MQTT events via EventBus
         on<bool>(DomoticsCore::MQTTEvents::EVENT_CONNECTED, [this](const bool&) {
             DLOG_I(LOG_HA, "MQTT connected (via EventBus), publishing availability");
+            // A new session may carry a will moved since begin(): follow it.
+            reconcileAvailabilityWithWill();
             mqttConnected = true;
             setAvailable(true);
             subscribeToCommands();
