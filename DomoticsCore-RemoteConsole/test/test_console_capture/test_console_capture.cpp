@@ -247,6 +247,38 @@ void test_a_console_started_before_the_stack_waits_for_one() {
         "no server a second after a network interface existed");
 }
 
+// The history is heap a device pays for once it has run long enough to fill it,
+// which is hours after any test and long after a release note is read. So its
+// cost at the default cap is a budget, measured here with lines as long as the
+// platform's own, and a history that keeps growing past its cap is a leak.
+void test_the_default_history_stays_within_its_budget() {
+    constexpr size_t kLine = 120;              // the length of a typical core line
+    constexpr uint32_t kPerLine = 200;         // measured 150-190 B on both boards
+    constexpr uint32_t kBudget = 16 * 1024;    // what the default may cost, full, anywhere
+    char line[kLine + 1];
+    memset(line, 'x', kLine);
+    line[kLine] = '\0';
+
+    RemoteConsoleConfig config;                // the default cap, and no server needed
+    config.enabled = false;
+    RemoteConsoleComponent history(config);
+    const uint32_t cap = config.bufferSize;
+    const uint32_t start = HAL::Platform::getAllocatableFreeHeap();
+
+    for (uint32_t i = 0; i < cap; ++i) history.log(LOG_LEVEL_INFO, "PLATFORM", line);
+    const uint32_t full = start - HAL::Platform::getAllocatableFreeHeap();
+    for (uint32_t i = 0; i < cap; ++i) history.log(LOG_LEVEL_INFO, "PLATFORM", line);
+    const uint32_t wrapped = start - HAL::Platform::getAllocatableFreeHeap();
+
+    char note[112];
+    snprintf(note, sizeof(note), "%u lines of %u chars hold %u B, then %u B after another %u",
+             (unsigned)cap, (unsigned)kLine, (unsigned)full, (unsigned)wrapped, (unsigned)cap);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(cap * kPerLine, full, note);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32_MESSAGE(kBudget, cap * kPerLine,
+        "the default history's budget grew: say so in the release notes, then here");
+    TEST_ASSERT_UINT32_WITHIN_MESSAGE(64, full, wrapped, note);
+}
+
 int runAllTests() {
     UNITY_BEGIN();
     RUN_TEST(test_a_console_started_before_the_stack_waits_for_one);
@@ -257,6 +289,7 @@ int runAllTests() {
     RUN_TEST(test_a_full_intake_refuses_and_counts);
     RUN_TEST(test_the_sdk_switch_takes_the_sink_back);
     RUN_TEST(test_the_intake_is_the_size_the_platform_declared);
+    RUN_TEST(test_the_default_history_stays_within_its_budget);
     return UNITY_END();
 }
 

@@ -97,6 +97,33 @@ void test_a_console_shut_down_does_not_reopen_its_port(void) {
         "the telnet port came back after the component was shut down");
 }
 
+// The history is reserved once, at its cap. Grown by doubling instead, a
+// 100-line history holds 128 slots and moves the whole vector six times on the way.
+void test_the_history_is_allocated_once_at_its_cap(void) {
+    RemoteConsoleConfig config;
+    config.bufferSize = 100;   // not a power of two, or doubling would land on it too
+    RemoteConsoleComponent console(config);
+
+    for (int i = 0; i < 250; ++i) console.log(LOG_LEVEL_INFO, "TEST", "a line of history");
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(100, (uint32_t)console.logBufferCapacityForTest(),
+        "the history holds slots it will never use");
+}
+
+// A cleared history gives its memory back, and the next line takes exactly the
+// cap again rather than regrowing through every power of two.
+void test_a_cleared_history_is_reallocated_at_its_cap(void) {
+    RemoteConsoleConfig config;
+    config.bufferSize = 100;
+    RemoteConsoleComponent console(config);
+    for (int i = 0; i < 10; ++i) console.log(LOG_LEVEL_INFO, "TEST", "before the clear");
+
+    console.clearBuffer();
+    console.log(LOG_LEVEL_INFO, "TEST", "after the clear");
+
+    TEST_ASSERT_EQUAL_UINT32(100, (uint32_t)console.logBufferCapacityForTest());
+}
+
 // ============================================================================
 // RemoteConsoleComponent Creation Tests
 // ============================================================================
@@ -917,6 +944,8 @@ int main(int argc, char **argv) {
     UNITY_BEGIN();
 
     // Component creation tests
+    RUN_TEST(test_the_history_is_allocated_once_at_its_cap);
+    RUN_TEST(test_a_cleared_history_is_reallocated_at_its_cap);
     RUN_TEST(test_a_console_started_before_the_stack_opens_nothing);
     RUN_TEST(test_a_console_shut_down_does_not_reopen_its_port);
     RUN_TEST(test_the_server_opens_when_a_stack_appears);
