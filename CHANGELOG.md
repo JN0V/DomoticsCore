@@ -55,6 +55,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > `AlarmPanelCommand` constants equal to the payloads Home Assistant documents,
 > which is where the agreement lives now.
 
+> **Omitted from this entry when it was published, and added on 2026-09-25: the
+> console's history grew threefold.** `DOMOTICS_LOG_BUFFER_SIZE` went from 50 to
+> 150 entries on ESP32 and from 5 to 20 on ESP8266. The buffer fills as lines
+> arrive, so the cost appears hours after boot rather than at it: about 22 KB
+> more resident heap on a full ESP32 buffer of platform-length lines, measured on
+> a board, and seen in production as a free heap settling 23 KB below 2.6.1's.
+> It is not a leak. `RemoteConsoleConfig::bufferSize = 50` restores 2.6.1's
+> figure today; the next release lowers the ESP32 default to 64.
+
 ### Added
 
 - **The platform's own log lines reach console clients** — `CoreLog_HAL.h` in
