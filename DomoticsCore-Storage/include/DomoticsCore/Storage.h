@@ -111,7 +111,7 @@ public:
         } else {
             metadata.name = "Storage";
         }
-        metadata.version = "1.6.0";
+        metadata.version = "1.6.1";
         metadata.author = "DomoticsCore";
         metadata.description = "Key-value storage component for preferences and app data";
         metadata.category = "Storage";

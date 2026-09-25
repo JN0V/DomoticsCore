@@ -26,6 +26,74 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.8.0] - 2026-09-25
+
+> **Corrective: an MQTT client id stored empty no longer reaches the broker as
+> an empty id.** A settings save with the Client ID field blank stored `""`, the
+> next boot loaded it over the default, and the broker invented a new id at every
+> connection. A reconnection then never took over the previous session: the dead
+> one's retained `offline` arrived after the new `online`, and Home Assistant
+> showed the device unavailable after every reboot, dropping the commands sent to
+> it. An empty client id now means the generated one wherever it comes from, and
+> keep-alive, which a broker loaded from storage left at 15 s, is set at every
+> connection.
+
+> **Settings changed from a card now reach the live session.** A change to the
+> broker, port, credentials, client id, TLS, keep-alive or Last Will while
+> connected closes the session cleanly and reopens it within a loop, where it used
+> to wait for the next dropped link. The default Last Will topic follows a new
+> client id, and Home Assistant follows the will. **Turning TLS on from the card
+> now really switches the transport** — and neither platform client is given a
+> CA, so a device then stays off a TLS broker until the field is turned back off.
+
+> **`SystemConfig::ntpServer` and `ntpTimezone` now take effect.** They were
+> documented and read by nothing; a sketch that set them gets what it asked for.
+> The timezone default becomes `"UTC0"`, the POSIX form of the `"UTC"` it replaces.
+
+### Added
+
+- **Card edits that were lost at reboot are persisted**: MQTT TLS and Last Will
+  (`mqtt_tls`, `mqtt_lwt_en`, `mqtt_lwt_topic`, `mqtt_lwt_msg`), Home Assistant
+  manufacturer, model and area (`ha_area`), OTA firmware URL and auto-reboot
+  (`ota_url`, `ota_reboot`).
+- **`OTAWebUI::setConfigSaveCallback()`**, which the System composition uses to
+  store the OTA card's fields.
+
+### Changed
+
+- **A stored empty value no longer replaces the configured one** where empty only
+  means "the default": the MQTT client id and Last Will topic, the Home Assistant
+  node id, device name and discovery prefix, the WebUI theme, colour, username and
+  password, the NTP timezone, the device name. A cleared broker, username, password
+  or descriptive field still stands.
+- **Settings cards refuse an empty value that would win at every boot**: Home
+  Assistant's node id, discovery prefix and device name; the WebUI's theme (now
+  `dark`, `light` or `auto` only), colour and username.
+- **`MQTTComponent::setConfig()` normalises as the constructor does**: empty
+  client id generated, empty will topic `{clientId}/status`, `lwtQoS` clamped to 2.
+
+### Fixed
+
+- **MQTT: a client id stored empty connected as an empty id** (BUG-73, HIGH). See
+  the note above.
+- **MQTT: keep-alive was applied in `begin()` only** (BUG-74).
+- **MQTT: the default will topic did not follow a new client id; a session setting
+  changed while connected waited for the next reconnection; an empty will topic
+  reached CONNECT; a QoS of 3 passed `setConfig()`; `useTLS` was never applied
+  after construction** (BUG-75 to BUG-79).
+- **System: a rename from the SystemInfo card was reverted by the next WebUI
+  settings save** (BUG-80).
+- **NTP: turning NTP off in the card left the client setting the clock, and
+  `setConfig()` restarted a component `shutdown()` had stopped** (BUG-72).
+- **OTA: a check interval changed after `begin()` was not rescheduled** (BUG-84).
+
+### Component versions
+
+MQTT 1.7.0 → 1.8.0, OTA 1.9.1 → 1.10.0, System 1.8.0 → 1.9.0, HomeAssistant
+2.4.0 → 2.4.1, NTP 1.4.1 → 1.4.2, WebUI 1.10.1 → 1.10.2, Storage 1.6.0 → 1.6.1
+(the native stub only). Core, LED, RemoteConsole, SystemInfo and Wifi are
+unchanged.
+
 ## [2.7.1] - 2026-09-25
 
 > **Corrective: the ESP32 console history goes back down, from 150 lines to
