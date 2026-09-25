@@ -553,6 +553,9 @@ struct AllocatorShape {
 };
 
 } // namespace Platform
+
+/** @brief Whether a socket can be opened yet: always, lwIP starts before the sketch. */
+inline bool canOpenServer() { return true; }
 } // namespace HAL
 } // namespace DomoticsCore
 

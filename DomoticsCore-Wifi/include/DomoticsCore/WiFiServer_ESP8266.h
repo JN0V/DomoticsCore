@@ -15,8 +15,5 @@ using WiFiServer = ::WiFiServer;
 using WiFiClient = ::WiFiClient;
 using IPAddress = ::IPAddress;
 
-/** @brief Always: the SDK starts lwIP before the sketch runs. */
-inline bool canOpenServer() { return true; }
-
 } // namespace HAL
 } // namespace DomoticsCore
