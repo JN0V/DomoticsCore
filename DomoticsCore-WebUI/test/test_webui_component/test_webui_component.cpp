@@ -85,6 +85,26 @@ void test_webui_config_applies_the_other_settings_fields() {
     TEST_ASSERT_NOT_NULL(err);  // set by the refusal
 }
 
+void test_webui_config_refuses_an_empty_or_unknown_value() {
+    WebUIConfig c;
+    const char* err = nullptr;
+    TEST_ASSERT_TRUE(c.applySetting("theme", "light", err));
+    TEST_ASSERT_TRUE(c.applySetting("primary_color", "#123456", err));
+    TEST_ASSERT_TRUE(c.applySetting("username", "bench", err));
+
+    TEST_ASSERT_FALSE(c.applySetting("theme", "", err));
+    TEST_ASSERT_EQUAL_STRING("Theme must be dark, light or auto", err);
+    TEST_ASSERT_FALSE(c.applySetting("theme", "blue", err));
+    TEST_ASSERT_FALSE(c.applySetting("primary_color", "", err));
+    TEST_ASSERT_EQUAL_STRING("Primary color cannot be empty", err);
+    TEST_ASSERT_FALSE(c.applySetting("username", "", err));
+    TEST_ASSERT_EQUAL_STRING("Username cannot be empty", err);
+
+    TEST_ASSERT_EQUAL_STRING("light", c.theme);
+    TEST_ASSERT_EQUAL_STRING("#123456", c.primaryColor);
+    TEST_ASSERT_EQUAL_STRING("bench", c.username);
+}
+
 void test_webui_config_normalize_auth_clears_an_unusable_flag() {
     WebUIConfig c;
     c.enableAuth = true;   // the stored state SEC-14 guards against: auth on, no password
@@ -2452,6 +2472,7 @@ int main() {
     RUN_TEST(test_webui_config_custom_values);
     RUN_TEST(test_webui_config_refuses_auth_without_a_password);
     RUN_TEST(test_webui_config_applies_the_other_settings_fields);
+    RUN_TEST(test_webui_config_refuses_an_empty_or_unknown_value);
     RUN_TEST(test_webui_config_normalize_auth_clears_an_unusable_flag);
 
     // WebUIField tests
