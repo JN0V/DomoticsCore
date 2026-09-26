@@ -458,7 +458,7 @@ private:
     // user-data pointers. Static instance is required for callback routing.
     // Consider std::function wrapper if PubSubClient is ever replaced.
     static void mqttCallback(char* topic, byte* payload, unsigned int length);
-    static MQTTComponent* instance;  // For static callback
+    static MQTTComponent*& instance();  // For static callback
 };
 
 } // namespace Components

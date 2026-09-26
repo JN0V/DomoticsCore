@@ -23,17 +23,22 @@ namespace DomoticsCore {
 namespace HAL {
 namespace OTAUpdate {
 
-// Track bytes written for progress reporting
-inline size_t s_bytesWritten = 0;
+// Bytes written, for progress reporting. A local static of an inline function
+// is one object across translation units, which C++14 allows and a header
+// variable does not.
+inline size_t& bytesWrittenCounter() {
+    static size_t written = 0;
+    return written;
+}
 
 inline bool begin(size_t size = UPDATE_SIZE_UNKNOWN) {
-    s_bytesWritten = 0;
+    bytesWrittenCounter() = 0;
     return Update.begin(size);
 }
 
 inline size_t write(uint8_t* data, size_t len) {
     size_t written = Update.write(data, len);
-    s_bytesWritten += written;
+    bytesWrittenCounter() += written;
     return written;
 }
 
@@ -87,7 +92,7 @@ inline bool hasBufferOverflow() {
  * @brief Get bytes written to flash
  */
 inline size_t getBytesWritten() {
-    return s_bytesWritten;
+    return bytesWrittenCounter();
 }
 
 /**
