@@ -19,7 +19,7 @@ public:
         this->icon = icon;
     }
 
-    String payloadPress = "PRESS";
+    String payloadPress = HAPayload::PRESS;
     
     void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
                               const String& discoveryPrefix,
@@ -41,16 +41,12 @@ public:
 
         doc["dev"] = device;
 
-        if (!availabilityTopic.isEmpty()) {
-            doc["avty_t"] = availabilityTopic;
-            doc["pl_avail"] = "online";
-            doc["pl_not_avail"] = "offline";
-        }
+        addAvailability(doc, availabilityTopic);
 
         // Add button-specific fields
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
         doc["cmd_t"] = buf;
-        doc["pl_prs"] = payloadPress;
+        addUnlessDefault(doc, "pl_prs", payloadPress, HAPayload::PRESS);
     }
     
     /**

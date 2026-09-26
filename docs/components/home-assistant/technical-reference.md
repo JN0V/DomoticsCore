@@ -457,9 +457,11 @@ virtual void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
                                    const String& availabilityTopic) const;
 ```
 
-The base implementation adds: `name`, `uniq_id`, `stat_t`, `ic` (if set), `dev_cla` (if set), `dev` (device registry object), and `avty_t` with `pl_avail`/`pl_not_avail`; then, only when set, `ent_cat`, `val_tpl` and `json_attr_t`.
+The base implementation adds: `name`, `uniq_id`, `stat_t`, `ic` (if set), `dev_cla` (if set), `dev` (device registry object), and `avty_t` unless `useAvailability` is false; then, only when set, `ent_cat`, `val_tpl` and `json_attr_t`.
 
 Every key is written in the short form Home Assistant documents for MQTT discovery and expands on receipt (`stat_t` is `state_topic`, `cmd_t` is `command_topic`, `uniq_id` is `unique_id`, `dev` is `device` with `ids`, `mf`, `mdl`, `sw`, `cu`, `sa`; `pl_` is `payload_`, `_tpl` is `_template`, `avty` is `availability`, `cod_arm_req` is `code_arm_required`, `sup_feat` is `supported_features`). A config crosses the EventBus in a 699-character field and, on ESP8266, PubSubClient's 768-byte packet buffer; the long spellings put an alarm control panel over both. The full list is in Home Assistant's MQTT discovery documentation.
+
+A payload key is written only where its value differs from what Home Assistant assumes for an absent key: `online`/`offline` for availability, `ON`/`OFF`, `PRESS`. Those defaults are the `HAPayload` constants, which the MQTT Last Will and `setAvailable()` publish; a native test holds them equal to Home Assistant's.
 
 Derived classes call the base implementation and then add type-specific fields.
 
@@ -516,8 +518,7 @@ Read-only on/off sensor (motion, door, etc.).
 
 ### Discovery Fields Added
 
-- `pl_on`
-- `pl_off`
+- `pl_on`, `pl_off`, each only when changed from `"ON"`/`"OFF"`
 
 ---
 
@@ -541,8 +542,7 @@ Controllable on/off device (relay, socket).
 ### Discovery Fields Added
 
 - `cmd_t`
-- `pl_on`, `pl_off`
-- `stat_on`, `stat_off`
+- `pl_on`, `pl_off`, each only when changed from `"ON"`/`"OFF"`. No `stat_on`/`stat_off`: Home Assistant reads their absence as the command payload
 - `optimistic` (only if `true`)
 
 ### Command Handling
@@ -576,11 +576,8 @@ Controllable light with optional brightness.
 ### Discovery Fields Added
 
 - `cmd_t`
-- `pl_on`, `pl_off`
 - `stat_val_tpl`: `{{ value_json.state }}`
-- When `supportsBrightness` is true:
-  - `brightness`: `true`
-  - `bri_scl`: `255`
+- When `supportsBrightness` is true (the scale is Home Assistant's default, 255):
   - `bri_stat_t` (same as state topic)
   - `bri_cmd_t` (same as command topic)
   - `bri_val_tpl`: `{{ value_json.brightness }}`
@@ -627,9 +624,9 @@ Trigger-only action (restart, calibrate, etc.).
 
 Buttons override the base `buildDiscoveryPayload()` completely (no `stat_t` is added):
 
-- `name`, `uniq_id`, `icon`, `device_class`, `device`, `avty_t`
+- `name`, `uniq_id`, `icon`, `device_class`, `device`, `avty_t` (unless `useAvailability` is false)
 - `cmd_t`
-- `pl_prs`
+- `pl_prs`, only when changed from `"PRESS"`
 
 ### Command Handling
 
@@ -732,9 +729,9 @@ own.
 
 A code-less panel with two arm modes (`arm_away`, `arm_night`), the default
 device block, a 17-character node id and a 13-character entity id publishes a
-541-character document; the two requirement keys are 40 of those characters,
+496-character document; the two requirement keys are 40 of those characters,
 against the 699-character field of the section above. The same panel with all six
-arm modes fits as well, at 552 characters on a 9-character node id — it did not
+arm modes fits as well, at 507 characters on a 9-character node id — it did not
 while the payload constants were written out.
 
 ### Command Handling
@@ -968,9 +965,7 @@ Topic: `homeassistant/sensor/esp32-demo/temperature/config`
     "mf": "DomoticsCore",
     "sw": "1.0.0"
   },
-  "avty_t": "ESP32-0000a1b2c3d4/status",
-  "pl_avail": "online",
-  "pl_not_avail": "offline"
+  "avty_t": "ESP32-0000a1b2c3d4/status"
 }
 ```
 
@@ -984,14 +979,8 @@ Topic: `homeassistant/switch/esp32-demo/relay/config`
   "uniq_id": "esp32-demo_relay",
   "stat_t": "homeassistant/switch/esp32-demo/relay/state",
   "cmd_t": "homeassistant/switch/esp32-demo/relay/set",
-  "pl_on": "ON",
-  "pl_off": "OFF",
-  "stat_on": "ON",
-  "stat_off": "OFF",
   "dev": { "..." : "..." },
-  "avty_t": "ESP32-0000a1b2c3d4/status",
-  "pl_avail": "online",
-  "pl_not_avail": "offline"
+  "avty_t": "ESP32-0000a1b2c3d4/status"
 }
 ```
 
@@ -1005,19 +994,13 @@ Topic: `homeassistant/light/esp32-demo/led/config`
   "uniq_id": "esp32-demo_led",
   "stat_t": "homeassistant/light/esp32-demo/led/state",
   "cmd_t": "homeassistant/light/esp32-demo/led/set",
-  "pl_on": "ON",
-  "pl_off": "OFF",
   "stat_val_tpl": "{{ value_json.state }}",
-  "brightness": true,
-  "bri_scl": 255,
   "bri_stat_t": "homeassistant/light/esp32-demo/led/state",
   "bri_cmd_t": "homeassistant/light/esp32-demo/led/set",
   "bri_val_tpl": "{{ value_json.brightness }}",
   "on_cmd_type": "brightness",
   "dev": { "..." : "..." },
-  "avty_t": "ESP32-0000a1b2c3d4/status",
-  "pl_avail": "online",
-  "pl_not_avail": "offline"
+  "avty_t": "ESP32-0000a1b2c3d4/status"
 }
 ```
 
@@ -1030,12 +1013,9 @@ Topic: `homeassistant/button/esp32-demo/restart/config`
   "name": "Restart",
   "uniq_id": "esp32-demo_restart",
   "cmd_t": "homeassistant/button/esp32-demo/restart/set",
-  "pl_prs": "PRESS",
   "ic": "mdi:restart",
   "dev": { "..." : "..." },
-  "avty_t": "ESP32-0000a1b2c3d4/status",
-  "pl_avail": "online",
-  "pl_not_avail": "offline"
+  "avty_t": "ESP32-0000a1b2c3d4/status"
 }
 ```
 
@@ -1059,9 +1039,7 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
   "cmd_tpl": "{{ action }}{% if code %} {{ code }}{% endif %}",
   "sup_feat": ["arm_home", "arm_away", "trigger"],
   "dev": { "..." : "..." },
-  "avty_t": "ESP32-0000a1b2c3d4/status",
-  "pl_avail": "online",
-  "pl_not_avail": "offline"
+  "avty_t": "ESP32-0000a1b2c3d4/status"
 }
 ```
 
@@ -1123,7 +1101,7 @@ The component enforces that at `begin()`, on every `setConfig()`, and at every M
 - **`availabilityTopic` set by the application** — `MQTTConfig::lwtTopic` is moved onto it. A session already open is reopened, because the Last Will is sent in the CONNECT packet and cannot be changed afterwards.
 - **`lwtRetain` false** — forced to `true`. Availability is published retained; a transient Last Will would leave that retained `"online"` standing after the device is gone.
 
-Two configurations cannot be reconciled and are reported in the log instead of being advertised as if they worked: **no MQTT component** and **`enableLWT` false**. In both the generated topic is kept and no Last Will corrects it. (An empty `lwtTopic` is not one of them: the MQTT component reads it as `{clientId}/status`.) A **`lwtMessage` other than `"offline"`** is also reported: entities declare `pl_not_avail: "offline"`, so a will saying anything else lands on the right topic and still never marks the device unavailable.
+Two configurations cannot be reconciled and are reported in the log instead of being advertised as if they worked: **no MQTT component** and **`enableLWT` false**. In both the generated topic is kept and no Last Will corrects it. (An empty `lwtTopic` is not one of them: the MQTT component reads it as `{clientId}/status`.) A **`lwtMessage` other than `"offline"`** is also reported: entities leave Home Assistant on its default `"offline"`, so a will saying anything else lands on the right topic and still never marks the device unavailable.
 
 What the component publishes itself:
 

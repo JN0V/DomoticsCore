@@ -32,13 +32,10 @@ public:
         char buf[HA_TOPIC_BUF_SIZE];
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
         doc["cmd_t"] = buf;
-        doc["pl_on"] = "ON";
-        doc["pl_off"] = "OFF";
         doc["stat_val_tpl"] = "{{ value_json.state }}";
 
+        // brightness_scale defaults to 255; "brightness" belongs to the JSON schema.
         if (supportsBrightness) {
-            doc["brightness"] = true;
-            doc["bri_scl"] = 255;
             getStateTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
             doc["bri_stat_t"] = buf;
             // brightness_command_topic is the same as command_topic

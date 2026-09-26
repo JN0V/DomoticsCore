@@ -229,9 +229,7 @@ When you add a temperature sensor, this JSON is published to `homeassistant/sens
     "mf": "DomoticsCore",
     "sw": "1.0.0"
   },
-  "avty_t": "homeassistant/esp32-demo/availability",
-  "pl_avail": "online",
-  "pl_not_avail": "offline"
+  "avty_t": "homeassistant/esp32-demo/availability"
 }
 ```
 

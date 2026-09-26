@@ -377,7 +377,7 @@ void test_alarm_panel_add_method() {
         });
 
     simulateMqttConnect(core);
-    TEST_ASSERT_EQUAL_MESSAGE(546, published.length(), "the abbreviated panel config reaches the bus whole");
+    TEST_ASSERT_EQUAL_MESSAGE(501, published.length(), "the abbreviated panel config reaches the bus whole");
     TEST_ASSERT_EQUAL_STRING("", warn);
     TEST_ASSERT_EQUAL_UINT32(0, haPtr->getStatistics().discoveryRefused);
     LoggerCallbacks::removeCallback(cb);
@@ -391,7 +391,7 @@ void test_alarm_panel_add_method() {
 
 void test_alarm_panel_over_the_event_field_is_refused_and_counted() {
     // The shape no abbreviation rescues: six arm modes, a 32-character node id, a
-    // configuration URL and an area — 786 characters against the 699-character
+    // configuration URL and an area — 741 characters against the 699-character
     // field. Refused before the bus, named in one warning, counted, and not
     // announced as queued.
     Core core;
@@ -425,7 +425,7 @@ void test_alarm_panel_over_the_event_field_is_refused_and_counted() {
 
     simulateMqttConnect(core);
     TEST_ASSERT_FALSE_MESSAGE(discoveryPublished, "BUG-38: a document over the event field must be refused, not cut");
-    TEST_ASSERT_EQUAL_STRING("Payload for 'homeassistant/alarm_control_panel/abcdefghijklmnopqrstuvwxyz012345/alarm/config' is 786 bytes, over the 699-byte event field: not published", warn);
+    TEST_ASSERT_EQUAL_STRING("Payload for 'homeassistant/alarm_control_panel/abcdefghijklmnopqrstuvwxyz012345/alarm/config' is 741 bytes, over the 699-byte event field: not published", warn);
     TEST_ASSERT_EQUAL_UINT32(1, haPtr->getStatistics().discoveryRefused);
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, queuedInfo, "a refused config must not be announced as queued");
     LoggerCallbacks::removeCallback(cb);
@@ -573,8 +573,8 @@ void test_a_panel_with_no_code_says_no_code_is_required() {
 
     // The document this panel publishes against the event field it crosses.
     // The margin is the figure worth pinning, not the fact that it fits: the two
-    // requirements cost 40 of the 699 characters, and 158 are left.
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(541, published.length(),
+    // requirements cost 40 of the 699 characters, and 203 are left.
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(496, published.length(),
         "a two-mode code-less panel's document, against a 699-character field");
 
     core.shutdown();
@@ -658,7 +658,7 @@ void test_a_code_less_panel_with_every_arm_mode_now_fits_the_field() {
         });
     simulateMqttConnect(core);
 
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(552, (uint32_t)length,
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(507, (uint32_t)length,
         "the document moved: re-derive the figures the reference states");
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, haPtr->getStatistics().discoveryRefused,
         "this shape is over the field again");
