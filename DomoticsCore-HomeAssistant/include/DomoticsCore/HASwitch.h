@@ -19,8 +19,8 @@ public:
         this->icon = icon;
     }
 
-    String payloadOn = "ON";
-    String payloadOff = "OFF";
+    String payloadOn = HAPayload::ON;
+    String payloadOff = HAPayload::OFF;
     bool optimistic = false;    // If true, HA assumes state changes immediately
     bool autoPublishState = true;  // If true, auto-publishes state back to HA after command
     bool state = false;  // Current switch state (updated by handleCommand)
@@ -36,10 +36,9 @@ public:
         char buf[HA_TOPIC_BUF_SIZE];
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
         doc["cmd_t"] = buf;
-        doc["pl_on"] = payloadOn;
-        doc["pl_off"] = payloadOff;
-        doc["stat_on"] = payloadOn;
-        doc["stat_off"] = payloadOff;
+        // Home Assistant reads an absent state_on/state_off as the command payload.
+        addUnlessDefault(doc, "pl_on", payloadOn, HAPayload::ON);
+        addUnlessDefault(doc, "pl_off", payloadOff, HAPayload::OFF);
         
         if (optimistic) {
             doc["opt"] = true;

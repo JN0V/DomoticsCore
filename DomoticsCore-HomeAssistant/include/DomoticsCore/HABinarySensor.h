@@ -20,8 +20,8 @@ public:
         this->icon = icon;
     }
     
-    String payloadOn = "ON";
-    String payloadOff = "OFF";
+    String payloadOn = HAPayload::ON;
+    String payloadOff = HAPayload::OFF;
     
     void buildDiscoveryPayload(JsonDocument& doc, const String& nodeId,
                               const String& discoveryPrefix,
@@ -31,8 +31,8 @@ public:
         HAEntity::buildDiscoveryPayload(doc, nodeId, discoveryPrefix, device, availabilityTopic);
         
         // Add binary sensor-specific fields
-        doc["pl_on"] = payloadOn;
-        doc["pl_off"] = payloadOff;
+        addUnlessDefault(doc, "pl_on", payloadOn, HAPayload::ON);
+        addUnlessDefault(doc, "pl_off", payloadOff, HAPayload::OFF);
     }
 };
 

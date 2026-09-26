@@ -19,6 +19,16 @@ namespace HomeAssistant {
 // the broker. A larger buffer here would only move the cut one step later.
 static constexpr size_t HA_TOPIC_BUF_SIZE = 128;
 
+// The payloads Home Assistant assumes when a document omits the key. A document
+// states a payload only where it differs; the Last Will must publish these.
+namespace HAPayload {
+    constexpr const char* AVAILABLE     = "online";
+    constexpr const char* NOT_AVAILABLE = "offline";
+    constexpr const char* ON            = "ON";
+    constexpr const char* OFF           = "OFF";
+    constexpr const char* PRESS         = "PRESS";
+}
+
 class HAEntity {
 public:
     HAEntity(const String& id, const String& name, const String& component)
@@ -102,12 +112,7 @@ public:
         // Add device info
         doc["dev"] = device;
         
-        // Add availability
-        if (useAvailability && !availabilityTopic.isEmpty()) {
-            doc["avty_t"] = availabilityTopic;
-            doc["pl_avail"] = "online";
-            doc["pl_not_avail"] = "offline";
-        }
+        addAvailability(doc, availabilityTopic);
 
         if (!entityCategory.isEmpty() && entityCategoryIsValid()) doc["ent_cat"] = entityCategory;
         if (!valueTemplate.isEmpty()) doc["val_tpl"] = valueTemplate;
@@ -122,6 +127,16 @@ public:
     virtual bool handleCommand(const String& payload) { return true; }
 
 protected:
+    // The payloads are Home Assistant's defaults (HAPayload), so only the topic is stated.
+    void addAvailability(JsonDocument& doc, const String& availabilityTopic) const {
+        if (useAvailability && !availabilityTopic.isEmpty()) doc["avty_t"] = availabilityTopic;
+    }
+
+    // Writes the key only where the value differs from what an absent key means.
+    static void addUnlessDefault(JsonDocument& doc, const char* key, const String& value, const char* dflt) {
+        if (value != dflt) doc[key] = value;
+    }
+
     int buildTopic(char* buf, size_t len, const char* discoveryPrefix, const char* nodeId, const char* suffix) const {
         return snprintf(buf, len, "%s/%s/%s/%s/%s", discoveryPrefix, component.c_str(), nodeId, id.c_str(), suffix);
     }

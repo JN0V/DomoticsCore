@@ -94,7 +94,7 @@ Plain configuration struct with 13 fields. No methods. Passed by value to constr
 
 ### `OTAEvents` (namespace)
 
-Six `inline constexpr const char*` constants. No classes or functions. All six are emitted by `OTA.cpp` since BUG-21 closed the gap: `EVENT_START` when a transfer opens and `EVENT_END` when it finishes, before verification, on the download and upload paths alike. (`EVENT_COMPLETE` was removed in v2.1.0, DC-6.) `inline` rather than `static` for the reason BUG-12 gave for `HAEvents.h` — `static` at namespace scope gives every translation unit its own copy.
+Six `static constexpr const char*` constants. No classes or functions. All six are emitted by `OTA.cpp` since BUG-21 closed the gap: `EVENT_START` when a transfer opens and `EVENT_END` when it finishes, before verification, on the download and upload paths alike. (`EVENT_COMPLETE` was removed in v2.1.0, DC-6.) Each translation unit holds its own copy, which costs nothing: the EventBus keys subscriptions by the string's value, never by its address, and `inline` variables are C++17 while the `esp32dev` build is `gnu++14`.
 
 ---
 

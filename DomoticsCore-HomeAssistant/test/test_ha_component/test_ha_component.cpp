@@ -1699,11 +1699,9 @@ static void captureDiscoveryConfig(Core& core, const char* configTopic, String& 
 }
 
 void test_discovery_config_for_a_sensor_is_this_exact_document() {
-    // The bytes today's code sends for a sensor with a unit and an icon. The
-    // OBS-5 fields (entity_category, value_template, json_attributes_topic, a
-    // state_topic override, the availability opt-out) must be appended after
-    // these keys and emitted only when set, so this string does not move.
-    // Keys are Home Assistant's abbreviations since BUG-38; the pin is the same.
+    // The bytes sent for a sensor with a unit and an icon. Optional fields are
+    // emitted only when set, and a payload equal to Home Assistant's default is
+    // not stated, so nothing else belongs in this string.
     Core core;
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
@@ -1726,7 +1724,6 @@ void test_discovery_config_for_a_sensor_is_this_exact_document() {
         "\"dev\":{\"ids\":[\"test_node\"],\"name\":\"Test Device\","
         "\"mdl\":\"TestModel\",\"mf\":\"TestMfg\",\"sw\":\"2.0.0\"},"
         "\"avty_t\":\"homeassistant/test_node/availability\","
-        "\"pl_avail\":\"online\",\"pl_not_avail\":\"offline\","
         "\"unit_of_meas\":\"bytes\",\"stat_cla\":\"measurement\"}",
         payload.c_str());
     core.shutdown();

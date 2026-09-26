@@ -312,9 +312,7 @@ haPtr->addLight("led_strip", "LED Strip", [](bool state, uint8_t brightness) {
     "mf": "DomoticsCore",
     "sw": "1.0.0"
   },
-  "avty_t": "homeassistant/esp32-sensor/availability",
-  "pl_avail": "online",
-  "pl_not_avail": "offline"
+  "avty_t": "homeassistant/esp32-sensor/availability"
 }
 ```
 
@@ -326,10 +324,6 @@ haPtr->addLight("led_strip", "LED Strip", [](bool state, uint8_t brightness) {
   "uniq_id": "esp32-sensor_relay1",
   "stat_t": "homeassistant/switch/esp32-sensor/relay1/state",
   "cmd_t": "homeassistant/switch/esp32-sensor/relay1/set",
-  "pl_on": "ON",
-  "pl_off": "OFF",
-  "stat_on": "ON",
-  "stat_off": "OFF",
   "ic": "mdi:electric-switch",
   "dev": { ... },
   "avty_t": "homeassistant/esp32-sensor/availability"

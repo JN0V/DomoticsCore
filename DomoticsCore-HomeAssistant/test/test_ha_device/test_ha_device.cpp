@@ -79,7 +79,7 @@ static HomeAssistantComponent* publishPanel(const char* nodeId, const char* enti
     return haPtr;
 }
 
-/** @brief The two-arm-mode code-less panel the host suites measure at 541. */
+/** @brief The two-arm-mode code-less panel the host suites measure at 496. */
 static HomeAssistantComponent* publishConsumerPanel() {
     return publishPanel("device_seventeen1", "alarm_control", "Alarm Control",
                         "mdi:shield-home", AlarmFeature::ArmAway | AlarmFeature::ArmNight);
@@ -91,7 +91,7 @@ static HomeAssistantComponent* publishConsumerPanel() {
 void test_a_code_less_panel_fits_the_event_field_on_the_board() {
     HomeAssistantComponent* ha = publishConsumerPanel();
 
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(541, (uint32_t)capturedLength,
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(496, (uint32_t)capturedLength,
         "the board builds a different document from the host suites");
     TEST_ASSERT_EQUAL_UINT32(0, ha->getStatistics().discoveryRefused);
 }
@@ -121,7 +121,7 @@ void test_every_arm_mode_still_fits() {
         AlarmFeature::ArmHome | AlarmFeature::ArmAway | AlarmFeature::ArmNight |
         AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass | AlarmFeature::Trigger);
 
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(552, (uint32_t)capturedLength,
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(507, (uint32_t)capturedLength,
         "the widest panel moved: re-derive the figures the reference states");
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, ha->getStatistics().discoveryRefused,
         "the widest code-less panel is over the field again");
@@ -157,7 +157,7 @@ void test_republishing_discovery_leaves_the_heap_where_it_was() {
     }
     const uint32_t after = HAL::Platform::getFreeHeap();
 
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(541, (uint32_t)capturedLength,
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(496, (uint32_t)capturedLength,
         "nothing was republished, so the heap below is measuring an idle loop");
 
     char note[80];
