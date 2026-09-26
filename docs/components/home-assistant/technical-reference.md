@@ -590,7 +590,7 @@ Controllable light with optional brightness.
 bool handleCommand(const String& payload) override;
 ```
 
-Attempts to parse `payload` as JSON with `state` and `brightness` keys. Falls back to simple `"ON"`/`"OFF"` parsing if JSON deserialization fails. Returns `false` for payloads that are neither valid JSON nor `"ON"`/`"OFF"` (invalid commands are suppressed from the `ha/command` event).
+Accepts what the default schema this light declares sends: a bare brightness from `0` to `255` (digits only; `state` follows it, on above zero), and `"ON"`/`"OFF"`. A JSON object with `state` and `brightness` keys is also read. Anything else, including JSON that is not an object or a brightness off the scale, returns `false` and changes nothing (invalid commands are suppressed from the `ha/command` event).
 
 Updates `state` and `brightness` internally.
 
@@ -1078,7 +1078,7 @@ When HA sends a command (e.g., turning a switch ON), the flow is:
 5. `stats.commandsReceived` is incremented (note: this happens before validation, so invalid commands are counted too).
 6. `entity->handleCommand(payload)` is called via **virtual dispatch** (v2.0.0). Each entity type validates the command and stores state internally:
    - **`HASwitch`**: Sets `state = (payload == payloadOn)`. Returns `true`.
-   - **`HALight`**: Parses JSON or simple ON/OFF. Sets `state` and `brightness`. Returns `true` for valid payloads, `false` for garbage.
+   - **`HALight`**: Reads a bare brightness `0`-`255`, `ON`/`OFF`, or a JSON object. Sets `state` and `brightness`. Returns `true` for valid payloads, `false` for garbage.
    - **`HAButton`**: Returns `true` only if `payload == payloadPress`, `false` otherwise.
    - **`HAAlarmControlPanel`**: Parses `"COMMAND"` or `"COMMAND CODE"` format into `lastCommand`/`lastCode`. Returns `true`.
 7. If `handleCommand()` returns `true`, an `HACommandEvent` is emitted on the `ha/command` EventBus topic.

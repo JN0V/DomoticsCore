@@ -55,11 +55,19 @@ public:
      * @return true if command was valid and processed, false for invalid/garbage payloads
      */
     bool handleCommand(const String& payload) override {
+        // The default schema sends a brightness as a bare number on the command topic.
+        if (isDigits(payload)) {
+            if (payload.length() > 3 || payload.toInt() > 255) return false;
+            brightness = (uint8_t)payload.toInt();
+            state = brightness > 0;
+            return true;
+        }
+
         // Parse JSON command
         JsonDocument cmdDoc;
         DeserializationError error = deserializeJson(cmdDoc, payload);
 
-        if (error) {
+        if (error || !cmdDoc.is<JsonObject>()) {
             // Try simple ON/OFF
             if (payload == "ON" || payload == "OFF") {
                 state = (payload == "ON");
@@ -71,10 +79,19 @@ public:
             return false;
         }
 
-        // Extract state and brightness from JSON
+        // Extract state and brightness from JSON; a brightness off the scale is refused
+        JsonVariant bri = cmdDoc["brightness"];
+        if (!bri.isNull() && (!bri.is<int>() || bri.as<int>() < 0 || bri.as<int>() > 255)) return false;
         String stateStr = cmdDoc["state"] | String("ON");
-        brightness = cmdDoc["brightness"] | 255;
+        brightness = bri.isNull() ? 255 : (uint8_t)bri.as<int>();
         state = (stateStr == "ON");
+        return true;
+    }
+
+private:
+    static bool isDigits(const String& s) {
+        if (s.isEmpty()) return false;
+        for (size_t i = 0; i < s.length(); i++) if (s[i] < '0' || s[i] > '9') return false;
         return true;
     }
 };
