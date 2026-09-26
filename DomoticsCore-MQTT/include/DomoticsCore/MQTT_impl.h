@@ -4,8 +4,12 @@
 namespace DomoticsCore {
 namespace Components {
 
-// Static members
-inline MQTTComponent* MQTTComponent::instance = nullptr;
+// A local static of an inline function is one object across translation units,
+// which a C++14 build cannot get from a static data member defined in a header.
+inline MQTTComponent*& MQTTComponent::instance() {
+    static MQTTComponent* current = nullptr;
+    return current;
+}
 
 // Constructor
 inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
@@ -18,7 +22,7 @@ inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
     , lastPublishTime(0)
     , publishCountThisSecond(0)
 {
-    instance = this;
+    instance() = this;
 
     normalizeConfig(String());
 
@@ -36,7 +40,7 @@ inline MQTTComponent::~MQTTComponent() {
     }
     delete mqttClient;
     mqttClient = nullptr;
-    instance = nullptr;
+    instance() = nullptr;
 }
 
 // Lifecycle methods
@@ -664,8 +668,8 @@ inline String MQTTComponent::generateClientId() {
 
 // Static callback
 inline void MQTTComponent::mqttCallback(char* topic, byte* payload, unsigned int length) {
-    if (instance) {
-        instance->handleIncomingMessage(topic, payload, length);
+    if (instance()) {
+        instance()->handleIncomingMessage(topic, payload, length);
     }
 }
 
