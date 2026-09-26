@@ -405,7 +405,7 @@ public:
      * @brief Publish entity state (boolean)
      */
     void publishState(const String& id, bool state) {
-        publishState(id, String(state ? "ON" : "OFF"));
+        publishState(id, String(state ? HAPayload::ON : HAPayload::OFF));
     }
 
     /**
@@ -449,7 +449,7 @@ public:
      * @brief Set device availability status
      */
     void setAvailable(bool available) {
-        String payload = available ? "online" : "offline";
+        String payload = available ? HAPayload::AVAILABLE : HAPayload::NOT_AVAILABLE;
         DLOG_I(LOG_HA, "Publishing availability:");
         DLOG_I(LOG_HA, "  Topic: %s", config.availabilityTopic);
         DLOG_I(LOG_HA, "  Payload: %s", payload.c_str());
@@ -807,9 +807,9 @@ private:
                    config.availabilityTopic);
             return;
         }
-        // The broker writes the payload, not this component, and HAEntity
-        // advertises pl_not_avail "offline". Anything else lands on the right
-        // topic and still never marks the device unavailable.
+        // The broker writes the payload, not this component, and the documents
+        // leave Home Assistant on its default "offline". Anything else lands on
+        // the right topic and still never marks the device unavailable.
         // setAvailable() publishes "online" retained, so a transient will is
         // seen only by whoever is subscribed at that instant and the retained
         // "online" outlives the device.
@@ -820,7 +820,7 @@ private:
             cfg.lwtRetain = true;
             mqtt->setConfig(cfg);
         }
-        if (cfg.lwtMessage != "offline") {
+        if (cfg.lwtMessage != HAPayload::NOT_AVAILABLE) {
             DLOG_W(LOG_HA, "MQTT will payload is '%s', not 'offline': Home Assistant "
                            "will not read it as unavailable",
                    cfg.lwtMessage.c_str());

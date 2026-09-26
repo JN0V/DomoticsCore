@@ -285,8 +285,6 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
     "sw": "1.6.0"
   },
   "avty_t": "homeassistant/esp32-demo/availability",
-  "pl_avail": "online",
-  "pl_not_avail": "offline",
   "code": "1234",
   "cod_arm_req": false,
   "cod_dis_req": true,
