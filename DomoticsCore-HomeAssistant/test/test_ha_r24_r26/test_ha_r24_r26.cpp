@@ -66,6 +66,32 @@ void test_virtual_dispatch_light_via_base_pointer() {
     TEST_ASSERT_EQUAL_UINT8(255, light.brightness);
 }
 
+// The default schema sends a brightness as a bare number, never as JSON.
+void test_a_light_reads_a_bare_brightness() {
+    HALight light("test", "Test Light");
+    TEST_ASSERT_TRUE(light.handleCommand("128"));
+    TEST_ASSERT_TRUE(light.state);
+    TEST_ASSERT_EQUAL_UINT8(128, light.brightness);
+
+    TEST_ASSERT_TRUE(light.handleCommand("0"));
+    TEST_ASSERT_FALSE(light.state);
+    TEST_ASSERT_EQUAL_UINT8(0, light.brightness);
+}
+
+void test_a_light_refuses_a_brightness_off_its_scale() {
+    HALight light("test", "Test Light");
+    light.handleCommand("40");
+    TEST_ASSERT_FALSE(light.handleCommand("256"));
+    TEST_ASSERT_FALSE(light.handleCommand("12a"));
+    // Valid JSON that is not an object carries neither a state nor a brightness.
+    TEST_ASSERT_FALSE(light.handleCommand("-5"));
+    TEST_ASSERT_FALSE(light.handleCommand("1.5"));
+    TEST_ASSERT_FALSE(light.handleCommand("{\"brightness\":300}"));
+    TEST_ASSERT_FALSE(light.handleCommand("{\"brightness\":-5}"));
+    TEST_ASSERT_EQUAL_UINT8(40, light.brightness);
+    TEST_ASSERT_TRUE(light.state);
+}
+
 void test_virtual_dispatch_button_via_base_pointer() {
     HAButton btn("test", "Test Button");
     HAEntity* base = &btn;
@@ -377,6 +403,8 @@ int runAllTests() {
     // R24 -- Virtual dispatch tests
     RUN_TEST(test_virtual_dispatch_via_base_pointer);
     RUN_TEST(test_virtual_dispatch_light_via_base_pointer);
+    RUN_TEST(test_a_light_reads_a_bare_brightness);
+    RUN_TEST(test_a_light_refuses_a_brightness_off_its_scale);
     RUN_TEST(test_virtual_dispatch_button_via_base_pointer);
 
     // R26 -- EventBus emission tests

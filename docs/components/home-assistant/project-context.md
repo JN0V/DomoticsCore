@@ -81,7 +81,7 @@ Total header files: 10 (all under `include/DomoticsCore/`).
 | `HASensor` | `HASensor.h` | `sensor` | None | Yes | No |
 | `HABinarySensor` | `HABinarySensor.h` | `binary_sensor` | None | Yes | No |
 | `HASwitch` | `HASwitch.h` | `switch` | `bool state` | Yes | Yes |
-| `HALight` | `HALight.h` | `light` | `bool state`, `uint8_t brightness` | Yes (JSON) | Yes (JSON) |
+| `HALight` | `HALight.h` | `light` | `bool state`, `uint8_t brightness` | Yes (JSON) | Yes (bare brightness, ON/OFF, JSON object) |
 | `HAButton` | `HAButton.h` | `button` | None | No | Yes |
 | `HAAlarmControlPanel` | `HAAlarmControlPanel.h` | `alarm_control_panel` | `char lastCommand[64]`, `char lastCode[32]` | Yes (consumer-managed) | Yes |
 
