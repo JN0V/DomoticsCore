@@ -5,6 +5,7 @@
  * @brief Telnet-based remote console for log streaming and command execution
  */
 
+#include <DomoticsCore/AuthDelay.h>
 #include <DomoticsCore/ComponentConfig.h>  // digitsOnly, shared with the WebUI fields
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
@@ -95,12 +96,8 @@ private:
         String authPendingArgs;
     };
     std::map<uint32_t, ClientState> clientState;
-    // SEC-4: per-address failure memory, so a reconnection keeps its wait. Never
-    // refuses anything: it only decides when the next attempt is read.
-    struct AuthDelayEntry { uint32_t ip = 0; uint8_t failures = 0; unsigned long lastFailureAt = 0; };
-    static constexpr size_t AUTH_DELAY_ENTRIES = 4;
-    static constexpr unsigned long AUTH_DELAY_FORGET_MS = 60000;
-    AuthDelayEntry authDelays[AUTH_DELAY_ENTRIES];
+    // Per-address failure memory, so a reconnection keeps its wait.
+    Utils::AuthDelay authDelay;
     LogLevel currentLogLevel;
     std::vector<String> tagFilter;  // Empty = show all
     bool connectionInfoDisplayed = false;  // Track if we've shown connection info
@@ -254,7 +251,7 @@ public:
                     ClientState& st = clientState[clientId];
                     st.authenticated = !config.requireAuth;
                     st.connectedAt = now;
-                    st.authNotBefore = authNotBeforeFor((uint32_t)clients.back().second.remoteIP(), now);
+                    st.authNotBefore = authDelay.notBefore((uint32_t)clients.back().second.remoteIP(), now, config.authDelayMaxMs);
 
                     DLOG_I(LOG_CONSOLE, "Client connected: #%u", clientId);
 
@@ -698,55 +695,15 @@ private:
         const uint32_t ip = (uint32_t)client.remoteIP();
         if (!args.isEmpty() && !config.password.isEmpty() && config.password == args) {
             st.authenticated = true;
-            forgetAuthFailures(ip);
+            authDelay.forget(ip);
             client.println("Authentication successful!");
             return;
         }
-        const uint8_t failures = noteAuthFailure(ip, now);
-        const unsigned long wait = authDelayMs(failures);
+        const uint8_t failures = authDelay.noteFailure(ip, now);
+        const unsigned long wait = Utils::AuthDelay::waitMs(failures, config.authDelayMaxMs);
         st.authNotBefore = now + wait;
         DLOG_W(LOG_CONSOLE, "Auth failure #%u from client #%u; next attempt read in %lu ms", failures, clientId, wait);
         client.println("Authentication failed.");
-    }
-
-    unsigned long authDelayMs(uint8_t failures) const {
-        if (failures == 0 || config.authDelayMaxMs == 0) return 0;
-        const unsigned shift = failures > 16 ? 16 : failures - 1;
-        const unsigned long wait = 1000UL << shift;
-        return wait < config.authDelayMaxMs ? wait : config.authDelayMaxMs;
-    }
-
-    AuthDelayEntry* findAuthDelay(uint32_t ip) {
-        for (auto& e : authDelays) if (e.failures != 0 && e.ip == ip) return &e;
-        return nullptr;
-    }
-
-    /** When the next attempt from this address may be read: after the wait its last failure set. */
-    unsigned long authNotBeforeFor(uint32_t ip, unsigned long now) {
-        AuthDelayEntry* e = findAuthDelay(ip);
-        if (!e || now - e->lastFailureAt >= AUTH_DELAY_FORGET_MS) return now;
-        return e->lastFailureAt + authDelayMs(e->failures);
-    }
-
-    uint8_t noteAuthFailure(uint32_t ip, unsigned long now) {
-        AuthDelayEntry* e = findAuthDelay(ip);
-        if (e && now - e->lastFailureAt >= AUTH_DELAY_FORGET_MS) e->failures = 0;
-        if (!e) {
-            e = &authDelays[0];   // a free slot, else the one that failed longest ago
-            for (auto& c : authDelays) {
-                if (c.failures == 0) { e = &c; break; }
-                if (c.lastFailureAt < e->lastFailureAt) e = &c;
-            }
-            e->ip = ip;
-            e->failures = 0;
-        }
-        if (e->failures < 255) e->failures++;
-        e->lastFailureAt = now;
-        return e->failures;
-    }
-
-    void forgetAuthFailures(uint32_t ip) {
-        if (AuthDelayEntry* e = findAuthDelay(ip)) e->failures = 0;
     }
 
     void sendWelcome(HAL::WiFiClient& client) {
