@@ -19,6 +19,7 @@
 #include <functional>
 
 #include "DomoticsCore/IComponent.h"
+#include "DomoticsCore/AuthDelay.h"
 #include "DomoticsCore/Logger.h"
 #include "DomoticsCore/Platform_HAL.h"  // For HAL::getFreeHeap()
 #include "DomoticsCore/MemoryManager.h" // For adaptive WS limits
@@ -64,6 +65,14 @@ private:
     // reader who can obtain it already has same-origin access, which is the one
     // case this cannot defend against anyway.
     char csrfToken_[17] = {0};
+
+    // Failed-auth memory per address. Mutated only from the web server's task.
+    mutable Utils::AuthDelay authDelay_;
+
+    static uint32_t remoteAddress(AsyncWebServerRequest* request) {
+        AsyncClient* client = request->client();
+        return client ? static_cast<uint32_t>(client->remoteIP()) : 0;
+    }
 
     // Shared WS send buffer (single-threaded, safe to share between sendWebSocketUpdate/sendWebSocketUpdates)
     static char wsBuffer_[WEBUI_WS_BUFFER_SIZE];
@@ -246,12 +255,27 @@ public:
      */
     /**
      * @brief The auth gate every route shares: true when enableAuth is off or
-     * the request carries this device's credentials, read live (SEC-13).
+     * the request carries this device's credentials, read live.
      * Public so sibling providers and the SSE middleware use it rather than a copy.
+     * A wrong password makes its address wait (1 s, doubling, capped at
+     * authDelayMaxMs); inside the wait a request is refused without reading it.
      */
     bool authorize(AsyncWebServerRequest* request) const {
         if (!config.enableAuth) return true;
-        return request->authenticate(config.username, config.password);
+        const uint32_t ip = remoteAddress(request);
+        const unsigned long now = HAL::Platform::getMillis();
+        if (authDelay_.isWaiting(ip, now, config.authDelayMaxMs)) return false;
+        if (request->authenticate(config.username, config.password)) {
+            authDelay_.forget(ip);
+            return true;
+        }
+        // No Authorization header is the browser asking for the challenge, not a guess.
+        if (request->hasHeader("Authorization")) {
+            const uint8_t failures = authDelay_.noteFailure(ip, now);
+            DLOG_W(LOG_WEB, "Auth failure #%u; next attempt read in %lu ms", failures,
+                   Utils::AuthDelay::waitMs(failures, config.authDelayMaxMs));
+        }
+        return false;
     }
 
     bool checkCsrf(AsyncWebServerRequest* request) const {

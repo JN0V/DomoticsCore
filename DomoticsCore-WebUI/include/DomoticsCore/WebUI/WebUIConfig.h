@@ -27,6 +27,7 @@ struct WebUIConfig {
     bool enableAuth = false;
     char username[32] = "admin";
     char password[48] = "";
+    uint32_t authDelayMaxMs = 8000;  // cap of the doubling wait after a wrong password (0 = none)
     int maxWebSocketClients = 3;
     int apiTimeout = 5000;
     bool enableCompression = true;
