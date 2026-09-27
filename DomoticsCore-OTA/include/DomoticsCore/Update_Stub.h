@@ -42,7 +42,11 @@ inline size_t s_stubAbortCalls = 0;
 // browser upload on a board. That gap is TEST-8's.
 inline bool s_stubEndEvenIfRemaining = false;
 
+// Never reset by begin(): a test zeroes it to observe whether an update was opened at all.
+inline size_t s_stubBeginCalls = 0;
+
 inline bool begin(size_t = UPDATE_SIZE_UNKNOWN) {
+    ++s_stubBeginCalls;
     s_stubBytesWritten = 0;
     s_stubEndCalls = 0;
     s_stubAbortCalls = 0;

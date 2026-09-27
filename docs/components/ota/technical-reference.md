@@ -40,6 +40,7 @@ Defined in `DomoticsCore/OTA.h` within `DomoticsCore::Components`.
 | `maxDownloadSize` | `size_t` | `0` | Ceiling on an incoming firmware image, in bytes. `0` means unlimited. Applies to **downloads and uploads alike** since SEC-8, and is checked twice on each: once against the size the sender announces, and again against the bytes that actually arrive — the announced figure is one the sender chose, and on an upload it is optional. On the upload path the announced-size refusal lands before flash is erased. |
 | `enableWebUIUpload` | `bool` | `true` | When `true`, expose manual firmware upload routes and WebUI file-upload controls. |
 | `requireUploadHash` | `bool` | `false` | When `true`, refuse any upload that arrives without an expected SHA-256 (SEC-7). The refusal happens before a flash sector is erased. Note this also rejects the built-in `/ota/upload` browser form, which cannot send one — see below. |
+| `requireDownloadHash` | `bool` | `false` | When `true`, refuse a URL install that carries no expected SHA-256: `triggerUpdateFromUrl()` without a digest returns `false`, and a manifest without a `sha256` field ends in `Error` with `Firmware hash required`. Both refusals land before an update is opened. |
 | `uploadIdleTimeoutSec` | `uint16_t` | `30` | Seconds of client silence after which an in-progress upload is dropped and aborted (BUG-37). ESPAsyncWebServer's own limit is 3 s for the whole body, which a client in TCP retransmission backoff exceeds on an ordinary WiFi link; this replaces it once the first body chunk has reached the handler and the upload's CSRF and auth gates have passed — the request line, headers and first chunk are still under the server's 3 s. Read at that first chunk, so a `setConfig()` during an upload applies to the next one. `0` disables the limit, and a client that vanishes without a reset then leaves the update open until the next reboot — the lock BUG-35 removed. |
 
 ### Runtime Configuration Update
@@ -94,11 +95,15 @@ Returns `true` (always succeeds in scheduling).
 
 ```cpp
 bool triggerUpdateFromUrl(const String& url, bool force = false);
+bool triggerUpdateFromUrl(const String& url, const String& expectedSha256, bool force = false);
+bool triggerUpdateFromUrl(const String& url, const char* expectedSha256, bool force = false);
 ```
 
 Schedules a firmware download-and-install from the given URL on the next `loop()` iteration. When `force` is `true`, version and downgrade checks are skipped.
 
-Returns `false` only if `url` is empty.
+With `expectedSha256` (hex, case-insensitive), the downloaded image is hashed as it arrives and discarded before the commit if it does not match (`SHA256 mismatch`). Without one it is installed unverified, unless `requireDownloadHash` is set. The `const char*` overload exists so that a string literal reaches the digest rather than converting to `force`.
+
+Returns `false` if `url` is empty, or if `requireDownloadHash` is set and no digest is given (`getLastError()` then reads `Firmware hash required`).
 
 ### State Accessors
 
@@ -478,7 +483,7 @@ When `enableWebUIUpload` is `false`, the card omits the file upload field and us
 |-------|--------|
 | `update_url` | Updates `OTAConfig::updateUrl` via get/override/set pattern |
 | `check_now` | Calls `triggerImmediateCheck(true)` |
-| `start_update` | Calls `triggerUpdateFromUrl()` with the configured or provided URL |
+| `start_update` | Calls `triggerUpdateFromUrl()` with the configured or provided URL, without a digest; answers `Firmware hash required` when `requireDownloadHash` is set |
 | `auto_reboot` | Updates `OTAConfig::autoReboot` via get/override/set pattern |
 
 ---
@@ -493,7 +498,7 @@ All endpoints are registered by `OTAWebUI::registerRoutes()` after `init()` is c
 | `POST` | `/api/ota/unified` | Returns current state (same fields as GET). Requires the device credentials with `enableAuth` on. |
 | `GET` | `/api/ota/status` | Returns JSON with `state`, `progress`, `downloaded`, `total`, `lastResult`, `lastVersion`, `autoReboot`. Requires the device credentials with `enableAuth` on. |
 | `POST` | `/api/ota/check` | Triggers an immediate manifest check. Returns `{"success": true}`. Requires the CSRF token and, with `enableAuth` on, the device credentials. |
-| `POST` | `/api/ota/update` | Starts a firmware download. Accepts `url` and `force` parameters in the **body**; with a parameter present it requires the CSRF token. Without parameters, returns current field values. Requires the device credentials with `enableAuth` on, either way. |
+| `POST` | `/api/ota/update` | Starts a firmware download. Accepts `url`, `force` and an optional `sha256` (the digest the image must match) in the **body**; with a parameter present it requires the CSRF token. Without parameters, returns current field values. Requires the device credentials with `enableAuth` on, either way. |
 | `GET` | `/ota/upload` | Serves a minimal HTML firmware upload page (only when `enableWebUIUpload` is `true`). |
 | `POST` | `/api/ota/upload` | Accepts `multipart/form-data` firmware upload (only when `enableWebUIUpload` is `true`). Returns `{"success": true/false}`. Optionally carries the expected digest as an `X-Firmware-SHA256` header, or a `?sha256=` query parameter for clients that cannot set headers. The connection is dropped, and the update aborted, after `uploadIdleTimeoutSec` seconds without a byte from the client (30 by default; the server's own 3 s applies until the first body chunk). |
 

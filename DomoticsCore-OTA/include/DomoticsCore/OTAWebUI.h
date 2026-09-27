@@ -173,7 +173,9 @@ public:
                 if (url.isEmpty()) {
                     return "{\"success\":false,\"error\":\"No firmware URL configured\"}";
                 }
-                ota->triggerUpdateFromUrl(url, true);
+                if (!ota->triggerUpdateFromUrl(url, true)) {
+                    return "{\"success\":false,\"error\":\"Firmware hash required\"}";
+                }
                 return "{\"success\":true}";
             }
             if (field == "auto_reboot") {
@@ -354,10 +356,11 @@ private:
                 String v = request->getParam("force", true)->value();
                 force = (v == "true" || v == "1" || v == "on");
             }
-            bool ok = !url.isEmpty() && ota->triggerUpdateFromUrl(url, force);
-            respondJson(request, [ok](JsonDocument& doc) {
+            const String sha256 = request->hasParam("sha256", true) ? request->getParam("sha256", true)->value() : String("");
+            bool ok = !url.isEmpty() && ota->triggerUpdateFromUrl(url, sha256, force);
+            respondJson(request, [ok, &url, this](JsonDocument& doc) {
                 doc["success"] = ok;
-                if (!ok) doc["error"] = "Missing or invalid URL";
+                if (!ok) doc["error"] = url.isEmpty() ? "Missing or invalid URL" : ota->getLastError().c_str();
             });
         });
 

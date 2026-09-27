@@ -436,6 +436,38 @@ void test_an_update_from_a_url_with_credentials_still_triggers() {
     TEST_ASSERT_EQUAL_STRING("No downloader set", harness->ota->getLastError().c_str());
 }
 
+void test_an_update_from_a_url_without_a_digest_is_refused_when_one_is_required() {
+    harness->otaConfig.requireDownloadHash = true;
+    harness->build();
+    const String token = harness->csrfToken();
+
+    AsyncWebServerRequest request;
+    request.addHeader("X-DC-Token", token);
+    request.addParam("url", "http://example.invalid/fw.bin", true);
+    harness->updateRoute()->handler(&request);
+
+    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("Firmware hash required") >= 0, request.sentBody.c_str());
+    harness->ota->loop();
+    TEST_ASSERT_TRUE_MESSAGE(harness->ota->getState() == OTAComponent::State::Idle,
+                             "a refused URL install reached the component");
+}
+
+void test_an_update_from_a_url_carries_its_digest() {
+    harness->otaConfig.requireDownloadHash = true;
+    harness->build();
+    const String token = harness->csrfToken();
+
+    AsyncWebServerRequest request;
+    request.addHeader("X-DC-Token", token);
+    request.addParam("url", "http://example.invalid/fw.bin", true);
+    request.addParam("sha256", "0000000000000000000000000000000000000000000000000000000000000000", true);
+    harness->updateRoute()->handler(&request);
+
+    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("\"success\":true") >= 0, request.sentBody.c_str());
+    harness->ota->loop();
+    TEST_ASSERT_EQUAL_STRING("No downloader set", harness->ota->getLastError().c_str());
+}
+
 // Auth off is the shipped default: every route answers.
 void test_with_auth_off_every_route_answers() {
     harness->build();
@@ -554,6 +586,8 @@ int main(int, char**) {
     RUN_TEST(test_a_check_with_credentials_still_triggers);
     RUN_TEST(test_an_update_from_a_url_without_credentials_triggers_nothing);
     RUN_TEST(test_an_update_from_a_url_with_credentials_still_triggers);
+    RUN_TEST(test_an_update_from_a_url_without_a_digest_is_refused_when_one_is_required);
+    RUN_TEST(test_an_update_from_a_url_carries_its_digest);
     RUN_TEST(test_with_auth_off_every_route_answers);
     RUN_TEST(test_the_read_routes_are_gated_too);
     RUN_TEST(test_the_read_routes_answer_a_client_that_authenticates);
