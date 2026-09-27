@@ -12,7 +12,7 @@
 4. [ComponentConfig and Metadata](#4-componentconfig-and-metadata)
 5. [EventBus](#5-eventbus)
 6. [Logger](#6-logger)
-7. [Timer (NonBlockingDelay)](#7-timer-nonblockingdelay)
+7. [Timer (NonBlockingDelay) and AuthDelay](#7-timer-nonblockingdelay-and-authdelay)
 8. [MemoryManager](#8-memorymanager)
 9. [HeapTracker (Testing)](#9-heaptracker-testing)
 10. [Platform HAL](#10-platform-hal)
@@ -470,7 +470,7 @@ Every log macro calls `LoggerCallbacks::broadcast()` after serial output, enabli
 
 ---
 
-## 7. Timer (NonBlockingDelay)
+## 7. Timer (NonBlockingDelay) and AuthDelay
 
 **Header:** `DomoticsCore/Timer.h`
 **Namespace:** `DomoticsCore::Utils`
@@ -491,6 +491,26 @@ Non-blocking delay utility that uses `HAL::getMillis()` for platform-independent
 | **isEnabled** | `bool isEnabled() const` | Check enabled state. |
 | **remaining** | `unsigned long remaining() const` | Milliseconds until next trigger (0 if ready or disabled). |
 | **elapsed** | `unsigned long elapsed() const` | Milliseconds since last trigger. |
+
+### AuthDelay
+
+**Header:** `DomoticsCore/AuthDelay.h`
+
+Per-address memory of failed authentication attempts, shared by the remote
+console and the WebUI. It decides when the next attempt from an address may be
+read and never refuses anything itself: 1 s after the first failure, doubling
+per consecutive failure up to a cap the caller passes. A fixed table of
+`ENTRIES` (4) addresses, no allocation; when it is full the address that failed
+longest ago is evicted. An address without a failure for `FORGET_MS` (60 s) is
+forgotten. All times are `millis()` values and survive its wrap.
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| **waitMs** | `static unsigned long waitMs(uint8_t failures, uint32_t capMs)` | The wait after `failures` consecutive failures; `0` when `failures` or `capMs` is `0`. |
+| **notBefore** | `unsigned long notBefore(uint32_t ip, unsigned long now, uint32_t capMs) const` | When the next attempt from `ip` may be read; `now` when it is not waiting. |
+| **isWaiting** | `bool isWaiting(uint32_t ip, unsigned long now, uint32_t capMs) const` | `true` while `ip` is inside that wait. |
+| **noteFailure** | `uint8_t noteFailure(uint32_t ip, unsigned long now)` | Records a failure and returns the address's count of consecutive failures. |
+| **forget** | `void forget(uint32_t ip)` | Clears the address, after a success. |
 
 ---
 
