@@ -120,7 +120,8 @@ struct Dependency {
 | **setActive** | `void setActive(bool state)` | Sets the `active` flag. Called by registry. |
 | **eventBus** | `EventBus& eventBus()` | Returns reference to the injected EventBus. |
 | **on\<T\>** | `template<T> uint32_t on(const String& topic, handler, bool replayLast = false)` | Subscribe to a topic with typed payload. Owner defaults to `this`. |
-| **emit\<T\>** | `template<T> void emit(const String& topic, const T& payload, bool sticky = false)` | Publish (or sticky-publish) an event with typed payload. |
+| **emit\<T\>** | `template<T> void emit(const String& topic, const T& payload, bool sticky = false)` | Publish (or sticky-publish) an event with typed payload. A `const char*` overload sends the topic to the queue without a temporary `String`. |
+| **emit** (bytes) | `void emit(const String& topic, const void* payload, size_t payloadSize, bool sticky)` | Publish a variable-length payload; the queue deep-copies `payloadSize` bytes. Also taken as `const char*`. |
 
 ### Protected Methods
 
@@ -384,7 +385,8 @@ struct QueuedEvent {
 | **unsubscribeOwner** | `void unsubscribeOwner(void* owner)` | Remove all subscriptions belonging to an owner. Used during component shutdown. |
 | **publish** (EventType+payload) | `template<PayloadT> void publish(EventType type, const PayloadT& payload)` | Queue a typed event with payload (byte-copied). |
 | **publish** (EventType) | `void publish(EventType type)` | Queue a typed event without payload. |
-| **publish** (topic+payload) | `template<PayloadT> void publish(const String& topic, const PayloadT& payload)` | Queue a topic-based event with payload. |
+| **publish** (topic+payload) | `template<PayloadT> void publish(const String& topic, const PayloadT& payload)` | Queue a topic-based event with payload. The topic may also be a `const char*`, copied once into the queued event. |
+| **publish** (topic+bytes) | `void publish(const String& topic, const void* payload, size_t payloadSize)` | Queue a variable-length payload, deep-copied. Also taken as `const char*`. |
 | **publish** (topic) | `void publish(const String& topic)` | Queue a topic-based event without payload. |
 | **publishSticky** (topic+payload) | `template<PayloadT> void publishSticky(const String& topic, const PayloadT& payload)` | Store the last payload for the topic and publish. Late subscribers with `replayLast=true` receive the stored value. |
 | **publishSticky** (topic) | `void publishSticky(const String& topic)` | Sticky publish without payload. |
