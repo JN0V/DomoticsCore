@@ -125,6 +125,33 @@ void test_sticky_event(void) {
     TEST_ASSERT_EQUAL(123, receivedValue);
 }
 
+// A sticky event still queued reaches a late subscriber once: from the queue,
+// not also from the replay.
+void test_a_queued_sticky_event_is_not_replayed_twice(void) {
+    int calls = 0;
+    int msg = 7;
+    const String topic("sticky/queued");
+    testBus->publishSticky(topic, msg);
+    testBus->subscribe(topic, [&](const void*) { calls++; }, nullptr, true);
+    testBus->poll();
+    TEST_ASSERT_EQUAL(1, calls);
+}
+
+// An event queued before its topic held a sticky value was never counted, so
+// dispatching it must not release the sticky event's count.
+void test_an_uncounted_event_does_not_release_a_sticky_count(void) {
+    int calls = 0;
+    int plain = 1, sticky = 2;
+    const String topic("sticky/mixed");
+    testBus->publish(topic, plain);
+    testBus->publishSticky(topic, sticky);
+    testBus->poll(1);  // dispatches the plain event only
+    testBus->subscribe(topic, [&](const void* p) { if (p && *static_cast<const int*>(p) == 2) calls++; },
+                       nullptr, true);
+    testBus->poll();
+    TEST_ASSERT_EQUAL_MESSAGE(1, calls, "the queued sticky value reached the late subscriber twice");
+}
+
 void test_wildcard_subscription(void) {
     int sensorCount = 0;
     int actuatorCount = 0;
@@ -820,6 +847,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_different_topics_isolated);
     RUN_TEST(test_unsubscribe);
     RUN_TEST(test_sticky_event);
+    RUN_TEST(test_a_queued_sticky_event_is_not_replayed_twice);
+    RUN_TEST(test_an_uncounted_event_does_not_release_a_sticky_count);
     RUN_TEST(test_wildcard_subscription);
     RUN_TEST(test_message_order);
     RUN_TEST(test_unsubscribe_owner);

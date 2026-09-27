@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 #include <DomoticsCore/Platform_HAL.h>
 #include <DomoticsCore/Logger.h>
@@ -85,6 +86,7 @@ public:
         String topic{};
         // Copy of payload bytes; we keep a small vector to store arbitrary payloads
         std::vector<uint8_t> data;
+        bool countedPending = false;  // counted in pendingByTopic; released only if so
     };
 
 
@@ -185,31 +187,23 @@ public:
     // Topic-based publish (with payload copy)
     template<typename PayloadT>
     void publish(const String& topic, const PayloadT& payload) {
-        // The payload is byte-copied, so an owning type would be dispatched
-        // after the original is gone. Use the (topic, void*, size) overload.
-        static_assert(std::is_trivially_copyable<PayloadT>::value,
-                      "EventBus payload must be trivially copyable. For a String or "
-                      "any other owning type, publish the bytes instead: "
-                      "emit(topic, s.c_str(), s.length() + 1, sticky).");
-        if (topic.length() == 0) return;
-        if (refuseOversized(topic.c_str(), topic.length(), sizeof(PayloadT))) return;
-        QueuedEvent qe;
-        qe.topic = topic;
-        const uint8_t* p = reinterpret_cast<const uint8_t*>(&payload);
-        qe.data.assign(p, p + sizeof(PayloadT));
-        enqueue(std::move(qe));
+        assertTriviallyCopyable<PayloadT>();
+        publishBytes(topic.c_str(), topic.length(), &payload, sizeof(PayloadT));
+    }
+    // A const char* topic is copied once, into the queued event.
+    template<typename PayloadT>
+    void publish(const char* topic, const PayloadT& payload) {
+        assertTriviallyCopyable<PayloadT>();
+        publishBytes(topic, topic ? strlen(topic) : 0, &payload, sizeof(PayloadT));
     }
 
     // Topic-based publish with a variable-length payload copy.
     // The caller retains ownership; the queued event owns its byte copy.
     void publish(const String& topic, const void* payload, size_t payloadSize) {
-        if (topic.length() == 0 || payload == nullptr || payloadSize == 0) return;
-        if (refuseOversized(topic.c_str(), topic.length(), payloadSize)) return;
-        QueuedEvent qe;
-        qe.topic = topic;
-        const uint8_t* p = static_cast<const uint8_t*>(payload);
-        qe.data.assign(p, p + payloadSize);
-        enqueue(std::move(qe));
+        publishBytes(topic.c_str(), topic.length(), payload, payloadSize);
+    }
+    void publish(const char* topic, const void* payload, size_t payloadSize) {
+        publishBytes(topic, topic ? strlen(topic) : 0, payload, payloadSize);
     }
 
     // Topic-based publish without payload
@@ -291,7 +285,7 @@ public:
                         }
                     }
                 }
-                {
+                if (qe.countedPending) {
                     HAL::Platform::LockGuard guard(lock_);
                     releasePending(qe.topic);
                 }
@@ -348,6 +342,26 @@ private:
         return true;
     }
 
+    template<typename PayloadT>
+    static void assertTriviallyCopyable() {
+        // The payload is byte-copied, so an owning type would be dispatched
+        // after the original is gone. Use the (topic, void*, size) overload.
+        static_assert(std::is_trivially_copyable<PayloadT>::value,
+                      "EventBus payload must be trivially copyable. For a String or "
+                      "any other owning type, publish the bytes instead: "
+                      "emit(topic, s.c_str(), s.length() + 1, sticky).");
+    }
+
+    void publishBytes(const char* topic, size_t topicLen, const void* payload, size_t payloadSize) {
+        if (topicLen == 0 || payload == nullptr || payloadSize == 0) return;
+        if (refuseOversized(topic, topicLen, payloadSize)) return;
+        QueuedEvent qe;
+        qe.topic = topic;
+        const uint8_t* p = static_cast<const uint8_t*>(payload);
+        qe.data.assign(p, p + payloadSize);
+        enqueue(std::move(qe));
+    }
+
     void enqueue(QueuedEvent&& qe) {
         HAL::Platform::LockGuard guard(lock_);
         const size_t cost = QueueCost::of(qe.data.size(), qe.topic.length());
@@ -364,7 +378,7 @@ private:
             // for this topic for the life of the process.
             const QueuedEvent& front = queue.front();
             queuedBytes_ -= static_cast<uint16_t>(QueueCost::of(front.data.size(), front.topic.length()));
-            releasePending(front.topic);
+            if (front.countedPending) releasePending(front.topic);
             queue.pop();
             ++droppedEvents_;
         }
@@ -372,10 +386,11 @@ private:
         const uint8_t pct = static_cast<uint8_t>(static_cast<size_t>(queuedBytes_) * 100u / QueueCost::kBudgetBytes);
         if (pct > highWaterPct_) highWaterPct_ = pct;
         queue.push(std::move(qe));
-        // Track pending by topic to help skip duplicate sticky replay
-        const QueuedEvent& back = queue.back();
-        if (back.topic.length() > 0) {
+        // Pending counts only matter where a sticky value could be replayed twice.
+        QueuedEvent& back = queue.back();
+        if (back.topic.length() > 0 && lastByTopic.count(back.topic)) {
             pendingByTopic[back.topic] = pendingByTopic[back.topic] + 1;
+            back.countedPending = true;
         }
     }
 
