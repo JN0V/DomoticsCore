@@ -36,6 +36,18 @@ private:
     std::map<String, std::function<IWebUIProvider*(IComponent*)>> providerFactories;
     std::vector<std::unique_ptr<IWebUIProvider>> ownedProviders;
 
+    // Enable/disable requests made on the web server's task, applied from loop().
+    struct PendingEnable {
+        char name[32];
+        bool enabled;
+    };
+    static constexpr size_t kMaxPendingEnables = 4;
+    PendingEnable pendingEnables_[kMaxPendingEnables] = {};
+    size_t pendingEnableCount_ = 0;
+    HAL::Platform::RecursiveLock pendingLock_;
+    // The maps are written from loop() and read by HTTP handlers on the web task.
+    mutable HAL::Platform::RecursiveLock registryLock_;
+
 public:
     ProviderRegistry() = default;
 
@@ -44,6 +56,7 @@ public:
      * Uses forEachContext() to avoid copying contexts on memory-constrained devices.
      */
     void registerProvider(IWebUIProvider* provider) {
+        HAL::Platform::LockGuard guard(registryLock_);
         if (!provider) return;
 
         int contextCount = 0;
@@ -69,6 +82,7 @@ public:
      * @brief Register a provider and remember the owning component for lifecycle callbacks.
      */
     void registerProviderWithComponent(IWebUIProvider* provider, IComponent* component) {
+        HAL::Platform::LockGuard guard(registryLock_);
         registerProvider(provider);
         if (provider) {
             providerInfo_[provider].component = component;
@@ -79,6 +93,7 @@ public:
      * @brief Remove all contexts contributed by the given provider without deleting it.
      */
     void unregisterProvider(IWebUIProvider* provider) {
+        HAL::Platform::LockGuard guard(registryLock_);
         if (!provider) return;
         for (auto it = contextProviders.begin(); it != contextProviders.end(); ) {
             if (it->second == provider) {
@@ -104,6 +119,7 @@ public:
     static constexpr uint32_t MIN_HEAP_FOR_DISCOVERY = 2048;
 
     void discoverProviders(const Components::ComponentRegistry& registry) {
+        HAL::Platform::LockGuard guard(registryLock_);
         auto comps = registry.getAllComponents();
         DLOG_I(LOG_WEB, "discoverProviders: %d components", (int)comps.size());
         int registered = 0;
@@ -156,6 +172,7 @@ public:
 
     // Logic for API /api/components
     void getComponentsList(JsonDocument& doc) {
+        HAL::Platform::LockGuard guard(registryLock_);
         JsonArray comps = doc["components"].to<JsonArray>();
 
         // Track names we've already added to avoid duplicates
@@ -214,56 +231,82 @@ public:
             return result;
         }
 
-        // Collect matching providers
-        std::vector<IWebUIProvider*> matched;
-        for (const auto& kv : contextProviders) {
-            if (kv.second && kv.second->getWebUIName() == name) {
-                if (std::find(matched.begin(), matched.end(), kv.second) == matched.end()) {
+        // The registry changes under the lock; lifecycle callbacks run after it,
+        // so a slow begin() never holds a web handler waiting on the maps.
+        std::vector<IComponent*> components;
+        {
+            HAL::Platform::LockGuard guard(registryLock_);
+            std::vector<IWebUIProvider*> matched;
+            for (const auto& kv : contextProviders) {
+                if (kv.second && kv.second->getWebUIName() == name &&
+                    std::find(matched.begin(), matched.end(), kv.second) == matched.end()) {
                     matched.push_back(kv.second);
                 }
             }
-        }
-        for (const auto& kv : providerInfo_) {
-            IWebUIProvider* prov = kv.first;
-            if (prov && prov->getWebUIName() == name) {
-                if (std::find(matched.begin(), matched.end(), prov) == matched.end()) {
-                    matched.push_back(prov);
+            for (const auto& kv : providerInfo_) {
+                if (kv.first && kv.first->getWebUIName() == name &&
+                    std::find(matched.begin(), matched.end(), kv.first) == matched.end()) {
+                    matched.push_back(kv.first);
                 }
             }
+            for (IWebUIProvider* provider : matched) {
+                ProviderInfo& info = providerInfo_[provider];
+                info.enabled = enabled;
+                result.found = true;
+                if (info.component) components.push_back(info.component);
+                if (!enabled) unregisterProvider(provider);
+                else registerProviderWithComponent(provider, info.component);
+            }
         }
-
-        for (IWebUIProvider* provider : matched) {
-            providerInfo_[provider].enabled = enabled;
-            result.found = true;
-
-            // Lifecycle callbacks
-            auto infoIt = providerInfo_.find(provider);
-            if (infoIt != providerInfo_.end() && infoIt->second.component) {
-                if (!enabled) {
-                    infoIt->second.component->shutdown();
-                } else {
-                    infoIt->second.component->begin();
-                }
-            }
-
-            // Sync registry
-            if (!enabled) {
-                unregisterProvider(provider);
-            } else {
-                auto pi = providerInfo_.find(provider);
-                registerProviderWithComponent(provider, (pi != providerInfo_.end()) ? pi->second.component : nullptr);
-            }
+        for (IComponent* component : components) {
+            if (enabled) component->begin();
+            else component->shutdown();
         }
 
         result.success = result.found;
-        if (name == "WebUI" && enabled == false) {
-             result.warning = "Disabling WebUI may make the UI inaccessible until reboot/reset.";
-        }
         return result;
+    }
+
+    /**
+     * @brief Queue an enable/disable for applyPendingEnables(); safe from any task.
+     * @return false when the queue is full or the name does not fit.
+     */
+    bool requestEnable(const String& name, bool enabled) {
+        HAL::Platform::LockGuard guard(pendingLock_);
+        if (pendingEnableCount_ >= kMaxPendingEnables) return false;
+        if (name.isEmpty() || name.length() >= sizeof(pendingEnables_[0].name)) return false;
+        PendingEnable& slot = pendingEnables_[pendingEnableCount_++];
+        snprintf(slot.name, sizeof(slot.name), "%s", name.c_str());
+        slot.enabled = enabled;
+        return true;
+    }
+
+    /**
+     * @brief Apply queued requests on the calling task; onApplied gets each name found.
+     */
+    void applyPendingEnables(const std::function<void(const String&)>& onApplied) {
+        PendingEnable batch[kMaxPendingEnables];
+        size_t count;
+        {
+            HAL::Platform::LockGuard guard(pendingLock_);
+            count = pendingEnableCount_;
+            memcpy(batch, pendingEnables_, count * sizeof(PendingEnable));
+            pendingEnableCount_ = 0;
+        }
+        for (size_t i = 0; i < count; i++) {
+            const String name(batch[i].name);
+            const EnableResult result = enableComponent(name, batch[i].enabled);
+            if (!result.found) {
+                DLOG_W(LOG_WEB, "Enable request for unknown component '%s' ignored", batch[i].name);
+            } else if (onApplied) {
+                onApplied(name);
+            }
+        }
     }
 
     // Accessors
     IWebUIProvider* getProviderForContext(const String& contextId) {
+        HAL::Platform::LockGuard guard(registryLock_);
         auto it = contextProviders.find(contextId);
         if (it != contextProviders.end()) {
             return it->second;
@@ -392,6 +435,7 @@ public:
     };
 
     std::shared_ptr<SchemaChunkState> prepareSchemaGeneration() {
+        HAL::Platform::LockGuard guard(registryLock_);
         auto state = std::make_shared<SchemaChunkState>();
 
         // Build unique provider list
@@ -416,6 +460,7 @@ public:
     }
 
     void handleComponentRemoved(IComponent* comp) {
+        HAL::Platform::LockGuard guard(registryLock_);
         if (!comp) return;
         std::vector<IWebUIProvider*> toRemove;
         for (const auto& kv : providerInfo_) {
@@ -433,6 +478,13 @@ public:
 
     const std::map<String, IWebUIProvider*>& getContextProviders() const {
         return contextProviders;
+    }
+
+    /** @brief Run fn over the context map with the registry locked. */
+    template<typename F>
+    auto withContextProviders(F fn) const -> decltype(fn(contextProviders)) {
+        HAL::Platform::LockGuard guard(registryLock_);
+        return fn(contextProviders);
     }
 };
 

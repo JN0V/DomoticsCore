@@ -913,6 +913,17 @@ class DomoticsApp {
                             if (!result.success) {
                                 throw new Error('Operation failed');
                             }
+                            // The device applies the change in its loop: wait until it reports it.
+                            let applied = false;
+                            for (let i = 0; i < 10 && !applied; i++) {
+                                await new Promise(r => setTimeout(r, 100));
+                                const list = await (await fetch('/api/components')).json();
+                                const entry = (list.components || []).find(c => c.name === name);
+                                applied = !!entry && entry.enabled === enabled;
+                            }
+                            if (!applied) {
+                                throw new Error('Change not applied');
+                            }
                             // Update row status text
                             valueEl.textContent = enabled ? 'Enabled' : 'Disabled';
                             valueEl.classList.toggle('status-success', enabled);
