@@ -26,6 +26,71 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.9.0] - 2026-09-27
+
+> **Discovery documents no longer state what Home Assistant already assumes.**
+> A payload key equal to Home Assistant's default for an absent key is left out:
+> `pl_avail`/`pl_not_avail` on every entity, `pl_on`/`pl_off` unless changed,
+> `stat_on`/`stat_off` on switches, `pl_prs` unless changed, `bri_scl` and
+> `brightness` on lights, and on the alarm panel a `cod_*_req` that is `true` and
+> a `sup_feat` listing all six features. Every document is at least 45 characters
+> shorter, and **a panel requiring a code for everything, refused whole at 741
+> characters, now fits and is published** (591 on a 32-character node id). The
+> defaults are the new `HAPayload` constants, which the MQTT Last Will and
+> `setAvailable()` publish. A consumer reading these keys from the broker should
+> apply Home Assistant's defaults when they are absent.
+
+> **`WifiComponent::scanNetworks()` releases the SDK's result list before
+> returning.** The vector it fills holds every result; `HAL::WiFiHAL::getScannedSSID()`
+> and `getScannedRSSI()` read nothing afterwards. The list used to stay allocated
+> until the next scan — 408 bytes for five networks on an ESP8266.
+
+> **`POST /api/components/enable` answers once the request is queued.** The
+> component's `begin()` or `shutdown()` now runs in the WebUI's `loop()`, not on
+> the web server's task, so `success: true` means queued; a full queue answers
+> `false`. The bundled page waits until `/api/components` reports the change.
+
+### Added
+
+- **`HomeAssistant::HAPayload`** (`AVAILABLE`, `NOT_AVAILABLE`, `ON`, `OFF`,
+  `PRESS`) and **`kAllAlarmFeatures`**.
+- **`const char*` overloads of `IComponent::emit()` and `EventBus::publish()`**:
+  the topic is copied once, into the queued event.
+
+### Changed
+
+- **A Home Assistant button honours `useAvailability`** and publishes its
+  `entityCategory` and `jsonAttributesTopic`, which it used to drop.
+- **`HALight::handleCommand()` reads the bare brightness** Home Assistant's
+  default schema sends (`0`–`255`, `state` following it), and refuses JSON that is
+  not an object and a brightness off the scale, which it used to accept.
+- **Fewer allocations on hot paths**: an OTA progress event, published once a
+  second through an upload, 9 → 4 on the host; a publish with a `const char*`
+  topic 5 → 2.
+- **The provider registry is locked** for the HTTP handlers that read it and the
+  loop that changes it.
+
+### Fixed
+
+- **Home Assistant: every brightness sent from Home Assistant was read as 255**
+  (BUG-87), and a panel's `true` requirements and full feature list restated
+  defaults (BUG-89), a button dropped its category (BUG-90), every document
+  restated the default payloads (BUG-68).
+- **WebUI: switching a component from the page ran its lifecycle on the web
+  server's task** (BUG-25).
+- **WiFi: the synchronous scan kept the SDK's list** (MEM-6).
+- **OTA: a status event regrew an unreserved `String`** (MEM-5).
+- **Core: a `const char*` topic was copied up to three times per publish**
+  (MEM-9).
+- **The shipping `esp32dev` build compiles without a warning**: eleven C++17
+  inline variables removed from headers built at `gnu++14` (CI-20).
+
+### Component versions
+
+Core 1.11.1 → 1.12.0, HomeAssistant 2.4.1 → 2.5.0, WebUI 1.10.2 → 1.11.0, Wifi
+1.6.1 → 1.7.0 (minor); MQTT 1.8.0 → 1.8.1, OTA 1.10.0 → 1.10.1 (patch). LED,
+NTP, RemoteConsole, Storage, System and SystemInfo are unchanged.
+
 ## [2.8.0] - 2026-09-25
 
 > **Corrective: an MQTT client id stored empty no longer reaches the broker as
