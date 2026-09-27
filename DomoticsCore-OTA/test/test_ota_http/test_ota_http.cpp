@@ -118,6 +118,7 @@ void setUp() {
 void tearDown() {
     delete harness;
     harness = nullptr;
+    DomoticsCore::HAL::Platform::resetMillisForTest();
 }
 
 void test_the_upload_route_is_registered_with_an_upload_handler() {
@@ -213,6 +214,77 @@ void test_right_credentials_let_the_upload_through() {
     TEST_ASSERT_FALSE(request.authenticationRequested);
     TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("\"success\":true") >= 0,
                              "an authenticated upload did not report success");
+}
+
+// The upload takes the WebUI's gate, so a wrong password anywhere makes the upload wait too.
+void test_a_wrong_password_makes_the_upload_wait_like_every_route() {
+    DomoticsCore::HAL::Platform::setMillisForTest(50000);
+    harness->withAuth("admin", "correct");
+    harness->build();
+    const String token = harness->csrfToken("admin", "correct");
+
+    AsyncWebServerRequest guess;
+    guess.setCredentials("admin", "wrong");
+    harness->statusRoute()->handler(&guess);
+    TEST_ASSERT_TRUE(guess.authenticationRequested);
+
+    AsyncWebServerRequest early;
+    early.addHeader("X-DC-Token", token);
+    early.setCredentials("admin", "correct");
+    deliver(early, kFirmware, sizeof(kFirmware), sizeof(kFirmware) + kMultipartEnvelope);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, harness->ota->getTotalBytes(),
+                                     "an upload inside the wait opened an update");
+    complete(early);
+    TEST_ASSERT_TRUE(early.authenticationRequested);
+
+    DomoticsCore::HAL::Platform::advanceMillisForTest(1000);
+    AsyncWebServerRequest later;
+    later.addHeader("X-DC-Token", token);
+    later.setCredentials("admin", "correct");
+    deliver(later, kFirmware, sizeof(kFirmware), sizeof(kFirmware) + kMultipartEnvelope);
+    complete(later);
+    TEST_ASSERT_TRUE_MESSAGE(later.sentBody.indexOf("\"success\":true") >= 0, later.sentBody.c_str());
+}
+
+// One upload is one attempt: chunk 0 decides, the completion handler does not ask again.
+void test_a_wrong_password_upload_counts_once() {
+    DomoticsCore::HAL::Platform::setMillisForTest(50000);
+    harness->withAuth("admin", "correct");
+    harness->build();
+    const String token = harness->csrfToken("admin", "correct");
+
+    AsyncWebServerRequest guess;
+    guess.addHeader("X-DC-Token", token);
+    guess.setCredentials("admin", "wrong");
+    deliver(guess, kFirmware, sizeof(kFirmware), sizeof(kFirmware) + kMultipartEnvelope);
+    DomoticsCore::HAL::Platform::advanceMillisForTest(1500);   // a slow body: the 1 s wait is over
+    complete(guess);
+    TEST_ASSERT_TRUE(guess.authenticationRequested);
+
+    AsyncWebServerRequest status;
+    status.setCredentials("admin", "correct");
+    harness->statusRoute()->handler(&status);
+    TEST_ASSERT_FALSE_MESSAGE(status.authenticationRequested, "the completion handler counted a second failure");
+}
+
+void test_a_good_upload_is_answered_even_if_a_wait_starts_meanwhile() {
+    DomoticsCore::HAL::Platform::setMillisForTest(50000);
+    harness->withAuth("admin", "correct");
+    harness->build();
+    const String token = harness->csrfToken("admin", "correct");
+
+    AsyncWebServerRequest request;
+    request.addHeader("X-DC-Token", token);
+    request.setCredentials("admin", "correct");
+    deliver(request, kFirmware, sizeof(kFirmware), sizeof(kFirmware) + kMultipartEnvelope);
+
+    AsyncWebServerRequest other;   // another tab, same address, wrong password
+    other.setCredentials("admin", "wrong");
+    harness->statusRoute()->handler(&other);
+
+    complete(request);
+    TEST_ASSERT_FALSE_MESSAGE(request.authenticationRequested, "a written upload was answered with a challenge");
+    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("\"success\":true") >= 0, request.sentBody.c_str());
 }
 
 void test_a_client_that_vanishes_mid_upload_releases_the_update() {
@@ -471,6 +543,9 @@ int main(int, char**) {
     RUN_TEST(test_a_refused_upload_does_not_poison_the_next_one);
     RUN_TEST(test_wrong_credentials_ask_for_authentication_and_open_nothing);
     RUN_TEST(test_right_credentials_let_the_upload_through);
+    RUN_TEST(test_a_wrong_password_makes_the_upload_wait_like_every_route);
+    RUN_TEST(test_a_wrong_password_upload_counts_once);
+    RUN_TEST(test_a_good_upload_is_answered_even_if_a_wait_starts_meanwhile);
     RUN_TEST(test_a_client_that_vanishes_mid_upload_releases_the_update);
     RUN_TEST(test_a_finished_uploads_own_disconnect_aborts_nothing);
     RUN_TEST(test_the_receive_idle_timeout_widens_only_once_the_gates_pass);

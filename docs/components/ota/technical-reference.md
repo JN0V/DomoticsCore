@@ -505,7 +505,9 @@ token (`X-DC-Token`, or `?token=`) and, when `WebUIConfig::enableAuth` is on,
 the device credentials. A request missing either is answered `403` or `401` and
 nothing is opened: no flash is erased and no download starts. The token proves
 the request came from the device's own page; the credentials prove who sent it,
-and a state change needs both.
+and a state change needs both. Every route, the upload included, checks the
+credentials through `WebUIComponent::authorize()`, so a wrong password makes
+its address wait before the next attempt on any of them is read.
 
 The read routes — `/api/ota/status`, `/api/ota/unified` and `/api/ota/update`
 called without a parameter — take no token, since they change nothing, but they

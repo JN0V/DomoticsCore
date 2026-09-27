@@ -203,6 +203,8 @@ private:
         String error;
         String filename;
         size_t total = 0;
+        const AsyncWebServerRequest* gatedRequest = nullptr;  ///< The request chunk 0 asked the gate for.
+        bool gateAuthorized = false;                          ///< And its answer.
     } uploadState;
     
     // State tracking for change detection
@@ -375,14 +377,9 @@ private:
                     "</div></body></html>";
             // SEC-3: Gate upload HTML page behind WebUI auth
             webui->registerApiRoute("/ota/upload", HTTP_GET, [this](AsyncWebServerRequest* request){
-                // NOTE: WebUIConfig.username is char[32] and .password is char[48] (not String)
-                if (webui && webui->getConfig().enableAuth) {
-                    if (!request->authenticate(
-                            webui->getConfig().username,
-                            webui->getConfig().password)) {
-                        request->requestAuthentication();
-                        return;
-                    }
+                if (!webui->authorize(request)) {
+                    request->requestAuthentication();
+                    return;
                 }
                 request->send(200, "text/html", OTA_UPLOAD_HTML);
             });
@@ -399,17 +396,14 @@ private:
                         request->send(403, "application/json", "{\"success\":false,\"error\":\"Bad or missing CSRF token\"}");
                         return;
                     }
-                    // SEC-3: Check authentication before processing upload result.
-                    // WebUIComponent::authorize() is the shared gate since SEC-13; this
-                    // inline copy is kept so OTA does not require that WebUI version.
-                    // NOTE: WebUIConfig.username is char[32] and .password is char[48] (not String)
-                    if (webui && webui->getConfig().enableAuth) {
-                        if (!request->authenticate(
-                                webui->getConfig().username,
-                                webui->getConfig().password)) {
-                            request->requestAuthentication();
-                            return;
-                        }
+                    // Chunk 0 already asked the gate; asking again would count one wrong
+                    // password twice, or refuse a good upload inside a wait set meanwhile.
+                    const bool authorized = uploadState.gatedRequest == request ? uploadState.gateAuthorized
+                                                                                : webui->authorize(request);
+                    uploadState.gatedRequest = nullptr;
+                    if (!authorized) {
+                        request->requestAuthentication();
+                        return;
                     }
                     respondJson(request, [this](JsonDocument& doc) {
                         doc["success"] = uploadState.success;
@@ -424,7 +418,6 @@ private:
                     // SEC-3: Reset state FIRST at index == 0, THEN check auth.
                     // This prevents a stale rejected flag from a previous failed upload
                     // from causing the current upload to be silently rejected.
-                    // NOTE: WebUIConfig.username is char[32] and .password is char[48] (not String)
                     if (index == 0) {
                         uploadState = UploadState{};  // Reset ALL state (clears stale rejected)
                         // BUG-35: a client that vanishes mid-body leaves the update
@@ -457,17 +450,15 @@ private:
                             ota->abortUpload("CSRF token missing");
                             return;
                         }
-                        if (webui && webui->getConfig().enableAuth) {
-                            if (!request->authenticate(
-                                    webui->getConfig().username,
-                                    webui->getConfig().password)) {
-                                uploadState.success = false;
-                                uploadState.error = "Authentication required";
-                                uploadState.rejected = true;
-                                // Abort any in-progress OTA to prevent flash writes
-                                ota->abortUpload("Authentication required");
-                                return;
-                            }
+                        uploadState.gatedRequest = request;
+                        uploadState.gateAuthorized = webui->authorize(request);
+                        if (!uploadState.gateAuthorized) {
+                            uploadState.success = false;
+                            uploadState.error = "Authentication required";
+                            uploadState.rejected = true;
+                            // Abort any in-progress OTA to prevent flash writes
+                            ota->abortUpload("Authentication required");
+                            return;
                         }
                         uploadState.active = true;
                         // BUG-37: ESPAsyncWebServer arms a 3 s receive-idle timeout on
