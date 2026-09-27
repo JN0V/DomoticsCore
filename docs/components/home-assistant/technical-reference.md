@@ -622,9 +622,10 @@ Trigger-only action (restart, calibrate, etc.).
 
 ### Discovery Fields Added
 
-Buttons override the base `buildDiscoveryPayload()` completely (no `stat_t` is added):
+Buttons build their own document, without `stat_t` or `val_tpl`:
 
 - `name`, `uniq_id`, `icon`, `device_class`, `device`, `avty_t` (unless `useAvailability` is false)
+- `ent_cat` and `json_attr_t`, when set
 - `cmd_t`
 - `pl_prs`, only when changed from `"PRESS"`
 
