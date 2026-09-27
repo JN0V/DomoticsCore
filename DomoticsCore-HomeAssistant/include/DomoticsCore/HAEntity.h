@@ -114,9 +114,9 @@ public:
         
         addAvailability(doc, availabilityTopic);
 
-        if (!entityCategory.isEmpty() && entityCategoryIsValid()) doc["ent_cat"] = entityCategory;
+        addEntityCategory(doc);
         if (!valueTemplate.isEmpty()) doc["val_tpl"] = valueTemplate;
-        if (!jsonAttributesTopic.isEmpty()) doc["json_attr_t"] = jsonAttributesTopic;
+        addAttributesTopic(doc);
     }
 
     /**
@@ -130,6 +130,14 @@ protected:
     // The payloads are Home Assistant's defaults (HAPayload), so only the topic is stated.
     void addAvailability(JsonDocument& doc, const String& availabilityTopic) const {
         if (useAvailability && !availabilityTopic.isEmpty()) doc["avty_t"] = availabilityTopic;
+    }
+
+    // Optional fields every entity takes, state topic or not.
+    void addEntityCategory(JsonDocument& doc) const {
+        if (!entityCategory.isEmpty() && entityCategoryIsValid()) doc["ent_cat"] = entityCategory;
+    }
+    void addAttributesTopic(JsonDocument& doc) const {
+        if (!jsonAttributesTopic.isEmpty()) doc["json_attr_t"] = jsonAttributesTopic;
     }
 
     // Writes the key only where the value differs from what an absent key means.

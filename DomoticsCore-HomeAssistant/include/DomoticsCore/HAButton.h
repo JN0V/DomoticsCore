@@ -42,6 +42,8 @@ public:
         doc["dev"] = device;
 
         addAvailability(doc, availabilityTopic);
+        addEntityCategory(doc);
+        addAttributesTopic(doc);
 
         // Add button-specific fields
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());

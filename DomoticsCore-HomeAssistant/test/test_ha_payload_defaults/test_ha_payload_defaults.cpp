@@ -90,6 +90,19 @@ void test_a_button_honours_the_availability_opt_out() {
     TEST_ASSERT_TRUE(doc["avty_t"].isNull());
 }
 
+// A button builds its own document, without a state topic, and must still carry
+// the optional fields every entity takes.
+void test_a_button_keeps_its_category_and_attributes_topic() {
+    HAButton button("b", "Restart");
+    button.entityCategory = "config";
+    button.jsonAttributesTopic = "site/restart/attrs";
+    JsonDocument doc;
+    build(button, doc);
+    TEST_ASSERT_EQUAL_STRING("config", doc["ent_cat"].as<String>().c_str());
+    TEST_ASSERT_EQUAL_STRING("site/restart/attrs", doc["json_attr_t"].as<String>().c_str());
+    TEST_ASSERT_TRUE(doc["stat_t"].isNull());
+}
+
 void test_a_default_switch_states_no_payload() {
     JsonDocument doc;
     build(HASwitch("r", "Relay"), doc);
@@ -160,6 +173,7 @@ int runAllTests() {
     RUN_TEST(test_the_will_and_the_availability_publish_the_defaults);
     RUN_TEST(test_no_entity_states_the_availability_payloads);
     RUN_TEST(test_a_button_honours_the_availability_opt_out);
+    RUN_TEST(test_a_button_keeps_its_category_and_attributes_topic);
     RUN_TEST(test_a_default_switch_states_no_payload);
     RUN_TEST(test_a_switch_states_only_the_payload_its_caller_changed);
     RUN_TEST(test_a_binary_sensor_states_only_the_payload_its_caller_changed);
