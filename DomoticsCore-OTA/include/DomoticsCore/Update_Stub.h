@@ -75,11 +75,7 @@ inline void abort() {
 inline String errorString() { return "Update not supported on this platform"; }
 inline bool hasError() { return false; }
 
-inline bool requiresBuffering() { return false; }
-inline bool hasPendingData() { return false; }
-inline bool hasBufferOverflow() { return false; }
 inline size_t getBytesWritten() { return s_stubBytesWritten; }
-inline int processBuffer(String& error) { (void)error; return 0; }
 
 } // namespace OTAUpdate
 } // namespace HAL

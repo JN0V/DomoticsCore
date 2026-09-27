@@ -91,40 +91,10 @@ inline bool hasError() {
 }
 
 /**
- * @brief Check if buffering is required for this platform
- * With runAsync(true), direct writes are safe - no buffering needed
- */
-inline bool requiresBuffering() {
-    return false;
-}
-
-/**
- * @brief Check if buffer has pending data to process (no buffering used)
- */
-inline bool hasPendingData() {
-    return false;
-}
-
-/**
- * @brief Check if buffer overflow occurred (no buffering used)
- */
-inline bool hasBufferOverflow() {
-    return false;
-}
-
-/**
  * @brief Get bytes written to flash
  */
 inline size_t getBytesWritten() {
     return s_bytesWritten;
-}
-
-/**
- * @brief Process buffered data - no-op since we use async mode for direct writes
- */
-inline int processBuffer(String& error) {
-    (void)error;
-    return 0;
 }
 
 } // namespace OTAUpdate

@@ -560,10 +560,6 @@ All three platform implementations expose the same interface in `DomoticsCore::H
 | `HAL::OTAUpdate::abort()` | Cancel in-progress update |
 | `HAL::OTAUpdate::errorString()` | Last error description |
 | `HAL::OTAUpdate::hasError()` | Error flag |
-| `HAL::OTAUpdate::hasPendingData()` | Always returns `false` (legacy buffering API, now unused on all platforms) |
-| `HAL::OTAUpdate::processBuffer(error)` | No-op on all platforms (returns `0`). Retained for interface compatibility. |
-| `HAL::OTAUpdate::requiresBuffering()` | Returns `false` on all platforms (ESP8266 now uses `Update.runAsync(true)` for direct writes) |
-| `HAL::OTAUpdate::hasBufferOverflow()` | Always returns `false` (no buffering on any platform) |
 | `HAL::OTAUpdate::getBytesWritten()` | Total bytes committed to flash |
 | `HAL::SHA256` | SHA-256 context for download integrity verification |
 
@@ -601,4 +597,3 @@ These private methods of `OTAComponent` are documented for maintainers and AI ag
 | C14 | ~~Minor~~ | **Resolved (BUG-21).** `EVENT_START` and `EVENT_END` are emitted on both the download and the upload path. See the event table above. |
 | C15 | Minor | `State::Applying` exists in the enum but `transition(State::Applying, ...)` is never called. |
 | BUG-1 | Minor | `OTAWebUI::getWebUIVersion()` returns hardcoded `"1.4.0"` instead of `"1.4.1"`. |
-| LEGACY-1 | Cosmetic | `loop()` checks `hasPendingData()` / `processBuffer()` which are no-ops on all platforms since buffering was removed. |

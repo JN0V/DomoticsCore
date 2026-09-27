@@ -192,17 +192,11 @@ Tests run on `native` platform using the `Update_Stub.h` HAL. No real firmware f
 
 ### ESP32 (`Update_ESP32.h`)
 
-ESP32 can write directly to flash from async context (no yield panic). Uses the standard ESP32 `Update` library. All buffering API functions return `false`/no-op.
+ESP32 can write directly to flash from async context (no yield panic). Uses the standard ESP32 `Update` library.
 
 ### ESP8266 (`Update_ESP8266.h`)
 
 On ESP8266, the OTA HAL uses `Update.runAsync(true)` to enable direct flash writes from AsyncWebServer callbacks without `__yield` panic. This eliminates the need for buffered writes. When `size == 0`, the HAL calculates available sketch space via `ESP.getFreeSketchSpace()`.
-
-The buffering API functions still exist in the HAL for interface compatibility, but they are all no-ops:
-- `requiresBuffering()` returns `false`.
-- `hasPendingData()` returns `false`.
-- `hasBufferOverflow()` returns `false`.
-- `processBuffer()` is a no-op that returns `0`.
 
 Both ESP32 and ESP8266 now perform direct writes via `HAL::OTAUpdate::write()` and immediate finalization via `HAL::OTAUpdate::end()`.
 
@@ -222,11 +216,7 @@ All three implementations expose the same function set in `DomoticsCore::HAL::OT
 | `abort` | `void abort()` | Cancel in-progress update |
 | `errorString` | `String errorString()` | Last error description |
 | `hasError` | `bool hasError()` | Error flag |
-| `requiresBuffering` | `bool requiresBuffering()` | Always `false` on all platforms |
-| `hasPendingData` | `bool hasPendingData()` | Always `false` on all platforms |
-| `hasBufferOverflow` | `bool hasBufferOverflow()` | Always `false` on all platforms |
 | `getBytesWritten` | `size_t getBytesWritten()` | Total bytes committed to flash |
-| `processBuffer` | `int processBuffer(String&)` | No-op on all platforms (returns `0`) |
 
 ---
 
@@ -251,7 +241,6 @@ All three implementations expose the same function set in `DomoticsCore::HAL::OT
 - ~~**(C14)**~~ **Resolved (BUG-21).** `EVENT_START` and `EVENT_END` are emitted at the points this entry named: the beginning of a download or upload, and the end of the transfer before verification.
 - **(C15)** `State::Applying` is defined in the enum and checked in `isBusy()` / `stateToString()` but is never entered via `transition()`. Either introduce a transition to `Applying` after download completes (before `finalizeUpdateOperation`), or remove the state from the enum to match actual runtime behavior.
 - **(Bug)** `OTAWebUI::getWebUIVersion()` returns hardcoded `"1.4.0"` instead of reading `metadata.version` (which is `"1.4.1"`). Should be updated to match.
-- **(Unreachable code)** The `loop()` method still checks `HAL::OTAUpdate::hasPendingData()` and calls `HAL::OTAUpdate::processBuffer()`, and two sites test `requiresBuffering()`; all three return false or zero unconditionally on every platform since the buffering strategy was removed, so the branch and its error handling never run.
 - `setConfig()` logs three of the ten `OTAConfig` fields (`updateUrl`, `autoReboot`, `enableWebUIUpload`); a runtime change to `maxDownloadSize`, `requireUploadHash`, `requireDownloadHash` or `uploadIdleTimeoutSec` leaves no trace in the log. The ESP8266 log buffer (128 bytes) is the constraint a fuller line has to fit.
 - The four `toInt()` calls in `OTA.cpp:717-722` parse a version string from the
   update manifest, so `"1.2x"` reads as a minor of 2 and a letter reads as 0.
