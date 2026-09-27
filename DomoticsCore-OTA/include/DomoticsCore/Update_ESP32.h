@@ -68,41 +68,10 @@ inline bool hasError() {
 }
 
 /**
- * @brief Check if buffering is required for this platform
- */
-inline bool requiresBuffering() {
-    return false;
-}
-
-/**
- * @brief Check if buffer has pending data to process (always false on ESP32)
- */
-inline bool hasPendingData() {
-    return false;
-}
-
-/**
- * @brief Check if buffer overflow occurred (always false on ESP32)
- */
-inline bool hasBufferOverflow() {
-    return false;
-}
-
-/**
  * @brief Get bytes written to flash
  */
 inline size_t getBytesWritten() {
     return bytesWrittenCounter();
-}
-
-/**
- * @brief Process buffered data - no-op on ESP32 (direct write)
- * @param error Output string set if error occurs
- * @return 0 = no-op, never returns 1 or -1 on ESP32
- */
-inline int processBuffer(String& error) {
-    (void)error;
-    return 0;  // No buffering needed
 }
 
 } // namespace OTAUpdate

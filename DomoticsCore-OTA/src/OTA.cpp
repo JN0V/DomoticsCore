@@ -104,39 +104,6 @@ ComponentStatus OTAComponent::begin() {
 void OTAComponent::loop() {
     const unsigned long now = HAL::Platform::getMillis();
 
-    // Process buffered upload data if platform requires it (ESP8266)
-    // This is safe to call on all platforms - it's a no-op when not needed
-    if (uploadSession.active && HAL::OTAUpdate::hasPendingData()) {
-        String bufferError;
-        int result = HAL::OTAUpdate::processBuffer(bufferError);
-
-        if (result < 0) {
-            // Error processing buffer
-            lastError = bufferError;
-            uploadSession.error = lastError;
-            HAL::OTAUpdate::abort();
-            uploadSha.abort();
-            uploadSession.active = false;
-            transition(State::Error, lastError);
-            publishStatusEvent(DomoticsCore::OTAEvents::EVENT_ERROR, [this](JsonDocument& doc){
-                doc["success"] = false;
-                doc["error"] = lastError.c_str();
-                doc["source"] = "upload";
-            }, false);
-            return;
-        } else if (result > 0) {
-            // Buffer processing complete - upload finalized
-            downloadedBytes = HAL::OTAUpdate::getBytesWritten();
-            uploadSession.success = true;
-            uploadSession.active = false;
-            DLOG_I(LOG_OTA, "Upload finalized | bytes=%lu", static_cast<unsigned long>(downloadedBytes));
-            finalizeUpdateOperation("upload", config.autoReboot);
-            return;
-        }
-        // result == 0: continue processing in next loop iteration
-        downloadedBytes = HAL::OTAUpdate::getBytesWritten();
-    }
-
     if (pendingUrlUpdate) {
         const bool force = pendingUrlForce;
         const String url = pendingUrl;
@@ -222,7 +189,6 @@ bool OTAComponent::beginUpload(size_t expectedSize, const String& expectedSha256
         return false;
     }
 
-    // Initialize HAL upload (handles buffering internally on platforms that need it)
     size_t updateSize = expectedSize > 0 ? expectedSize : UPDATE_SIZE_UNKNOWN;
     if (!HAL::OTAUpdate::begin(updateSize)) {
         lastError = HAL::OTAUpdate::errorString();
@@ -301,15 +267,9 @@ bool OTAComponent::acceptUploadChunk(const uint8_t* data, size_t length) {
         return false;
     }
 
-    // Write to HAL (buffers internally on ESP8266, direct write on ESP32)
     size_t written = HAL::OTAUpdate::write(const_cast<uint8_t*>(data), length);
     if (written != length) {
-        // Check for buffer overflow first
-        if (HAL::OTAUpdate::hasBufferOverflow()) {
-            lastError = "Upload buffer overflow - data arriving faster than flash write";
-        } else {
-            lastError = HAL::OTAUpdate::errorString();
-        }
+        lastError = HAL::OTAUpdate::errorString();
         uploadSession.error = lastError;
         HAL::OTAUpdate::abort();
         uploadSha.abort();
@@ -329,11 +289,7 @@ bool OTAComponent::acceptUploadChunk(const uint8_t* data, size_t length) {
 
     uploadSession.received += written;
 
-    // On platforms without buffering (ESP32), downloadedBytes = received
-    // On platforms with buffering (ESP8266), downloadedBytes is updated in loop()
-    if (!HAL::OTAUpdate::requiresBuffering()) {
-        downloadedBytes = uploadSession.received;
-    }
+    downloadedBytes = uploadSession.received;
 
     // Update progress based on received bytes
     if (uploadSession.expected > 0) {
@@ -434,8 +390,6 @@ bool OTAComponent::finalizeUpload() {
         return false;
     }
 
-    // On platforms with buffering, end() just marks as finalizing
-    // Actual finalization happens in loop() when buffer is flushed
     if (!HAL::OTAUpdate::end(true)) {
         lastError = HAL::OTAUpdate::errorString();
         uploadSession.error = lastError;
@@ -450,15 +404,10 @@ bool OTAComponent::finalizeUpload() {
         return false;
     }
 
-    // On platforms without buffering (ESP32), finalize immediately
-    if (!HAL::OTAUpdate::requiresBuffering()) {
-        uploadSession.success = true;
-        uploadSession.active = false;
-        DLOG_I(LOG_OTA, "Upload finalized | bytes=%lu", static_cast<unsigned long>(uploadSession.received));
-        finalizeUpdateOperation("upload", config.autoReboot);
-    }
-    // On platforms with buffering (ESP8266), loop() will complete finalization
-
+    uploadSession.success = true;
+    uploadSession.active = false;
+    DLOG_I(LOG_OTA, "Upload finalized | bytes=%lu", static_cast<unsigned long>(uploadSession.received));
+    finalizeUpdateOperation("upload", config.autoReboot);
     return true;
 }
 
@@ -530,12 +479,6 @@ bool OTAComponent::performCheck(bool force) {
         scheduleNextCheck();
         return false;
     }
-    // Refused before the download opens an update, as beginUpload() refuses before erasing.
-    if (config.requireDownloadHash && expectedSha256.isEmpty()) {
-        lastError = "Firmware hash required";
-        transition(State::Error, lastError);
-        return false;
-    }
 
     bool ok = installFromUrl(manifest.url, manifest.sha256, force || config.allowDowngrades);
     if (!manifest.version.isEmpty()) {
@@ -584,6 +527,12 @@ bool OTAComponent::installFromUrl(const String& url, const String& expectedSha25
     }
     if (!downloader) {
         lastError = "No downloader set";
+        transition(State::Error, lastError);
+        return false;
+    }
+    // Refused before the download opens an update, as beginUpload() refuses before erasing.
+    if (config.requireDownloadHash && expectedSha256.isEmpty()) {
+        lastError = "Firmware hash required";
         transition(State::Error, lastError);
         return false;
     }
