@@ -29,6 +29,10 @@ inline constexpr bool operator&(AlarmFeature a, AlarmFeature b) {
     return (static_cast<uint8_t>(a) & static_cast<uint8_t>(b)) != 0;
 }
 
+constexpr AlarmFeature kAllAlarmFeatures = AlarmFeature::ArmHome | AlarmFeature::ArmAway |
+    AlarmFeature::ArmNight | AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass |
+    AlarmFeature::Trigger;
+
 /**
  * @brief HA alarm_control_panel state constants (zero per-instance heap)
  */
@@ -97,12 +101,11 @@ public:
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
         doc["cmd_t"] = buf;
 
-        // Home Assistant reads an absent code_*_required as true where this
-        // component defaults to false, so each key is written where its value can
-        // act: arming and disarming always, triggering where the panel offers it.
-        doc["cod_arm_req"] = codeArmRequired;
-        doc["cod_dis_req"] = codeDisarmRequired;
-        if (supportedFeatures & AlarmFeature::Trigger) doc["cod_trig_req"] = codeTriggerRequired;
+        // Home Assistant reads an absent code_*_required as true, so only a false
+        // one is written; the trigger key only where the panel offers triggering.
+        if (!codeArmRequired) doc["cod_arm_req"] = false;
+        if (!codeDisarmRequired) doc["cod_dis_req"] = false;
+        if ((supportedFeatures & AlarmFeature::Trigger) && !codeTriggerRequired) doc["cod_trig_req"] = false;
 
         // The code itself, and the template that carries it, only matter when a
         // code travels — configured here, or asked of the user by Home Assistant.
@@ -116,7 +119,9 @@ public:
         // absent key, spending the discovery field to state what it already knows.
         // The constants above are the agreement, and a native test holds them to it.
 
-        // Supported features array (built from bitmask)
+        // Every feature is Home Assistant's default for an absent list.
+        if ((static_cast<uint8_t>(supportedFeatures) & static_cast<uint8_t>(kAllAlarmFeatures)) ==
+            static_cast<uint8_t>(kAllAlarmFeatures)) return;
         JsonArray features = doc["sup_feat"].to<JsonArray>();
         if (supportedFeatures & AlarmFeature::ArmHome)         features.add("arm_home");
         if (supportedFeatures & AlarmFeature::ArmAway)         features.add("arm_away");

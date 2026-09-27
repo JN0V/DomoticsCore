@@ -693,29 +693,30 @@ Combine with bitwise OR: `AlarmFeature::ArmAway | AlarmFeature::ArmHome | AlarmF
 |----------|------|---------|-------------|
 | `code` | `String` | `""` | PIN code sent to HA frontend for keypad display; the library does NOT validate it -- passthrough only |
 | `supportedFeatures` | `AlarmFeature` | `ArmAway` | Bitmask of supported arm modes |
-| `codeArmRequired` | `bool` | `false` | Require code for arm operations; always published, since Home Assistant reads an absent key as `true` |
-| `codeDisarmRequired` | `bool` | `false` | Require code for disarm; always published, for the same reason |
-| `codeTriggerRequired` | `bool` | `false` | Require code for trigger; published on panels that declare the `Trigger` feature |
+| `codeArmRequired` | `bool` | `false` | Require code for arm operations; published only when `false`, since Home Assistant reads an absent key as `true` |
+| `codeDisarmRequired` | `bool` | `false` | Require code for disarm; published only when `false`, for the same reason |
+| `codeTriggerRequired` | `bool` | `false` | Require code for trigger; published only when `false`, on panels that declare the `Trigger` feature |
 | `lastCommand` | `char[64]` | `""` | Parsed command from last `handleCommand()` (e.g., `"ARM_AWAY"`) |
 | `lastCode` | `char[32]` | `""` | Parsed code from last `handleCommand()` (e.g., `"1234"`) |
 
 ### Discovery Fields Added
 
 - `cmd_t`
-- `cod_arm_req` and `cod_dis_req`, always. Home Assistant reads an **absent**
-  `code_arm_required` or `code_disarm_required` as `true`, and both default to
-  `false` here: an omitted key advertises the reverse of the entity's own
-  configuration. A panel published without `cod_arm_req` is created, reports its
+- `cod_arm_req` and `cod_dis_req`, each when it is `false`. Home Assistant reads
+  an **absent** `code_arm_required` or `code_disarm_required` as `true`, and both
+  default to `false` here: a `true` is left to that default, and a `false` must be
+  stated or it advertises the reverse of the entity's own configuration. A panel published without `cod_arm_req` is created, reports its
   state and disarms, and cannot be armed from the interface at all — Home
   Assistant demands a code, and with no `code` configured `code_format` is null,
   so the card cannot offer a keypad either.
-- `cod_trig_req`, on a panel whose `supportedFeatures` includes `Trigger`. The
-  trigger service requires that feature, so the key can change nothing on a panel
-  that does not declare it and is left out.
+- `cod_trig_req: false`, on a panel whose `supportedFeatures` includes `Trigger`
+  and does not require a code to trigger. The trigger service requires that
+  feature, so the key can change nothing on a panel that does not declare it.
 - `code`, when one is configured.
 - `cmd_tpl` (`{{ action }}{% if code %} {{ code }}{% endif %}`), when a code
   travels: one configured here, or one Home Assistant asks the user for.
-- `sup_feat` JSON array built from bitmask
+- `sup_feat` JSON array built from bitmask, unless the panel offers all six
+  features, which is Home Assistant's default for an absent list
 
 No `pl_*` key is published. Every command payload this panel accepts — `ARM_HOME`,
 `DISARM`, the seven of `AlarmPanelCommand` — is the value Home Assistant assumes
@@ -731,8 +732,10 @@ A code-less panel with two arm modes (`arm_away`, `arm_night`), the default
 device block, a 17-character node id and a 13-character entity id publishes a
 496-character document; the two requirement keys are 40 of those characters,
 against the 699-character field of the section above. The same panel with all six
-arm modes fits as well, at 507 characters on a 9-character node id — it did not
-while the payload constants were written out.
+arm modes fits as well, at 415 characters on a 9-character node id. Requiring a
+code for everything on that panel, with a 32-character node id, a configuration
+URL and an area, publishes 591 characters; five modes and a code that is not
+required is the shape still over the field, at 713.
 
 ### Command Handling
 
@@ -1034,7 +1037,6 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
   "ic": "mdi:shield-home",
   "code": "1234",
   "cod_arm_req": false,
-  "cod_dis_req": true,
   "cod_trig_req": false,
   "cmd_tpl": "{{ action }}{% if code %} {{ code }}{% endif %}",
   "sup_feat": ["arm_home", "arm_away", "trigger"],
@@ -1043,7 +1045,7 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
 }
 ```
 
-Note: `cod_arm_req` and `cod_dis_req` are **always** included — Home Assistant defaults an absent `code_*_required` to `true`, the reverse of this component's default, so silence would make every code-less panel unarmable. `cod_trig_req` is included on panels declaring the `Trigger` feature. `code` and `cmd_tpl` are included when a code travels. No `pl_*` key is published at all: each would restate the payload Home Assistant already assumes.
+Note: a `code_*_required` key is included only when it is `false` — Home Assistant defaults an absent one to `true`, the reverse of this component's default, so silence would make every code-less panel unarmable, and this panel's required disarm code is left to that default. `cod_trig_req` is considered only on panels declaring the `Trigger` feature. `code` and `cmd_tpl` are included when a code travels. No `pl_*` key is published at all: each would restate the payload Home Assistant already assumes.
 
 ---
 

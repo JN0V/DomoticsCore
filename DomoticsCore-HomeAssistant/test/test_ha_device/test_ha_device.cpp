@@ -47,7 +47,8 @@ void tearDown(void) {
 static HomeAssistantComponent* publishPanel(const char* nodeId, const char* entityId,
                                             const char* entityName, const char* icon,
                                             AlarmFeature features,
-                                            const char* code = nullptr) {
+                                            const char* code = nullptr,
+                                            bool codeRequired = true) {
     HAConfig config;
     HA::setField(config.nodeId, nodeId, sizeof(config.nodeId));
     if (code) {
@@ -58,7 +59,8 @@ static HomeAssistantComponent* publishPanel(const char* nodeId, const char* enti
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     HomeAssistantComponent* haPtr = ha.get();
     if (code) {
-        ha->addAlarmControlPanel(entityId, entityName, icon, features, code, true, true, true);
+        ha->addAlarmControlPanel(entityId, entityName, icon, features, code,
+                                 codeRequired, codeRequired, codeRequired);
     } else {
         ha->addAlarmControlPanel(entityId, entityName, icon, features);
     }
@@ -121,20 +123,31 @@ void test_every_arm_mode_still_fits() {
         AlarmFeature::ArmHome | AlarmFeature::ArmAway | AlarmFeature::ArmNight |
         AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass | AlarmFeature::Trigger);
 
-    TEST_ASSERT_EQUAL_UINT32_MESSAGE(507, (uint32_t)capturedLength,
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(415, (uint32_t)capturedLength,
         "the widest panel moved: re-derive the figures the reference states");
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, ha->getStatistics().discoveryRefused,
         "the widest code-less panel is over the field again");
 }
 
-// And the shape nothing rescues: the same panel with a code, a long node id.
+// Every mode, a code required for everything, a long node id: its requirement
+// keys and feature list are Home Assistant's defaults, so it fits.
+void test_a_panel_requiring_a_code_for_everything_fits_on_the_board() {
+    HomeAssistantComponent* ha = publishPanel("abcdefghijklmnopqrstuvwxyz012345",
+        "alarm", "Alarm Panel", "mdi:shield-lock", kAllAlarmFeatures, "5678");
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(591, (uint32_t)capturedLength,
+        "the board builds a different document from the host suites");
+    TEST_ASSERT_EQUAL_UINT32(0, ha->getStatistics().discoveryRefused);
+}
+
+// A shape still over the field: five modes, a code configured but not required.
 // Refused whole rather than published cut, and counted.
 void test_a_document_over_the_field_is_refused_on_the_board() {
     HomeAssistantComponent* ha = publishPanel("abcdefghijklmnopqrstuvwxyz012345",
         "alarm", "Alarm Panel", "mdi:shield-lock",
         AlarmFeature::ArmHome | AlarmFeature::ArmAway | AlarmFeature::ArmNight |
-        AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass | AlarmFeature::Trigger,
-        "5678");
+        AlarmFeature::ArmVacation | AlarmFeature::ArmCustomBypass,
+        "5678", false);
 
     TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, publishes,
         "nothing was published at all, so a length of zero says nothing");
@@ -170,6 +183,7 @@ int runAllTests() {
     RUN_TEST(test_a_code_less_panel_fits_the_event_field_on_the_board);
     RUN_TEST(test_the_requirement_keys_are_on_the_wire);
     RUN_TEST(test_every_arm_mode_still_fits);
+    RUN_TEST(test_a_panel_requiring_a_code_for_everything_fits_on_the_board);
     RUN_TEST(test_a_document_over_the_field_is_refused_on_the_board);
     RUN_TEST(test_republishing_discovery_leaves_the_heap_where_it_was);
     return UNITY_END();
