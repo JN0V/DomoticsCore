@@ -161,6 +161,8 @@ public:
 
         schemaProbes_.tick();
 
+        registry->applyPendingEnables([this](const String& name) { webSocket->broadcastSchemaChange(name); });
+
         if (webSocket->shouldSendUpdates()) {
             sendWebSocketUpdates();
         }
@@ -581,22 +583,19 @@ private:
                 enabled = (v == "true" || v == "1" || v == "on");
             }
 
-            auto result = registry->enableComponent(name, enabled);
-
+            // A component's lifecycle and the registry belong to the loop's task:
+            // the request is queued here and applied by loop().
             JsonDocument doc;
-            doc["success"] = result.success;
-            doc["name"] = result.name;
-            doc["enabled"] = result.enabled;
-            if (!result.warning.isEmpty()) {
-                doc["warning"] = result.warning;
+            doc["name"] = name;
+            doc["enabled"] = enabled;
+            if (name == "WebUI" && !enabled) {
+                doc["success"] = false;
+                doc["warning"] = "Disabling WebUI may make the UI inaccessible until reboot/reset.";
+            } else {
+                doc["success"] = registry->requestEnable(name, enabled);
             }
-            
             serializeJson(doc, *response);
             request->send(response);
-
-            if (result.found) {
-                webSocket->broadcastSchemaChange(name);
-            }
         });
 
         // Context schema endpoint - loads full schema for a specific context
@@ -759,10 +758,11 @@ private:
     // where native tests reach it — BUG-32's escaping and the crowding it can
     // cause are pinned there, not here.
     int buildUpdateJson(bool forceFull) {
-        return WebUI::buildUpdateJson(wsBuffer_, sizeof(wsBuffer_),
-            registry->getContextProviders(), config.deviceName,
-            HAL::Platform::getMillis(), HAL::Platform::getFreeHeap(),
-            getWebSocketClients(), forceFull, forceNextUpdate);
+        return registry->withContextProviders([&](const std::map<String, IWebUIProvider*>& providers) {
+            return WebUI::buildUpdateJson(wsBuffer_, sizeof(wsBuffer_), providers, config.deviceName,
+                HAL::Platform::getMillis(), HAL::Platform::getFreeHeap(),
+                getWebSocketClients(), forceFull, forceNextUpdate);
+        });
     }
 
     void sendWebSocketUpdates() {

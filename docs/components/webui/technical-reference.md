@@ -680,7 +680,7 @@ Returns a JSON array of all registered providers with name, version, enabled/dis
 
 ### `POST /api/components/enable`
 
-POST body: `name=ComponentName&enabled=true`. Triggers component lifecycle callbacks.
+POST body: `name=ComponentName&enabled=true`. The request is queued and applied by the component's next `loop()`, which calls the component's `begin()` or `shutdown()`, updates the provider registry and broadcasts the schema change; the handler never runs a lifecycle callback on the web server's task. `success` means queued: it is `false` when the queue (four requests) is full or the name is empty or longer than 31 characters, and a name no provider carries is logged and ignored when applied. Disabling `WebUI` is refused at once with a `warning`.
 
 ### `GET /api/system/info`
 
