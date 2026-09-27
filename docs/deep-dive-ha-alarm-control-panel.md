@@ -219,9 +219,9 @@ MQTT broker → mqtt/connected event
                  └─> HAAlarmControlPanel::buildDiscoveryPayload()
                       ├─> Base: name, uniq_id, stat_t, icon, device, availability
                       ├─> cmd_t
-                      ├─> cod_arm_req, cod_dis_req (always), cod_trig_req (with Trigger)
+                      ├─> cod_arm_req, cod_dis_req, cod_trig_req with Trigger (each only when false)
                       ├─> [if a code travels] code, cmd_tpl
-                      └─> sup_feat[] array
+                      └─> sup_feat[] array (omitted when all six)
 ```
 
 ### 3. Command Handling
@@ -287,7 +287,6 @@ Topic: `homeassistant/alarm_control_panel/esp32-demo/alarm/config`
   "avty_t": "homeassistant/esp32-demo/availability",
   "code": "1234",
   "cod_arm_req": false,
-  "cod_dis_req": true,
   "cod_trig_req": false,
   "cmd_tpl": "{{ action }}{% if code %} {{ code }}{% endif %}",
   "sup_feat": ["arm_home", "arm_away", "trigger"]
