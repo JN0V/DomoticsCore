@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <strings.h>
 #include <functional>
 #include <map>
 #include <memory>
@@ -84,6 +85,10 @@ public:
     uint32_t getRxTimeout() const { return rxTimeoutSeconds; }
 
     uint32_t rxTimeoutSeconds = 0;
+
+    /// The peer's IPv4 address, as the board's IPAddress converts to.
+    uint32_t remoteIP() const { return remoteAddress; }
+    uint32_t remoteAddress = 0;
 };
 
 class AsyncWebServerResponse {
@@ -169,6 +174,12 @@ public:
     }
 
     size_t contentLength() const { return contentLength_; }
+
+    /// Credentials set by setCredentials() arrive as an Authorization header, as on the wire.
+    bool hasHeader(const String& name) const {
+        if (hasCredentials && strcasecmp(name.c_str(), "Authorization") == 0) return true;
+        return getHeader(name) != nullptr;
+    }
 
     const AsyncWebHeader* getHeader(const String& name) const {
         for (const auto& h : headers_) {

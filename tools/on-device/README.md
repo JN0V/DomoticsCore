@@ -507,6 +507,23 @@ The page itself (`/`) is in the route list: its gate reads the live
 configuration since SEC-13, so a runtime `enable_auth` flip is checked
 here too.
 
+## `webui_auth_delay_check.py`
+
+How long a wrong WebUI password makes its address wait:
+
+```
+python3 tools/on-device/webui_auth_delay_check.py http://device.local --user admin --password secret
+```
+
+Enables authentication through `webui_settings`, then times the right
+password after one and two wrong ones (refused inside 1 s and 2 s, read
+after), checks that a request with no credentials does not count, and sends
+a 64-byte upload with the right password inside a wait, which must be
+refused `401`. Restores the auth state on exit. A device without the wait
+answers `200` on every "inside" row; read the serial port to see that the
+refused upload printed no `Upload` line. Each case waits 9 s for the previous
+one's wait to lapse, so a run takes about a minute.
+
 ## `coredump_check.py`
 
 An ESP32 core dump off the device and decoded:

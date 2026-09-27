@@ -60,7 +60,7 @@ Constructs the component with the given configuration. Sets `metadata.name = "We
 | `unregisterProvider` | `void unregisterProvider(IWebUIProvider* provider)` | Remove all contexts contributed by a provider. |
 | `registerProviderFactory` | `void registerProviderFactory(const String& typeKey, std::function<IWebUIProvider*(IComponent*)> factory)` | Register a factory that creates providers for components matching a type key. |
 | `registerApiRoute` | `void registerApiRoute(const String& uri, WebRequestMethod method, ArRequestHandlerFunction handler)` | Register a custom REST endpoint on the web server. |
-| `authorize` | `bool authorize(AsyncWebServerRequest* request) const` | The auth gate every route shares: `true` when `enableAuth` is off or the request carries this device's credentials, read from the live configuration. A route registered through `registerApiRoute()` gates itself with `if (!webui->authorize(request)) return request->requestAuthentication();`. |
+| `authorize` | `bool authorize(AsyncWebServerRequest* request) const` | The auth gate every route shares: `true` when `enableAuth` is off or the request carries this device's credentials, read from the live configuration. A wrong password makes its address wait: for 1 s after the first failure, doubling per consecutive failure up to `authDelayMaxMs`, a request from that address is answered `false` without its credentials being read. Nothing is blocked and no connection is closed; a success, or a minute without failures, clears the address, and four addresses are remembered at a time. A request with no `Authorization` header is the browser asking for the challenge and does not count. A route registered through `registerApiRoute()` gates itself with `if (!webui->authorize(request)) return request->requestAuthentication();`. |
 | `registerApiUploadRoute` | `void registerApiUploadRoute(const String& uri, ArRequestHandlerFunction handler, ArUploadHandlerFunction uploadHandler)` | Register a file upload endpoint. |
 
 ### Configuration & State
@@ -574,6 +574,7 @@ Configuration struct using fixed-size `char[]` arrays to avoid heap fragmentatio
 | `enableAuth` | `bool` | `false` | Enable HTTP basic authentication. A non-empty `password` is required: a config that enables authentication with an empty password is applied with `enableAuth` cleared and a warning (`setConfig()`, `begin()`), and the settings card refuses to enable it before a password is set, or to empty the password while it is on. The next settings save then persists the cleared flag. |
 | `username` | `char[32]` | `"admin"` | Auth username. |
 | `password` | `char[48]` | `""` | Auth password. |
+| `authDelayMaxMs` | `uint32_t` | `8000` | Cap of the wait a wrong password puts on its address before its next attempt is read (see `authorize()`). `0` disables the wait. |
 | `maxWebSocketClients` | `int` | `3` | Maximum simultaneous clients (adapted at runtime by MemoryManager). |
 | `apiTimeout` | `int` | `5000` | API request timeout in ms. |
 | `enableCompression` | `bool` | `true` | Enable gzip content encoding. |
