@@ -173,7 +173,7 @@ Stops connection attempts, releases a scan still in flight (`scanDelete()` and t
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| `scanNetworks()` | `bool scanNetworks(std::vector<String>& networks)` | Synchronous scan, fills vector with "SSID (RSSI dBm)" strings |
+| `scanNetworks()` | `bool scanNetworks(std::vector<String>& networks)` | Synchronous scan, fills vector with "SSID (RSSI dBm)" strings, then releases the SDK's result list: read the vector, not `HAL::WiFiHAL::getScannedSSID()`, afterwards |
 | `startScanAsync()` | `bool startScanAsync()` | Start non-blocking scan (returns immediately); `false` when one is already running |
 | `getLastScanSummary()` | `String getLastScanSummary() const` | Returns last scan results as comma-separated string |
 

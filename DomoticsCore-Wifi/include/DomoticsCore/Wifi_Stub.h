@@ -95,6 +95,7 @@ inline std::vector<StubNetwork>& stubbedNetworks() {
 // is how the failure branches are reached (-1 for the synchronous scan guard,
 // -2 for WIFI_SCAN_FAILED on the asynchronous one).
 inline int16_t stubbedScanResult = 0;
+inline int scanDeleteCallsForTest = 0;  // counted by scanDelete() below
 
 inline void setScannedNetworksForTest(std::vector<StubNetwork> networks) {
     stubbedNetworks() = std::move(networks);
@@ -110,6 +111,7 @@ inline void resetScanForTest() {
     stubbedNetworks().clear();
     stubbedNetworks().shrink_to_fit();
     stubbedScanResult = 0;
+    scanDeleteCallsForTest = 0;
 }
 
 inline void init() {}
@@ -165,9 +167,9 @@ inline int16_t scanComplete() {
     if (stubbedScanResult < 0) return stubbedScanResult;
     return static_cast<int16_t>(stubbedNetworks().size());
 }
-// No-op: the scripted table is owned by whichever test set it, not by the
-// component under test. On a real SDK this frees the scan-result list.
-inline void scanDelete() {}
+// Counted, not cleared: the scripted table is owned by whichever test set it.
+// On a real SDK this frees the scan-result list.
+inline void scanDelete() { ++scanDeleteCallsForTest; }
 inline void disconnectAndOff() { ++stubWifiState().disconnectAndOffCalls; }
 inline uint8_t getRawStatus() { return stubWifiState().rawStatus; }
 

@@ -108,6 +108,7 @@ struct ScanProbe {
     uint32_t cyclesAtHeader = 0;
     uint32_t cyclesAtLastEntry = 0;
     uint32_t heapAtLastEntry = 0;
+    uint32_t heapAfterLoop = 0;  // on the line after the loop, before the SDK list is released
 
     void reset() {
         armed = false;
@@ -116,6 +117,7 @@ struct ScanProbe {
         cyclesAtHeader = 0;
         cyclesAtLastEntry = 0;
         heapAtLastEntry = 0;
+        heapAfterLoop = 0;
     }
 
     uint32_t loopCycles() const {
@@ -152,6 +154,8 @@ static void onLog(LogLevel level, const char* tag, const char* message) {
         probe.entries++;
         probe.cyclesAtLastEntry = ESP.getCycleCount();
         probe.heapAtLastEntry = ESP.getFreeHeap();
+    } else if (level == LOG_LEVEL_DEBUG && strncmp(message, "Scan listed ", 12) == 0) {
+        probe.heapAfterLoop = ESP.getFreeHeap();
     }
 }
 
@@ -255,8 +259,10 @@ void test_wifi_scan_networks_entry_is_not_copied() {
 
     probe.armed = true;
     const bool ok = f.wifi.scanNetworks(networks);
-    const uint32_t heapAfter = ESP.getFreeHeap();
     probe.armed = false;
+    // Sampled after the loop and before scanNetworks() releases the SDK's list,
+    // which would otherwise read as a copy freed on the way out.
+    const uint32_t heapAfter = probe.heapAfterLoop;
 
     const uint32_t heapAtLast = probe.heapAtLastEntry;
     const int entries = probe.entries;
@@ -268,10 +274,11 @@ void test_wifi_scan_networks_entry_is_not_copied() {
     Serial.printf("  Entries seen by the probe:   %d\n", entries);
     Serial.printf("  Cycles across the loop:      %u\n", (unsigned)cycles);
     Serial.printf("  Free heap in last iteration: %u\n", (unsigned)heapAtLast);
-    Serial.printf("  Free heap after the return:  %u\n", (unsigned)heapAfter);
+    Serial.printf("  Free heap after the loop:    %u\n", (unsigned)heapAfter);
     Serial.printf("  Held at the last iteration:  %d\n", (int)held);
 
     TEST_ASSERT_TRUE_MESSAGE(ok, "scanNetworks() returned false -- the scan failed");
+    TEST_ASSERT_TRUE_MESSAGE(heapAfter != 0, "the probe never saw the line after the loop");
 
     // Non-vacuity, before anything is measured. Each of these is a way this
     // test could pass while measuring nothing at all.
@@ -352,6 +359,38 @@ void test_wifi_scan_networks_entry_is_not_copied() {
 }
 
 // ============================================================================
+// scanNetworks() releases the SDK's result list before returning
+// ============================================================================
+
+// Calibration-free: after scanNetworks() returns and its vector is gone, an
+// explicit scanDelete() must free nothing more. Left to the SDK, the list it
+// frees is every network the scan found.
+void test_wifi_sync_scan_releases_the_sdk_list() {
+    requireRadio();
+    IdleWifi f;
+
+    int found = 0;
+    {
+        std::vector<String> networks;
+        TEST_ASSERT_TRUE(f.wifi.scanNetworks(networks));
+        found = (int)networks.size();
+    }
+    TEST_ASSERT_TRUE_MESSAGE(found > 0, "the scan found nothing, so there was no list to release");
+    const uint32_t afterReturn = ESP.getFreeHeap();
+    HAL::WiFiHAL::scanDelete();
+    const uint32_t afterDelete = ESP.getFreeHeap();
+    const int freedByDelete = (int)afterDelete - (int)afterReturn;
+
+    Serial.printf("\n[WIFI SCAN LIST]\n  networks: %d, freed by a later scanDelete(): %d B\n",
+                  found, freedByDelete);
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "a scanDelete() after scanNetworks() freed %d B over %d networks: the SDK list outlived the call",
+             freedByDelete, found);
+    TEST_ASSERT_TRUE_MESSAGE(freedByDelete < 16, msg);
+}
+
+// ============================================================================
 // The async summary — the loop nothing had ever executed
 // ============================================================================
 
@@ -365,6 +404,7 @@ void test_wifi_scan_networks_entry_is_not_copied() {
 // evidence: this test has no self-contained discriminating assertion, and the
 // cycle count is reported for the two-run removal check rather than compared
 // against a threshold.
+
 void test_wifi_async_scan_summary() {
     requireRadio();
 
@@ -465,6 +505,7 @@ void setup() {
 
     RUN_TEST(test_wifi_scan_sees_networks);
     RUN_TEST(test_wifi_scan_networks_entry_is_not_copied);
+    RUN_TEST(test_wifi_sync_scan_releases_the_sdk_list);
     RUN_TEST(test_wifi_async_scan_summary);
 
     UNITY_END();
