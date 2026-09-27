@@ -3006,8 +3006,8 @@ one worth a one-line change, and six rows that are not defects.
   panel's figures move by the 45: 541 → 496, 552 → 507, 546 → 501, and the shape
   nothing rescues 786 → 741, still refused.
 - **Verification**: a new native suite, 9 cases, 7 red before the fix; seven
-  removal checks, each red. The device suite's pins are updated and **have not run
-  on a board**.
+  removal checks, each red. `test_ha_device` with the moved pins: 5/5 on the
+  WROOM-32D, 9/9 on the nodemcuv2.
 
 ### TEST-13 — the native `String` converter reads a missing JSON key as an empty string, not as the default [LOW] — **NEW (2026-09-26, by BUG-68's review)**
 
