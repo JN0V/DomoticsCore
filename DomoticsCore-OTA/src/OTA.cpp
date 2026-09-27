@@ -62,8 +62,18 @@ bool OTAComponent::shouldCheckNow() const {
 }
 
 bool OTAComponent::triggerUpdateFromUrl(const String& url, bool force) {
+    return triggerUpdateFromUrl(url, String(""), force);
+}
+
+bool OTAComponent::triggerUpdateFromUrl(const String& url, const String& expectedSha256, bool force) {
     if (url.isEmpty()) return false;
+    if (config.requireDownloadHash && expectedSha256.isEmpty()) {
+        lastError = "Firmware hash required";
+        DLOG_W(LOG_OTA, "URL install refused: requireDownloadHash is set and no SHA-256 was supplied");
+        return false;
+    }
     pendingUrl = url;
+    pendingUrlSha256 = expectedSha256;
     pendingUrlForce = force;
     pendingUrlUpdate = true;
     return true;
@@ -81,6 +91,7 @@ ComponentStatus OTAComponent::begin() {
     pendingUrlUpdate = false;
     pendingUrlForce = false;
     pendingUrl.clear();
+    pendingUrlSha256.clear();
     uploadSession = UploadSession{};
     progress = 0.0f;
     downloadedBytes = 0;
@@ -129,10 +140,12 @@ void OTAComponent::loop() {
     if (pendingUrlUpdate) {
         const bool force = pendingUrlForce;
         const String url = pendingUrl;
+        const String sha256 = pendingUrlSha256;
         pendingUrlUpdate = false;
         pendingUrlForce = false;
         pendingUrl.clear();
-        installFromUrl(url, "", force);
+        pendingUrlSha256.clear();
+        installFromUrl(url, sha256, force);
     } else if (pendingCheck) {
         const bool force = pendingForce;
         pendingCheck = false;
@@ -515,6 +528,12 @@ bool OTAComponent::performCheck(bool force) {
         lastError = "Manifest missing URL";
         transition(State::Error, lastError);
         scheduleNextCheck();
+        return false;
+    }
+    // Refused before the download opens an update, as beginUpload() refuses before erasing.
+    if (config.requireDownloadHash && expectedSha256.isEmpty()) {
+        lastError = "Firmware hash required";
+        transition(State::Error, lastError);
         return false;
     }
 

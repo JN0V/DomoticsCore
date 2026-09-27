@@ -27,6 +27,7 @@ struct OTAConfig {
     size_t maxDownloadSize = 0;         //!< Reject binaries larger than this (0 = unlimited)
     bool enableWebUIUpload = true;      //!< Allow manual firmware upload via WebUI helpers
     bool requireUploadHash = false;     //!< Reject uploads that carry no expected SHA-256 (SEC-7)
+    bool requireDownloadHash = false;   //!< Refuse a URL install, triggered or from a manifest, that carries no expected SHA-256
     uint16_t uploadIdleTimeoutSec = 30; //!< Drop an upload whose client has been silent this long, in seconds (BUG-37); 0 = never
 };
 
@@ -59,6 +60,16 @@ public:
     // Control API
     bool triggerImmediateCheck(bool force = false);
     bool triggerUpdateFromUrl(const String& url, bool force = false);
+    /**
+     * @brief Install from `url`, verified against `expectedSha256` (hex) before
+     * the image is committed. An empty digest installs unverified unless
+     * `OTAConfig::requireDownloadHash` is set, which refuses it here.
+     */
+    bool triggerUpdateFromUrl(const String& url, const String& expectedSha256, bool force = false);
+    // A string literal would otherwise convert to the bool overload's `force`.
+    bool triggerUpdateFromUrl(const String& url, const char* expectedSha256, bool force = false) {
+        return triggerUpdateFromUrl(url, String(expectedSha256 ? expectedSha256 : ""), force);
+    }
 
     // Manual upload helpers (used by WebUI provider or OTA tooling)
     /**
@@ -145,6 +156,7 @@ private:
     bool pendingUrlUpdate = false;
     bool pendingUrlForce = false;
     String pendingUrl;
+    String pendingUrlSha256;
 
     // Pluggable providers (unset by default)
     ManifestFetcher manifestFetcher = nullptr;
