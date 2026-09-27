@@ -583,8 +583,7 @@ These private methods of `OTAComponent` are documented for maintainers and AI ag
 | `finalizeUpdateOperation` | `bool finalizeUpdateOperation(const String& source, bool autoRebootPending)` | Sets progress to 100%, emits `EVENT_COMPLETE` and `EVENT_COMPLETED` (sticky), transitions to `RebootPending` or `Idle`. |
 | `verifySha256` | `bool verifySha256(const uint8_t* digest, const String& expectedHex)` | Compares computed digest against expected hex (case-insensitive, strips spaces and colons). |
 | `isNewerVersion` | `bool isNewerVersion(const String& candidate) const` | Semantic version comparison (major.minor.patch) against `metadata.version`. |
-| `broadcastProgress` | `void broadcastProgress()` | **Dead code**: defined but never called. Emits a progress event with `percent`, `downloaded`, `total`, `state`. All actual progress events use `publishStatusEvent()` instead. |
-| `publishStatusEvent` | `void publishStatusEvent(const String& topic, fn, bool sticky)` | Builds JSON payload via callback, auto-injects `state`, `progress`, `lastResult`, serializes and emits via EventBus. |
+| `publishStatusEvent` | `void publishStatusEvent(const char* topic, fn, bool sticky)` | Builds JSON payload via callback, auto-injects `state`, `progress`, `lastResult`, and emits the bytes via EventBus. A payload under 192 bytes is serialized on the stack; a longer one takes one reserved heap buffer. |
 
 ---
 
@@ -595,5 +594,4 @@ These private methods of `OTAComponent` are documented for maintainers and AI ag
 | C14 | ~~Minor~~ | **Resolved (BUG-21).** `EVENT_START` and `EVENT_END` are emitted on both the download and the upload path. See the event table above. |
 | C15 | Minor | `State::Applying` exists in the enum but `transition(State::Applying, ...)` is never called. |
 | BUG-1 | Minor | `OTAWebUI::getWebUIVersion()` returns hardcoded `"1.4.0"` instead of `"1.4.1"`. |
-| DEAD-1 | Cosmetic | `broadcastProgress()` is defined but never called (607 lines in OTA.cpp). |
 | LEGACY-1 | Cosmetic | `loop()` checks `hasPendingData()` / `processBuffer()` which are no-ops on all platforms since buffering was removed. |

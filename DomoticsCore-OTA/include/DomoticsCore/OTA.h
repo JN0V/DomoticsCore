@@ -162,7 +162,7 @@ private:
     bool finalizeUpdateOperation(const String& source, bool autoRebootPending);
     bool verifySha256(const uint8_t* digest, const String& expectedHex);
     bool isNewerVersion(const String& candidate) const;
-    void publishStatusEvent(const String& topicSuffix, std::function<void(JsonDocument&)> fn, bool sticky);
+    void publishStatusEvent(const char* topic, std::function<void(JsonDocument&)> fn, bool sticky);
 };
 
 } // namespace Components

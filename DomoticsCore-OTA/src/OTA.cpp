@@ -769,18 +769,23 @@ bool OTAComponent::finalizeUpdateOperation(const String& source, bool autoReboot
     return true;
 }
 
-void OTAComponent::publishStatusEvent(const String& topic, std::function<void(JsonDocument&)> fn, bool sticky) {
+void OTAComponent::publishStatusEvent(const char* topic, std::function<void(JsonDocument&)> fn, bool sticky) {
     JsonDocument doc;
     fn(doc);
     doc["state"] = stateToString(state);
     doc["progress"] = progress;
     doc["lastResult"] = lastResult.c_str();
+    // Publish the bytes, not a String: the queue deep-copies them, NUL included.
+    // A short status is serialized on the stack, a longer one into one reserved buffer.
+    char buf[192];
+    const size_t len = measureJson(doc);
+    if (len < sizeof(buf)) {
+        serializeJson(doc, buf, sizeof(buf));
+        emit(topic, buf, len + 1, sticky);
+        return;
+    }
     String payload;
+    payload.reserve(len + 1);
     serializeJson(doc, payload);
-    // BUG-30: publish the bytes, not the object. emit<String> byte-copies a String
-    // — pointer, length, capacity — into a queue that dispatches after `payload`
-    // has been destroyed and its buffer freed. The sized overload deep-copies what
-    // it is given and the queued event owns the copy, so subscribers receive a
-    // NUL-terminated char buffer they can actually read. Length + 1 carries the NUL.
     emit(topic, payload.c_str(), payload.length() + 1, sticky);
 }

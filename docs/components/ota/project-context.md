@@ -146,7 +146,7 @@ This avoids exposing individual setters and keeps the config struct as the singl
 
 ### Event Publishing
 
-All events are emitted as serialized JSON strings via `emit<String>(topic, payload, sticky)`. The `publishStatusEvent` helper automatically injects `state`, `progress`, and `lastResult` into every event payload.
+All events are emitted as serialized JSON bytes, NUL included, via the sized `emit(topic, data, size, sticky)`; a payload under 192 bytes is serialized on the stack. The `publishStatusEvent` helper automatically injects `state`, `progress`, and `lastResult` into every event payload.
 
 ### Progress Throttling
 
