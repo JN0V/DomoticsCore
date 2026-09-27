@@ -531,7 +531,9 @@ public:
             DLOG_D(LOG_WIFI, "  %s", network.c_str());
             networks.push_back(std::move(network));
         }
-        
+        // Everything the caller needs is in `networks`: release the SDK's list.
+        DLOG_D(LOG_WIFI, "Scan listed %d networks, releasing the SDK list", n);
+        HAL::WiFiHAL::scanDelete();
         return true;
     }
 

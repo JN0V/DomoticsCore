@@ -566,6 +566,20 @@ void test_wifi_scan_entry_format(void) {
     TEST_ASSERT_EQUAL_STRING(" (-70 dBm)", networks[2].c_str());
 }
 
+// The SDK keeps its result list until something deletes it; the synchronous
+// scan has copied what it needs, so it releases the list before returning.
+void test_wifi_sync_scan_releases_the_sdk_list(void) {
+    HAL::WiFiImpl::setScannedNetworksForTest({{String("HomeNet"), -42}});
+    HAL::WiFiImpl::scanDeleteCallsForTest = 0;
+
+    WifiComponent wifi;
+    std::vector<String> networks;
+    TEST_ASSERT_TRUE(wifi.scanNetworks(networks));
+    TEST_ASSERT_EQUAL(1, networks.size());
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, HAL::WiFiImpl::scanDeleteCallsForTest,
+                                  "the SDK's scan list outlived scanNetworks()");
+}
+
 void test_wifi_scan_failure_returns_false(void) {
     // WIFI_SCAN_FAILED is -2, not -1. The guard used to test `n == -1` only and
     // then reserve(static_cast<size_t>(n)) — 4 GB on a 40 KB heap.
@@ -888,6 +902,7 @@ int main(int argc, char **argv) {
 
     // Scan summary formatting (MEM-2) — the loops the stub could not reach
     RUN_TEST(test_wifi_scan_entry_format);
+    RUN_TEST(test_wifi_sync_scan_releases_the_sdk_list);
     RUN_TEST(test_wifi_scan_failure_returns_false);
     RUN_TEST(test_wifi_scan_failure_minus_one_returns_false);
     RUN_TEST(test_wifi_async_summary_format);
