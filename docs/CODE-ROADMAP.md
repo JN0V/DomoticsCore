@@ -2501,7 +2501,7 @@ one worth a one-line change, and six rows that are not defects.
   Home Assistant UI at all**. Home Assistant refuses before publishing:
   ```
   Arming requires a code but none was given for
-  alarm_control_panel.gaia_alarmcontrol_alarm_control
+  alarm_control_panel.<node>_alarm
   ```
   and because `code_format` is null — no code was configured, so there is
   nothing to format — the card cannot even offer a keypad to enter the code it
