@@ -14,10 +14,17 @@
 #include <PubSubClient.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
+#include <lwip/sockets.h>
 
 namespace DomoticsCore {
 namespace HAL {
 namespace MQTT {
+
+// Bytes the publish queue may hold, topic, payload and entry included: an ESP32 has room to ride out a slow broker.
+#ifndef DOMOTICS_MQTT_QUEUE_BYTES
+#define DOMOTICS_MQTT_QUEUE_BYTES 32768
+#endif
+constexpr size_t kQueueByteBudget = DOMOTICS_MQTT_QUEUE_BYTES;
 
 /**
  * @brief ESP32 MQTT client implementation
@@ -54,6 +61,20 @@ public:
         } else {
             return client.connect(id);
         }
+    }
+
+    // WiFiClient::write() waits in select() up to 1 s per retry while lwIP holds
+    // too much unacknowledged data; asking first, with no wait, keeps loop() free.
+    bool canWrite(size_t packetLength) override {
+        (void)packetLength;
+        if (useTLS) return true;
+        const int fd = wifiClient.fd();
+        if (fd < 0) return false;
+        fd_set set;
+        FD_ZERO(&set);
+        FD_SET(fd, &set);
+        struct timeval tv = {0, 0};
+        return select(fd + 1, nullptr, &set, nullptr, &tv) > 0;
     }
 
     void disconnect() override {

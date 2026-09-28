@@ -257,7 +257,8 @@ public:
 
     /**
      * @brief Publish without queueing and without allocating (OBS-5).
-     * Offline, over the rate limit, or refused by the client it returns false and
+     * Offline, over the rate limit, with the socket still waiting for the broker's
+     * acknowledgements, or refused by the client it returns false and
      * the message is gone: for a periodic sample that would be stale on delivery.
      * QoS is 0, which is all the client sends.
      */
@@ -358,6 +359,7 @@ public:
      * @return Queue size
      */
     size_t getQueuedMessageCount() const { return messageQueue.size(); }
+    size_t getQueuedBytes() const { return queuedBytes; }
     /** @brief The HAL client, for a native test to read what the stub was handed. */
     HAL::MQTT::MQTTClientImpl* getClientForTest() { return mqttClient; }
     
@@ -413,6 +415,10 @@ private:
         bool retain;
     };
     std::vector<QueuedMessage> messageQueue;
+    size_t queuedBytes = 0;  // what messageQueue holds, against HAL::MQTT::kQueueByteBudget
+    static size_t queueCost(const String& topic, const String& payload) {
+        return topic.length() + payload.length() + sizeof(QueuedMessage);
+    }
     
     // Rate limiting
     unsigned long lastPublishTime;
@@ -438,6 +444,10 @@ private:
      * on the wire yet, and counting here would count the message twice.
      */
     bool enqueueMessage(const String& topic, const String& payload, uint8_t qos, bool retain);
+    /** @brief Hands one message to the client and counts it; the caller has checked the socket. */
+    bool writeNow(const String& topic, const String& payload, bool retain);
+    /** @brief The packet PubSubClient builds: 5-byte header, 2-byte topic length, topic, payload. */
+    static size_t packetLength(const char* topic, size_t payloadLen);
     /**
      * @brief PubSubClient's own size test, made before it answers a bare false.
      *
