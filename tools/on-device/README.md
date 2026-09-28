@@ -572,7 +572,8 @@ compiled on the next run without clearing `.pio`.
 | `allocator-shape/` | `HAL::Platform::AllocatorShape` on a board, one constant per series: the EventBus queue is filled without draining and then drained, so the fill measures occupancy and the drain says it was held. The slope across N is the per-event cost, the steps are the deque chunk |
 | `wifi-scan-ap/` | an async scan started with no configured SSID — the state an operator provisions from, which the native stub cannot speak for. Prints entry count, summary length and heap per second, never the summary itself; two rounds, so a flag that is never released shows as a refused second start. `nodemcuv2` and `esp32dev` |
 | `mqtt-link-loss/` | what a device sees when its broker link goes away: one line per `mqtt/connected` and `mqtt/disconnected` as the bus delivers them, with the MQTT state and `HomeAssistant::isReady()` beside them. Restart the broker under it. `-DDC_LINK_LOSS_BROKER=\"…\"` names a broker you can restart — a mosquitto on the bench machine, never a deployment |
+| `mqtt-send-stall/` | how long `loop()` and `MQTTComponent::publish()` take against a slow or lossy broker: a burst of `DC_STALL_BURST` publishes of `DC_STALL_PAYLOAD` bytes every 2 s, a `STALL` line every 10 s with the worst of the window, and a `SLOWLOOP`/`SLOWPUBLISH` line for anything over 100 ms. `esp32dev` and `nodemcuv2`. Point `-DDC_STALL_BROKER=\"…\" -DDC_STALL_PORT=…` at a mosquitto in docker with `tc qdisc add dev eth0 root netem delay 150ms 50ms loss 10%` inside it (`--cap-add NET_ADMIN`); read delivery with `mosquitto_sub` on the same broker, one probe at a time on the topic |
 
-Credentials for `obs-loopmax` and `mqtt-link-loss` come from the repository's
+Credentials for `obs-loopmax`, `mqtt-link-loss` and `mqtt-send-stall` come from the repository's
 untracked `secrets.h`, like the examples. Never paste their output with the
 network name in it.
