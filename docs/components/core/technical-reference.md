@@ -800,7 +800,7 @@ The following functions are available in the `DomoticsCore::HAL::Platform` names
 | **getMinFreeHeap** | `uint32_t getMinFreeHeap()` | Minimum free heap ever recorded since boot. |
 | **getMaxAllocHeap** | `uint32_t getMaxAllocHeap()` | Largest allocatable block in bytes. |
 | **getFlashSize** | `uint32_t getFlashSize()` | Flash chip size in bytes. |
-| **getSketchSize** | `uint32_t getSketchSize()` | Size of the uploaded sketch (program) in bytes. |
+| **getSketchSize** | `uint32_t getSketchSize()` | Size of the uploaded sketch (program) in bytes. Read once per boot on ESP32, where the Arduino core computes it by verifying the whole running image through ESP-IDF's single `bootloader_mmap` slot — the slot an OTA commit needs at the same time. |
 | **getFreeSketchSpace** | `uint32_t getFreeSketchSpace()` | Free space available for OTA updates in bytes. |
 | **getResetReason** | `ResetReason getResetReason()` | Returns the platform-agnostic reset reason (see ResetReason enum below). |
 | **getResetReasonString** | `String getResetReasonString(ResetReason)` | Human-readable string for a reset reason value. |

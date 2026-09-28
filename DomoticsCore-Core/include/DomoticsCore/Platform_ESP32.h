@@ -173,9 +173,13 @@ inline uint32_t getFlashSize() {
 
 /**
  * @brief Get sketch (program) size for ESP32
+ *
+ * ESP.getSketchSize() verifies the whole running image through ESP-IDF's single
+ * bootloader_mmap slot, which an OTA commit needs too; the size never changes, so read it once.
  */
 inline uint32_t getSketchSize() {
-    return ESP.getSketchSize();
+    static const uint32_t size = ESP.getSketchSize();
+    return size;
 }
 
 /**
