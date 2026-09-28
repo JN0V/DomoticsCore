@@ -26,6 +26,40 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.11.0] - 2026-09-28
+
+> **`MQTTComponent::publish()` no longer waits on the network.** On a slow or
+> lossy link it used to hold `loop()` until the broker acknowledged earlier
+> data — up to seconds on ESP32 and ESP8266 alike. The socket is now asked
+> first: a message it cannot take without waiting is queued and sent from a
+> later `loop()`, in the order it was published. `publishNow()` and
+> `publishBinary()` return `false` instead of waiting.
+
+> **The publish queue now has a byte budget as well as `maxQueueSize`.**
+> `HAL::MQTT::kQueueByteBudget` is 8 KB on ESP8266 and 32 KB on ESP32
+> (`-DDOMOTICS_MQTT_QUEUE_BYTES=<bytes>` overrides it); a message that would
+> exceed it is refused, logged and counted in `publishErrors`, as past
+> `maxQueueSize`. **`maxQueueSize = 0` now removes only the count limit** — the
+> byte budget still applies. On a link durably slower than the application
+> publishes, messages are refused rather than queued without bound; before,
+> an ESP8266 could run out of heap.
+
+### Added
+
+- **`MQTTComponent::getQueuedBytes()`** and **`HAL::MQTT::MQTTClient::canWrite(packetLength)`**
+  (default `true`; a custom client may override it).
+
+### Changed
+
+- Messages published while others are queued go out after them.
+
+### Known issue
+
+- **An ESP8266 System with about fifteen Home Assistant entities or more
+  reboots at every broker connection** (`last failed alloc (830)` during the
+  discovery burst). This predates 2.11.0 and is tracked; keep an ESP8266
+  build to fewer entities meanwhile.
+
 ## [2.10.0] - 2026-09-28
 
 > **This release removes public API**, as the note above allows a minor release
