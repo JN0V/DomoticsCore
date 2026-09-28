@@ -581,7 +581,7 @@ void test_a_panel_with_no_code_says_no_code_is_required() {
     // cannot be armed from the interface at all.
     Core core;
     HAConfig config;
-    HA::setField(config.nodeId, "gaia_alarmcontrol", sizeof(config.nodeId));
+    HA::setField(config.nodeId, "house_alarm_panel", sizeof(config.nodeId));
 
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     ha->addAlarmControlPanel("alarm_control", "Alarm Control", "mdi:shield-home",
