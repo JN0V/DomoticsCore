@@ -26,6 +26,59 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.10.0] - 2026-09-28
+
+> **This release removes public API**, as the note above allows a minor release
+> to do when it says so here. `HAL::OTAUpdate::requiresBuffering()`,
+> `hasPendingData()`, `hasBufferOverflow()` and `processBuffer()` are gone from
+> all three OTA HALs: they returned `false` or `0` on every platform since the
+> ESP8266 moved to direct writes. And `OTAComponent::triggerUpdateFromUrl(url, 0)`
+> or `(url, NULL)` no longer compiles — the new digest overloads make it
+> ambiguous; write `false`.
+
+> **A wrong WebUI password now makes its address wait** before its next attempt
+> is read: 1 s, doubling to `WebUIConfig::authDelayMaxMs` (8 s by default,
+> `0` turns it off), four addresses remembered, forgotten after a minute. Inside
+> the wait a request is answered `401` without its credentials being read, so
+> the right password sent too early is refused and must be sent again. This
+> covers every route, the OTA upload included. A request with no credentials
+> does not count.
+
+> **ESP32: a manual OTA upload no longer fails to activate** with
+> `Could Not Activate The Firmware` when SystemInfo is running. Its 5 s metrics
+> refresh verified the whole running image through the flash mapping the
+> commit needed at the same moment; about one upload in four failed on our
+> bench, and a retry worked. The sketch size is now read once per boot.
+
+### Added
+
+- **`OTAComponent::triggerUpdateFromUrl(url, sha256, force)`** (and a
+  `const char*` overload): the downloaded image is checked against the digest
+  before it is committed. **`OTAConfig::requireDownloadHash`** (default `false`)
+  refuses a URL install, triggered or from a manifest, that carries none.
+  `POST /api/ota/update` takes an optional `sha256` body parameter.
+- **`WebUIConfig::authDelayMaxMs`**, and **`DomoticsCore::Utils::AuthDelay`**
+  in Core: the per-address wait the remote console and the WebUI now share.
+
+### Changed
+
+- **The OTA upload routes check credentials through
+  `WebUIComponent::authorize()`**, once per upload, instead of three inlined
+  copies.
+- **RemoteConsole requires Core ≥ 1.13.0.** Its console `auth` wait is
+  unchanged.
+
+### Removed
+
+- The four OTA HAL buffering functions listed at the top of this entry, and
+  the dead `loop()` branch that called them.
+
+### Fixed
+
+- **ESP32: OTA commit failing on a concurrent `ESP.getSketchSize()`**
+  (`bootloader_mmap: tried to bootloader_mmap twice`) — see the top of this
+  entry. `HAL::Platform::getSketchSize()` is read once per boot.
+
 ## [2.9.0] - 2026-09-27
 
 > **Discovery documents no longer state what Home Assistant already assumes.**
