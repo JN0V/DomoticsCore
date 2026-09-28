@@ -12,12 +12,19 @@
 #define MQTT_MAX_PACKET_SIZE 768
 #endif
 
+#include <lwip/opt.h>
 #include <PubSubClient.h>
 #include <ESP8266WiFi.h>
 
 namespace DomoticsCore {
 namespace HAL {
 namespace MQTT {
+
+// Bytes the publish queue may hold, topic, payload and entry included: an ESP8266 runs a full System on about 27 KB of free heap.
+#ifndef DOMOTICS_MQTT_QUEUE_BYTES
+#define DOMOTICS_MQTT_QUEUE_BYTES 8192
+#endif
+constexpr size_t kQueueByteBudget = DOMOTICS_MQTT_QUEUE_BYTES;
 
 /**
  * @brief ESP8266 MQTT client implementation
@@ -93,6 +100,14 @@ public:
 
     bool setBufferSize(uint16_t size) override {
         return client.setBufferSize(size);
+    }
+
+    // WiFiClient::write() waits up to its 5 s timeout for send-buffer space. A packet
+    // larger than the whole buffer goes once the buffer is empty, or it would never go.
+    bool canWrite(size_t packetLength) override {
+        if (useTLS) return true;
+        const size_t need = packetLength < TCP_SND_BUF ? packetLength : TCP_SND_BUF;
+        return static_cast<size_t>(wifiClient.availableForWrite()) >= need;
     }
 
     uint16_t getBufferSize() override {

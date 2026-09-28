@@ -136,6 +136,12 @@ public:
      * @return Call count, or 0 if not tracked by this implementation
      */
     virtual uint32_t getLoopCallCount() const { return 0; }
+
+    /**
+     * @brief True when a packet of this length can be handed to the network
+     * stack without waiting for the broker to acknowledge earlier data.
+     */
+    virtual bool canWrite(size_t packetLength) { (void)packetLength; return true; }
 };
 
 } // namespace MQTT

@@ -20,6 +20,12 @@ namespace DomoticsCore {
 namespace HAL {
 namespace MQTT {
 
+// Bytes the publish queue may hold, topic, payload and entry included: the ESP8266 figure, so native tests meet the tighter budget.
+#ifndef DOMOTICS_MQTT_QUEUE_BYTES
+#define DOMOTICS_MQTT_QUEUE_BYTES 8192
+#endif
+constexpr size_t kQueueByteBudget = DOMOTICS_MQTT_QUEUE_BYTES;
+
 /**
  * @brief Mock MQTT client for native tests
  *
@@ -169,6 +175,13 @@ public:
     bool connected() override {
         return isConnected;
     }
+
+    bool canWrite(size_t packetLength) override {
+        lastCanWriteLength = packetLength;
+        return writable;
+    }
+    bool writable = true;               // a test sets it false to model unacknowledged data
+    size_t lastCanWriteLength = 0;
 
     // Test helper methods (not part of public interface)
     uint32_t getLoopCallCount() const override { return loopCallCount; }

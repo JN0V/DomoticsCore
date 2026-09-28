@@ -114,7 +114,7 @@ Returns the current state as an enum or human-readable string (`"Disconnected"`,
 bool publish(const String& topic, const String& payload, uint8_t qos = 0, bool retain = false);
 ```
 
-Publishes a string message. If disconnected, the message is pushed to the offline queue and the method returns `true` (queued). If connected, publishes directly via the HAL client.
+Publishes a string message. If disconnected, the message is pushed to the offline queue and the method returns `true` (queued). If connected, publishes directly via the HAL client — unless the client's socket is still waiting for the broker to acknowledge earlier data, in which case the message is queued and `loop()` sends it once the socket can take it; while anything is queued, a new message queues behind it, so messages leave in the order they were published. A publish of a packet within the default client buffer therefore never waits on the network: on a slow or lossy link the Arduino cores' `WiFiClient::write()` would otherwise hold `loop()` until the next acknowledgement, up to 1 s per retry on ESP32 and 5 s on ESP8266. The writes PubSubClient makes on its own — the connect packet and the keepalive ping — are not covered.
 
 ```cpp
 bool publishJSON(const String& topic, const JsonDocument& doc, uint8_t qos = 0, bool retain = false);
@@ -126,13 +126,13 @@ Serializes an ArduinoJson document to string and delegates to `publish()`.
 bool publishBinary(const String& topic, const uint8_t* data, size_t length, uint8_t qos = 0, bool retain = false);
 ```
 
-Publishes raw binary data. Does NOT queue when offline -- returns `false` immediately if disconnected.
+Publishes raw binary data. Does NOT queue -- returns `false` immediately if disconnected or if the socket cannot take the packet without waiting.
 
 ```cpp
 bool publishNow(const char* topic, const char* payload, size_t len, bool retain = false);
 ```
 
-Publishes without queueing and without allocating: the payload goes straight to the client's buffer. Offline, over the publish rate limit, larger than the client's buffer (`topic + payload + 7` bytes — PubSubClient's 5-byte header plus the topic length — against `getBufferSize()`, logged), or refused by the client it returns `false` and the message is gone — the shape a periodic sample wants, since one delivered late is wrong. Counts against the same per-second window and statistics as `publish()`, `publishErrors` included. QoS is 0, which is all the client sends.
+Publishes without queueing and without allocating: the payload goes straight to the client's buffer. Offline, over the publish rate limit, with the socket still waiting for the broker's acknowledgements, larger than the client's buffer (`topic + payload + 7` bytes — PubSubClient's 5-byte header plus the topic length — against `getBufferSize()`, logged), or refused by the client it returns `false` and the message is gone — the shape a periodic sample wants, since one delivered late is wrong. Counts against the same per-second window and statistics as `publish()`, `publishErrors` included. QoS is 0, which is all the client sends.
 
 ### Subscribing
 
@@ -217,13 +217,13 @@ All fields with their types, defaults, and descriptions:
 | `autoReconnect` | `bool` | `true` | Auto-reconnect on disconnect |
 | `reconnectDelay` | `uint32_t` | `1000` | Initial reconnection delay in ms |
 | `maxReconnectDelay` | `uint32_t` | `30000` | Maximum reconnection delay in ms |
-| `maxQueueSize` | `uint16_t` | `100` | Maximum offline message queue size (0 = unlimited). Enforced: queue size is checked before adding; excess messages are dropped with a warning log. |
+| `maxQueueSize` | `uint16_t` | `100` | Maximum number of queued messages (0 = no count limit; the platform's byte budget still applies). Excess messages are dropped with a warning log. |
 | `publishRateLimit` | `uint8_t` | `10` | Max messages per second (0 = unlimited). Enforced: uses a tumbling 1-second window; messages exceeding the limit are dropped with a warning log. |
 | `maxSubscriptions` | `uint8_t` | `50` | Maximum number of subscriptions (0 = unlimited). Enforced: subscription count is checked before subscribing; excess subscriptions are rejected with a warning log. |
 | `enabled` | `bool` | `true` | Master enable/disable flag |
 
 **Enforcement details for resource-protection fields**:
-> - `maxQueueSize`: `publish()` checks the queue size before adding a message when offline. If the queue is at capacity, the message is dropped, a warning is logged, and `publish()` returns `false`. Set to `0` for unlimited queue growth.
+> - `maxQueueSize`: `publish()` checks the queue size before adding a message when offline. If the queue is at capacity, the message is dropped, a warning is logged, and `publish()` returns `false`. Set to `0` to remove the count limit; the byte budget described under Message Queuing still applies.
 > - `publishRateLimit`: `publish()` uses a tumbling 1-second window. A counter (`publishCountThisSecond`) resets every 1000 ms. When the counter reaches the limit, further messages within that window are dropped, a warning is logged, and `publish()` returns `false`. Set to `0` for unlimited rate.
 > - `maxSubscriptions`: `subscribe()` checks the subscription count before adding. If the limit is reached, the subscription is rejected, a warning is logged, and `subscribe()` returns `false`. Set to `0` for unlimited subscriptions.
 
@@ -322,9 +322,16 @@ struct QueuedMessage {
 
 **Queue processing** happens in `loop()` when the connection is active. The component iterates through the queue, publishing each message. Successfully published messages are removed; if a publish fails, processing stops (preserving message order) — except for a message that can never succeed: a packet larger than the client's buffer (`topic + payload + 7` against `getBufferSize()`, 768 bytes on ESP8266) is dropped with a warning naming the topic and counted in `publishErrors`, so the messages behind it still go out. `publish()` makes the same check before handing a message to the client, and says which topic it refused.
 
-**Limits**: The `config.maxQueueSize` field (default 100) bounds the queue size. When the queue reaches `maxQueueSize`, additional messages are dropped with a warning log and `publish()` returns `false`. Set `maxQueueSize` to `0` for unlimited queue growth. Monitor `getQueuedMessageCount()` to track current queue depth.
+The queue also holds what a busy socket could not take (see `publish()` above), and it drains only while the client says the socket can take the next packet, so draining never waits on the network either.
 
-**Important**: `publishBinary()` and `publishNow()` do NOT queue when offline -- they return `false` immediately.
+**Limits**: two bounds, whichever is reached first refuses the next message — it is dropped with a warning log, counted in `publishErrors`, and `publish()` returns `false`:
+
+- `config.maxQueueSize` (default 100) bounds the number of messages; `0` removes this bound.
+- `HAL::MQTT::kQueueByteBudget` bounds the bytes held, each message counting its topic, its payload and its queue entry: 8 KB on ESP8266, 32 KB on ESP32, overridable with `-DDOMOTICS_MQTT_QUEUE_BYTES=<bytes>`. It always applies: a hundred 500-byte payloads would exhaust an ESP8266's heap long before the count is reached. It counts what the messages carry, not the allocator's overhead or the vector's spare capacity, so the heap a full queue takes is somewhat above it.
+
+On a link durably slower than what the application publishes, messages are therefore refused rather than delayed without bound. Monitor `getQueuedMessageCount()` and `getQueuedBytes()` to track the queue.
+
+**Important**: `publishBinary()` and `publishNow()` do NOT queue -- they return `false` immediately when offline or when the socket is busy.
 
 ---
 
@@ -561,6 +568,7 @@ struct MQTTStatistics {
 ```cpp
 const MQTTStatistics& getStatistics() const;
 size_t getQueuedMessageCount() const;
+size_t getQueuedBytes() const;    // against HAL::MQTT::kQueueByteBudget
 String getLastError() const;
 uint32_t debugLoopCount() const;  // HAL client loop() call count
 ```
@@ -607,8 +615,11 @@ public:
     virtual int state() = 0;
     virtual bool connected() = 0;
     virtual uint32_t getLoopCallCount() const { return 0; }
+    virtual bool canWrite(size_t packetLength) { return true; }
 };
 ```
+
+`canWrite(packetLength)` says whether a packet of that length can be handed to the network stack without waiting for the broker's acknowledgements. ESP32 asks lwIP with a zero-timeout `select()` on the socket; ESP8266 compares `WiFiClient::availableForWrite()` with the packet length, or with the whole send buffer (`TCP_SND_BUF`) for a packet larger than that; both answer `true` over TLS, where the socket is not reachable. The native stub exposes a `writable` flag.
 
 ### Platform Buffer Sizes
 

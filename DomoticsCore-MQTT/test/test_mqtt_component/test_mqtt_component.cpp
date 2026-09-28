@@ -813,9 +813,11 @@ void test_mqtt_queue_unlimited_when_zero() {
     cfg.publishRateLimit = 0; // disable rate limit to test queue only
     MQTTComponent mqtt(cfg);
     mqtt.begin();
-    for (int i = 0; i < 100; i++) {
-        TEST_ASSERT_TRUE(mqtt.publish("topic", String(i)));
-    }
+    // No count limit: only the platform's byte budget stops the queue.
+    size_t accepted = 0;
+    while (accepted < 10000 && mqtt.publish("topic", String((int)accepted))) accepted++;
+    TEST_ASSERT_GREATER_THAN(HAL::MQTT::kQueueByteBudget - 100, mqtt.getQueuedBytes());
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, mqtt.getStatistics().publishErrors, "refused once, by the byte budget");
     mqtt.shutdown();
 }
 
