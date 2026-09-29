@@ -1,5 +1,5 @@
 <!-- workline
-sources: [docs/reliability/observing-a-device.md, docs/components/system-info/technical-reference.md, DomoticsCore-SystemInfo/include/DomoticsCore/, DomoticsCore-RemoteConsole/include/DomoticsCore/, DomoticsCore-Storage/include/DomoticsCore/]
+sources: [docs/reliability/observing-a-device.md, docs/components/system-info/technical-reference.md, DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfo.h, DomoticsCore-RemoteConsole/include/DomoticsCore/, DomoticsCore-Storage/include/DomoticsCore/]
 checked: 358931b
 -->
 

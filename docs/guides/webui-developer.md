@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-WebUI/include/DomoticsCore/, DomoticsCore-WebUI/include/DomoticsCore/WebUI/]
+sources: [DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/StreamingContextSerializer.h]
 checked: b17f0a1
 verified: agent:documentalist
 -->

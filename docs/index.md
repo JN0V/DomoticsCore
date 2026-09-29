@@ -1,5 +1,5 @@
 <!-- workline
-sources: [docs/, DomoticsCore-Core/, DomoticsCore-System/, DomoticsCore-Wifi/, DomoticsCore-WebUI/, DomoticsCore-MQTT/, DomoticsCore-HomeAssistant/, DomoticsCore-NTP/, DomoticsCore-OTA/, DomoticsCore-Storage/, DomoticsCore-LED/, DomoticsCore-RemoteConsole/, DomoticsCore-SystemInfo/, library.json, README.md, CHANGELOG.md, examples/]
+sources: [docs/, DomoticsCore-Core/include/DomoticsCore/AuthDelay.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_HAL.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/StreamingContextSerializer.h, DomoticsCore-MQTT/, DomoticsCore-HomeAssistant/, DomoticsCore-NTP/, DomoticsCore-OTA/include/DomoticsCore/OTA.h, DomoticsCore-OTA/src/OTA.cpp, DomoticsCore-Storage/include/DomoticsCore/Storage.h, DomoticsCore-Storage/include/DomoticsCore/Storage_Stub.h, DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-RemoteConsole/, DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfo.h, library.json, README.md, CHANGELOG.md]
 checked: 358931b
 verified: agent:documentalist
 -->

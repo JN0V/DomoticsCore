@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-RemoteConsole/include/DomoticsCore/, DomoticsCore-RemoteConsole/examples/BasicRemoteConsole/, DomoticsCore-RemoteConsole/examples/RemoteConsoleWithWebUI/]
+sources: [DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsole.h, DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsoleWebUI.h, DomoticsCore-RemoteConsole/examples/BasicRemoteConsole/platformio.ini, DomoticsCore-RemoteConsole/examples/BasicRemoteConsole/src/main.cpp, DomoticsCore-RemoteConsole/examples/RemoteConsoleWithWebUI/platformio.ini, DomoticsCore-RemoteConsole/examples/RemoteConsoleWithWebUI/src/main.cpp]
 checked: b73224f
 -->
 # DomoticsCore-RemoteConsole

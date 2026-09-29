@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-WebUI/include/DomoticsCore, DomoticsCore-WebUI/webui_src, DomoticsCore-WebUI/library.json]
+sources: [DomoticsCore-WebUI/include/DomoticsCore/BaseWebUIComponents.h, DomoticsCore-WebUI/include/DomoticsCore/DocMainpage.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/ProviderRegistry.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/StreamingContextSerializer.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebResponse_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebServerManager.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebSocketHandler.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebUIConfig.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_ESP32.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_ESP8266.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_Stub.h, DomoticsCore-WebUI/webui_src/app.js, DomoticsCore-WebUI/webui_src/index.html, DomoticsCore-WebUI/webui_src/style.css, DomoticsCore-WebUI/library.json]
 checked: 3c4d96c
 verified: agent:documentalist
 -->

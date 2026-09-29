@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Storage/include/DomoticsCore, DomoticsCore-Storage/examples]
+sources: [DomoticsCore-Storage/include/DomoticsCore/Storage.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h, DomoticsCore-Storage/include/DomoticsCore/StorageWebUI.h]
 checked: ae5715e
 -->
 # DomoticsCore-Storage

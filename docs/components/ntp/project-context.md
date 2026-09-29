@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-NTP/library.json, DomoticsCore-NTP/platformio.ini, DomoticsCore-NTP/README.md, DomoticsCore-NTP/SPECIFICATIONS.md, DomoticsCore-NTP/include/DomoticsCore, DomoticsCore-NTP/test, DomoticsCore-NTP/examples, tests/mocks/MockNTPClient.h]
+sources: [DomoticsCore-NTP/library.json, DomoticsCore-NTP/platformio.ini, DomoticsCore-NTP/README.md, DomoticsCore-NTP/SPECIFICATIONS.md, DomoticsCore-NTP/include/DomoticsCore/NTP.h, DomoticsCore-NTP/include/DomoticsCore/NTPEvents.h, DomoticsCore-NTP/include/DomoticsCore/NTPWebUI.h, DomoticsCore-NTP/include/DomoticsCore/NTP_ESP32.h, DomoticsCore-NTP/include/DomoticsCore/NTP_ESP8266.h, DomoticsCore-NTP/include/DomoticsCore/NTP_HAL.h, DomoticsCore-NTP/include/DomoticsCore/NTP_Stub.h, DomoticsCore-NTP/test/test_ntp_component/test_ntp_component.cpp, DomoticsCore-NTP/examples/BasicNTP/platformio.ini, DomoticsCore-NTP/examples/NTPWithWebUI/platformio.ini, tests/mocks/MockNTPClient.h]
 checked: ae5715e
 verified: agent:documentalist
 -->

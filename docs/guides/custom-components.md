@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Core/include/DomoticsCore/, DomoticsCore-System/include/DomoticsCore/, DomoticsCore-Storage/include/DomoticsCore/]
+sources: [DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_HAL.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/Platform_Stub.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, DomoticsCore-Storage/include/DomoticsCore/Storage.h]
 checked: 500862d
 verified: agent:documentalist
 -->

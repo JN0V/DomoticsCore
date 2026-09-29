@@ -1,5 +1,5 @@
 <!-- workline
-sources: [docs, DomoticsCore-Core/include/DomoticsCore]
+sources: [docs, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_HAL.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h]
 checked: 436872f
 -->
 # DomoticsCore Documentation

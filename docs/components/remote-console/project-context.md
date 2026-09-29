@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-RemoteConsole/include/DomoticsCore/, DomoticsCore-RemoteConsole/test/, DomoticsCore-RemoteConsole/library.json]
+sources: [DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsole.h, DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsoleWebUI.h, DomoticsCore-RemoteConsole/test/test_remoteconsole_component/test_remoteconsole_component.cpp, DomoticsCore-RemoteConsole/library.json]
 checked: fa51735
 verified: agent:documentalist
 -->

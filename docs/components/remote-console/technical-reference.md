@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-RemoteConsole/include/DomoticsCore]
+sources: [DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsole.h, DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsoleWebUI.h]
 checked: 4d330ee
 -->
 # DomoticsCore-RemoteConsole -- Technical Reference

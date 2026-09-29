@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-HomeAssistant/include/DomoticsCore, DomoticsCore-MQTT/include/DomoticsCore]
+sources: [DomoticsCore-HomeAssistant/include/DomoticsCore/HAAlarmControlPanel.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HABinarySensor.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAButton.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEntity.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEvents.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HALight.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HASensor.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HASwitch.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistantWebUI.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h]
 checked: 113a4ce
 -->
 # DomoticsCore-HomeAssistant -- Technical Reference

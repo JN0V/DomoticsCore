@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-WebUI/include/DomoticsCore, DomoticsCore-WebUI/include/DomoticsCore/WebUI]
+sources: [DomoticsCore-WebUI/include/DomoticsCore/BaseWebUIComponents.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/ProviderRegistry.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/StreamingContextSerializer.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebResponse_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebServerManager.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebSocketHandler.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebUIConfig.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_ESP32.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_ESP8266.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_Stub.h]
 checked: 30ce588
 verified: agent:documentalist
 -->

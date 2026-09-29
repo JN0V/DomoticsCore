@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Wifi/include/DomoticsCore/]
+sources: [DomoticsCore-Wifi/include/DomoticsCore/INetworkProvider.h, DomoticsCore-Wifi/include/DomoticsCore/IPAddress_Stub.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_ESP32.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_ESP8266.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_Stub.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi.h, DomoticsCore-Wifi/include/DomoticsCore/WifiEvents.h, DomoticsCore-Wifi/include/DomoticsCore/WifiWebUI.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_ESP32.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_ESP8266.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_Stub.h]
 checked: 636748e
 verified: agent:documentalist
 -->

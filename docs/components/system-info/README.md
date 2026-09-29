@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-SystemInfo/include/DomoticsCore/, DomoticsCore-SystemInfo/library.json, DomoticsCore-Core/include/DomoticsCore/]
+sources: [DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfo.h, DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfoWebUI.h, DomoticsCore-SystemInfo/library.json, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h]
 checked: ae5715e
 -->
 # DomoticsCore-SystemInfo

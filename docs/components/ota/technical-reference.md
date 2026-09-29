@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-OTA/include/DomoticsCore/, DomoticsCore-OTA/src/, DomoticsCore-OTA/test/]
+sources: [DomoticsCore-OTA/include/DomoticsCore/OTA.h, DomoticsCore-OTA/include/DomoticsCore/OTAEvents.h, DomoticsCore-OTA/include/DomoticsCore/OTAWebUI.h, DomoticsCore-OTA/include/DomoticsCore/Update_ESP32.h, DomoticsCore-OTA/include/DomoticsCore/Update_ESP8266.h, DomoticsCore-OTA/include/DomoticsCore/Update_HAL.h, DomoticsCore-OTA/include/DomoticsCore/Update_Stub.h, DomoticsCore-OTA/src/OTA.cpp, DomoticsCore-OTA/test/test_ota_esp32/test_ota_esp32.cpp, DomoticsCore-OTA/test/test_ota_esp8266/test_ota_esp8266.cpp]
 checked: f815f62
 verified: agent:documentalist
 -->

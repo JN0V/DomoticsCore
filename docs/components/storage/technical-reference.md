@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Storage/include/DomoticsCore/]
+sources: [DomoticsCore-Storage/include/DomoticsCore/Storage.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h, DomoticsCore-Storage/include/DomoticsCore/StorageWebUI.h, DomoticsCore-Storage/include/DomoticsCore/Storage_ESP32.h, DomoticsCore-Storage/include/DomoticsCore/Storage_ESP8266.h, DomoticsCore-Storage/include/DomoticsCore/Storage_HAL.h, DomoticsCore-Storage/include/DomoticsCore/Storage_Stub.h]
 checked: b7192b5
 verified: agent:documentalist
 -->

@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-HomeAssistant/include/DomoticsCore/, DomoticsCore-Wifi/include/DomoticsCore/, DomoticsCore-System/include/DomoticsCore/]
+sources: [DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-HomeAssistant/include/DomoticsCore/, DomoticsCore-Wifi/include/DomoticsCore/Wifi.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_HAL.h, DomoticsCore-System/include/DomoticsCore/System.h]
 checked: 76c0609
 verified: agent:documentalist
 -->

@@ -1,13 +1,5 @@
 <!-- workline
-sources: [
-  DomoticsCore-Core/include/DomoticsCore/,
-  DomoticsCore-Wifi/include/DomoticsCore/,
-  DomoticsCore-MQTT/include/DomoticsCore/,
-  DomoticsCore-NTP/include/DomoticsCore/,
-  DomoticsCore-OTA/include/DomoticsCore/,
-  DomoticsCore-HomeAssistant/include/DomoticsCore/,
-  DomoticsCore-Storage/include/DomoticsCore/
-]
+sources: [DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_HAL.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/Platform_Stub.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi.h, DomoticsCore-Wifi/include/DomoticsCore/WifiEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-NTP/include/DomoticsCore/NTPEvents.h, DomoticsCore-OTA/include/DomoticsCore/OTA.h, DomoticsCore-OTA/include/DomoticsCore/OTAEvents.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEvents.h, DomoticsCore-Storage/include/DomoticsCore/Storage.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h]
 checked: 4cdb3e6
 verified: agent:documentalist
 -->

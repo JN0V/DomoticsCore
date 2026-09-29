@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-System/include/DomoticsCore, DomoticsCore-System/examples, docs/components/system/technical-reference.md]
+sources: [DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, docs/components/system/technical-reference.md]
 checked: 358931b
 -->
 # DomoticsCore-System

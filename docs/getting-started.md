@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-System/include/DomoticsCore/, DomoticsCore-System/examples/Minimal/, DomoticsCore-System/examples/Standard/, DomoticsCore-System/examples/FullStack/, DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-WebUI/include/DomoticsCore/, DomoticsCore-NTP/include/DomoticsCore/, examples/README.md]
+sources: [DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, DomoticsCore-System/examples/Minimal/platformio.ini, DomoticsCore-System/examples/Standard/platformio.ini, DomoticsCore-System/examples/FullStack/platformio.ini, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebUIConfig.h, DomoticsCore-NTP/include/DomoticsCore/NTP.h, examples/README.md]
 checked: d54dae8
 verified: agent:documentalist
 -->

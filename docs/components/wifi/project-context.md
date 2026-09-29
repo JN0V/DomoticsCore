@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Wifi/include/DomoticsCore, DomoticsCore-Wifi/examples, DomoticsCore-Wifi/test, DomoticsCore-Wifi/library.json, tests/mocks]
+sources: [DomoticsCore-Wifi/include/DomoticsCore/DocMainpage.h, DomoticsCore-Wifi/include/DomoticsCore/INetworkProvider.h, DomoticsCore-Wifi/include/DomoticsCore/IPAddress_Stub.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_ESP32.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_ESP8266.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_Stub.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi.h, DomoticsCore-Wifi/include/DomoticsCore/WifiEvents.h, DomoticsCore-Wifi/include/DomoticsCore/WifiWebUI.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_ESP32.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_ESP8266.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_Stub.h, DomoticsCore-Wifi/examples/BasicWifi/platformio.ini, DomoticsCore-Wifi/examples/WifiWithWebUI/platformio.ini, DomoticsCore-Wifi/library.json, tests/mocks/MockWifiHAL.h]
 checked: 7ec34b1
 verified: agent:documentalist
 -->

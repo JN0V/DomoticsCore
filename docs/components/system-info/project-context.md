@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-SystemInfo/]
+sources: [DomoticsCore-SystemInfo/examples/BasicSystemInfo/platformio.ini, DomoticsCore-SystemInfo/examples/BasicSystemInfo/src/main.cpp, DomoticsCore-SystemInfo/examples/SystemInfoWithWebUI/platformio.ini, DomoticsCore-SystemInfo/examples/SystemInfoWithWebUI/src/main.cpp, DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfo.h, DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfoWebUI.h, DomoticsCore-SystemInfo/library.json, DomoticsCore-SystemInfo/platformio.ini, DomoticsCore-SystemInfo/test/test_systeminfo_api/test_systeminfo_api.cpp, DomoticsCore-SystemInfo/test/test_systeminfo_boot/test_systeminfo_boot.cpp, DomoticsCore-SystemInfo/test/test_systeminfo_metrics/test_systeminfo_metrics.cpp]
 checked: ae5715e
 verified: agent:documentalist
 -->

@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Storage/include/DomoticsCore/, DomoticsCore-Storage/examples/, DomoticsCore-Storage/test/, DomoticsCore-Storage/library.json, DomoticsCore-Storage/README.md]
+sources: [DomoticsCore-Storage/include/DomoticsCore/DocMainpage.h, DomoticsCore-Storage/include/DomoticsCore/Storage.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h, DomoticsCore-Storage/include/DomoticsCore/StorageWebUI.h, DomoticsCore-Storage/include/DomoticsCore/Storage_ESP32.h, DomoticsCore-Storage/include/DomoticsCore/Storage_ESP8266.h, DomoticsCore-Storage/include/DomoticsCore/Storage_HAL.h, DomoticsCore-Storage/include/DomoticsCore/Storage_Stub.h, DomoticsCore-Storage/library.json, DomoticsCore-Storage/README.md]
 checked: 3c4d96c
 verified: agent:documentalist
 -->

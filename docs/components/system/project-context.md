@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-System/include/DomoticsCore, DomoticsCore-System/examples, DomoticsCore-System/library.json]
+sources: [DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, DomoticsCore-System/include/DomoticsCore/SystemPersistence.h, DomoticsCore-System/include/DomoticsCore/SystemWebUISetup.h, DomoticsCore-System/library.json]
 checked: 436872f
 verified: agent:documentalist
 -->
