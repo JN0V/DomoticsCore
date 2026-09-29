@@ -1,3 +1,7 @@
+<!-- workline
+sources: [DomoticsCore-HomeAssistant/library.json, DomoticsCore-HomeAssistant/include/DomoticsCore, DomoticsCore-HomeAssistant/examples, DomoticsCore-MQTT/include/DomoticsCore]
+checked: 967d328
+-->
 # DomoticsCore-HomeAssistant -- Project Context
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

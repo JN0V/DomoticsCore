@@ -1,3 +1,7 @@
+<!-- workline
+sources: [DomoticsCore-OTA/include/DomoticsCore/, DomoticsCore-OTA/src/, DomoticsCore-OTA/library.json, DomoticsCore-OTA/examples/BasicOTA/, DomoticsCore-OTA/examples/OTAWithWebUI/, DomoticsCore-OTA/test/test_ota_component/]
+checked: 4b811cd
+-->
 # DomoticsCore-OTA
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

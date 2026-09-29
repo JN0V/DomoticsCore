@@ -1,3 +1,16 @@
+<!-- workline
+sources: [
+  DomoticsCore-Core/include/DomoticsCore/,
+  DomoticsCore-Wifi/include/DomoticsCore/,
+  DomoticsCore-MQTT/include/DomoticsCore/,
+  DomoticsCore-NTP/include/DomoticsCore/,
+  DomoticsCore-OTA/include/DomoticsCore/,
+  DomoticsCore-HomeAssistant/include/DomoticsCore/,
+  DomoticsCore-Storage/include/DomoticsCore/
+]
+checked: 4cdb3e6
+verified: agent:documentalist
+-->
 # EventBus Patterns
 
 This document describes common patterns for using the DomoticsCore EventBus.

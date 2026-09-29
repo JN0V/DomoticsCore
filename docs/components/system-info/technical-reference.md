@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfo.h, DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfoWebUI.h]
+checked: 3c4d96c
+verified: agent:documentalist
+-->
 # DomoticsCore-SystemInfo -- Technical Reference
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

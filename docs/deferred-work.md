@@ -1,3 +1,7 @@
+<!-- workline
+sources: []
+verified: agent:documentalist
+-->
 # Deferred work
 
 Decisions a lot parked rather than took, each with its evidence, until a lot

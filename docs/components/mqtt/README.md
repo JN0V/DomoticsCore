@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-MQTT/examples/, DomoticsCore-MQTT/library.json]
+checked: ae5715e
+-->
+
 # DomoticsCore-MQTT
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

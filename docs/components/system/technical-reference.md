@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-System/include/DomoticsCore, DomoticsCore-System/examples, DomoticsCore-System/library.json]
+checked: 5adaa1e
+verified: agent:documentalist
+-->
 # DomoticsCore-System -- Technical Reference
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

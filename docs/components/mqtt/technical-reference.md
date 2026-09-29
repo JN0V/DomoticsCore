@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-MQTT/include/DomoticsCore/]
+checked: e927998
+verified: agent:documentalist
+-->
 # DomoticsCore-MQTT -- Technical Reference
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

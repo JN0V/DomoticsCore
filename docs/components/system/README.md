@@ -1,3 +1,7 @@
+<!-- workline
+sources: [DomoticsCore-System/include/DomoticsCore, DomoticsCore-System/examples, docs/components/system/technical-reference.md]
+checked: 358931b
+-->
 # DomoticsCore-System
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

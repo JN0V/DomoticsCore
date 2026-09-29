@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-MQTT/library.json, DomoticsCore-MQTT/examples/]
+checked: fa51735
+verified: agent:documentalist
+-->
 # DomoticsCore-MQTT -- Project Context (AI Agent Reference)
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

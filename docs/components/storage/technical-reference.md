@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-Storage/include/DomoticsCore/]
+checked: b7192b5
+verified: agent:documentalist
+-->
 # DomoticsCore-Storage -- Technical Reference
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

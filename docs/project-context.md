@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-Core/, DomoticsCore-System/, DomoticsCore-Wifi/, DomoticsCore-WebUI/, DomoticsCore-MQTT/, DomoticsCore-HomeAssistant/, DomoticsCore-NTP/, DomoticsCore-OTA/, DomoticsCore-Storage/, DomoticsCore-LED/, DomoticsCore-RemoteConsole/, DomoticsCore-SystemInfo/, library.json, library.properties, .specify/memory/constitution.md, .github/workflows/, tools/, tests/, examples/]
+checked: 4cdb3e6
+verified: agent:documentalist
+-->
 # DomoticsCore - Project Context
 
 > AI-agent context document. Provides the essential knowledge needed to work effectively on this codebase.

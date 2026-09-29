@@ -1,3 +1,6 @@
+<!-- workline
+sources: []
+-->
 # DomoticsCore — Code Remediation Roadmap v2
 
 > Generated from adversarial code review of all 12 components + root (2026-03-10).

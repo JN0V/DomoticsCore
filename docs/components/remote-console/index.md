@@ -1,3 +1,8 @@
+<!-- workline
+sources: [docs/components/remote-console/README.md, docs/components/remote-console/technical-reference.md, docs/components/remote-console/project-context.md]
+checked: ae5715e
+verified: agent:documentalist
+-->
 # DomoticsCore-RemoteConsole -- Documentation Index
 
 > Generated: 2026-03-10 | Component version: 1.4.1 | Project type: embedded (header-only library)

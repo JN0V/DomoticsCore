@@ -1,3 +1,7 @@
+<!-- workline
+sources: [docs, DomoticsCore-Core/include/DomoticsCore]
+checked: 436872f
+-->
 # DomoticsCore Documentation
 
 ## Overview

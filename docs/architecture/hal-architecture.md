@@ -1,3 +1,16 @@
+<!-- workline
+sources: [
+  DomoticsCore-Core/include/DomoticsCore/,
+  DomoticsCore-Wifi/include/DomoticsCore/,
+  DomoticsCore-WebUI/include/DomoticsCore/,
+  DomoticsCore-MQTT/include/DomoticsCore/,
+  DomoticsCore-NTP/include/DomoticsCore/,
+  DomoticsCore-Storage/include/DomoticsCore/,
+  DomoticsCore-OTA/include/DomoticsCore/
+]
+checked: ae5715e
+verified: agent:documentalist
+-->
 # HAL Architecture: Routing Header + Platform Files
 
 ## Overview

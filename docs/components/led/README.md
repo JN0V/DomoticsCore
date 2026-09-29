@@ -1,3 +1,9 @@
+<!-- workline
+sources: [DomoticsCore-LED/include/DomoticsCore/, DomoticsCore-LED/examples/BasicLED/, DomoticsCore-LED/examples/LEDWithWebUI/]
+checked: ae5715e
+verified: agent:documentalist
+-->
+
 # DomoticsCore-LED
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

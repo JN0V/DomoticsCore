@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-NTP/include/DomoticsCore/, DomoticsCore-NTP/library.json, DomoticsCore-NTP/examples/BasicNTP/, DomoticsCore-NTP/examples/NTPWithWebUI/, DomoticsCore-NTP/test/test_ntp_component/test_ntp_component.cpp]
+checked: ae5715e
+-->
+
 # DomoticsCore-NTP Component
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

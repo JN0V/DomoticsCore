@@ -1,3 +1,9 @@
+<!-- workline
+sources: [DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-NTP/include/DomoticsCore/NTP.h, DomoticsCore-Wifi/include/DomoticsCore/, DomoticsCore-WebUI/include/DomoticsCore/, DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-HomeAssistant/include/DomoticsCore/, DomoticsCore-SystemInfo/include/DomoticsCore/, DomoticsCore-OTA/include/DomoticsCore/, DomoticsCore-RemoteConsole/include/DomoticsCore/, DomoticsCore-LED/include/DomoticsCore/]
+checked: 500862d
+verified: agent:documentalist
+-->
+
 # Component Configuration Pattern
 
 ## Standard Pattern for All Components

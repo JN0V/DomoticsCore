@@ -1,3 +1,7 @@
+<!-- workline
+sources: [DomoticsCore-Storage/include/DomoticsCore, DomoticsCore-Storage/examples]
+checked: ae5715e
+-->
 # DomoticsCore-Storage
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

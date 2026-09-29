@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-WebUI/include/DomoticsCore, DomoticsCore-WebUI/webui_src, DomoticsCore-WebUI/library.json]
+checked: 3c4d96c
+verified: agent:documentalist
+-->
 # DomoticsCore-WebUI -- Project Context (AI Reference)
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-WebUI/include/DomoticsCore/, DomoticsCore-WebUI/include/DomoticsCore/WebUI/]
+checked: b17f0a1
+verified: agent:documentalist
+-->
 # WebUI Developer Guide
 
 ## Table of Contents

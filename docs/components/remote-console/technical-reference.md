@@ -1,3 +1,7 @@
+<!-- workline
+sources: [DomoticsCore-RemoteConsole/include/DomoticsCore]
+checked: 4d330ee
+-->
 # DomoticsCore-RemoteConsole -- Technical Reference
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

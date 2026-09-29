@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-System/include/DomoticsCore, DomoticsCore-System/examples, DomoticsCore-System/library.json]
+checked: 436872f
+verified: agent:documentalist
+-->
 # DomoticsCore-System -- Project Context (AI Agent Reference)
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

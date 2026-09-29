@@ -1,3 +1,7 @@
+<!-- workline
+sources: [DomoticsCore-SystemInfo/include/DomoticsCore/, DomoticsCore-SystemInfo/library.json, DomoticsCore-Core/include/DomoticsCore/]
+checked: ae5715e
+-->
 # DomoticsCore-SystemInfo
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

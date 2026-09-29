@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-System/include/DomoticsCore/, DomoticsCore-System/examples/Minimal/, DomoticsCore-System/examples/Standard/, DomoticsCore-System/examples/FullStack/, DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-WebUI/include/DomoticsCore/, DomoticsCore-NTP/include/DomoticsCore/, examples/README.md]
+checked: d54dae8
+verified: agent:documentalist
+-->
 # Getting Started with DomoticsCore
 
 **Quick guide to start building IoT applications for ESP32, ESP32-C3, and ESP8266**

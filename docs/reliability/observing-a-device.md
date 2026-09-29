@@ -1,3 +1,12 @@
+<!-- workline
+sources: [DomoticsCore-Core/include/DomoticsCore/, DomoticsCore-Core/src/,
+  DomoticsCore-System/include/DomoticsCore/, DomoticsCore-SystemInfo/include/DomoticsCore/,
+  DomoticsCore-Storage/include/DomoticsCore/, DomoticsCore-MQTT/include/DomoticsCore/,
+  DomoticsCore-HomeAssistant/include/DomoticsCore/, DomoticsCore-RemoteConsole/include/DomoticsCore/,
+  DomoticsCore-WebUI/include/DomoticsCore/, tools/on-device/]
+checked: d54dae8
+verified: agent:documentalist
+-->
 # Observing a device in production
 
 How to build, configure and read a device so that a reboot, a crash or a

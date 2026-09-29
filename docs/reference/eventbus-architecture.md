@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-HomeAssistant/include/DomoticsCore/, DomoticsCore-Wifi/include/DomoticsCore/, DomoticsCore-System/include/DomoticsCore/]
+checked: 76c0609
+verified: agent:documentalist
+-->
 # EventBus Architecture - DomoticsCore
 
 **Version**: 2.0

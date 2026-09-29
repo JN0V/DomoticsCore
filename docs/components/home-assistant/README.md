@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-HomeAssistant/include/DomoticsCore/, DomoticsCore-HomeAssistant/examples/]
+checked: c5aef9f
+-->
+
 # DomoticsCore-HomeAssistant
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

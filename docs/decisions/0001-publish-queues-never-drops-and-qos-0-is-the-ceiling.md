@@ -1,3 +1,7 @@
+<!-- workline
+sources: []
+-->
+
 # 0001 — `publish()` defers, it never drops; and QoS 0 is the ceiling
 
 **Status**: accepted

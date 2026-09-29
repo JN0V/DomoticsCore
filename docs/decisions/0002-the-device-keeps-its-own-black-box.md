@@ -1,3 +1,7 @@
+<!-- workline
+sources: []
+verified: agent:documentalist
+-->
 # 0002 — The device keeps its own black box, in RTC memory, owned by Core
 
 **Status**: accepted

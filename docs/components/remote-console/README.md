@@ -1,3 +1,7 @@
+<!-- workline
+sources: [DomoticsCore-RemoteConsole/include/DomoticsCore/, DomoticsCore-RemoteConsole/examples/BasicRemoteConsole/, DomoticsCore-RemoteConsole/examples/RemoteConsoleWithWebUI/]
+checked: b73224f
+-->
 # DomoticsCore-RemoteConsole
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-LED/library.json, DomoticsCore-LED/platformio.ini, DomoticsCore-LED/README.md, DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-LED/include/DomoticsCore/LEDWebUI.h, DomoticsCore-LED/test/test_led_types/, DomoticsCore-LED/test/test_led_component/, DomoticsCore-LED/examples/BasicLED/, DomoticsCore-LED/examples/LEDWithWebUI/]
+checked: ae5715e
+-->
+
 # DomoticsCore-LED -- Project Context (AI Agent Reference)
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

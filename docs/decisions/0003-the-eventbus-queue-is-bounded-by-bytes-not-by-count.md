@@ -1,3 +1,7 @@
+<!-- workline
+sources: []
+verified: agent:documentalist
+-->
 # 0003 — the EventBus queue is bounded by bytes, not by a count of entries
 
 **Status**: accepted

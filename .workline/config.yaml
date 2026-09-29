@@ -1,0 +1,4 @@
+routing:
+  # Before a push, the committer checks the commits leaving the machine, and
+  # the documentalist has the docs they made suspect judged.
+  events: {pre-push: [committer, documentalist]}

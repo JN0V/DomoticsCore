@@ -1,3 +1,7 @@
+<!-- workline
+sources: [DomoticsCore-OTA/include/DomoticsCore/, DomoticsCore-OTA/src/, DomoticsCore-OTA/library.json, DomoticsCore-OTA/platformio.ini, DomoticsCore-OTA/examples/BasicOTA/, DomoticsCore-OTA/examples/OTAWithWebUI/, DomoticsCore-OTA/test/test_ota_component/, DomoticsCore-Core/include/DomoticsCore/, DomoticsCore-WebUI/include/DomoticsCore/]
+checked: f815f62
+-->
 # DomoticsCore-OTA -- Project Context (AI Agent)
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

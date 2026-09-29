@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-RemoteConsole/include/DomoticsCore/, DomoticsCore-RemoteConsole/test/, DomoticsCore-RemoteConsole/library.json]
+checked: fa51735
+verified: agent:documentalist
+-->
 # DomoticsCore-RemoteConsole -- Project Context
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

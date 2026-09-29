@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-Storage/include/DomoticsCore/, DomoticsCore-Storage/examples/, DomoticsCore-Storage/test/, DomoticsCore-Storage/library.json, DomoticsCore-Storage/README.md]
+checked: 3c4d96c
+verified: agent:documentalist
+-->
 # DomoticsCore-Storage -- Project Context (AI Reference)
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

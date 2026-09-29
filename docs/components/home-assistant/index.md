@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-HomeAssistant/]
+checked: ae5715e
+-->
+
 # DomoticsCore-HomeAssistant -- Documentation Index
 
 > Component documentation for DomoticsCore-HomeAssistant v2.0.0

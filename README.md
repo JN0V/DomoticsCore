@@ -1,3 +1,8 @@
+<!-- workline
+sources: [library.json, DomoticsCore-Core/, DomoticsCore-System/, DomoticsCore-Wifi/, DomoticsCore-LED/, DomoticsCore-Storage/, DomoticsCore-RemoteConsole/, DomoticsCore-WebUI/, DomoticsCore-MQTT/, DomoticsCore-NTP/, DomoticsCore-OTA/, DomoticsCore-HomeAssistant/, DomoticsCore-SystemInfo/, tools/check_versions.py, tools/bump_version.py, docs/architecture.md#header-only-design]
+checked: d54dae8
+-->
+
 # DomoticsCore
 
 [![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v2.0.0)

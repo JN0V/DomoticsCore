@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-Core/include/DomoticsCore/, DomoticsCore-Core/include/DomoticsCore/Testing/, DomoticsCore-Wifi/include/DomoticsCore/, DomoticsCore-WebUI/include/DomoticsCore/, DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-NTP/include/DomoticsCore/, DomoticsCore-Storage/include/DomoticsCore/, DomoticsCore-OTA/include/DomoticsCore/, DomoticsCore-HomeAssistant/include/DomoticsCore/]
+checked: f0a5518
+verified: agent:documentalist
+-->
 # DomoticsCore - Technical Reference
 
 > Cross-cutting technical reference for the entire DomoticsCore framework. For component-specific details, see `docs/components/{name}/technical-reference.md`.

@@ -1,3 +1,9 @@
+<!-- workline
+sources: [library.json, DomoticsCore-Core/, DomoticsCore-System/, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-LED/, DomoticsCore-RemoteConsole/, DomoticsCore-Wifi/, DomoticsCore-MQTT/, DomoticsCore-WebUI/, DomoticsCore-HomeAssistant/, DomoticsCore-NTP/, DomoticsCore-OTA/, DomoticsCore-Storage/, DomoticsCore-SystemInfo/]
+checked: 4b811cd
+verified: agent:documentalist
+-->
+
 # DomoticsCore Architecture
 
 **Version:** 2.0.0

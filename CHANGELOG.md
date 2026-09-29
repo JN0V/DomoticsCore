@@ -1,3 +1,7 @@
+<!-- workline
+sources: []
+-->
+
 # Changelog
 
 All notable changes to DomoticsCore will be documented in this file.

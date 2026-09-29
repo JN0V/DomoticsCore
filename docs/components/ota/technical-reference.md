@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-OTA/include/DomoticsCore/, DomoticsCore-OTA/src/, DomoticsCore-OTA/test/]
+checked: f815f62
+verified: agent:documentalist
+-->
 # DomoticsCore-OTA -- Technical Reference
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

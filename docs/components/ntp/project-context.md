@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-NTP/library.json, DomoticsCore-NTP/platformio.ini, DomoticsCore-NTP/README.md, DomoticsCore-NTP/SPECIFICATIONS.md, DomoticsCore-NTP/include/DomoticsCore, DomoticsCore-NTP/test, DomoticsCore-NTP/examples, tests/mocks/MockNTPClient.h]
+checked: ae5715e
+verified: agent:documentalist
+-->
 # DomoticsCore-NTP -- AI Project Context
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

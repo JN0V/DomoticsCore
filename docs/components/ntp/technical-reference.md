@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-NTP/include/DomoticsCore]
+checked: 281c95a
+verified: agent:documentalist
+-->
 # DomoticsCore-NTP Technical Reference
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

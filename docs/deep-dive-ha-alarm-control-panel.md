@@ -1,3 +1,9 @@
+<!-- workline
+sources: [DomoticsCore-HomeAssistant/include/DomoticsCore/HAAlarmControlPanel.h, DomoticsCore-HomeAssistant/test/test_ha_alarm_panel/test_ha_alarm_panel.cpp, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEntity.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAButton.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HALight.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HASwitch.h, DomoticsCore-HomeAssistant/library.json]
+checked: 453983a
+verified: agent:documentalist
+-->
+
 # Deep-Dive: HA Alarm Control Panel
 
 > **Generated:** 2026-03-05 | **Mode:** Deep-dive | **Scan Level:** Exhaustive

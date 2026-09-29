@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-Core/include/DomoticsCore/, DomoticsCore-Core/src/, DomoticsCore-Core/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-NTP/library.json, DomoticsCore-System/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-Storage/library.json, DomoticsCore-OTA/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-SystemInfo/library.json]
+checked: 4cdb3e6
+verified: agent:documentalist
+-->
 # DomoticsCore-Core -- Project Context (AI Agent Reference)
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

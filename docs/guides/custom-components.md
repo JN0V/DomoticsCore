@@ -1,3 +1,9 @@
+<!-- workline
+sources: [DomoticsCore-Core/include/DomoticsCore/, DomoticsCore-System/include/DomoticsCore/, DomoticsCore-Storage/include/DomoticsCore/]
+checked: 500862d
+verified: agent:documentalist
+-->
+
 # Creating Custom Components
 
 This guide shows how to create custom components for DomoticsCore, including best practices for ESP32 hardware interaction, dependency management, and storage patterns.

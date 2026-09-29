@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-SystemInfo/]
+checked: ae5715e
+verified: agent:documentalist
+-->
 # DomoticsCore-SystemInfo -- Project Context
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

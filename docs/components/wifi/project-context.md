@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-Wifi/include/DomoticsCore, DomoticsCore-Wifi/examples, DomoticsCore-Wifi/test, DomoticsCore-Wifi/library.json, tests/mocks]
+checked: 7ec34b1
+verified: agent:documentalist
+-->
 # DomoticsCore-Wifi -- Project Context (AI Agent Reference)
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

@@ -1,3 +1,8 @@
+<!-- workline
+sources: [docs/guides/webui-developer.md#state-tracking-with-lazystate]
+checked: f892bfa
+verified: agent:documentalist
+-->
 # WebUI State Tracking - Quick Reference
 
 > **📘 For complete WebUI development guide, see [WebUI-Developer-Guide.md](WebUI-Developer-Guide.md)**

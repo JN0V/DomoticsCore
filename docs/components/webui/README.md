@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-WebUI/include/DomoticsCore, DomoticsCore-WebUI/webui_src, DomoticsCore-WebUI/test]
+checked: fd40c74
+verified: agent:documentalist
+-->
 # DomoticsCore-WebUI
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

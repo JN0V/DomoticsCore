@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-Wifi/include/DomoticsCore, DomoticsCore-Wifi/test, DomoticsCore-Wifi/examples, DomoticsCore-Wifi/library.json]
+checked: ae5715e
+verified: agent:documentalist
+-->
 # DomoticsCore-Wifi
 
 > **All development MUST comply with the [DomoticsCore Constitution](../../../.specify/memory/constitution.md).**

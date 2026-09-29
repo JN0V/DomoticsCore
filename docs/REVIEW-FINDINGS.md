@@ -1,3 +1,6 @@
+<!-- workline
+sources: []
+-->
 # DomoticsCore Documentation - Adversarial Review Findings
 
 > **ARCHIVED** — All findings have been resolved as of 2026-03-09 (see [CODE-ROADMAP.md](./CODE-ROADMAP.md) for tracking).

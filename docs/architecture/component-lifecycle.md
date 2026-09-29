@@ -1,3 +1,8 @@
+<!-- workline
+sources: [DomoticsCore-Core/include/DomoticsCore/, DomoticsCore-Core/src/]
+checked: ae5715e
+verified: agent:documentalist
+-->
 # Component Lifecycle
 
 This document describes the lifecycle of DomoticsCore components.
