@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-MQTT/include/DomoticsCore/]
-checked: e927998
+checked: 6a979a6
 verified: agent:documentalist
 -->
 # DomoticsCore-MQTT -- Technical Reference
@@ -402,7 +402,7 @@ public:
     void setConfigSaveCallback(std::function<void(const MQTTConfig&)> callback);
 
     String getWebUIName() const override;   // Returns "MQTT" (from metadata.name)
-    String getWebUIVersion() const override; // Returns metadata.version (currently "1.4.1")
+    String getWebUIVersion() const override; // Returns metadata.version (currently "1.9.0")
 
     String getWebUIData(const String& contextId) override;
     bool hasDataChanged(const String& contextId) override;

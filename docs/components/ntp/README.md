@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-NTP/include/DomoticsCore/, DomoticsCore-NTP/library.json, DomoticsCore-NTP/examples/BasicNTP/, DomoticsCore-NTP/examples/NTPWithWebUI/, DomoticsCore-NTP/test/test_ntp_component/test_ntp_component.cpp]
-checked: ae5715e
+checked: 6a979a6
 -->
 
 # DomoticsCore-NTP Component
@@ -105,7 +105,7 @@ lib_deps =
 
 ## Testing
 
-33 native unit tests in `DomoticsCore-NTP/test/test_ntp_component/test_ntp_component.cpp` covering events, lifecycle, configuration, sync status, timezones, callbacks, uptime, edge cases, and memory stability.
+36 native unit tests in `DomoticsCore-NTP/test/test_ntp_component/test_ntp_component.cpp` covering events, lifecycle, configuration, sync status, timezones, callbacks, uptime, edge cases, and memory stability.
 
 ## License
 

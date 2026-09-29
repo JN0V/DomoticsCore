@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-HomeAssistant/library.json, DomoticsCore-HomeAssistant/include/DomoticsCore, DomoticsCore-HomeAssistant/examples, DomoticsCore-MQTT/include/DomoticsCore]
-checked: 967d328
+checked: 6a979a6
 -->
 # DomoticsCore-HomeAssistant -- Project Context
 
@@ -15,7 +15,7 @@ This document provides AI-oriented context for the DomoticsCore-HomeAssistant co
 | Field | Value |
 |-------|-------|
 | **Library Name** | `DomoticsCore-HomeAssistant` |
-| **Version** | `2.0.0` |
+| **Version** | `2.5.0` |
 | **Component Name** | `HomeAssistant` (registered as `metadata.name`) |
 | **Namespace** | `DomoticsCore::Components::HomeAssistant` |
 | **Architecture** | Header-only (no `.cpp` source files) |
@@ -31,7 +31,7 @@ This document provides AI-oriented context for the DomoticsCore-HomeAssistant co
 
 ```
 DomoticsCore-HomeAssistant/
-  library.json                                  # PlatformIO metadata (v2.0.0)
+  library.json                                  # PlatformIO metadata (v2.5.0)
   README.md                                     # Component README
   SPECIFICATIONS.md                             # Design specifications
   include/
@@ -290,7 +290,7 @@ This section maps component behavior to the [DomoticsCore Constitution](../../..
 | **XII. Multi-Registry** | `library.json` present with proper PlatformIO structure. |
 | **XIII. Anti-Patterns** | No singletons. No circular dependencies. Event constants centralized in `HAEvents.h` and `MQTTEvents.h`. |
 | **XIV. Memory Leak Prevention** | Entities stored in `std::unique_ptr`. No raw `new`/`delete`. Fixed-size char buffers for MQTT events (`MQTT_EVENT_TOPIC_SIZE`, `MQTT_EVENT_PAYLOAD_SIZE`) and HAConfig. |
-| **XV. Semantic Versioning** | `library.json` version (`2.0.0`) matches `metadata.version` in constructor. |
+| **XV. Semantic Versioning** | `library.json` version (`2.5.0`) matches `metadata.version` in constructor. |
 
 ---
 

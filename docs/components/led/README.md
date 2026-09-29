@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-LED/include/DomoticsCore/, DomoticsCore-LED/examples/BasicLED/, DomoticsCore-LED/examples/LEDWithWebUI/]
-checked: ae5715e
+checked: 6a979a6
 verified: agent:documentalist
 -->
 

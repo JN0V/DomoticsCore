@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-MQTT/examples/, DomoticsCore-MQTT/library.json]
-checked: ae5715e
+checked: 6a979a6
 -->
 
 # DomoticsCore-MQTT
@@ -111,7 +111,7 @@ Three ready-to-use examples are included:
 
 ## Version
 
-Current version: **1.4.1** (as declared in `library.json` and `metadata.version`).
+Current version: **1.9.0** (as declared in `library.json` and `metadata.version`).
 
 ## License
 

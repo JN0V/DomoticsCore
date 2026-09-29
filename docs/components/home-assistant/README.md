@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-HomeAssistant/include/DomoticsCore/, DomoticsCore-HomeAssistant/examples/]
-checked: c5aef9f
+checked: 6a979a6
 -->
 
 # DomoticsCore-HomeAssistant

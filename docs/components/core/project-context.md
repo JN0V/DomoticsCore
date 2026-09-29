@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-Core/include/DomoticsCore/, DomoticsCore-Core/src/, DomoticsCore-Core/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-NTP/library.json, DomoticsCore-System/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-Storage/library.json, DomoticsCore-OTA/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-SystemInfo/library.json]
-checked: 4cdb3e6
+checked: 6a979a6
 verified: agent:documentalist
 -->
 # DomoticsCore-Core -- Project Context (AI Agent Reference)
@@ -16,7 +16,7 @@ This document provides the context an AI coding agent needs to understand, navig
 | Field | Value |
 |-------|-------|
 | **Name** | DomoticsCore-Core |
-| **Version** | 1.5.2 (see `library.json`) |
+| **Version** | 1.13.0 (see `library.json`) |
 | **Role** | Foundation library -- runtime engine, component model, EventBus, logging, timers, memory management |
 | **Namespace** | `DomoticsCore` (top-level), `DomoticsCore::Components`, `DomoticsCore::Utils`, `DomoticsCore::Testing` |
 | **License** | MIT |
@@ -118,7 +118,7 @@ Every DomoticsCore component depends on Core. Based on `library.json` dependency
 | DomoticsCore-LED | Yes | Uses IComponent, NonBlockingDelay |
 | DomoticsCore-NTP | Yes (`>=1.0.0`) | Uses IComponent, EventBus |
 | DomoticsCore-System | Yes (`>=1.0.0`) | Uses IComponent, EventBus, ComponentRegistry |
-| DomoticsCore-RemoteConsole | Yes (`>=1.4.0`) | Uses IComponent, LoggerCallbacks, EventBus |
+| DomoticsCore-RemoteConsole | Yes (`>=1.13.0`) | Uses IComponent, LoggerCallbacks, EventBus |
 | DomoticsCore-Wifi | Implicit (via includes) | Uses IComponent, EventBus, Logger |
 | DomoticsCore-Storage | Implicit (via includes) | Uses IComponent, EventBus, Logger |
 | DomoticsCore-OTA | Implicit (via includes) | Uses IComponent, EventBus, Logger |

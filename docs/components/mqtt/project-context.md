@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-MQTT/library.json, DomoticsCore-MQTT/examples/]
-checked: fa51735
+checked: 6a979a6
 verified: agent:documentalist
 -->
 # DomoticsCore-MQTT -- Project Context (AI Agent Reference)
@@ -17,7 +17,7 @@ This document provides structured context for AI agents and developers working o
 |----------|-------|
 | **Name** | DomoticsCore-MQTT |
 | **Registered as** | `"MQTT"` (via `metadata.name`) |
-| **Version** | 1.4.1 (declared in both `library.json` and `metadata.version` in constructor) |
+| **Version** | 1.9.0 (declared in both `library.json` and `metadata.version` in constructor) |
 | **Role** | MQTT client component providing publish/subscribe messaging over TCP/IP for ESP32/ESP8266 IoT devices |
 | **Architecture** | Header-only library; inline implementations in `MQTT_impl.h` included at the end of `MQTT.h` |
 | **Namespace** | `DomoticsCore::Components::MQTTComponent` |
@@ -219,4 +219,4 @@ core.addComponent(std::make_unique<MQTTComponent>(cfg));
 auto* mqtt = core.getComponent<MQTTComponent>("MQTT");
 ```
 
-The component registers itself with `metadata.name = "MQTT"`, `metadata.version = "1.4.1"`, `metadata.author = "DomoticsCore"`.
+The component registers itself with `metadata.name = "MQTT"`, `metadata.version = "1.9.0"`, `metadata.author = "DomoticsCore"`.

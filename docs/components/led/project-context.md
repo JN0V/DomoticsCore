@@ -1,6 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-LED/library.json, DomoticsCore-LED/platformio.ini, DomoticsCore-LED/README.md, DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-LED/include/DomoticsCore/LEDWebUI.h, DomoticsCore-LED/test/test_led_types/, DomoticsCore-LED/test/test_led_component/, DomoticsCore-LED/examples/BasicLED/, DomoticsCore-LED/examples/LEDWithWebUI/]
-checked: ae5715e
+checked: 6a979a6
+verified: agent:documentalist
 -->
 
 # DomoticsCore-LED -- Project Context (AI Agent Reference)
@@ -18,7 +19,7 @@ This document is intended for AI coding agents working on the DomoticsCore-LED c
 | **Library name** | `DomoticsCore-LED` |
 | **Component class** | `DomoticsCore::Components::LEDComponent` |
 | **Registered name** | `"LED"` (set in `metadata.name`) |
-| **Version** | `1.4.0` (must match in both `library.json` and `metadata.version`) |
+| **Version** | `1.6.0` (must match in both `library.json` and `metadata.version`) |
 | **Category** | `Hardware` |
 | **Platforms** | `espressif32`, `espressif8266` |
 | **Framework** | Arduino |
@@ -39,7 +40,7 @@ All paths are relative to the repository root.
 | `DomoticsCore-LED/include/DomoticsCore/LED.h` | Main header: `LEDEffect`, `LEDColor`, `LEDConfig`, `LEDState`, `LEDComponent` |
 | `DomoticsCore-LED/include/DomoticsCore/LEDWebUI.h` | WebUI provider: `LEDWebUI` (extends `CachingWebUIProvider`) |
 | `DomoticsCore-LED/test/test_led_types/test_led_types.cpp` | Unity tests for `LEDColor`, `LEDEffect`, `LEDConfig`, `LEDState` |
-| `DomoticsCore-LED/test/test_led_component/test_led_component.cpp` | Unity tests for `LEDComponent` metadata and Core lookup |
+| `DomoticsCore-LED/test/test_led_component/test_led_component.cpp` | Unity tests for `LEDComponent` lifecycle, state management, metadata and Core lookup |
 | `DomoticsCore-LED/examples/BasicLED/src/main.cpp` | Standalone demo cycling six effects |
 | `DomoticsCore-LED/examples/BasicLED/platformio.ini` | PlatformIO config for the BasicLED example |
 | `DomoticsCore-LED/examples/BasicLED/README.md` | Hardware wiring guide and expected output |
@@ -69,11 +70,11 @@ All paths are relative to the repository root.
 |------------|---------|---------|
 | `DomoticsCore-Core` | `^1.3.0` | Provides `IComponent`, `Core`, `Timer` (contains `NonBlockingDelay`), `Platform_HAL`, `Logger` |
 
-`LED.h` includes `<DomoticsCore/IComponent.h>`, `<DomoticsCore/Timer.h>`, `<DomoticsCore/Platform_HAL.h>`, and `<vector>`.
+`LED.h` includes `<DomoticsCore/IComponent.h>`, `<DomoticsCore/Timer.h>`, `<DomoticsCore/Platform_HAL.h>`, `<vector>`, and `<cmath>`.
 
-`LEDWebUI.h` additionally depends on headers from Core's WebUI subsystem (`IWebUIProvider.h`, `BaseWebUIComponents.h`) and `ArduinoJson`. These are transitive through Core.
+`LEDWebUI.h` additionally depends on headers from `DomoticsCore-WebUI` (`IWebUIProvider.h`, `BaseWebUIComponents.h`) and `ArduinoJson`; the native test environment adds both to reach them.
 
-There are **no other component dependencies**. The LED component does not depend on WiFi, MQTT, Storage, or any other DomoticsCore component.
+`LED.h` has **no other component dependencies**. The LED component does not depend on WiFi, MQTT, Storage, or any other DomoticsCore component.
 
 ---
 
@@ -112,19 +113,17 @@ The WebUI component takes ownership of the `LEDWebUI` pointer.
 
 ## Pitfalls and Common Mistakes
 
-1. **Calling control methods before `begin()`**: `ledStates` is empty until `begin()` resizes it to match `ledConfigs`. Calls to `setLED()` or `setLEDEffect()` will return `false`.
+1. **Calling control methods before `begin()`**: `ledStates` is empty until `begin()` sizes it to match `ledConfigs`. Calls to `setLED()` or `setLEDEffect()` will return `false`.
 
 2. **Forgetting `invertLogic` for common-anode LEDs**: Common-anode RGB LEDs require `invertLogic = true`. Without it, the PWM output is reversed (full brightness produces off, and vice versa).
 
 3. **Rainbow on single-color LEDs**: `LEDEffect::Rainbow` only produces visible color changes on RGB LEDs. On single-color LEDs it has no visible effect because the HSV-to-RGB conversion is applied to channels that are collapsed into a single output.
 
-4. **Adding LEDs after `begin()`**: `addLED()` / `addSingleLED()` / `addRGBLED()` modify only `ledConfigs`. The `ledStates` vector is resized once during `begin()`. LEDs added after `begin()` will not have corresponding state entries and will be ignored.
+4. **Name collisions**: There is no uniqueness enforcement on LED names. Duplicate names cause `setLED(name, ...)` to always match the first occurrence.
 
-5. **Name collisions**: There is no uniqueness enforcement on LED names. Duplicate names cause `setLED(name, ...)` to always match the first occurrence.
+5. **WebUI initial state**: `LEDWebUI` starts with `enabled = false`. The LED will be OFF until the user toggles the enable switch in the dashboard or `setLED()` is called programmatically.
 
-6. **WebUI initial state**: `LEDWebUI` starts with `enabled = false`. The LED will be OFF until the user toggles the enable switch in the dashboard or `setLED()` is called programmatically.
-
-7. **String allocations in `getLEDNames()`**: This method allocates a new `std::vector<String>` on each call. Avoid calling it in tight loops. The `LEDWebUI` caches names internally for this reason.
+6. **String allocations in `getLEDNames()`**: This method allocates a new `std::vector<String>` on each call. Avoid calling it in tight loops. The `LEDWebUI` caches names internally for this reason.
 
 ---
 
@@ -139,7 +138,7 @@ When modifying this component, ensure adherence to these key constitution princi
 - **Performance (Section V)**: Avoid heap allocations in `loop()` and `updateEffects()`. The 20 Hz tick runs on every frame.
 - **HAL Isolation (Section IX)**: All GPIO and timing calls go through `HAL::`. No `#ifdef` platform checks are permitted in LED.h or LEDWebUI.h.
 - **Non-Blocking Timer (Section X)**: The component already uses `NonBlockingDelay`. Never introduce `delay()`.
-- **File Size (Section VII)**: `LED.h` is approximately 480 lines. Monitor this; the hard limit is 800 lines.
+- **File Size (Section VII)**: Monitor the size of `LED.h`; the hard limit is 800 lines.
 - **Memory Leak Prevention (Section XIV)**: `LEDWebUI` caches LED names. Ensure any new caches are invalidated or bounded. No `new` without corresponding ownership transfer.
 - **Semantic Versioning (Section XV)**: Version changes must use `tools/bump_version.py`. The version in `library.json` must match `metadata.version` in `LEDComponent`'s constructor.
 - **Documentation (Quality Gates)**: All documentation, specs, and code comments must be in English.

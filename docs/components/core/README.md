@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-Core/include/DomoticsCore/, DomoticsCore-Core/src/]
-checked: ae5715e
+checked: 6a979a6
 verified: agent:documentalist
 -->
 # DomoticsCore-Core

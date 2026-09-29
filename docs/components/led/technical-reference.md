@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-LED/include/DomoticsCore/LEDWebUI.h, DomoticsCore-LED/test/test_led_types/test_led_types.cpp, DomoticsCore-LED/test/test_led_component/test_led_component.cpp]
-checked: 3c4d96c
+checked: 6a979a6
 -->
 
 # DomoticsCore-LED -- Technical Reference
@@ -132,7 +132,7 @@ class LEDComponent : public IComponent { ... };
 | Field | Value |
 |-------|-------|
 | `metadata.name` | `"LED"` |
-| `metadata.version` | `"1.4.0"` |
+| `metadata.version` | `"1.6.0"` |
 | `metadata.author` | `"DomoticsCore"` |
 | `metadata.category` | `"Hardware"` |
 | `metadata.tags` | `{"led", "pwm", "effects", "hardware"}` |
@@ -339,7 +339,7 @@ Returns `metadata.name` from the linked `LEDComponent` (`"LED"`).
 
 #### `String getWebUIVersion() const`
 
-Returns `metadata.version` from the linked `LEDComponent` (typically `"1.4.0"`). Falls back to `"1.3.0"` if the component pointer is null.
+Returns `metadata.version` from the linked `LEDComponent` (typically `"1.6.0"`). Falls back to `"1.3.0"` if the component pointer is null.
 
 #### `String getWebUIData(const String& contextId)`
 

@@ -1,12 +1,11 @@
 <!-- workline
 sources: [DomoticsCore-HomeAssistant/]
-checked: ae5715e
+checked: 6a979a6
 -->
 
 # DomoticsCore-HomeAssistant -- Documentation Index
 
-> Component documentation for DomoticsCore-HomeAssistant v2.0.0
-> Last updated: 2026-03-10
+> Component documentation for DomoticsCore-HomeAssistant (version: see `library.json`)
 
 ---
 
@@ -101,12 +100,12 @@ DomoticsCore-HomeAssistant is the Home Assistant MQTT Discovery integration comp
 
 ```
 DomoticsCore-HomeAssistant/
-  library.json                                  # PlatformIO metadata (v2.0.0)
+  library.json                                  # PlatformIO metadata and version
   README.md                                     # Component README
   SPECIFICATIONS.md                             # Original design specs (v0.1.0, partially outdated)
   include/
     DomoticsCore/
-      HomeAssistant.h                           # Main component (~695 lines)
+      HomeAssistant.h                           # Main component
       HAEntity.h                                # Base entity class
       HASensor.h                                # Sensor entity
       HABinarySensor.h                          # Binary sensor entity
