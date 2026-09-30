@@ -1,4 +1,19 @@
+roles:
+  committer:
+    settings:
+      # The role's list (a project's list replaces it), plus the chips this
+      # library targets: ESP32 and ESP8266 are names, not internal codes.
+      internal-codes-allow: [UTF-8, UTF-16, UTF8, UTF16, SHA-1, SHA-256, SHA-512, SHA1, SHA256, SHA512, ISO-8601, 'RFC-[0-9]+', 'CVE-[0-9]+',
+        'IPv[46]', x86, x64, arm64, amd64, win32, win64, 'H26[45]', 'MP[34]', 'HTTP[23]', OAuth2, 'ES20[0-9]{2}', 'v[0-9]+', 'Go1[0-9]+',
+        'ESP32', 'ESP8266']
+  documentalist:
+    settings:
+      # Catching up a backlog of docs, nightly: few pull requests waiting at a
+      # time, few docs per call, so the subscription's limits hold.
+      max-open-merge-requests: 3
+      ai-max-calls: 5
 routing:
-  # Before a push, the committer checks the commits leaving the machine, and
-  # the documentalist has the docs they made suspect judged.
+  # Before a push, the committer checks the commits leaving the machine; the
+  # documentalist only counts the docs they made suspect (ADR-0010). Docs are
+  # judged on the pull request, and by gardening at night.
   events: {pre-push: [committer, documentalist]}
