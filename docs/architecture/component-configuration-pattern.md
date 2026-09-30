@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-NTP/include/DomoticsCore/NTP.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebUIConfig.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h, DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfo.h, DomoticsCore-OTA/include/DomoticsCore/, DomoticsCore-RemoteConsole/include/DomoticsCore/, DomoticsCore-LED/include/DomoticsCore/LED.h]
+sources: [DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemPersistence.h, DomoticsCore-NTP/include/DomoticsCore/NTP.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebUIConfig.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h, DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfo.h, DomoticsCore-OTA/include/DomoticsCore/OTA.h, DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsole.h, DomoticsCore-LED/include/DomoticsCore/LED.h]
 checked: 500862d
 verified: agent:documentalist
 -->
