@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-MQTT/include/DomoticsCore/]
+sources: [DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTWebUI.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_ESP32.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_ESP8266.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_HAL.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_Stub.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h]
 checked: 6a979a6
 verified: agent:documentalist
 -->

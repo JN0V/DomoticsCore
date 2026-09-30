@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-NTP/include/DomoticsCore/, DomoticsCore-NTP/library.json, DomoticsCore-NTP/examples/BasicNTP/, DomoticsCore-NTP/examples/NTPWithWebUI/, DomoticsCore-NTP/test/test_ntp_component/test_ntp_component.cpp]
+sources: [DomoticsCore-NTP/library.json, DomoticsCore-NTP/include/DomoticsCore/NTP.h, DomoticsCore-NTP/include/DomoticsCore/NTPEvents.h, DomoticsCore-NTP/include/DomoticsCore/NTPWebUI.h, DomoticsCore-NTP/include/DomoticsCore/NTP_ESP32.h, DomoticsCore-NTP/include/DomoticsCore/NTP_ESP8266.h, DomoticsCore-NTP/include/DomoticsCore/NTP_HAL.h, DomoticsCore-NTP/include/DomoticsCore/NTP_Stub.h, DomoticsCore-NTP/test/test_ntp_component/test_ntp_component.cpp]
 checked: 6a979a6
 -->
 

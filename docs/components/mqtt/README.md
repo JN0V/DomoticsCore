@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-MQTT/include/DomoticsCore/, DomoticsCore-MQTT/examples/, DomoticsCore-MQTT/library.json]
+sources: [DomoticsCore-MQTT/library.json, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTWebUI.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_HAL.h]
 checked: 6a979a6
 -->
 
