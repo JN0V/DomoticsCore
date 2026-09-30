@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Core/include/DomoticsCore/, DomoticsCore-Core/src/]
+sources: [DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/src/IComponent.cpp, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/src/Core.cpp, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h, DomoticsCore-Wifi/include/DomoticsCore/WifiEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h]
 checked: 6a979a6
 verified: agent:documentalist
 -->
