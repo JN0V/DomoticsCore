@@ -328,14 +328,20 @@ The store takes a recursive lock, so publishing a state from a task other than
 the loop — a web-server handler, say — is safe; the drain in `loop()` takes the
 same lock.
 
-#### What the pacing is for, and where it stops
+#### What the pacing is for
 
-`publishDiscovery()` emits one `mqtt/publish` per entity inside a single
-EventBus handler, against a queue that holds about 32 of them and **evicts the
-oldest**. Draining the store in the same pass would take that burst from
-1 + N events to 1 + 2N. Pacing keeps the lossless connect at around thirty
-entities instead of halving it to fifteen; **above that, the discovery burst
-alone is what evicts**, with or without this store.
+Each discovery document crosses the EventBus as an 830-byte `mqtt/publish`
+event. `publishDiscovery()` therefore sends nothing itself: `loop()` sends one
+document per call while the broker is connected, then drains the store four
+states per call. The event queue holds a few events at any time instead of one
+per entity: one 830-byte block per entity at once is more heap than an
+ESP8266 running a System has. The documents then wait in MQTT's own publish queue, at their real
+size, until the socket takes them; that queue's byte budget
+(`HAL::MQTT::kQueueByteBudget`) is what bounds a very large device.
+
+States are not held during a pass: one published before its entity's document
+reaches the broker first, and Home Assistant reads it, retained, when the
+document makes it subscribe. `removeDiscovery()` cancels a pass still running.
 
 Two orderings the store relies on and does not enforce:
 
@@ -366,7 +372,7 @@ void removeDiscovery();         // Remove all discovery payloads (empty retained
 void republishEntity(const String& id);  // Republish discovery for a single entity
 ```
 
-- `publishDiscovery()` builds the device info JSON once and publishes a discovery payload for each entity. Emits the `ha/discovery_published` event with the entity count.
+- `publishDiscovery()` starts a discovery pass: `loop()` then publishes one entity's document per call while MQTT is connected, and emits `ha/discovery_published` with the entity count after the last one. A call during a pass restarts it from the first entity; a disconnection pauses it and the reconnection starts a new one. `getStatistics().discoveryCount` counts the passes requested. `isDiscoveryPending()` is true while a pass has documents left.
 - `removeDiscovery()` publishes empty payloads to each entity's config topic, causing HA to remove them.
 - `republishEntity()` publishes discovery for a single entity. Called automatically when an entity is added while MQTT is already connected.
 
@@ -829,7 +835,7 @@ Runtime statistics counters.
 ```cpp
 struct HAStatistics {
     uint32_t entityCount = 0;       // Total registered entities
-    uint32_t discoveryCount = 0;    // Number of full discovery publishes
+    uint32_t discoveryCount = 0;    // Discovery passes requested
     uint32_t discoveryRefused = 0;  // Configs never handed to MQTT: over the event field
     uint32_t stateUpdates = 0;      // Total state messages sent
     uint32_t commandsReceived = 0;  // Total commands received from HA

@@ -175,11 +175,14 @@ public:
     }
     
     void loop() override {
-        // A broker outage holds the states it stopped; they leave a few per
-        // loop, behind the discovery documents the reconnection queued, so the
-        // burst never outgrows the event queue.
+        // Discovery leaves one document per loop, then the states an outage
+        // held a few per loop: the event queue never holds the whole burst.
         if (!mqttConnected) return;
         HAL::Platform::LockGuard guard(storeLock);
+        if (discoveryPending) {
+            publishNextDiscovery();
+            return;
+        }
         if (pendingPublishes.empty()) return;
 
         size_t sent = 0;
@@ -464,30 +467,32 @@ public:
     
     /**
      * @brief Publish discovery messages for all entities
+     *
+     * Asynchronous: the documents leave one per loop() while the broker is
+     * connected, and EVENT_DISCOVERY_PUBLISHED fires after the last one. A call
+     * during a pass restarts it from the first entity.
      */
     void publishDiscovery() {
+        HAL::Platform::LockGuard guard(storeLock);
         DLOG_I(LOG_HA, "Publishing discovery for %zu entities", entities.size());
-        
-        // Build device info once
-        JsonDocument deviceDoc;
-        JsonObject device = deviceDoc.to<JsonObject>();
-        buildDeviceInfo(device);
-        
-        for (const auto& entity : entities) {
-            publishEntityDiscovery(entity.get(), device);
-        }
-        
+        discoveryNext = 0;
+        discoveryPending = true;
         stats.discoveryCount++;
-        
-        // Emit event for monitoring
-        emit(DomoticsCore::HAEvents::EVENT_DISCOVERY_PUBLISHED, (int)entities.size());
     }
+
+    /** @brief True while a discovery pass still has documents to send. */
+    bool isDiscoveryPending() const { return discoveryPending; }
     
     /**
      * @brief Remove discovery messages (makes entities disappear from HA)
      */
     void removeDiscovery() {
         DLOG_I(LOG_HA, "Removing discovery for all entities");
+        {
+            // A pass still running would publish the documents again, retained.
+            HAL::Platform::LockGuard guard(storeLock);
+            discoveryPending = false;
+        }
         
         for (const auto& entity : entities) {
             char topic[HA_TOPIC_BUF_SIZE];
@@ -620,6 +625,22 @@ private:
     // Small enough that a reconnection's discovery documents and the states
     // behind them never fill the event queue at once.
     static constexpr size_t FLUSH_PER_LOOP = 4;
+    // Each document is an 830-byte event: sent all at once from the connect
+    // handler, twenty of them outgrow an ESP8266's heap before any is written.
+    bool discoveryPending = false;
+    size_t discoveryNext = 0;
+
+    void publishNextDiscovery() {
+        if (discoveryNext < entities.size()) {
+            JsonDocument deviceDoc;
+            JsonObject device = deviceDoc.to<JsonObject>();
+            buildDeviceInfo(device);
+            publishEntityDiscovery(entities[discoveryNext++].get(), device);
+        }
+        if (discoveryNext < entities.size()) return;
+        discoveryPending = false;
+        emit(DomoticsCore::HAEvents::EVENT_DISCOVERY_PUBLISHED, (int)entities.size());
+    }
     // A slot count is not a memory bound: each one may hold 699 characters, and
     // an outage can hold two per entity. The budget is what the store is
     // allowed on the smaller heap, and a hold over it is refused aloud.
