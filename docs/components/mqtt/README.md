@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-MQTT/library.json, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTWebUI.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_HAL.h]
-checked: d7afb75
+checked: 0820cf2
 verified: agent:documentalist
 -->
 
@@ -112,7 +112,7 @@ Three ready-to-use examples are included:
 
 ## Version
 
-Current version: **1.9.0** (as declared in `library.json` and `metadata.version`).
+Current version: **1.10.0** (as declared in `library.json` and `metadata.version`).
 
 ## License
 

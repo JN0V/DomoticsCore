@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Platform_Arduino.h, DomoticsCore-Core/include/DomoticsCore/Platform_Stub.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker_Native.h, DomoticsCore-Core/src/Core.cpp, DomoticsCore-Core/src/IComponent.cpp, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json]
-checked: 6a979a6
+checked: 0820cf2
 verified: agent:documentalist
 -->
 # DomoticsCore-Core -- Project Context (AI Agent Reference)
@@ -16,7 +16,7 @@ This document provides the context an AI coding agent needs to understand, navig
 | Field | Value |
 |-------|-------|
 | **Name** | DomoticsCore-Core |
-| **Version** | 1.13.0 (see `library.json`) |
+| **Version** | 1.13.1 (see `library.json`) |
 | **Role** | Foundation library -- runtime engine, component model, EventBus, logging, timers, memory management |
 | **Namespace** | `DomoticsCore` (top-level), `DomoticsCore::Components`, `DomoticsCore::Utils`, `DomoticsCore::Testing` |
 | **License** | MIT |
