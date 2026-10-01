@@ -177,7 +177,7 @@ Replaces the current configuration, normalised the way the constructor normalise
 - An empty `lwtTopic` means `{clientId}/status`, and a `lwtTopic` that was the previous id's default follows a new `clientId`. A topic the application named stays.
 - `lwtQoS` above 2 is clamped to 2.
 
-Everything the connection carries — broker, port, TLS, keep-alive, credentials, client id and the Last Will fields — is read at connect time, so a configuration applied after `begin()` (which is when persistence applies it) reaches the next session. If one of those fields changes while `Connected` — or while a connection attempt is under way — the next `loop()` closes the session cleanly and opens a new one; other fields change nothing on the wire. A changed `useTLS` rebuilds the client in `loop()` before that reconnection, never from `connect()`, which may run on the web server's task.
+Everything the connection carries — broker, port, TLS, keep-alive, credentials, client id and the Last Will fields — is read at connect time, so a configuration applied after `begin()` (which is when persistence applies it) reaches the next session. If one of those fields changes while `Connected` — or while a connection attempt is under way — the next `loop()` closes the session cleanly and opens a new one; other fields change nothing on the wire. A changed `useTLS` or `caCert` rebuilds the client in `loop()` before that reconnection, never from `connect()`, which may run on the web server's task.
 
 **Critical behavior**: if the component is currently `Connected` and the new config has `enabled = false`, the `enabled` flag is forcibly preserved to `true` to prevent silently dropping messages on an active connection. Also refreshes the PubSubClient server pointer after config change.
 
@@ -210,6 +210,7 @@ All fields with their types, defaults, and descriptions:
 | `broker` | `String` | `""` | Broker hostname or IP address |
 | `port` | `uint16_t` | `1883` | Broker port (1883 plain, 8883 TLS) |
 | `useTLS` | `bool` | `false` | Enable TLS/SSL encryption |
+| `caCert` | `const char*` | `nullptr` | PEM root CA the broker's certificate must chain to; required by `useTLS`. Not copied: it must outlive the component (a static array) |
 | `username` | `String` | `""` | Authentication username (optional) |
 | `password` | `String` | `""` | Authentication password (optional) |
 | `clientId` | `String` | `""` | Client identifier (auto-generated if empty) |
@@ -356,15 +357,32 @@ The `topicMatches(filter, topic)` static method splits both strings on `/` and c
 
 ## TLS/SSL Configuration
 
-TLS is enabled by setting `config.useTLS = true` and (typically) `config.port = 8883`.
+TLS is enabled by setting `config.useTLS = true`, `config.caCert` to the PEM of the root CA the broker's certificate chains to, and (typically) `config.port = 8883`. The server is always verified: there is no insecure mode and no fingerprint pinning. With `useTLS` and no `caCert`, `connect()` attempts nothing and `getLastError()` reads `TLS needs a CA certificate`.
+
+```cpp
+static const char kBrokerCa[] = R"(-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----
+)";
+
+MQTTConfig cfg;
+cfg.broker = "broker.lan";
+cfg.port = 8883;
+cfg.useTLS = true;
+cfg.caCert = kBrokerCa;   // kept by pointer: static storage
+```
 
 The HAL implementations select the transport at construction time:
 
-- **ESP32**: Uses `WiFiClientSecure` when TLS is enabled, `WiFiClient` otherwise.
-- **ESP8266**: Uses `WiFiClientSecure` (BearSSL-based) when TLS is enabled.
-- **Native stub**: Ignores TLS flag (no real network).
+- **ESP32**: `WiFiClientSecure` with `setCACert()`, which keeps the pointer. Certificate dates are not checked: the Arduino core's mbedTLS is built without them, so an expired certificate from the right CA is accepted. A known limit, left at the framework's default.
+- **ESP8266**: `WiFiClientSecure` (BearSSL) with the CA parsed into trust anchors the client owns. Its record buffers are cut to 1 KB each way (`HAL::MQTT::kTlsBufferBytes`): the default 16 KB receive buffer does not fit beside a System, and the smaller one makes BearSSL ask the broker for short records with the max fragment length extension, which the broker must accept (Mosquitto over OpenSSL does). Certificate dates are checked against the system clock, so the handshake fails until NTP has synced.
+- **Native stub**: records the flag and the CA pointer; `failTlsForTest()` makes its handshakes fail.
 
-Certificate validation, pinning, and custom CA configuration must be done at the HAL level before connection. The component constructor passes `config.useTLS` to the `MQTTClientImpl` constructor; a `useTLS` changed later through `setConfig()` rebuilds the client before the next connection.
+The certificate must name the broker as the device addresses it. Neither TLS library matches an IP address against an `IP:` subject alternative name: a broker reached by address needs that address as a `DNS:` entry too.
+
+A failed handshake puts the library's reason in `getLastError()`, prefixed `TLS: ` — a CA that does not match and a name the certificate does not carry otherwise both read `Connection failed`; a refused TCP connection stays `Connection failed`. On ESP32 a failed name lookup records nothing, so the previous attempt's reason is shown again. A successful connection clears it.
+
+The component constructor passes `config.useTLS` and `config.caCert` to the `MQTTClientImpl` constructor; either changed later through `setConfig()` rebuilds the client before the next connection.
 
 ---
 
@@ -444,7 +462,7 @@ if (webui && mqtt) {
 - **Editable fields**: `enabled`, `broker`, `port`, `username`, `password`, `client_id`, `use_tls`, `lwt_enabled`, `lwt_topic`, `lwt_message`
 - **POST handling**: Updates config field-by-field; calls `setConfig()`, optionally invokes `onConfigSaved` callback. Toggling `enabled` triggers `connect()` or `disconnect()`.
 - **Persistence**: the save callback receives the configuration the component applied (`getConfig()` after `setConfig()`), so a generated client id or a will topic that followed a new id is what gets stored.
-- **TLS**: `use_tls` switches the transport, which only connects when the HAL client has been given what the broker's certificate needs (a CA, or an insecure mode); without it the device stays off the broker until the field is turned back off.
+- **TLS**: `use_tls` switches the transport. The CA comes with the firmware (`MQTTConfig::caCert`), so turning TLS on without one answers `TLS needs a CA certificate in the firmware` and stores nothing; turning it off is always accepted.
 - **Refusals**: `port` is digits only and inside 1..65535 — anything else answers `Invalid port` and stores nothing. A field not in the list above answers `Unknown field` and stores nothing, invoking neither `setConfig()` nor the persistence callback. An empty `password` means "leave the stored one alone"; an empty `username` clears it.
 
 #### `mqtt_detail` -- Component Detail Card

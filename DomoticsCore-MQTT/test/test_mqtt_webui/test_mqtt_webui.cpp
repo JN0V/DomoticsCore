@@ -45,6 +45,14 @@ struct Fixture {
         ui.setConfigSaveCallback([this](const MQTTConfig&) { ++saves; });
     }
 
+    // The firmware's CA, as an application sets it before the card is used.
+    void withCa() {
+        static const char ca[] = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n";
+        MQTTConfig cfg = mqtt.getConfig();
+        cfg.caCert = ca;
+        mqtt.setConfig(cfg);
+    }
+
     String post(const char* field, const char* value) {
         return ui.handleWebUIRequest(String("mqtt_settings"), String("/api/ui/action"),
                                      String("POST"), fieldValue(field, value));
@@ -131,6 +139,7 @@ void test_a_port_inside_the_range_is_applied() {
 
 void test_the_boolean_fields_accept_true_and_one_and_nothing_else() {
     Fixture f;
+    f.withCa();
     for (const char* field : {"use_tls", "lwt_enabled"}) {
         TEST_ASSERT_TRUE(succeeded(f.post(field, "true")));
         TEST_ASSERT_TRUE(succeeded(f.post(field, "0")));
@@ -141,6 +150,18 @@ void test_the_boolean_fields_accept_true_and_one_and_nothing_else() {
 
     TEST_ASSERT_TRUE(succeeded(f.post("use_tls", "yes")));
     TEST_ASSERT_FALSE_MESSAGE(f.mqtt.getConfig().useTLS, "\"yes\" enabled TLS");
+}
+
+void test_tls_is_refused_without_a_ca_and_says_why() {
+    Fixture f;
+    const int savesBefore = f.saves;
+    const String response = f.post("use_tls", "true");
+    TEST_ASSERT_FALSE(succeeded(response));
+    TEST_ASSERT_TRUE_MESSAGE(strstr(response.c_str(), "\"error\":\"TLS needs a CA") != nullptr, response.c_str());
+    TEST_ASSERT_FALSE(f.mqtt.getConfig().useTLS);
+    TEST_ASSERT_EQUAL_INT(savesBefore, f.saves);
+    // Turning it off needs nothing.
+    TEST_ASSERT_TRUE(succeeded(f.post("use_tls", "false")));
 }
 
 void test_the_last_will_topic_is_settable_from_this_page() {
@@ -255,6 +276,7 @@ int main(int, char**) {
     RUN_TEST(test_a_port_that_is_not_a_number_is_refused);
     RUN_TEST(test_a_port_inside_the_range_is_applied);
     RUN_TEST(test_the_boolean_fields_accept_true_and_one_and_nothing_else);
+    RUN_TEST(test_tls_is_refused_without_a_ca_and_says_why);
     RUN_TEST(test_the_last_will_topic_is_settable_from_this_page);
     RUN_TEST(test_an_unknown_field_is_named_in_the_refusal);
     RUN_TEST(test_every_field_the_settings_card_declares_is_accepted);

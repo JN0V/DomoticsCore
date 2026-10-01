@@ -87,6 +87,10 @@ struct MQTTConfig {
     String broker = "";                     ///< MQTT broker address
     uint16_t port = 1883;                   ///< MQTT broker port (1883 for plain, 8883 for TLS)
     bool useTLS = false;                    ///< Use TLS/SSL encryption
+    /// PEM root CA the broker's certificate must chain to; TLS refuses to
+    /// connect without one. Not copied: point at storage that outlives the
+    /// component, such as a static array.
+    const char* caCert = nullptr;
     uint16_t keepAlive = 60;                ///< Keep-alive interval in seconds
 
     // Authentication
@@ -387,6 +391,7 @@ private:
     // MQTT client (using HAL for platform independence)
     HAL::MQTT::MQTTClientImpl* mqttClient;
     bool clientTLS_;              ///< The TLS flag mqttClient was built with
+    const char* clientCa_;        ///< The CA mqttClient was built with
     bool reopenPending_ = false;  ///< A session setting changed while connected
 
     // State management

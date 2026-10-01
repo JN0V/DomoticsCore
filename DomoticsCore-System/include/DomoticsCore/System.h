@@ -411,6 +411,8 @@ private:
         mqttConfig.username = config.mqttUser;
         mqttConfig.password = config.mqttPassword;
         mqttConfig.clientId = config.mqttClientId;
+        mqttConfig.useTLS = config.mqttUseTLS;
+        mqttConfig.caCert = config.mqttCaCert;
         mqttConfig.enabled = true;
         core.addComponent(std::make_unique<Components::MQTTComponent>(mqttConfig));
         DLOG_I(LOG_SYSTEM, "✓ MQTT component added");

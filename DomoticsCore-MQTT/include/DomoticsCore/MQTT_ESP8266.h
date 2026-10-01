@@ -15,6 +15,7 @@
 #include <lwip/opt.h>
 #include <PubSubClient.h>
 #include <ESP8266WiFi.h>
+#include <memory>
 
 namespace DomoticsCore {
 namespace HAL {
@@ -26,6 +27,9 @@ namespace MQTT {
 #endif
 constexpr size_t kQueueByteBudget = DOMOTICS_MQTT_QUEUE_BYTES;
 
+// TLS record buffers, each way; the broker must accept the max fragment length extension.
+constexpr int kTlsBufferBytes = 1024;
+
 /**
  * @brief ESP8266 MQTT client implementation
  *
@@ -35,6 +39,8 @@ class MQTTClientImpl : public MQTTClient {
 private:
     PubSubClient client;
     WiFiClient wifiClient;
+    // BearSSL keeps a pointer to its trust anchors: declared first, destroyed last.
+    std::unique_ptr<BearSSL::X509List> trustAnchors;
     WiFiClientSecure wifiClientSecure;
     bool useTLS;
 
@@ -42,10 +48,20 @@ public:
     /**
      * @brief Construct MQTT client for ESP8266
      * @param useTLS_ Use TLS/SSL connection
+     * @param caCert PEM root CA, parsed into a copy; certificate dates are
+     *        checked against the system clock, so NTP must have synced
      */
-    explicit MQTTClientImpl(bool useTLS_ = false)
+    explicit MQTTClientImpl(bool useTLS_ = false, const char* caCert = nullptr)
         : client(useTLS_ ? (Client&)wifiClientSecure : (Client&)wifiClient)
-        , useTLS(useTLS_) {}
+        , useTLS(useTLS_) {
+        if (useTLS_ && caCert) {
+            trustAnchors.reset(new BearSSL::X509List(caCert));
+            wifiClientSecure.setTrustAnchors(trustAnchors.get());
+            // BearSSL's default 16 KB receive buffer does not fit beside a System;
+            // a smaller one makes it ask the broker for short records (MFLN).
+            wifiClientSecure.setBufferSizes(kTlsBufferBytes, kTlsBufferBytes);
+        }
+    }
 
     bool connect(const char* id,
                 const char* user = nullptr,
@@ -54,6 +70,9 @@ public:
                 uint8_t willQoS = 0,
                 bool willRetain = false,
                 const char* willMessage = nullptr) override {
+        // A failed handshake keeps its reason until the next one: clear it, so
+        // a later refused TCP connection does not report it again.
+        if (useTLS) wifiClientSecure.stop();
         if (willTopic && willMessage) {
             return client.connect(id, user, pass, willTopic, willQoS, willRetain, willMessage);
         } else if (user && pass) {
@@ -61,6 +80,11 @@ public:
         } else {
             return client.connect(id);
         }
+    }
+
+    int lastTlsError(char* buf, size_t size) override {
+        if (!useTLS) return MQTTClient::lastTlsError(buf, size);
+        return wifiClientSecure.getLastSSLError(buf, size);
     }
 
     void disconnect() override {

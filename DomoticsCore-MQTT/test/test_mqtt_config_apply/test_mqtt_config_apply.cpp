@@ -199,6 +199,10 @@ void test_a_setting_outside_the_session_does_not_reopen_it() {
     mqtt.shutdown();
 }
 
+// The stub never parses it: any address stands for a PEM the firmware carries.
+const char kTestCa[] = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n";
+const char kOtherCa[] = "-----BEGIN CERTIFICATE-----\nOTHER\n-----END CERTIFICATE-----\n";
+
 void test_tls_turned_on_reaches_the_next_session() {
     MQTTConfig cfg;
     cfg.broker = "test.local";
@@ -209,11 +213,77 @@ void test_tls_turned_on_reaches_the_next_session() {
 
     MQTTConfig changed = mqtt.getConfig();
     changed.useTLS = true;
+    changed.caCert = kTestCa;
     mqtt.setConfig(changed);
     mqtt.loop();
 
     TEST_ASSERT_TRUE(mqtt.isConnected());
     TEST_ASSERT_TRUE_MESSAGE(stubOf(mqtt)->usesTLS(), "the session still runs on the plaintext client");
+    TEST_ASSERT_EQUAL_PTR(kTestCa, stubOf(mqtt)->getCaCert());
+    mqtt.shutdown();
+}
+
+void test_tls_without_a_ca_attempts_no_connection_and_says_why() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.useTLS = true;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    HAL::WiFiImpl::setConnectedForTest(true);
+    TEST_ASSERT_FALSE(mqtt.connect());
+    TEST_ASSERT_FALSE(mqtt.isConnected());
+    TEST_ASSERT_EQUAL_UINT32(0, mqtt.getStatistics().connectCount);
+    TEST_ASSERT_EQUAL_STRING("TLS needs a CA certificate", mqtt.getLastError().c_str());
+    mqtt.shutdown();
+}
+
+void test_the_ca_given_at_construction_reaches_the_client() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.useTLS = true;
+    cfg.caCert = kTestCa;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    connectNow(mqtt);
+    TEST_ASSERT_TRUE(stubOf(mqtt)->usesTLS());
+    TEST_ASSERT_EQUAL_PTR(kTestCa, stubOf(mqtt)->getCaCert());
+    mqtt.shutdown();
+}
+
+void test_a_failed_handshake_names_its_reason() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.useTLS = true;
+    cfg.caCert = kTestCa;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    stubOf(mqtt)->failTlsForTest(62, "Chain could not be linked to a trust anchor.");
+    HAL::WiFiImpl::setConnectedForTest(true);
+    TEST_ASSERT_FALSE(mqtt.connect());
+    TEST_ASSERT_EQUAL_STRING("TLS: Chain could not be linked to a trust anchor.", mqtt.getLastError().c_str());
+
+    stubOf(mqtt)->failTlsForTest(0, nullptr);
+    TEST_ASSERT_TRUE(mqtt.connect());
+    TEST_ASSERT_EQUAL_STRING_MESSAGE("", mqtt.getLastError().c_str(), "a connected session still reports the old failure");
+    mqtt.shutdown();
+}
+
+void test_a_changed_ca_reaches_the_next_session() {
+    MQTTConfig cfg;
+    cfg.broker = "test.local";
+    cfg.useTLS = true;
+    cfg.caCert = kTestCa;
+    MQTTComponent mqtt(cfg);
+    mqtt.begin();
+    connectNow(mqtt);
+
+    MQTTConfig changed = mqtt.getConfig();
+    changed.caCert = kOtherCa;
+    mqtt.setConfig(changed);
+    mqtt.loop();
+
+    TEST_ASSERT_TRUE(mqtt.isConnected());
+    TEST_ASSERT_EQUAL_PTR_MESSAGE(kOtherCa, stubOf(mqtt)->getCaCert(), "the session still trusts the old CA");
     mqtt.shutdown();
 }
 
@@ -230,5 +300,9 @@ int main(int, char**) {
     RUN_TEST(test_a_session_setting_changed_while_connected_reopens_the_session);
     RUN_TEST(test_a_setting_outside_the_session_does_not_reopen_it);
     RUN_TEST(test_tls_turned_on_reaches_the_next_session);
+    RUN_TEST(test_tls_without_a_ca_attempts_no_connection_and_says_why);
+    RUN_TEST(test_the_ca_given_at_construction_reaches_the_client);
+    RUN_TEST(test_a_changed_ca_reaches_the_next_session);
+    RUN_TEST(test_a_failed_handshake_names_its_reason);
     return UNITY_END();
 }

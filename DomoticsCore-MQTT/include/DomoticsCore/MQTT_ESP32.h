@@ -42,10 +42,13 @@ public:
     /**
      * @brief Construct MQTT client for ESP32
      * @param useTLS_ Use TLS/SSL connection
+     * @param caCert PEM root CA; the secure client keeps the pointer, not a copy
      */
-    explicit MQTTClientImpl(bool useTLS_ = false)
+    explicit MQTTClientImpl(bool useTLS_ = false, const char* caCert = nullptr)
         : client(useTLS_ ? (Client&)wifiClientSecure : (Client&)wifiClient)
-        , useTLS(useTLS_) {}
+        , useTLS(useTLS_) {
+        if (useTLS_ && caCert) wifiClientSecure.setCACert(caCert);
+    }
 
     bool connect(const char* id,
                 const char* user = nullptr,
@@ -61,6 +64,14 @@ public:
         } else {
             return client.connect(id);
         }
+    }
+
+    int lastTlsError(char* buf, size_t size) override {
+        if (!useTLS) return MQTTClient::lastTlsError(buf, size);
+        // -1 is the TCP connection failing, before any TLS took place.
+        const int err = wifiClientSecure.lastError(buf, size);
+        if (err == -1) return MQTTClient::lastTlsError(buf, size);
+        return err;
     }
 
     // WiFiClient::write() waits in select() up to 1 s per retry while lwIP holds
