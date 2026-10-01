@@ -2,6 +2,7 @@
 sources: [DomoticsCore-Storage/include/DomoticsCore/DocMainpage.h, DomoticsCore-Storage/include/DomoticsCore/Storage.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h, DomoticsCore-Storage/include/DomoticsCore/StorageWebUI.h, DomoticsCore-Storage/include/DomoticsCore/Storage_ESP32.h, DomoticsCore-Storage/include/DomoticsCore/Storage_ESP8266.h, DomoticsCore-Storage/include/DomoticsCore/Storage_HAL.h, DomoticsCore-Storage/include/DomoticsCore/Storage_Stub.h, DomoticsCore-Storage/library.json, DomoticsCore-Storage/README.md]
 checked: 3c4d96c
 verified: agent:documentalist
+judged: 25bc3f1
 -->
 # DomoticsCore-Storage -- Project Context (AI Reference)
 
@@ -16,7 +17,7 @@ This document provides machine-readable context for AI assistants working on the
 | Field | Value |
 |-------|-------|
 | Component name | DomoticsCore-Storage |
-| Version | 1.4.2 |
+| Version | 1.6.1 |
 | Metadata name | `"Storage"` (default) or custom via `StorageConfig::componentName` |
 | Category | Storage |
 | License | MIT |
@@ -175,7 +176,7 @@ This section maps DomoticsCore-Storage design decisions to specific constitution
 | XI. Centralized Storage | All persistence via Storage component | This IS the centralized storage component; other components must use it |
 | XII. Multi-Registry | PlatformIO + Arduino compatible | `library.json` present; `include/` and `examples/` follow standard layouts |
 | XIV. Memory Leak Prevention | Heap stability | Cache bounded by `maxEntries`; `shrink_to_fit` should be applied after `clear()`/`remove()` in vectors |
-| XV. Semantic Versioning | `library.json` matches `metadata.version` | Both set to `1.4.2` |
+| XV. Semantic Versioning | `library.json` matches `metadata.version` | Both set to `1.6.1` |
 
 ---
 
