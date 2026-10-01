@@ -21,6 +21,7 @@
 #if !defined(ARDUINO)
 
 #include <ArduinoJson.h>
+#include <string>
 
 // ArduinoJson 7 converter functions for stub String class
 // These use ADL (Argument Dependent Lookup) and must be in global namespace
@@ -28,17 +29,28 @@
 
 /**
  * @brief Check if JsonVariant can be converted to String
+ *
+ * Only a string, as ArduinoJson's own Arduino String support: a missing key
+ * must fall back to the default of `doc[k] | String(dflt)` on the host too.
  */
 inline bool canConvertFromJson(ArduinoJson::JsonVariantConst src, const String&) {
-    return src.is<const char*>() || src.isNull();
+    return src.is<ArduinoJson::JsonString>();
 }
 
 /**
  * @brief Convert JsonVariant to String
+ *
+ * A non-string value is serialized, as on the boards: null reads "null".
  */
 inline void convertFromJson(ArduinoJson::JsonVariantConst src, String& dst) {
-    const char* str = src.as<const char*>();
-    dst = str ? String(str) : String();
+    ArduinoJson::JsonString str = src.as<ArduinoJson::JsonString>();
+    if (str) {
+        dst = String(str.c_str());
+        return;
+    }
+    std::string text;
+    ArduinoJson::serializeJson(src, text);
+    dst = String(text.c_str());
 }
 
 /**
