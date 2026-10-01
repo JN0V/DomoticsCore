@@ -271,6 +271,20 @@ def check_root_vs_components(root: Path, errors: list) -> bool:
     return True
 
 
+def check_properties_vs_root(root: Path, errors: list) -> bool:
+    """Ensure library.properties (the Arduino registry) carries the root version."""
+    props = root / "library.properties"
+    if not props.is_file():
+        return True
+    m = re.search(r"^version=(.*)$", props.read_text(encoding="utf-8"), flags=re.M)
+    root_version = load_json(root / "library.json").get("version")
+    if not m or m.group(1).strip() != root_version:
+        found = m.group(1).strip() if m else "none"
+        errors.append(f"library.properties version {found} does not match root library.json {root_version}")
+        return False
+    return True
+
+
 def main() -> None:
     args = parse_args()
     root = Path(args.repo_root).resolve()
@@ -282,6 +296,7 @@ def main() -> None:
     ok_components, errors = check_component_versions(root, verbose=args.verbose)
     ok_tag = check_root_against_tag(root, args, errors)
     ok_root_vs_components = check_root_vs_components(root, errors)
+    ok_properties = check_properties_vs_root(root, errors)
 
     if errors:
         print("Version inconsistencies detected:")
@@ -289,7 +304,7 @@ def main() -> None:
             print(f" - {msg}")
         sys.exit(1)
 
-    if ok_components and ok_tag and ok_root_vs_components:
+    if ok_components and ok_tag and ok_root_vs_components and ok_properties:
         print("All version checks passed.")
     else:
         # Defensive fallback; in practice if there were problems, 'errors' would be non-empty.
