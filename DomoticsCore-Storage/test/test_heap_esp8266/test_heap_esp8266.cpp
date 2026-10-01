@@ -385,8 +385,7 @@ void test_storage_undrained_writes_plateau() {
 // cycle does not come back to zero — it leaves ~128 B behind, and that residue
 // is one-time rather than per-event: EventBus keeps the topic's entry in its
 // pending-by-topic map (poll() decrements the counter but never erases the
-// entry), and HeapTracker charges each checkpoint's own map node to the window
-// that follows it. Widening the threshold to swallow that would blind the test
+// entry). Widening the threshold to swallow that would blind the test
 // to a real 128 B leak. Comparing two cycles does not: a genuine loss recurs
 // every cycle, a one-time allocation is already paid by the first.
 void test_storage_drain_reclaims_queue_memory() {
@@ -420,9 +419,7 @@ void test_storage_drain_reclaims_queue_memory() {
         yield();
     }
 
-    // Read the queued occupancy straight from the heap rather than through a
-    // checkpoint: a third checkpoint would add a tracker map node to the very
-    // window being measured.
+    // Read straight from the heap, like heapAtBaseline: two raw readings compare.
     const uint32_t heapWhileQueued = ESP.getFreeHeap();
     const int32_t held = (int32_t)heapAtBaseline - (int32_t)heapWhileQueued;
 

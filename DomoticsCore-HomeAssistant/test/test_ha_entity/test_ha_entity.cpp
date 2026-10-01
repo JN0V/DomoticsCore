@@ -43,9 +43,8 @@ void test_ha_topic_methods_zero_heap() {
     }
 
     HEAP_CHECKPOINT(tracker, "after");
-    // Tolerance 200: HeapTracker's own checkpoint bookkeeping uses ~144 bytes on native.
-    // Old String-concat API would add ~500+ bytes per iteration (5000+ total). 200 catches real leaks.
-    HEAP_ASSERT_STABLE(tracker, "before", "after", 200);
+    // Pure stack work: the old String-concat API allocated ~500 bytes per iteration.
+    HEAP_ASSERT_STABLE(tracker, "before", "after", 0);
 }
 
 // ============================================================================

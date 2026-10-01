@@ -251,9 +251,8 @@ void test_the_intake_allocates_nothing(void) {
         HAL::CoreLog::feedCharsForTest("scandone\n");
     }
     HEAP_CHECKPOINT(tracker, "after");
-    // Tolerance 200: HeapTracker's own checkpoint bookkeeping uses ~144 bytes on
-    // native. The sink itself must not allocate — it can run in an interrupt.
-    HEAP_ASSERT_STABLE(tracker, "before", "after", 200);
+    // The sink must not allocate: it can run in an interrupt.
+    HEAP_ASSERT_STABLE(tracker, "before", "after", 0);
 }
 
 // ============================================================================

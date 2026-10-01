@@ -1673,7 +1673,10 @@ void test_detect_memory_large_custom_content() {
         .withCustomHtmlDynamic(largeHtml)
         .withCustomCss(".chart-container { display: flex; } .data-point { width: 20px; height: var(--value); }")
         .withCustomJs("function updateChart(data) { /* chart update logic */ }"));
-    
+
+    // Warmup: the first pass builds the context cache, which is not a leak.
+    provider.forEachContext([](const WebUIContext&) { return true; });
+
     tracker.checkpoint("before");
     
     // Use NEW memory-efficient API: forEachContext
