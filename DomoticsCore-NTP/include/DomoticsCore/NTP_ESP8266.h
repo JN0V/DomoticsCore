@@ -42,10 +42,11 @@ inline void init(const char* server1, const char* server2, const char* server3) 
     }
     // Not configTime(0, 0, ...): it writes GMT+0 into newlib's zone rules and
     // would undo setTimezone(), DST included. The servers alone go to SNTP.
+    // A null clears the slot, so a shorter list does not keep polling the old names.
     sntp_stop();
-    if (s1) sntp_setservername(0, s1);
-    if (s2) sntp_setservername(1, s2);
-    if (s3) sntp_setservername(2, s3);
+    sntp_setservername(0, s1);
+    sntp_setservername(1, s2);
+    sntp_setservername(2, s3);
     sntp_init();
 }
 
