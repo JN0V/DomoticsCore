@@ -66,13 +66,12 @@ inline void forceSync() {
     NTPImpl::forceSync();
 }
 
-inline bool isSynced() {
-    time_t now = time(nullptr);
-    return now > 1577836800;  // 2020-01-01 00:00:00 UTC
+inline time_t getTime() {
+    return NTPImpl::now();
 }
 
-inline time_t getTime() {
-    return time(nullptr);
+inline bool isSynced() {
+    return getTime() > 1577836800;  // 2020-01-01 00:00:00 UTC
 }
 
 inline bool getFormattedTime(const char* format, char* buffer, size_t bufferSize) {
@@ -81,7 +80,7 @@ inline bool getFormattedTime(const char* format, char* buffer, size_t bufferSize
         return false;
     }
     
-    time_t now = time(nullptr);
+    time_t now = getTime();
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
     strftime(buffer, bufferSize, format, &timeinfo);
