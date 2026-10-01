@@ -238,7 +238,13 @@ public:
                 } else if (field == "client_id") {
                     cfg.clientId = value;
                 } else if (field == "use_tls") {
-                    cfg.useTLS = (value == "true" || value == "1");
+                    const bool on = (value == "true" || value == "1");
+                    // The CA comes with the firmware: without one, TLS would take
+                    // the device off the broker until the field is turned back off.
+                    if (on && !cfg.caCert) {
+                        return "{\"success\":false,\"error\":\"TLS needs a CA certificate in the firmware\"}";
+                    }
+                    cfg.useTLS = on;
                 } else if (field == "lwt_enabled") {
                     cfg.enableLWT = (value == "true" || value == "1");
                 } else if (field == "lwt_topic") {

@@ -35,6 +35,9 @@ class MQTTClientImpl : public MQTTClient {
 private:
     bool isConnected = false;
     bool tls = false;
+    const char* ca = nullptr;
+    int tlsFailCode = 0;
+    std::string tlsFailText;
     std::string serverDomain;
     uint16_t serverPort = 0;
     uint16_t bufferSize = 256;
@@ -58,7 +61,7 @@ private:
     uint32_t loopCallCount = 0;
 
 public:
-    MQTTClientImpl(bool useTLS = false) : tls(useTLS) {}
+    MQTTClientImpl(bool useTLS = false, const char* caCert = nullptr) : tls(useTLS), ca(caCert) {}
 
     bool connect(const char* id,
                 const char* user = nullptr,
@@ -68,7 +71,7 @@ public:
                 bool willRetain_ = false,
                 const char* willMessage_ = nullptr) override {
         // Simulate connection success if server configured
-        if (serverDomain.empty() || serverPort == 0) {
+        if (serverDomain.empty() || serverPort == 0 || (tls && tlsFailCode != 0)) {
             connectionState = -2;  // Connection refused
             isConnected = false;
             return false;
@@ -192,6 +195,17 @@ public:
     uint16_t getKeepAlive() const { return keepAliveSeconds; }
     uint8_t getLWTQoS() const { return lwtQoS; }
     bool usesTLS() const { return tls; }
+    const char* getCaCert() const { return ca; }
+    // Every TLS handshake fails with this reason until cleared with code 0.
+    void failTlsForTest(int code, const char* text) { tlsFailCode = code; tlsFailText = text ? text : ""; }
+    int lastTlsError(char* buf, size_t size) override {
+        if (!tls || tlsFailCode == 0) return MQTTClient::lastTlsError(buf, size);
+        if (buf && size) {
+            strncpy(buf, tlsFailText.c_str(), size - 1);
+            buf[size - 1] = '\0';
+        }
+        return tlsFailCode;
+    }
     const std::string& getUsername() const { return username; }
     const std::string& getLWTTopic() const { return lwtTopic; }
     const std::string& getLWTMessage() const { return lwtMessage; }

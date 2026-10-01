@@ -14,8 +14,9 @@ inline MQTTComponent*& MQTTComponent::instance() {
 // Constructor
 inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
     : config(cfg)
-    , mqttClient(new HAL::MQTT::MQTTClientImpl(config.useTLS))
+    , mqttClient(new HAL::MQTT::MQTTClientImpl(config.useTLS, config.caCert))
     , clientTLS_(config.useTLS)
+    , clientCa_(config.caCert)
     , state(MQTTState::Disconnected)
     , reconnectTimer(cfg.reconnectDelay)
     , stateChangeTime(0)
@@ -174,6 +175,12 @@ inline bool MQTTComponent::connect() {
         lastError = "No broker configured";
         return false;
     }
+
+    // Without a CA every handshake fails; say why instead of retrying it.
+    if (config.useTLS && !config.caCert) {
+        lastError = "TLS needs a CA certificate";
+        return false;
+    }
     
     state = MQTTState::Connecting;
     stateChangeTime = HAL::Platform::getMillis();
@@ -183,6 +190,7 @@ inline bool MQTTComponent::connect() {
     bool success = connectInternal();
     
     if (success) {
+        lastError = "";  // what failed before this session no longer applies
         state = MQTTState::Connected;
         stateChangeTime = HAL::Platform::getMillis();
         reconnectTimer.setInterval(config.reconnectDelay);  // Reset to initial delay
@@ -202,7 +210,12 @@ inline bool MQTTComponent::connect() {
         state = MQTTState::Error;
         stateChangeTime = HAL::Platform::getMillis();
         lastError = "Connection failed";
-        DLOG_E(LOG_MQTT, "Connection failed");
+        // A wrong CA and a name the certificate does not carry look alike otherwise.
+        char tls[96];
+        if (config.useTLS && mqttClient->lastTlsError(tls, sizeof(tls)) != 0) {
+            lastError = String("TLS: ") + tls;
+        }
+        DLOG_E(LOG_MQTT, "%s", lastError.c_str());
     }
     
     return success;
@@ -646,14 +659,15 @@ inline void MQTTComponent::updateStatistics() {
     }
 }
 
-// TLS is chosen when the client is built, so a changed flag needs a new one.
+// TLS and its CA are chosen when the client is built, so a change needs a new one.
 // Called from loop() only, with no session open: connect() may run on another task.
 inline void MQTTComponent::rebuildClientIfNeeded() {
-    if (clientTLS_ == config.useTLS || isConnected()) return;
+    if ((clientTLS_ == config.useTLS && clientCa_ == config.caCert) || isConnected()) return;
     delete mqttClient;
-    mqttClient = new HAL::MQTT::MQTTClientImpl(config.useTLS);
+    mqttClient = new HAL::MQTT::MQTTClientImpl(config.useTLS, config.caCert);
     mqttClient->setCallback(mqttCallback);
     clientTLS_ = config.useTLS;
+    clientCa_ = config.caCert;
 }
 
 // An empty client id or will topic means the generated one; a will topic that
@@ -675,6 +689,7 @@ inline void MQTTComponent::normalizeConfig(const String& previousClientId) {
 
 inline bool MQTTComponent::sameSession(const MQTTConfig& a, const MQTTConfig& b) {
     return a.broker == b.broker && a.port == b.port && a.useTLS == b.useTLS &&
+           a.caCert == b.caCert &&
            a.keepAlive == b.keepAlive && a.username == b.username &&
            a.password == b.password && a.clientId == b.clientId &&
            a.enableLWT == b.enableLWT && a.lwtTopic == b.lwtTopic &&

@@ -78,7 +78,14 @@ struct Boot {
         m.username = "compiled-user";
         m.password = "compiled-pass";
         m.clientId = "compiled-id";
+        m.caCert = compiledCa();
         return m;
+    }
+
+    // The firmware's CA: the card can turn TLS on only when there is one.
+    static const char* compiledCa() {
+        static const char ca[] = "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n";
+        return ca;
     }
 
     String post(IWebUIProvider* provider, const char* context, const char* field, const char* value) {
@@ -220,6 +227,7 @@ void test_mqtt_card_edits_survive_a_reboot() {
     Boot next;
     const MQTTConfig m = next.mqtt->getConfig();
     TEST_ASSERT_TRUE(m.useTLS);
+    TEST_ASSERT_EQUAL_PTR_MESSAGE(Boot::compiledCa(), m.caCert, "the stored settings dropped the firmware's CA");
     TEST_ASSERT_FALSE(m.enableLWT);
     TEST_ASSERT_EQUAL_STRING("house/panel/alive", m.lwtTopic.c_str());
     TEST_ASSERT_EQUAL_STRING("gone", m.lwtMessage.c_str());

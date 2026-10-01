@@ -142,6 +142,12 @@ public:
      * stack without waiting for the broker to acknowledge earlier data.
      */
     virtual bool canWrite(size_t packetLength) { (void)packetLength; return true; }
+
+    /** @brief Why the last TLS handshake failed: a code, 0 for none, and its text in buf. */
+    virtual int lastTlsError(char* buf, size_t size) {
+        if (buf && size) buf[0] = '\0';
+        return 0;
+    }
 };
 
 } // namespace MQTT

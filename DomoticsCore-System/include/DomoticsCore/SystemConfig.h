@@ -87,6 +87,8 @@ struct SystemConfig {
     String mqttUser = "";
     String mqttPassword = "";
     String mqttClientId = "";  // Auto-generated if empty
+    bool mqttUseTLS = false;
+    const char* mqttCaCert = nullptr;  // PEM root CA for TLS; a static array, not copied
     
     // Home Assistant (optional, requires MQTT)
     bool enableHomeAssistant = false;

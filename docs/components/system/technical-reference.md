@@ -146,6 +146,8 @@ All fields have sensible defaults. Fields are grouped by functional area.
 | `mqttUser` | `String` | `""` | MQTT username (optional) |
 | `mqttPassword` | `String` | `""` | MQTT password (optional) |
 | `mqttClientId` | `String` | `""` | MQTT client ID. Auto-generated if empty |
+| `mqttUseTLS` | `bool` | `false` | Connect over TLS |
+| `mqttCaCert` | `const char*` | `nullptr` | PEM root CA for TLS, required by `mqttUseTLS`; not copied, so a static array |
 
 ### Home Assistant
 
@@ -509,7 +511,7 @@ The **NTP**, **OTA** and **RemoteConsole** WebUI providers require an additional
 
 Every field a settings card edits is saved and loaded back at the next boot:
 
-- **MQTT**: broker, port, username, password, client id, enabled, TLS, and the Last Will's enabled flag, topic and message.
+- **MQTT**: broker, port, username, password, client id, enabled, TLS, and the Last Will's enabled flag, topic and message. A stored value wins over the firmware's: a device whose card was saved with TLS off stays off after a firmware that sets `mqttUseTLS`, until the card turns it on. The CA is never stored; it always comes from the firmware.
 - **Home Assistant**: node id, device name, discovery prefix, manufacturer, model and suggested area. `swVersion` has no field on the card; it is loaded from `ha_sw_ver` when present.
 - **OTA**: firmware URL and auto-reboot.
 - **SystemInfo**: the device name, which also updates the WebUI's copy so the page header follows it at once.

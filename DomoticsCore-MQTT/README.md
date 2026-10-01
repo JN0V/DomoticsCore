@@ -110,6 +110,7 @@ struct MQTTConfig {
     String broker;              // MQTT broker address
     uint16_t port;              // Port (1883 for plain, 8883 for TLS)
     bool useTLS;                // Use TLS/SSL encryption
+    const char* caCert;         // PEM root CA, required by useTLS (static storage)
     uint16_t keepAlive;         // Keep-alive interval (seconds)
 
     // Authentication
@@ -147,6 +148,7 @@ struct MQTTConfig {
 |---------|---------|-------------|
 | `port` | 1883 | Standard MQTT port |
 | `useTLS` | false | Plain connection |
+| `caCert` | nullptr | No CA: TLS refuses to connect |
 | `keepAlive` | 60 | 60 second keep-alive |
 | `enableLWT` | true | LWT enabled |
 | `lwtQoS` | 1 | At-least-once delivery |
