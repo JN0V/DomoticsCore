@@ -220,7 +220,7 @@ DomoticsCore includes a **Hardware Abstraction Layer (HAL)** for platform portab
 |----------|--------|------|---------|-----|----------------|
 | **ESP32** | ✅ Full Support | ✅ | ✅ NVS | ✅ SNTP | ✅ |
 | **ESP32-C3** | ✅ Full Support | ✅ | ✅ NVS | ✅ SNTP | ✅ (USB CDC) |
-| **ESP8266** | ⚠️ Partial | ✅ | ✅ LittleFS | ✅ configTime | ⚠️ (~80KB RAM, optimized) |
+| **ESP8266** | ⚠️ Partial | ✅ | ✅ LittleFS | ✅ sntp | ⚠️ (~80KB RAM, optimized) |
 | **AVR** | ❌ Not Suitable | ❌ | ❌ | ❌ | ❌ (2KB RAM) |
 | **ARM** | 🔬 Experimental | ⚠️ shields | ⚠️ | ⚠️ | ⚠️ |
 

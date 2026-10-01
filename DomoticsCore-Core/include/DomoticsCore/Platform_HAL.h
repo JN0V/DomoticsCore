@@ -42,7 +42,7 @@
     #define DOMOTICS_HAS_PREFERENCES 0  // Use EEPROM or LittleFS instead
     #define DOMOTICS_HAS_FREERTOS 0
     #define DOMOTICS_HAS_ASYNC_TCP 0    // Different library needed
-    #define DOMOTICS_HAS_SNTP 0         // Use configTime() instead
+    #define DOMOTICS_HAS_SNTP 0         // No esp_sntp: lwIP's sntp client instead
     #define DOMOTICS_HAS_OTA 1
     #define DOMOTICS_HAS_SPIFFS 1
     #define DOMOTICS_HAS_LITTLEFS 1
