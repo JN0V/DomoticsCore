@@ -29,16 +29,22 @@ inline void init(const char* server1, const char* server2, const char* server3) 
         strncpy(serverBuf[0], server1, sizeof(serverBuf[0]) - 1);
         serverBuf[0][sizeof(serverBuf[0]) - 1] = '\0';
         esp_sntp_setservername(0, serverBuf[0]);
+    } else {
+        esp_sntp_setservername(0, nullptr);  // a slot a shorter list frees
     }
     if (server2) {
         strncpy(serverBuf[1], server2, sizeof(serverBuf[1]) - 1);
         serverBuf[1][sizeof(serverBuf[1]) - 1] = '\0';
         esp_sntp_setservername(1, serverBuf[1]);
+    } else {
+        esp_sntp_setservername(1, nullptr);  // a slot a shorter list frees
     }
     if (server3) {
         strncpy(serverBuf[2], server3, sizeof(serverBuf[2]) - 1);
         serverBuf[2][sizeof(serverBuf[2]) - 1] = '\0';
         esp_sntp_setservername(2, serverBuf[2]);
+    } else {
+        esp_sntp_setservername(2, nullptr);  // a slot a shorter list frees
     }
     esp_sntp_init();
 }
