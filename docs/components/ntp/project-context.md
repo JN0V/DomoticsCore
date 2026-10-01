@@ -39,7 +39,7 @@ DomoticsCore-NTP/
     NTPEvents.h                 (21 lines)  # Event constants: ntp/synced, ntp/sync_failed
     NTP_HAL.h                   (95 lines)  # HAL routing header (selects platform impl)
     NTP_ESP32.h                 (49 lines)  # ESP32 implementation using esp_sntp
-    NTP_ESP8266.h               (46 lines)  # ESP8266 implementation using configTime/sntp
+    NTP_ESP8266.h               (79 lines)  # ESP8266 implementation on lwIP's sntp client
     NTP_Stub.h                  (27 lines)  # No-op stubs for native/test builds
     NTPWebUI.h                 (338 lines)  # WebUI provider, timezone lookup table
   test/
