@@ -30,6 +30,44 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.12.0] - 2026-10-01
+
+> **An ESP8266 System with fifteen Home Assistant entities or more no longer
+> reboots at every broker connection** — the known issue 2.11.0 announced.
+> `publishDiscovery()` used to send every discovery document at once; it now
+> starts a pass, and `loop()` sends one document per call.
+> `ha/discovery_published` fires after the last one, no longer from inside
+> the call.
+
+> **MQTT over TLS connects, verified against a CA the firmware carries.**
+> Set `MQTTConfig::caCert` (or `SystemConfig::mqttCaCert`) to the broker CA's
+> PEM, in static storage: it is kept by pointer. Without one, TLS attempts no
+> connection, says why in `getLastError()`, and the settings card refuses to
+> turn it on. There is no insecure mode. The broker's certificate must name
+> it as the device addresses it — an IP address needs a `DNS:` entry too. On
+> ESP8266 the broker must accept the TLS max fragment length extension, and
+> NTP must have synced (certificate dates are checked); the ESP32 core does
+> not check certificate dates.
+
+### Added
+
+- **`MQTTConfig::caCert`**; **`SystemConfig::mqttUseTLS`** and **`SystemConfig::mqttCaCert`**.
+- **`HomeAssistantComponent::isDiscoveryPending()`**.
+- **`HAL::MQTT::MQTTClient::lastTlsError()`** (default: none; a custom client may override it).
+
+### Changed
+
+- `HomeAssistantComponent::publishDiscovery()` is asynchronous, as above;
+  `removeDiscovery()` cancels a pass still running. `discoveryCount` counts the
+  passes requested.
+- A failed TLS handshake puts the library's reason in `getLastError()`, prefixed
+  `TLS: `; a successful connection clears `getLastError()`.
+
+### Fixed
+
+- The native test stub reads JSON into `String` as ArduinoJson does on the
+  boards: a missing or `null` key falls back to the default of `| String(...)`.
+
 ## [2.11.0] - 2026-09-28
 
 > **`MQTTComponent::publish()` no longer waits on the network.** On a slow or
