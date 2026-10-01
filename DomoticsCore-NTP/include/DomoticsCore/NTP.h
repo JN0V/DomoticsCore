@@ -368,13 +368,12 @@ public:
         strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%S", &timeinfo);
         String result = String(buffer);
         
-        // Add timezone offset
-        int offset = getGMTOffset();
-        int offsetHours = offset / 3600;
-        int offsetMinutes = abs(offset % 3600) / 60;
-        
+        // Add timezone offset; the sign is kept apart so -00:30 stays negative
+        const int offset = getGMTOffset();
+        const int magnitude = offset < 0 ? -offset : offset;
         char tzBuffer[12];
-        snprintf(tzBuffer, sizeof(tzBuffer), "%+03d:%02d", offsetHours, offsetMinutes);
+        snprintf(tzBuffer, sizeof(tzBuffer), "%c%02d:%02d", offset < 0 ? '-' : '+',
+                 magnitude / 3600, (magnitude % 3600) / 60);
         result += tzBuffer;
         
         return result;
@@ -448,11 +447,9 @@ public:
         struct tm local_tm;
         gmtime_r(&now, &utc_tm);
         localtime_r(&now, &local_tm);
-        
-        // Calculate offset in seconds
-        time_t utc_time = mktime(&utc_tm);
-        time_t local_time = mktime(&local_tm);
-        return (int)(local_time - utc_time);
+        // Both read as UTC wall clocks: mktime() would apply the zone again and
+        // take the UTC fields for standard time, an hour out during DST.
+        return (int)(civilSeconds(local_tm) - civilSeconds(utc_tm));
     }
 
     /**
@@ -562,6 +559,19 @@ private:
     /// but should be considered if writing tests that simulate long uptimes.
     unsigned long bootTime;
     SyncCallback syncCallback;
+    // Seconds since 1970 of a broken-down time read as UTC (days from civil).
+    static int64_t civilSeconds(const struct tm& t) {
+        int y = t.tm_year + 1900;
+        const unsigned m = (unsigned)t.tm_mon + 1;
+        y -= m <= 2;
+        const int era = (y >= 0 ? y : y - 399) / 400;
+        const unsigned yoe = (unsigned)(y - era * 400);
+        const unsigned doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + (unsigned)t.tm_mday - 1;
+        const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        const int64_t days = (int64_t)era * 146097 + (int64_t)doe - 719468;
+        return days * 86400 + t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec;
+    }
+
     Utils::NonBlockingDelay syncTimeoutTimer;  // Timer for sync timeout tracking
 };
 
