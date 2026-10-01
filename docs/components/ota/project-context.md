@@ -15,9 +15,9 @@ This document provides structured context for AI coding agents working on the Do
 | Field | Value |
 |-------|-------|
 | Library name | `DomoticsCore-OTA` |
-| Version | **1.4.1** |
+| Version | **1.11.0** |
 | `metadata.name` | `"OTA"` |
-| `metadata.version` | `"1.4.1"` (must match `library.json`) |
+| `metadata.version` | `"1.11.0"` (must match `library.json`) |
 | `metadata.category` | `"system"` |
 | Type key | `"ota"` |
 | Namespace | `DomoticsCore::Components` (core), `DomoticsCore::Components::WebUI` (provider), `DomoticsCore::OTAEvents` (events) |
@@ -50,7 +50,7 @@ DomoticsCore-OTA/
   test/
     test_ota_component/
       test_ota_component.cpp  -- 30 Unity tests: events, config, state, upload, lifecycle, integration
-  library.json           -- PlatformIO library manifest (v1.4.1)
+  library.json           -- PlatformIO library manifest (v1.11.0)
   platformio.ini         -- Native test environment (Unity, gnu++17)
   README.md              -- Component-level README with usage examples
 ```
@@ -94,7 +94,7 @@ Plain configuration struct with 13 fields. No methods. Passed by value to constr
 - Registers both standard WebUI contexts and custom REST/upload routes
 - `handleWebUIRequest` accepts both `ota_unified` and `ota_manager` as context IDs
 - Internal `UploadState` struct tracks active upload metadata (filename, total, success/error)
-- **Bug (minor)**: `getWebUIVersion()` returns hardcoded `"1.4.0"` instead of `"1.4.1"` -- mismatch with `library.json` and `metadata.version`
+- **Bug (minor)**: `getWebUIVersion()` returns hardcoded `"1.4.0"` instead of `"1.11.0"` -- mismatch with `library.json` and `metadata.version`
 
 ### `OTAEvents` (namespace)
 
@@ -234,7 +234,7 @@ All three implementations expose the same function set in `DomoticsCore::HAL::OT
 | File Size (VII) | Warning | `OTA.cpp` is 607 lines, within the 800-line hard limit but above the 500-line target. `OTAWebUI.h` is 393 lines. Monitor growth. |
 | EventBus (VI) | Compliant | All status and progress updates published via `emit<String>()` |
 | Memory (XIV) | Compliant | Upload progress throttled; no String concatenation in hot paths; PROGMEM used for HTML |
-| Versioning (XV) | Compliant | `library.json` version `1.4.1` matches `metadata.version` in constructor |
+| Versioning (XV) | Compliant | `library.json` version `1.11.0` matches `metadata.version` in constructor |
 | Anti-Patterns (XIII) | Compliant | No singletons; centralized event constants in `OTAEvents.h`; dependencies declared |
 
 ### Potential Improvement Areas
@@ -244,7 +244,7 @@ All three implementations expose the same function set in `DomoticsCore::HAL::OT
 - Firmware signature verification is not implemented. The `signaturePublicKey` field that used to advertise it was removed in v2.1.0 (DC-7): it was never read, so it promised a check that did not happen. SHA-256 integrity verification *is* performed on the download path, and the image is committed to flash only after the digest matches (SEC-2). Note the ordering is the security property: `HAL::OTAUpdate::end(true)` is the point of no return — it switches the ESP32 boot partition and stages the ESP8266 eboot copy — and no Arduino core lets the application undo it, so `abort()` is only meaningful *before* `end()`. See the contract in `Update_HAL.h`. The **upload** path verifies on the same terms since SEC-7: `acceptUploadChunk()` hashes what it writes and `finalizeUpload()` checks the digest before `end(true)`. The expected hash is optional per upload (`X-Firmware-SHA256` header or `?sha256=`), because every caller before SEC-7 supplied none; set `OTAConfig::requireUploadHash` to refuse uploads without one, which also rejects the built-in browser form since it cannot send a digest.
 - ~~**(C14)**~~ **Resolved (BUG-21).** `EVENT_START` and `EVENT_END` are emitted at the points this entry named: the beginning of a download or upload, and the end of the transfer before verification.
 - **(C15)** `State::Applying` is defined in the enum and checked in `isBusy()` / `stateToString()` but is never entered via `transition()`. Either introduce a transition to `Applying` after download completes (before `finalizeUpdateOperation`), or remove the state from the enum to match actual runtime behavior.
-- **(Bug)** `OTAWebUI::getWebUIVersion()` returns hardcoded `"1.4.0"` instead of reading `metadata.version` (which is `"1.4.1"`). Should be updated to match.
+- **(Bug)** `OTAWebUI::getWebUIVersion()` returns hardcoded `"1.4.0"` instead of reading `metadata.version` (which is `"1.11.0"`). Should be updated to match.
 - `setConfig()` logs three of the ten `OTAConfig` fields (`updateUrl`, `autoReboot`, `enableWebUIUpload`); a runtime change to `maxDownloadSize`, `requireUploadHash`, `requireDownloadHash` or `uploadIdleTimeoutSec` leaves no trace in the log. The ESP8266 log buffer (128 bytes) is the constraint a fuller line has to fit.
 - The four `toInt()` calls in `OTA.cpp:717-722` parse a version string from the
   update manifest, so `"1.2x"` reads as a minor of 2 and a letter reads as 0.
