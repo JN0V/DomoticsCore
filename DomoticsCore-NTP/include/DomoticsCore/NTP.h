@@ -144,6 +144,10 @@ public:
         for (size_t i = 0; i < config.servers.size() && i < 3; i++) {
             DLOG_I(LOG_NTP, "NTP server %zu: %s", i, config.servers[i].c_str());
         }
+        if (config.servers.size() > 3) {
+            DLOG_W(LOG_NTP, "%u NTP servers configured; the SNTP client takes three, the rest are ignored",
+                   (unsigned)config.servers.size());
+        }
 
         clientWanted_ = true;
         startClient();
