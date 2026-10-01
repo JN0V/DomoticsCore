@@ -7,7 +7,7 @@
  * 
  * Provides a unified interface for time synchronization across platforms:
  * - ESP32: Uses esp_sntp API
- * - ESP8266: Uses configTime() 
+ * - ESP8266: Uses lwIP's sntp client
  * - Other platforms: Stub implementation
  */
 

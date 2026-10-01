@@ -3,7 +3,7 @@
 
 /**
  * @file NTP_ESP8266.h
- * @brief ESP8266-specific NTP implementation using configTime().
+ * @brief ESP8266-specific NTP implementation on lwIP's SNTP client.
  */
 
 #if DOMOTICS_PLATFORM_ESP8266
@@ -17,8 +17,8 @@ namespace HAL {
 namespace NTPImpl {
 
 inline void init(const char* server1, const char* server2, const char* server3) {
-    // configTime() may store the raw char* pointers without copying, so the
-    // buffers must outlive the call. Callers pass String::c_str(), which does not.
+    // SNTP keeps the raw char* pointers without copying, so the buffers must
+    // outlive the call. Callers pass String::c_str(), which does not.
     static char serverBuf[3][64];
 
     const char* s1 = nullptr;
@@ -40,7 +40,13 @@ inline void init(const char* server1, const char* server2, const char* server3) 
         serverBuf[2][sizeof(serverBuf[2]) - 1] = '\0';
         s3 = serverBuf[2];
     }
-    configTime(0, 0, s1, s2, s3);
+    // Not configTime(0, 0, ...): it writes GMT+0 into newlib's zone rules and
+    // would undo setTimezone(), DST included. The servers alone go to SNTP.
+    sntp_stop();
+    if (s1) sntp_setservername(0, s1);
+    if (s2) sntp_setservername(1, s2);
+    if (s3) sntp_setservername(2, s3);
+    sntp_init();
 }
 
 inline void setTimezone(const char* tz) {
