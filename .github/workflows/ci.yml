@@ -126,7 +126,8 @@ jobs:
   # build reaches all ten ESP8266-specific headers (Platform, Filesystem,
   # HeapTracker, Wifi, WiFiServer, Storage, WebUI, MQTT, NTP, Update). Building
   # it for the three targets buys that coverage for three builds instead of
-  # eighty-seven.
+  # eighty-seven. On ESP8266 it is a link witness only: the example cannot
+  # join a network there, with about 1.9 KB of heap left against the 2.5 KB WiFi needs.
   # ---------------------------------------------------------------------------
   build-targets:
     name: Build ${{ matrix.target }}
