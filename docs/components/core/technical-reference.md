@@ -648,7 +648,7 @@ Named wrapper used internally by `HeapTracker` to associate a label with a `Heap
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | **takeSnapshot** | `HeapSnapshot takeSnapshot() const` | Get current heap state. |
-| **checkpoint** | `void checkpoint(const String& name)` | Create a named checkpoint with current heap state. |
+| **checkpoint** | `void checkpoint(const String& name)` | Create a named checkpoint with current heap state. What storing the checkpoints costs is given back to every snapshot, so no delta is charged for the tracker's own nodes. |
 | **getCheckpoint** | `HeapSnapshot getCheckpoint(const String& name) const` | Get snapshot at a checkpoint. Returns zero-initialized if not found. |
 | **hasCheckpoint** | `bool hasCheckpoint(const String& name) const` | Check existence. |
 | **getDelta** | `int32_t getDelta(const String& start, const String& end) const` | Heap difference in bytes. Positive = memory used/leaked. |
@@ -676,6 +676,8 @@ These macros integrate with Unity's `TEST_ASSERT_TRUE_MESSAGE`.
 **Namespace:** `DomoticsCore::Testing`
 
 These utilities provide detailed heap tracking on native (desktop) platforms using system APIs (`mallinfo` on Linux, `mach_task_basic_info` on macOS). They complement the `HeapTracker` checkpoint-based approach with per-allocation granularity.
+
+On Linux, `mallinfo()` counts the blocks glibc keeps in its per-thread cache (tcache) as allocated, so a delta would depend on what the tests before it freed. Every native environment therefore runs its tests with `GLIBC_TUNABLES=glibc.malloc.tcache_count=0`, through `test_testing_command` in its `platformio.ini`; a native test binary run by hand needs the same variable. The command uses `env`, so native tests run on Linux and macOS hosts, not Windows.
 
 #### Standalone Functions
 

@@ -94,10 +94,15 @@ public:
      * @param name Unique checkpoint name
      */
     void checkpoint(const String& name) {
-        HeapCheckpoint cp;
+        // The tracker's own node is not the code under test: measure what storing
+        // it costs and give it back, so no window is charged for it.
+        const uint32_t before = takeSnapshot().freeHeap;
+        HeapCheckpoint& cp = checkpoints_[name];
         cp.name = name;
+        const uint32_t after = takeSnapshot().freeHeap;
+        if (before > after) ownBytes_ += before - after;
         cp.snapshot = takeSnapshot();
-        checkpoints_[name] = cp;
+        cp.snapshot.freeHeap += ownBytes_;
     }
     
     /**
@@ -202,8 +207,9 @@ public:
      */
     MemoryTestResult assertNoGrowth(const String& checkpointName, 
                                      int32_t toleranceBytes = 0) const {
-        // Create temporary "now" checkpoint
+        // Create temporary "now" checkpoint, on the same footing as the stored ones
         HeapSnapshot now = takeSnapshot();
+        now.freeHeap += ownBytes_;
         HeapSnapshot start = getCheckpoint(checkpointName);
         
         MemoryTestResult result;
@@ -234,6 +240,7 @@ public:
      */
     void clear() {
         checkpoints_.clear();
+        ownBytes_ = 0;
     }
     
     /**
@@ -272,6 +279,7 @@ public:
 
 protected:
     std::map<String, HeapCheckpoint> checkpoints_;
+    uint32_t ownBytes_ = 0;  // what storing the checkpoints has taken from the heap
 };
 
 } // namespace Testing
