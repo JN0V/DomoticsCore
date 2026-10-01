@@ -243,7 +243,7 @@ entity->getStateTopic(topic, sizeof(topic), nodeId, discoveryPrefix);
 
 | Event | Payload Type | When |
 |-------|-------------|------|
-| `ha/discovery_published` | `int` (entity count) | After `publishDiscovery()` completes |
+| `ha/discovery_published` | `int` (entity count) | After the last document of a discovery pass |
 | `ha/entity_added` | `HAEntityAddedEvent` | When any `add*()` method is called (all entity types) |
 | `ha/command` | `HACommandEvent` | When an entity processes a valid command from HA |
 | `mqtt/publish` | `MQTTPublishEvent` | Every state/discovery/availability publish |

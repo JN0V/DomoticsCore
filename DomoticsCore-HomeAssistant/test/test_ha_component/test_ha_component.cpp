@@ -1729,51 +1729,127 @@ void test_discovery_config_for_a_sensor_is_this_exact_document() {
     core.shutdown();
 }
 
-// How many sensors a device can declare before the connect burst overflows the
-// EventBus. A platform figure: derived from QueueCost below, not written down.
-// The eight system entities come out of the same budget.
-static void connectWithSensors(Core& core, int n, int& configs) {
+// Discovery leaves one document per loop, so the connect burst never holds more
+// than a few events in the queue, whatever the number of entities.
+struct ConnectCapture {
+    int configs = 0;
+    int states = 0;
+    int removals = 0;  // config topics with an empty payload
+    int discoveryDone = 0;
+};
+
+static HomeAssistantComponent* addHaWithSensors(Core& core, int n, ConnectCapture& cap) {
     HAConfig config;
     HA::setField(config.nodeId, "test_node", sizeof(config.nodeId));
     auto ha = std::make_unique<HomeAssistantComponent>(config);
     for (int i = 0; i < n; i++) ha->addSensor(String("s") + i, String("Sensor ") + i);
+    HomeAssistantComponent* raw = ha.get();
     core.addComponent(std::move(ha));
     core.begin();
-    configs = 0;
     core.on<MQTTPublishEvent>(DomoticsCore::MQTTEvents::EVENT_PUBLISH,
-        [&](const MQTTPublishEvent& ev) {
-            if (strstr(ev.topic, "/config") != nullptr) configs++;
+        [&cap](const MQTTPublishEvent& ev) {
+            if (strstr(ev.topic, "/config") != nullptr) {
+                if (ev.payload[0] == '\0') cap.removals++;
+                else cap.configs++;
+            }
+            else if (strstr(ev.topic, "/state") != nullptr) cap.states++;
         });
-    simulateMqttConnect(core);
-    for (int i = 0; i < 10; i++) core.loop();
+    core.on<int>(DomoticsCore::HAEvents::EVENT_DISCOVERY_PUBLISHED,
+        [&cap](const int&) { cap.discoveryDone++; });
+    return raw;
 }
 
-// The budget holds this many events the size of an MQTTPublishEvent; the connect
-// handler spends two of them on its own account (availability, and the command
-// subscription), and the rest carry configs.
-static size_t sensorsThatFitAtConnect() {
+// Well past what the queue could hold at once: the old burst dropped here.
+static int manySensors() {
     using DomoticsCore::Utils::QueueCost;
-    const size_t refEvents = QueueCost::kBudgetBytes /
-        QueueCost::of(sizeof(MQTTPublishEvent), strlen(DomoticsCore::MQTTEvents::EVENT_PUBLISH));
-    return refEvents - 2;
+    return (int)(3 * QueueCost::kBudgetBytes /
+                 QueueCost::of(sizeof(MQTTPublishEvent), strlen(DomoticsCore::MQTTEvents::EVENT_PUBLISH)));
 }
 
-void test_every_sensor_the_budget_holds_reaches_the_bus_at_connect_without_a_drop() {
-    const size_t N = sensorsThatFitAtConnect();
+void test_every_sensor_reaches_the_bus_at_connect_without_a_drop() {
+    const int n = manySensors();
     Core core;
-    int configs = 0;
-    connectWithSensors(core, (int)N, configs);
-    TEST_ASSERT_EQUAL_INT((int)N, configs);
+    ConnectCapture cap;
+    addHaWithSensors(core, n, cap);
+    simulateMqttConnect(core);
+    for (int i = 0; i < n + 5; i++) core.loop();
+    TEST_ASSERT_EQUAL_INT(n, cap.configs);
+    TEST_ASSERT_EQUAL_INT(1, cap.discoveryDone);
     TEST_ASSERT_EQUAL_UINT32(0, core.getEventBus().getDroppedCount());
     core.shutdown();
 }
 
-void test_one_sensor_past_the_budget_costs_a_dropped_event_at_connect() {
-    const size_t N = sensorsThatFitAtConnect();
+void test_the_connect_burst_holds_a_few_events_not_one_per_entity() {
+    using DomoticsCore::Utils::QueueCost;
+    const int n = manySensors();
     Core core;
-    int configs = 0;
-    connectWithSensors(core, (int)N + 1, configs);
-    TEST_ASSERT_EQUAL_UINT32(1, core.getEventBus().getDroppedCount());
+    ConnectCapture cap;
+    addHaWithSensors(core, n, cap);
+    simulateMqttConnect(core);
+    for (int i = 0; i < n + 5; i++) core.loop();
+    // The connect handler's availability and subscription, plus one document.
+    const size_t oneDoc = QueueCost::of(sizeof(MQTTPublishEvent), strlen(DomoticsCore::MQTTEvents::EVENT_PUBLISH));
+    const unsigned boundPct = (unsigned)((3 * oneDoc * 100 + QueueCost::kBudgetBytes - 1) / QueueCost::kBudgetBytes);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT(boundPct, core.getEventBus().getQueueHighWaterPct());
+    core.shutdown();
+}
+
+void test_a_state_published_during_discovery_is_sent_not_held() {
+    const int n = 12;
+    Core core;
+    ConnectCapture cap;
+    HomeAssistantComponent* ha = addHaWithSensors(core, n, cap);
+    core.emit<bool>(DomoticsCore::MQTTEvents::EVENT_CONNECTED, true);
+    core.loop();
+    core.loop();
+    TEST_ASSERT_TRUE(ha->isDiscoveryPending());
+    ha->publishState("s0", "42");
+    TEST_ASSERT_EQUAL_UINT32(0, (uint32_t)ha->getPendingPublishCount());
+    core.loop();
+    TEST_ASSERT_EQUAL_INT(1, cap.states);
+    for (int i = 0; i < n + 10; i++) core.loop();
+    TEST_ASSERT_EQUAL_INT(n, cap.configs);
+    core.shutdown();
+}
+
+void test_remove_discovery_cancels_a_pass() {
+    const int n = 12;
+    Core core;
+    ConnectCapture cap;
+    HomeAssistantComponent* ha = addHaWithSensors(core, n, cap);
+    core.emit<bool>(DomoticsCore::MQTTEvents::EVENT_CONNECTED, true);
+    for (int i = 0; i < 3; i++) core.loop();
+    const int sentBefore = cap.configs;
+    TEST_ASSERT_TRUE(sentBefore > 0 && sentBefore < n);
+    ha->removeDiscovery();
+    for (int i = 0; i < n + 5; i++) core.loop();
+    TEST_ASSERT_FALSE(ha->isDiscoveryPending());
+    TEST_ASSERT_EQUAL_INT(n, cap.removals);
+    // At most the document the loop dispatching the removal had already queued.
+    TEST_ASSERT_LESS_OR_EQUAL_INT(sentBefore + 1, cap.configs);
+    TEST_ASSERT_EQUAL_INT(0, cap.discoveryDone);
+    core.shutdown();
+}
+
+void test_a_disconnect_pauses_discovery_and_a_reconnect_restarts_it() {
+    const int n = 12;
+    Core core;
+    ConnectCapture cap;
+    HomeAssistantComponent* ha = addHaWithSensors(core, n, cap);
+    core.emit<bool>(DomoticsCore::MQTTEvents::EVENT_CONNECTED, true);
+    for (int i = 0; i < 4; i++) core.loop();
+    core.emit<bool>(DomoticsCore::MQTTEvents::EVENT_DISCONNECTED, false);
+    core.loop();  // the loop that dispatches the drop may still send one
+    const int sentBeforeDrop = cap.configs;
+    TEST_ASSERT_TRUE(sentBeforeDrop > 0 && sentBeforeDrop < n);
+    for (int i = 0; i < n + 5; i++) core.loop();
+    TEST_ASSERT_EQUAL_INT(sentBeforeDrop, cap.configs);
+    TEST_ASSERT_EQUAL_INT(0, cap.discoveryDone);
+    simulateMqttConnect(core);
+    for (int i = 0; i < n + 5; i++) core.loop();
+    TEST_ASSERT_EQUAL_INT(sentBeforeDrop + n, cap.configs);
+    TEST_ASSERT_EQUAL_INT(1, cap.discoveryDone);
+    TEST_ASSERT_FALSE(ha->isDiscoveryPending());
     core.shutdown();
 }
 
@@ -2131,8 +2207,11 @@ int runAllTests() {
 
     // Baselines pinned before OBS-5 changes the discovery payload
     RUN_TEST(test_discovery_config_for_a_sensor_is_this_exact_document);
-    RUN_TEST(test_every_sensor_the_budget_holds_reaches_the_bus_at_connect_without_a_drop);
-    RUN_TEST(test_one_sensor_past_the_budget_costs_a_dropped_event_at_connect);
+    RUN_TEST(test_every_sensor_reaches_the_bus_at_connect_without_a_drop);
+    RUN_TEST(test_the_connect_burst_holds_a_few_events_not_one_per_entity);
+    RUN_TEST(test_a_state_published_during_discovery_is_sent_not_held);
+    RUN_TEST(test_remove_discovery_cancels_a_pass);
+    RUN_TEST(test_a_disconnect_pauses_discovery_and_a_reconnect_restarts_it);
 
     // OBS-5 — the discovery fields and the duplicate-id warning
     RUN_TEST(test_discovery_config_with_the_diagnostic_fields_emits_exactly_them);
