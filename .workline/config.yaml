@@ -12,6 +12,10 @@ roles:
       # time, few docs per call, so the subscription's limits hold.
       max-open-merge-requests: 3
       ai-max-calls: 5
+      # Docs whose sources do not fit one call are judged in parts, a share
+      # of their sources at a time (workline ADR-0009): fixed, but `checked`
+      # stays for a person, who reads them whole. At most 16 parts a night.
+      judge-in-parts: true
 routing:
   # Before a push, the committer checks the commits leaving the machine; the
   # documentalist only counts the docs they made suspect (ADR-0010). Docs are
