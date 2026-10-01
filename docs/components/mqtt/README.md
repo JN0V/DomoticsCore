@@ -1,6 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-MQTT/library.json, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTWebUI.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_HAL.h]
-checked: 6a979a6
+checked: d7afb75
+verified: agent:documentalist
 -->
 
 # DomoticsCore-MQTT
@@ -20,7 +21,7 @@ The component wraps the PubSubClient library behind a Hardware Abstraction Layer
 - **Offline message queuing** -- messages published while disconnected are buffered and sent on reconnect (up to 100 messages by default)
 - **Wildcard subscriptions** using single-level (`+`) and multi-level (`#`) MQTT wildcards
 - **Last Will and Testament (LWT)** -- broker publishes a configurable offline message when the device disconnects unexpectedly
-- **TLS/SSL** optional encrypted connections (port 8883)
+- **TLS/SSL** optional encrypted connections (port 8883), verified against a PEM root CA set in `MQTTConfig::caCert`; TLS does not connect without one
 - **EventBus communication** -- fully decoupled inter-component messaging via `mqtt/connected`, `mqtt/disconnected`, `mqtt/message`, `mqtt/publish`, and `mqtt/subscribe` events
 - **JSON helpers** -- `publishJSON()` serializes ArduinoJson documents directly
 - **WebUI provider** -- real-time status badge, settings card, and statistics dashboard
