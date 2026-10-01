@@ -169,7 +169,7 @@ public:
 
         // Check if time has been synced. Delegates to the HAL so the threshold
         // lives in exactly one place.
-        time_t now = time(nullptr);
+        time_t now = HAL::NTP::getTime();
         bool currentlySynced = HAL::NTP::isSynced();
         
         // Detect sync completion (initial or subsequent)
@@ -222,7 +222,7 @@ public:
             syncTimeoutTimer.disable();
             stats.syncErrors++;
             stats.consecutiveFailures++;
-            stats.lastFailTime = time(nullptr);
+            stats.lastFailTime = HAL::NTP::getTime();
             
             DLOG_W(LOG_NTP, "Sync timeout after %lu ms (no response from NTP servers)", syncTimeoutTimer.getInterval());
             
@@ -299,7 +299,7 @@ public:
     uint32_t getNextSyncIn() const {
         if (!isSynced() || !config.enabled) return 0;
         
-        time_t now = time(nullptr);
+        time_t now = HAL::NTP::getTime();
         time_t elapsed = now - stats.lastSyncTime;
         
         if (elapsed >= (time_t)config.syncInterval) {
@@ -316,7 +316,7 @@ public:
      * @return Seconds since epoch (1970-01-01 00:00:00 UTC)
      */
     time_t getUnixTime() const {
-        return time(nullptr);
+        return HAL::NTP::getTime();
     }
 
     /**
@@ -324,7 +324,7 @@ public:
      * @return Local time structure
      */
     struct tm getLocalTime() const {
-        time_t now = time(nullptr);
+        time_t now = HAL::NTP::getTime();
         struct tm timeinfo;
         localtime_r(&now, &timeinfo);
         return timeinfo;
@@ -443,7 +443,7 @@ public:
      * @return Offset from GMT in seconds (positive for east, negative for west)
      */
     int getGMTOffset() const {
-        time_t now = time(nullptr);
+        time_t now = HAL::NTP::getTime();
         struct tm utc_tm;
         struct tm local_tm;
         gmtime_r(&now, &utc_tm);

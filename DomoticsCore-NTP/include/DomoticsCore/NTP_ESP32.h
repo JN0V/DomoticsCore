@@ -54,6 +54,8 @@ inline void setTimezone(const char* tz) {
     tzset();
 }
 
+inline time_t now() { return time(nullptr); }
+
 inline void setSyncInterval(uint32_t intervalMs) {
     esp_sntp_set_sync_interval(intervalMs);
 }

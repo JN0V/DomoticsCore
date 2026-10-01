@@ -7,6 +7,9 @@
  */
 
 #include <cstdint>
+#include <cstdlib>
+#include <string>
+#include <time.h>
 
 #if !DOMOTICS_PLATFORM_ESP32 && !DOMOTICS_PLATFORM_ESP8266
 
@@ -35,8 +38,30 @@ inline uint32_t& forceSyncCalls() {
     return value;
 }
 
-inline void init(const char*, const char*, const char*) { clientRunning() = true; }
-inline void setTimezone(const char*) {}
+/// The servers the last init() was given, "" for none.
+inline std::string& initServer(int i) {
+    static std::string servers[3];
+    return servers[i];
+}
+
+/// A clock a host suite can set; 0 reads the real one.
+inline time_t& clockForTest() {
+    static time_t value = 0;
+    return value;
+}
+
+inline void init(const char* s1, const char* s2, const char* s3) {
+    initServer(0) = s1 ? s1 : "";
+    initServer(1) = s2 ? s2 : "";
+    initServer(2) = s3 ? s3 : "";
+    clientRunning() = true;
+}
+// As on the boards: the C library applies the POSIX rule, DST included.
+inline void setTimezone(const char* tz) {
+    setenv("TZ", tz, 1);
+    tzset();
+}
+inline time_t now() { return clockForTest() ? clockForTest() : time(nullptr); }
 inline void setSyncInterval(uint32_t intervalMs) { lastSyncIntervalMs() = intervalMs; }
 inline void stop() { clientRunning() = false; stopCalls()++; }
 inline void forceSync() { forceSyncCalls()++; }
