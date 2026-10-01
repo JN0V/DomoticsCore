@@ -29,6 +29,13 @@ This example provides **everything** for enterprise IoT:
 
 ## Requirements
 
+### Board
+
+An **ESP32-class board**. The example builds for an ESP8266 too, which is how CI
+compiles every ESP8266-specific header, but it does not run there: with every
+component started, about 1.9 KB of heap is left, and WiFi needs 2.5 KB to
+connect. The `Standard` example runs on an ESP8266.
+
 ### External Services
 
 1. **MQTT Broker** (required)
