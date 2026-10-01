@@ -37,6 +37,7 @@ static Components::MQTTComponent* mqtt = nullptr;
 static uint32_t lastBurst = 0, lastReport = 0, seq = 0;
 static size_t peakQueuedBytes = 0;
 static uint32_t maxLoopUs = 0, maxPublishUs = 0, loops = 0, over50 = 0, over200 = 0, publishes = 0;
+static uint32_t minHeap = UINT32_MAX;
 
 void setup() {
     HAL::Platform::initializeLogging(115200);
@@ -94,6 +95,8 @@ void loop() {
         }
     }
 
+    const uint32_t heap = HAL::Platform::getFreeHeap();
+    if (heap < minHeap) minHeap = heap;
     const uint32_t dl = micros() - t0;
     loops++;
     if (dl > maxLoopUs) maxLoopUs = dl;
@@ -104,12 +107,15 @@ void loop() {
     if (millis() - lastReport >= 10000) {
         lastReport = millis();
         Serial.printf("STALL t=%lus connected=%d loops=%lu maxLoop=%lums over50=%lu over200=%lu publishes=%lu maxPublish=%lums"
-                      " peakQueued=%uB errors=%lu sent=%lu heap=%u\n",
+                      " peakQueued=%uB errors=%lu sent=%lu heap=%u minHeap=%lu busPeak=%u%% busDropped=%lu\n",
                       (unsigned long)(millis() / 1000), mqtt ? (int)mqtt->isConnected() : -1,
                       (unsigned long)loops, (unsigned long)(maxLoopUs / 1000), (unsigned long)over50,
                       (unsigned long)over200, (unsigned long)publishes, (unsigned long)(maxPublishUs / 1000),
                       (unsigned)peakQueuedBytes, mqtt ? (unsigned long)mqtt->getStatistics().publishErrors : 0UL,
-                      mqtt ? (unsigned long)mqtt->getStatistics().publishCount : 0UL, (unsigned)HAL::Platform::getFreeHeap());
+                      mqtt ? (unsigned long)mqtt->getStatistics().publishCount : 0UL, (unsigned)HAL::Platform::getFreeHeap(),
+                      (unsigned long)minHeap, (unsigned)sys->getCore().getEventBus().getQueueHighWaterPct(),
+                      (unsigned long)sys->getCore().getEventBus().getDroppedCount());
+        minHeap = UINT32_MAX;
         maxLoopUs = maxPublishUs = 0;
         loops = over50 = over200 = publishes = 0;
     }
