@@ -99,7 +99,7 @@ lib_deps =
 | `NTPEvents.h` | 21 | Event topic constants (`ntp/synced`, `ntp/sync_failed`) |
 | `NTP_HAL.h` | 95 | HAL routing header, backward-compatible API |
 | `NTP_ESP32.h` | 49 | ESP32 `esp_sntp` implementation |
-| `NTP_ESP8266.h` | 46 | ESP8266 `configTime`/`sntp` implementation |
+| `NTP_ESP8266.h` | 79 | ESP8266 implementation on lwIP's `sntp` client |
 | `NTP_Stub.h` | 27 | No-op stubs for native/test builds |
 | `NTPWebUI.h` | 338 | WebUI provider, 29-entry timezone lookup table |
 

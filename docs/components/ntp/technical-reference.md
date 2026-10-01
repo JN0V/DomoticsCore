@@ -54,7 +54,7 @@ struct NTPConfig {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | `bool` | `true` | Enable or disable NTP synchronization entirely. |
-| `servers` | `std::vector<String>` | `{"pool.ntp.org", "time.google.com", "time.cloudflare.com"}` | Up to three NTP server hostnames. Only the first three are used by the HAL. |
+| `servers` | `std::vector<String>` | `{"pool.ntp.org", "time.google.com", "time.cloudflare.com"}` | Up to three NTP server hostnames, handed to the SNTP client in order; the client fails over between them. A fourth and beyond are ignored, with a warning at `begin()`. An empty list uses `pool.ntp.org`. |
 | `syncInterval` | `uint32_t` | `3600` | Automatic re-sync interval in seconds. Passed to the HAL in milliseconds. |
 | `timezone` | `String` | `"UTC0"` | POSIX TZ string controlling local time and DST rules. |
 | `timeoutMs` | `uint32_t` | `5000` | Maximum time in milliseconds to wait for a sync response before declaring failure. |
@@ -198,7 +198,7 @@ Returns a formatted time string using `strftime`. Returns `"Not synced"` if time
 
 #### `String getISO8601() const`
 
-Returns the current time in ISO 8601 format with timezone offset, e.g., `"2025-10-02T19:30:45+02:00"`. Returns `"Not synced"` if time has not been synchronized.
+Returns the current time in ISO 8601 format with timezone offset, e.g., `"2025-10-02T19:30:45+02:00"`. The offset is `getGMTOffset()`'s, signed apart from its hours, so a zone half an hour west reads `-00:30`. Returns `"Not synced"` if time has not been synchronized.
 
 ### Uptime
 
@@ -222,7 +222,7 @@ Returns the currently configured POSIX timezone string.
 
 #### `int getGMTOffset() const`
 
-Returns the current offset from GMT in seconds. Positive values indicate east of GMT, negative values indicate west. This value accounts for DST if currently active.
+Returns the current offset from GMT in seconds. Positive values indicate east of GMT, negative values indicate west. This value accounts for DST if currently active: it is the difference between the local and UTC calendar times of the same instant, both counted as UTC, so no second `mktime()` pass applies the zone or guesses DST again.
 
 #### `bool isDST() const`
 
@@ -282,8 +282,8 @@ Defined in `DomoticsCore/NTP_HAL.h` (routing header). Namespace: `DomoticsCore::
 The HAL provides a platform-independent interface. The routing header selects the correct implementation at compile time:
 
 - `NTP_ESP32.h` -- uses the `esp_sntp` API.
-- `NTP_ESP8266.h` -- uses `configTime()` and the `sntp` library.
-- `NTP_Stub.h` -- no-op stubs for native/test environments.
+- `NTP_ESP8266.h` -- uses lwIP's `sntp` client directly.
+- `NTP_Stub.h` -- stubs for native/test environments: `setTimezone()` sets `TZ` as on the boards, `init()` records its servers, and `clockForTest()` sets the clock (0 reads the real one).
 
 ### HAL Functions
 
@@ -294,23 +294,23 @@ The HAL provides a platform-independent interface. The routing header selects th
 | `setSyncInterval` | `void setSyncInterval(uint32_t intervalMs)` | Set the automatic re-sync interval. No effect on ESP8266. |
 | `stop` | `void stop()` | Stop the SNTP client. |
 | `forceSync` | `void forceSync()` | Request an immediate resynchronization. |
-| `isSynced` | `bool isSynced()` | Returns `true` if `time(nullptr)` exceeds 2020-01-01 UTC. |
-| `getTime` | `time_t getTime()` | Returns current `time(nullptr)`. |
+| `isSynced` | `bool isSynced()` | Returns `true` if `getTime()` exceeds 2020-01-01 UTC. |
+| `getTime` | `time_t getTime()` | Returns the platform's clock: `time(nullptr)` on the boards, the stub's settable clock on the host. Every time read in the component goes through it. |
 | `getFormattedTime` | `bool getFormattedTime(const char* format, char* buffer, size_t bufferSize)` | Format current local time into buffer. Returns `false` if not synced. |
 
 ### HAL Internal Architecture
 
-The public `HAL::NTP` namespace delegates to a platform-specific `HAL::NTPImpl` namespace. The routing header `NTP_HAL.h` selects the implementation at compile time using `DOMOTICS_PLATFORM_ESP32` and `DOMOTICS_PLATFORM_ESP8266` macros. Each platform file provides five inline functions in `NTPImpl`: `init`, `setTimezone`, `setSyncInterval`, `stop`, `forceSync`.
+The public `HAL::NTP` namespace delegates to a platform-specific `HAL::NTPImpl` namespace. The routing header `NTP_HAL.h` selects the implementation at compile time using `DOMOTICS_PLATFORM_ESP32` and `DOMOTICS_PLATFORM_ESP8266` macros. Each platform file provides six inline functions in `NTPImpl`: `init`, `setTimezone`, `setSyncInterval`, `stop`, `forceSync`, `now`.
 
-The `HAL::NTP` namespace adds three additional functions not delegated to `NTPImpl`: `isSynced()` (uses threshold `1577836800` / 2020-01-01), `getTime()` (returns `time(nullptr)`), and `getFormattedTime()` (formats via `localtime_r` + `strftime`).
+The `HAL::NTP` namespace adds three functions on top: `getTime()` (delegates to `NTPImpl::now()`), `isSynced()` (`getTime()` above `1577836800`, 2020-01-01), and `getFormattedTime()` (formats via `localtime_r` + `strftime`).
 
 ### Platform Notes
 
-**ESP32** (`NTP_ESP32.h`): Uses the `esp_sntp` API. `init()` sets POLL operating mode and configures up to 3 servers. `forceSync()` calls `sntp_restart()`, which reinitializes the SNTP client and triggers an immediate poll. `setSyncInterval()` calls `sntp_set_sync_interval()`.
+**ESP32** (`NTP_ESP32.h`): Uses the `esp_sntp` API. `init()` sets POLL operating mode and configures up to 3 servers; a slot a shorter list leaves unused is cleared. `forceSync()` calls `sntp_restart()`, which reinitializes the SNTP client and triggers an immediate poll. `setSyncInterval()` calls `sntp_set_sync_interval()`.
 
-**ESP8266** (`NTP_ESP8266.h`): Uses `configTime()` for initialization and the `sntp` library for stop/restart. `forceSync()` stops and reinitializes SNTP (`sntp_stop()` + `sntp_init()`). `setSyncInterval()` is a no-op because the ESP8266 SNTP library does not expose interval control.
+**ESP8266** (`NTP_ESP8266.h`): `init()` sets the three slots with `sntp_setservername()`, clearing those a shorter list leaves unused, and starts the client. It does not call `configTime(0, 0, ...)`, which writes GMT+0 straight into newlib's zone rules and would undo `setTimezone()`, DST included. The `sntp` library also serves stop/restart. `forceSync()` stops and reinitializes SNTP (`sntp_stop()` + `sntp_init()`). `setSyncInterval()` is a no-op because the ESP8266 SNTP library does not expose interval control.
 
-**Stub** (`NTP_Stub.h`): All five functions are no-ops. Guard macro: `!DOMOTICS_PLATFORM_ESP32 && !DOMOTICS_PLATFORM_ESP8266`. Suitable for native unit testing.
+**Stub** (`NTP_Stub.h`): `init()` records its servers, `setTimezone()` sets `TZ` as the boards do, `now()` reads `clockForTest()` when set; the rest are no-ops. Guard macro: `!DOMOTICS_PLATFORM_ESP32 && !DOMOTICS_PLATFORM_ESP8266`. Suitable for native unit testing.
 
 ---
 
@@ -458,7 +458,7 @@ The internal buffer is 128 bytes. Formats producing output exceeding this length
 | Platform | HAL File | SNTP Client | Sync Interval Control | Force Sync Mechanism |
 |---|---|---|---|---|
 | ESP32 | `NTP_ESP32.h` | `esp_sntp` API | `sntp_set_sync_interval()` | `sntp_restart()` |
-| ESP8266 | `NTP_ESP8266.h` | `configTime()` / `sntp` | Not available | `sntp_stop()` + `sntp_init()` |
+| ESP8266 | `NTP_ESP8266.h` | `sntp` | Not available | `sntp_stop()` + `sntp_init()` |
 | Native/Test | `NTP_Stub.h` | None (stubs) | No-op | No-op |
 
 ---
