@@ -1,6 +1,8 @@
 <!-- workline
 sources: [DomoticsCore-OTA/include/DomoticsCore/OTA.h, DomoticsCore-OTA/include/DomoticsCore/OTAEvents.h, DomoticsCore-OTA/include/DomoticsCore/OTAWebUI.h, DomoticsCore-OTA/include/DomoticsCore/Update_ESP32.h, DomoticsCore-OTA/include/DomoticsCore/Update_ESP8266.h, DomoticsCore-OTA/include/DomoticsCore/Update_HAL.h, DomoticsCore-OTA/include/DomoticsCore/Update_Stub.h, DomoticsCore-OTA/src/OTA.cpp, DomoticsCore-OTA/library.json, DomoticsCore-OTA/platformio.ini, DomoticsCore-OTA/test/test_ota_component/test_ota_component.cpp, DomoticsCore-OTA/examples/BasicOTA/src/main.cpp, DomoticsCore-OTA/examples/OTAWithWebUI/src/main.cpp]
 checked: f815f62
+verified: agent:documentalist
+judged: 25bc3f1
 -->
 # DomoticsCore-OTA -- Project Context (AI Agent)
 
