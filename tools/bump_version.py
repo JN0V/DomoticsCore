@@ -159,6 +159,24 @@ def update_library_version(lib_json: Path, new_version: str, dry_run: bool, verb
         print(f"Updated {lib_json} to version {new_version}")
 
 
+def update_properties_version(root: Path, new_version: str, dry_run: bool, verbose: bool) -> None:
+    """Keep the Arduino manifest's version on the root's."""
+    props = root / "library.properties"
+    if not props.is_file():
+        return
+    text = read_text(props)
+    new_text, count = re.subn(r"^version=.*$", f"version={new_version}", text, count=1, flags=re.M)
+    if count == 0:
+        raise SystemExit(f"Failed to update version in {props}: no version= line")
+    if dry_run:
+        if verbose:
+            print(f"[dry-run] Would update {props} to version {new_version}")
+        return
+    write_text(props, new_text)
+    if verbose:
+        print(f"Updated {props} to version {new_version}")
+
+
 def iter_source_files(component_dir: Path):
     exts = {".h", ".hpp", ".hh", ".hxx", ".cpp", ".cxx", ".cc", ".ino"}
     for sub in ("include", "src"):
@@ -211,10 +229,16 @@ def main() -> None:
 
     root_version = read_library_version(root_lib)
 
+    # Refuse before writing anything, or a malformed manifest leaves the bump half done.
+    props = root / "library.properties"
+    if props.is_file() and not re.search(r"^version=", read_text(props), flags=re.M):
+        raise SystemExit(f"No version= line in {props}")
+
     if is_root_target:
         new_root_version = bump_semver(root_version, args.level)
         print(f"Root DomoticsCore: {root_version} -> {new_root_version} [{args.level}]")
         update_library_version(root_lib, new_root_version, args.dry_run, args.verbose)
+        update_properties_version(root, new_root_version, args.dry_run, args.verbose)
         return
 
     # Component bump + root propagation
@@ -233,6 +257,7 @@ def main() -> None:
     update_library_version(lib_json, new_comp_version, args.dry_run, args.verbose)
     update_metadata_versions(target_dir, new_comp_version, args.dry_run, args.verbose)
     update_library_version(root_lib, new_root_version, args.dry_run, args.verbose)
+    update_properties_version(root, new_root_version, args.dry_run, args.verbose)
 
 
 if __name__ == "__main__":
