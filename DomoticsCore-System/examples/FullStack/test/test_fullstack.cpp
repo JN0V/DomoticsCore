@@ -1,11 +1,7 @@
 /**
  * @file test_fullstack.cpp
- * @brief Tests unitaires pour l'exemple FullStack
- * 
- * Vérifie que:
- * - Toutes les entités Home Assistant sont créées
- * - La publication MQTT fonctionne
- * - Les callbacks sont correctement enregistrés
+ * @brief On-device tests for the FullStack example: its configuration and its
+ *        Home Assistant entities.
  */
 
 #include <unity.h>
@@ -16,12 +12,12 @@
 using namespace DomoticsCore;
 using namespace DomoticsCore::Components;
 
-// Configuration de test
+// Test configuration
 SystemConfig testConfig;
 System* domotics = nullptr;
 
 void setUp(void) {
-    // Configuration minimale pour les tests
+    // Minimal configuration for the tests
     testConfig = SystemConfig::fullStack();
     testConfig.deviceName = "TestDevice";
     testConfig.mqttBroker = "test.mosquitto.org";
@@ -30,7 +26,7 @@ void setUp(void) {
 }
 
 void tearDown(void) {
-    // Nettoyage après chaque test
+    // Clean up after each test
     if (domotics) {
         delete domotics;
         domotics = nullptr;
@@ -38,7 +34,7 @@ void tearDown(void) {
 }
 
 /**
- * @brief Test: Vérifier que la configuration FullStack active tous les composants
+ * @brief The FullStack configuration enables every component
  */
 void test_fullstack_config_enables_all_components() {
     SystemConfig config = SystemConfig::fullStack();
@@ -55,7 +51,7 @@ void test_fullstack_config_enables_all_components() {
 }
 
 /**
- * @brief Test: Vérifier que System peut être créé avec la config FullStack
+ * @brief A System can be created from the FullStack configuration
  */
 void test_system_creation() {
     domotics = new System(testConfig);
@@ -63,7 +59,7 @@ void test_system_creation() {
 }
 
 /**
- * @brief Test: Vérifier la configuration MQTT
+ * @brief The MQTT configuration
  */
 void test_mqtt_configuration() {
     TEST_ASSERT_EQUAL_STRING_MESSAGE("test.mosquitto.org", testConfig.mqttBroker.c_str(), 
@@ -73,7 +69,7 @@ void test_mqtt_configuration() {
 }
 
 /**
- * @brief Test: Vérifier la configuration Home Assistant
+ * @brief The Home Assistant configuration
  */
 void test_home_assistant_configuration() {
     TEST_ASSERT_TRUE_MESSAGE(testConfig.enableHomeAssistant,
@@ -81,24 +77,24 @@ void test_home_assistant_configuration() {
 }
 
 /**
- * @brief Test: Vérifier que les entités HA peuvent être créées
+ * @brief The example's Home Assistant entities can be created
  */
 void test_home_assistant_entity_creation() {
-    // Configuration minimale d'un composant MQTT
+    // Minimal MQTT component configuration
     MQTTConfig mqttCfg;
     mqttCfg.broker = "test.mosquitto.org";
     mqttCfg.enabled = true;
     
     auto mqttComp = new MQTTComponent(mqttCfg);
     
-    // Configuration HA
+    // Home Assistant configuration
     HomeAssistant::HAConfig haCfg;
     snprintf(haCfg.nodeId, sizeof(haCfg.nodeId), "%s", "test-device");
     snprintf(haCfg.deviceName, sizeof(haCfg.deviceName), "%s", "Test Device");
 
     auto haComp = new HomeAssistant::HomeAssistantComponent(haCfg);
 
-    // Créer les entités comme dans l'exemple
+    // The entities the example creates
     haComp->addSensor("temperature", "Temperature", "°C", "temperature", "mdi:thermometer");
     haComp->addSensor("uptime", "Uptime", "s", "", "mdi:clock-outline");
     haComp->addSensor("free_heap", "Free Heap", "bytes", "", "mdi:memory");
@@ -106,23 +102,23 @@ void test_home_assistant_entity_creation() {
     haComp->addSwitch("relay", "Cooling Relay", "mdi:fan");
     haComp->addButton("restart", "Restart Device", "mdi:restart");
 
-    // Vérifier que toutes les entités ont été créées
+    // Every entity was created
     TEST_ASSERT_EQUAL_MESSAGE(6, haComp->getStatistics().entityCount,
                              "Should have 6 entities (4 sensors + 1 switch + 1 button)");
 
-    // Nettoyage
+    // Clean up
     delete haComp;
     delete mqttComp;
 }
 
 /**
- * @brief Test: Vérifier les intervalles de publication
+ * @brief The publishing intervals
  */
 void test_publishing_intervals() {
-    // Ces valeurs correspondent aux timers dans main.cpp
-    const uint32_t SENSOR_TIMER = 10000;       // 10 secondes
-    const uint32_t MQTT_PUBLISH_TIMER = 5000;  // 5 secondes
-    const uint32_t HEARTBEAT_TIMER = 30000;    // 30 secondes
+    // These match the timers in main.cpp
+    const uint32_t SENSOR_TIMER = 10000;       // 10 seconds
+    const uint32_t MQTT_PUBLISH_TIMER = 5000;  // 5 seconds
+    const uint32_t HEARTBEAT_TIMER = 30000;    // 30 seconds
     
     TEST_ASSERT_EQUAL_MESSAGE(10000, SENSOR_TIMER, 
                              "Sensor reading interval should be 10s");
@@ -133,7 +129,7 @@ void test_publishing_intervals() {
 }
 
 /**
- * @brief Test: Vérifier la configuration du relay
+ * @brief The relay configuration
  */
 void test_relay_configuration() {
     const int RELAY_PIN = 5;
@@ -141,43 +137,42 @@ void test_relay_configuration() {
 }
 
 /**
- * @brief Test: Vérifier que System retourne les composants corrects
+ * @brief System returns its components
  */
 void test_get_components() {
     domotics = new System(testConfig);
     
-    // Vérifier que getCore() retourne une référence valide
+    // getCore() returns a valid reference
     Core& core = domotics->getCore();
     TEST_ASSERT_MESSAGE(true, "getCore() should return valid reference");
     
-    // Note: getWiFi() peut retourner NULL si begin() n'a pas été appelé
-    // C'est un comportement attendu pour un système non initialisé
-    // Le test vérifie simplement que la méthode ne crash pas
+    // getWiFi() may return null before begin(): the test only checks it does not crash.
     auto* wifi = domotics->getWiFi();
-    // Le pointeur peut être NULL avant l'initialisation - c'est normal
     TEST_ASSERT_MESSAGE(true, "getWiFi() method should not crash");
 }
 
+
 void setup() {
-    delay(2000);  // Attendre l'initialisation du Serial
+    delay(2000);  // Let Serial come up
     
     UNITY_BEGIN();
-    
-    // Tests de configuration
+
+    // Configuration
     RUN_TEST(test_fullstack_config_enables_all_components);
     RUN_TEST(test_mqtt_configuration);
     RUN_TEST(test_home_assistant_configuration);
     RUN_TEST(test_publishing_intervals);
     RUN_TEST(test_relay_configuration);
     
-    // Tests de création
+    // Creation
     RUN_TEST(test_system_creation);
     RUN_TEST(test_get_components);
     RUN_TEST(test_home_assistant_entity_creation);
+
     
     UNITY_END();
 }
 
 void loop() {
-    // Tests exécutés une seule fois dans setup()
+    // The tests run once, from setup()
 }
