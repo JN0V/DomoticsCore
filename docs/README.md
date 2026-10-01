@@ -2,7 +2,7 @@
 sources: [library.json, library.properties, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_HAL.h, DomoticsCore-Storage/include/DomoticsCore/Storage_HAL.h, DomoticsCore-NTP/include/DomoticsCore/NTP_HAL.h, DomoticsCore-OTA/include/DomoticsCore/Update_HAL.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h]
 checked: f734747
 verified: agent:documentalist
-judged: 041e631
+judged: 1e9326b
 -->
 # DomoticsCore Documentation
 

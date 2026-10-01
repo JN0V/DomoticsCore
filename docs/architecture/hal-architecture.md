@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_HAL.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_HAL.h, DomoticsCore-NTP/include/DomoticsCore/NTP_HAL.h, DomoticsCore-Storage/include/DomoticsCore/Storage_HAL.h, DomoticsCore-OTA/include/DomoticsCore/Update_HAL.h]
-checked: d7afb75
+checked: 1e9326b
 verified: agent:documentalist
 -->
 # HAL Architecture: Routing Header + Platform Files
