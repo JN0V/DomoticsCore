@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Platform_Arduino.h, DomoticsCore-Core/include/DomoticsCore/Platform_Stub.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker_Native.h, DomoticsCore-Core/src/Core.cpp, DomoticsCore-Core/src/IComponent.cpp, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json]
 checked: 4cdb3e6
-judged: 0820cf2
+judged: b678013
 verified: agent:documentalist
 -->
 # DomoticsCore-Core -- Project Context (AI Agent Reference)
@@ -160,7 +160,7 @@ Every DomoticsCore component depends on Core. Based on `library.json` dependency
 
 5. **`getCore()` returns nullptr before registration.** If you call `getCore()` in the component constructor, it will return `nullptr`. The registry reference is injected during `registerComponent()`, and the Core reference is injected during `initializeAll()`.
 
-6. **HeapTracker checkpoints use `std::map<String, ...>`.** This allocates heap memory, so checkpoint creation itself affects heap measurements. Use coarse-grained checkpoints in real leak tests.
+6. **HeapTracker checkpoints use `std::map<String, ...>`.** This allocates heap memory, but `checkpoint()` measures what storing its own node costs and gives it back (`ownBytes_`, reset by `clear()`), so no window is charged for it. Use coarse-grained checkpoints in real leak tests.
 
 7. **MemoryManager is a singleton.** While the constitution warns against singleton abuse, `MemoryManager` is an intentional exception because memory profile must be globally accessible. Do not create additional global singletons for components.
 
