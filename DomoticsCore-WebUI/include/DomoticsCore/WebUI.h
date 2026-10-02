@@ -74,8 +74,10 @@ private:
         return client ? static_cast<uint32_t>(client->remoteIP()) : 0;
     }
 
-    // Shared WS send buffer (single-threaded, safe to share between sendWebSocketUpdate/sendWebSocketUpdates)
+    // Update buffer shared by the poll handler (web task) and the SSE broadcast
+    // (loop task): bufferLock_ covers it from build to last read, not only the build.
     static char wsBuffer_[WEBUI_WS_BUFFER_SIZE];
+    HAL::Platform::RecursiveLock bufferLock_;
 
     // Heap-staging diagnostics for /api/ui/schema (see WebUI/SchemaMemProbe.h)
     WebUI::SchemaMemProbes schemaProbes_;
@@ -492,17 +494,24 @@ private:
             
             // Normal polling update
             webSocket->onPollRequest();
-            int len = buildUpdateJson(true);
-            if (len > 0) {
-                // Inject SSE hint into response so frontend can upgrade to SSE
-                if (webSocket->isSSEEnabled()) {
-                    if (len > 2 && wsBuffer_[len-1] == '}' && wsBuffer_[len-2] == '}') {
-                        int extra = snprintf(wsBuffer_ + len - 1, sizeof(wsBuffer_) - len + 1,
-                            ",\"_sse\":\"/api/ui/events\"}");
-                        if (extra > 0) len += extra - 1;
+            AsyncWebServerResponse* response = nullptr;
+            {
+                HAL::Platform::LockGuard guard(bufferLock_);
+                int len = buildUpdateJson(true);
+                if (len > 0) {
+                    // Inject SSE hint into response so frontend can upgrade to SSE
+                    if (webSocket->isSSEEnabled()) {
+                        if (len > 2 && wsBuffer_[len-1] == '}' && wsBuffer_[len-2] == '}') {
+                            int extra = snprintf(wsBuffer_ + len - 1, sizeof(wsBuffer_) - len + 1,
+                                ",\"_sse\":\"/api/ui/events\"}");
+                            if (extra > 0) len += extra - 1;
+                        }
                     }
+                    // The response copies the buffer, so the lock can go before it is sent.
+                    response = request->beginResponse(200, "application/json", wsBuffer_);
                 }
-                AsyncWebServerResponse* response = request->beginResponse(200, "application/json", wsBuffer_);
+            }
+            if (response) {
                 addCorsHeaders(response);
                 response->addHeader("Connection", "close");
                 request->send(response);
@@ -803,6 +812,7 @@ private:
             return;
         }
 
+        HAL::Platform::LockGuard guard(bufferLock_);
         int len = buildUpdateJson(false);
         if (len > 0) {
             DLOG_D(LOG_WEB, "SSE broadcast: %d bytes, clients=%d", len, webSocket->getClientCount());
