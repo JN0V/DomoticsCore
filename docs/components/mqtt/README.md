@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-MQTT/library.json, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTWebUI.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_HAL.h]
-checked: 0820cf2
+checked: ae5715e
 judged: 684649e
 verified: agent:documentalist
 -->

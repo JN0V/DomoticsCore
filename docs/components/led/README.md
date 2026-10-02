@@ -1,6 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-LED/include/DomoticsCore/LEDWebUI.h, DomoticsCore-LED/examples/BasicLED/src/main.cpp, DomoticsCore-LED/examples/LEDWithWebUI/src/main.cpp]
-checked: 6a979a6
+checked: ae5715e
+judged: 6a979a6
 verified: agent:documentalist
 -->
 

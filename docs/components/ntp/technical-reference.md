@@ -1,6 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-NTP/include/DomoticsCore/NTP.h, DomoticsCore-NTP/include/DomoticsCore/NTPEvents.h, DomoticsCore-NTP/include/DomoticsCore/NTPWebUI.h, DomoticsCore-NTP/include/DomoticsCore/NTP_ESP32.h, DomoticsCore-NTP/include/DomoticsCore/NTP_ESP8266.h, DomoticsCore-NTP/include/DomoticsCore/NTP_HAL.h, DomoticsCore-NTP/include/DomoticsCore/NTP_Stub.h]
-checked: 7920678
+checked: 281c95a
+judged: 7920678
 verified: agent:documentalist
 -->
 # DomoticsCore-NTP Technical Reference
