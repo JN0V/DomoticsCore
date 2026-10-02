@@ -1084,12 +1084,10 @@ private:
         stats.commandsReceived++;
         DLOG_D(LOG_HA, "Command for %.*s: %s", (int)idLen, idStart, payload);
 
-        // R24: Virtual dispatch — replaces static_cast chain
-        // R26: handleCommand returns false if command is invalid (e.g., button with wrong payload, light with garbage)
+        // An entity refuses a command it cannot apply (a button's wrong payload, a light's garbage).
         bool valid = entity->handleCommand(payload);
         if (!valid) return;
 
-        // R26: Emit ha/command EventBus event
         HAEvents::HACommandEvent ev{};
         strncpy(ev.entityId, entityId, sizeof(ev.entityId) - 1);
         strncpy(ev.component, entity->component.c_str(), sizeof(ev.component) - 1);
@@ -1108,26 +1106,12 @@ private:
                    (int)idLen, idStart, payloadLen, sizeof(ev.command) - 1);
         }
 
-        // Populate code field for alarm_control_panel
-        // Note: overwrites ev.command with parsed command (e.g., "ARM_AWAY" instead of raw "ARM_AWAY 1234")
-        if (entity->component == "alarm_control_panel") {
-            auto* alarm = static_cast<HAAlarmControlPanel*>(entity);
-            strncpy(ev.command, alarm->lastCommand, sizeof(ev.command) - 1);
-            strncpy(ev.code, alarm->lastCode, sizeof(ev.code) - 1);
-        }
-
+        entity->describeCommand(ev);
         emit(HAEvents::EVENT_COMMAND, ev);
 
-        // Auto-publish for switches (moved from old if/else chain)
-        if (entity->component == "switch") {
-            auto* sw = static_cast<HASwitch*>(entity);
-            if (!sw->optimistic && sw->autoPublishState) {
-                // entity->id rather than the local buffer, which saves building
-                // a String for the id and nothing else: publishState looks the
-                // entity up again by String and builds one for the state. This
-                // is the accepted path, where the cost was never the claim.
-                publishState(entity->id, payload);
-            }
+        // entity->id rather than the local buffer: publishState builds its own Strings anyway.
+        if (entity->echoesCommandAsState()) {
+            publishState(entity->id, payload);
         }
     }
 };

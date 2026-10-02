@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ArduinoJson.h>
+#include "HAEvents.h"
 
 namespace DomoticsCore {
 namespace Components {
@@ -125,6 +126,12 @@ public:
      * @return true if command was valid and processed, false to skip EventBus emission
      */
     virtual bool handleCommand(const String& payload) { return true; }
+
+    // After a valid command: what the entity parsed, beyond the raw payload.
+    virtual void describeCommand(HAEvents::HACommandEvent& /*ev*/) const {}
+
+    // After a valid command: whether the component publishes the payload back as state.
+    virtual bool echoesCommandAsState() const { return false; }
 
 protected:
     // The payloads are Home Assistant's defaults (HAPayload), so only the topic is stated.

@@ -66,6 +66,36 @@ void test_virtual_dispatch_light_via_base_pointer() {
     TEST_ASSERT_EQUAL_UINT8(255, light.brightness);
 }
 
+// The base hooks leave the event as built and publish nothing back.
+void test_entity_command_hooks_default_to_nothing() {
+    HASensor sensor("t", "T");
+    HAEvents::HACommandEvent ev{};
+    sensor.describeCommand(ev);
+    TEST_ASSERT_EQUAL_STRING("", ev.command);
+    TEST_ASSERT_EQUAL_STRING("", ev.code);
+    TEST_ASSERT_FALSE(sensor.echoesCommandAsState());
+}
+
+void test_switch_echoes_only_when_not_optimistic_and_auto_publishing() {
+    HASwitch sw("s", "S");
+    TEST_ASSERT_TRUE(sw.echoesCommandAsState());
+    sw.autoPublishState = false;
+    TEST_ASSERT_FALSE(sw.echoesCommandAsState());
+    sw.autoPublishState = true;
+    sw.optimistic = true;
+    TEST_ASSERT_FALSE(sw.echoesCommandAsState());
+}
+
+void test_alarm_describes_its_parsed_command() {
+    HAAlarmControlPanel alarm("a", "A");
+    TEST_ASSERT_TRUE(alarm.handleCommand("ARM_HOME 4321"));
+    HAEvents::HACommandEvent ev{};
+    alarm.describeCommand(ev);
+    TEST_ASSERT_EQUAL_STRING("ARM_HOME", ev.command);
+    TEST_ASSERT_EQUAL_STRING("4321", ev.code);
+    TEST_ASSERT_FALSE(alarm.echoesCommandAsState());
+}
+
 // The default schema sends a brightness as a bare number, never as JSON.
 void test_a_light_reads_a_bare_brightness() {
     HALight light("test", "Test Light");
@@ -403,6 +433,9 @@ int runAllTests() {
     // R24 -- Virtual dispatch tests
     RUN_TEST(test_virtual_dispatch_via_base_pointer);
     RUN_TEST(test_virtual_dispatch_light_via_base_pointer);
+    RUN_TEST(test_entity_command_hooks_default_to_nothing);
+    RUN_TEST(test_switch_echoes_only_when_not_optimistic_and_auto_publishing);
+    RUN_TEST(test_alarm_describes_its_parsed_command);
     RUN_TEST(test_a_light_reads_a_bare_brightness);
     RUN_TEST(test_a_light_refuses_a_brightness_off_its_scale);
     RUN_TEST(test_virtual_dispatch_button_via_base_pointer);

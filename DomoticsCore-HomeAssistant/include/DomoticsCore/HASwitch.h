@@ -54,6 +54,8 @@ public:
         state = (payload == payloadOn);
         return true;
     }
+
+    bool echoesCommandAsState() const override { return !optimistic && autoPublishState; }
 };
 
 } // namespace HomeAssistant
