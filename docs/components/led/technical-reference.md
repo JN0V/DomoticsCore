@@ -1,6 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-LED/include/DomoticsCore/LEDWebUI.h, DomoticsCore-LED/test/test_led_types/test_led_types.cpp, DomoticsCore-LED/test/test_led_component/test_led_component.cpp]
-checked: 6a979a6
+checked: 3c4d96c
+judged: 6a979a6
 -->
 
 # DomoticsCore-LED -- Technical Reference

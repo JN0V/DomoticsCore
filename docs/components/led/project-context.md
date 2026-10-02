@@ -1,6 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-LED/library.json, DomoticsCore-LED/platformio.ini, DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-LED/include/DomoticsCore/LEDWebUI.h, DomoticsCore-LED/test/test_led_types/test_led_types.cpp, DomoticsCore-LED/test/test_led_component/test_led_component.cpp, DomoticsCore-LED/examples/BasicLED/src/main.cpp, DomoticsCore-LED/examples/BasicLED/platformio.ini, DomoticsCore-LED/examples/LEDWithWebUI/src/main.cpp, DomoticsCore-LED/examples/LEDWithWebUI/platformio.ini]
-checked: 6a979a6
+checked: ae5715e
+judged: 6a979a6
 verified: agent:documentalist
 -->
 
