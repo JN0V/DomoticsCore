@@ -77,6 +77,19 @@ void test_wildcards_skip_dollar_topics(void) {
     TEST_ASSERT_TRUE(matches("$SYS/+/uptime", "$SYS/broker/uptime"));
 }
 
+// MQTT 3.1.1 4.7.1: '#' alone and last, '+' alone in its level; a topic has a character.
+void test_malformed_filters_and_empty_strings_match_nothing(void) {
+    TEST_ASSERT_FALSE(matches("#x", "a"));
+    TEST_ASSERT_FALSE(matches("a/#b", "a/x"));
+    TEST_ASSERT_FALSE(matches("a/#/b", "a/x"));
+    TEST_ASSERT_FALSE(matches("a/+b/c", "a/x//c"));
+    TEST_ASSERT_FALSE(matches("+x#", "a"));
+    TEST_ASSERT_FALSE(matches("#", ""));
+    TEST_ASSERT_FALSE(matches("+", ""));
+    TEST_ASSERT_FALSE(matches("", ""));
+    TEST_ASSERT_FALSE(matches("", "a"));
+}
+
 void test_matching_allocates_nothing(void) {
     // Segments longer than the native String's inline capacity, so any copy shows.
     const String filter("domotics-living-room/+/sensors-and-actuators/#");
@@ -103,6 +116,7 @@ int main(int, char**) {
     RUN_TEST(test_multi_level_wildcard);
     RUN_TEST(test_multi_level_wildcard_matches_its_parent);
     RUN_TEST(test_wildcards_skip_dollar_topics);
+    RUN_TEST(test_malformed_filters_and_empty_strings_match_nothing);
     RUN_TEST(test_matching_allocates_nothing);
     return UNITY_END();
 }
