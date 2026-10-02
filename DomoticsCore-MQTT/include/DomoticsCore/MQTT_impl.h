@@ -713,15 +713,18 @@ inline void MQTTComponent::mqttCallback(char* topic, byte* payload, unsigned int
 }
 
 // MQTT 3.1.1 filter match, one segment at a time over the raw strings: no copy.
-// "a/#" also matches "a", and a filter opening on a wildcard never matches a '$' topic.
+// "a/#" also matches "a", a filter opening on a wildcard never matches a '$' topic,
+// and a malformed filter ('#' not last, a wildcard sharing its level) matches nothing.
 inline bool MQTTComponent::topicMatches(const String& filter, const String& topic) {
     const char* f = filter.c_str();
     const char* t = topic.c_str();
+    if (!f || !t || !*f || !*t) return false;
     if (*t == '$' && (*f == '+' || *f == '#')) return false;
 
     while (true) {
-        if (*f == '#') return true;
+        if (*f == '#') return f[1] == '\0';
         if (*f == '+') {
+            if (f[1] && f[1] != '/') return false;
             while (*t && *t != '/') t++;
             f++;
         } else {
