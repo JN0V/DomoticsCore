@@ -197,10 +197,7 @@ public:
     
     // Storage operations
     bool putString(const String& key, const String& value) {
-        if (!isOpen) {
-            DLOG_E(LOG_STORAGE, "Not open");
-            return false;
-        }
+        if (!writable()) return false;
 
         auto it = cache.find(key);
         if (it != cache.end() && it->second.type == StorageValueType::String && it->second.stringValue == value) return true;
@@ -225,10 +222,7 @@ public:
     }
     
     bool putInt(const String& key, int32_t value) {
-        if (!isOpen) {
-            DLOG_E(LOG_STORAGE, "Not open");
-            return false;
-        }
+        if (!writable()) return false;
 
         auto it = cache.find(key);
         if (it != cache.end() && it->second.type == StorageValueType::Integer && it->second.intValue == value) return true;
@@ -253,10 +247,7 @@ public:
     }
     
     bool putFloat(const String& key, float value) {
-        if (!isOpen) {
-            DLOG_E(LOG_STORAGE, "Not open");
-            return false;
-        }
+        if (!writable()) return false;
 
         auto it = cache.find(key);
         if (it != cache.end() && it->second.type == StorageValueType::Float && it->second.floatValue == value) return true;
@@ -281,10 +272,7 @@ public:
     }
     
     bool putBool(const String& key, bool value) {
-        if (!isOpen) {
-            DLOG_E(LOG_STORAGE, "Not open");
-            return false;
-        }
+        if (!writable()) return false;
 
         auto it = cache.find(key);
         if (it != cache.end() && it->second.type == StorageValueType::Boolean && it->second.boolValue == value) return true;
@@ -309,10 +297,7 @@ public:
     }
     
     bool putULong64(const String& key, uint64_t value) {
-        if (!isOpen) {
-            DLOG_E(LOG_STORAGE, "Not open");
-            return false;
-        }
+        if (!writable()) return false;
 
         auto it = cache.find(key);
         if (it != cache.end() && it->second.type == StorageValueType::UInt64 && it->second.uint64Value == value) return true;
@@ -337,10 +322,7 @@ public:
     }
     
     bool putBlob(const String& key, const uint8_t* data, size_t length) {
-        if (!isOpen) {
-            DLOG_E(LOG_STORAGE, "Not open");
-            return false;
-        }
+        if (!writable()) return false;
         if (data == nullptr && length > 0) {
             DLOG_E(LOG_STORAGE, "putBlob: null data with length %zu", length);
             return false;
@@ -519,10 +501,7 @@ public:
     }
     
     bool remove(const String& key) {
-        if (!isOpen) {
-            DLOG_E(LOG_STORAGE, "Not open");
-            return false;
-        }
+        if (!writable()) return false;
         
         bool success = storage.remove(key.c_str());
         if (success) {
@@ -545,10 +524,7 @@ public:
     }
     
     bool clear() {
-        if (!isOpen) {
-            DLOG_E(LOG_STORAGE, "Not open");
-            return false;
-        }
+        if (!writable()) return false;
         
         bool success = storage.clear();
         if (success) {
@@ -703,6 +679,19 @@ public:
     }
 
 private:
+    // Write gate for every platform: only ESP32's Preferences refuses writes on its own.
+    bool writable() const {
+        if (!isOpen) {
+            DLOG_E(LOG_STORAGE, "Not open");
+            return false;
+        }
+        if (storageConfig.readOnly) {
+            DLOG_W(LOG_STORAGE, "Read-only namespace: write refused");
+            return false;
+        }
+        return true;
+    }
+
     ComponentStatus initializeStorage() {
         DLOG_I(LOG_STORAGE, "Initializing storage via HAL...");
         

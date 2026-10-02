@@ -242,7 +242,7 @@ When running multiple `StorageComponent` instances, set `StorageConfig::componen
 
 ## Read-Only Mode
 
-Set `StorageConfig::readOnly = true` to open the namespace without write permission. On ESP32, this maps directly to `Preferences::begin(name, true)`. All `put*` calls will fail because the HAL backend rejects writes when opened read-only.
+Set `StorageConfig::readOnly = true` to open the namespace without write permission. Every `put*`, `remove()` and `clear()` then returns `false`, changes nothing and emits no `EVENT_CHANGED`, on every platform. On ESP32 the namespace is also opened with `Preferences::begin(name, true)`.
 
 > **Migration note**: The `autoCommit` field has been removed from `StorageConfig`. Writes are always committed to the backend immediately. No configuration is needed.
 

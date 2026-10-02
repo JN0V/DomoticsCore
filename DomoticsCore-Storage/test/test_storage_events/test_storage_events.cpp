@@ -28,6 +28,7 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    HAL::RAMOnlyStorage::persistAcrossInstancesForTest = false;
     if (testCore) {
         testCore->shutdown();
         delete testCore;
@@ -331,6 +332,50 @@ void test_storage_changed_no_emit_on_failure(void) {
 }
 
 // ============================================================================
+// Read-only namespace
+// ============================================================================
+
+void test_read_only_refuses_every_write(void) {
+    HAL::RAMOnlyStorage::persistAcrossInstancesForTest = true;
+    {
+        Core writer;
+        StorageConfig config;
+        config.namespace_name = "test_ro";
+        writer.addComponent(std::make_unique<StorageComponent>(config));
+        writer.begin();
+        writer.getComponent<StorageComponent>("Storage")->putInt("kept", 7);
+        writer.shutdown();
+    }
+
+    testCore->getEventBus().subscribe(StorageEvents::EVENT_CHANGED, [](const void*) {
+        changedCount++;
+    });
+    StorageConfig config;
+    config.namespace_name = "test_ro";
+    config.readOnly = true;
+    auto storagePtr = std::make_unique<StorageComponent>(config);
+    StorageComponent* storage = storagePtr.get();
+    testCore->addComponent(std::move(storagePtr));
+    testCore->begin();
+    testCore->loop();
+
+    const uint8_t blob[2] = {1, 2};
+    TEST_ASSERT_FALSE(storage->putString("s", "v"));
+    TEST_ASSERT_FALSE(storage->putInt("kept", 8));
+    TEST_ASSERT_FALSE(storage->putFloat("f", 1.5f));
+    TEST_ASSERT_FALSE(storage->putBool("b", true));
+    TEST_ASSERT_FALSE(storage->putULong64("u", 1));
+    TEST_ASSERT_FALSE(storage->putBlob("blob", blob, sizeof(blob)));
+    TEST_ASSERT_FALSE(storage->remove("kept"));
+    TEST_ASSERT_FALSE(storage->clear());
+    testCore->loop();
+
+    TEST_ASSERT_EQUAL_INT32(7, storage->getInt("kept", -1));
+    TEST_ASSERT_FALSE(storage->exists("s"));
+    TEST_ASSERT_EQUAL_INT(0, changedCount);
+}
+
+// ============================================================================
 // Memory Stability Test for M15 emit calls
 // ============================================================================
 
@@ -391,6 +436,8 @@ int main(int argc, char **argv) {
 
     // Memory stability
     RUN_TEST(test_storage_changed_memory_stability);
+
+    RUN_TEST(test_read_only_refuses_every_write);
 
     return UNITY_END();
 }
