@@ -173,6 +173,12 @@ public:
         strncpy(lastCode, codeValue.c_str(), sizeof(lastCode) - 1);
         return true;
     }
+
+    // The event carries the parsed command in place of the raw "COMMAND CODE" payload.
+    void describeCommand(HAEvents::HACommandEvent& ev) const override {
+        strncpy(ev.command, lastCommand, sizeof(ev.command) - 1);
+        strncpy(ev.code, lastCode, sizeof(ev.code) - 1);
+    }
 };
 
 } // namespace HomeAssistant
