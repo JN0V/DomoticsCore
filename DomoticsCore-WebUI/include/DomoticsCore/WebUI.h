@@ -294,7 +294,8 @@ public:
     // IComponent override: post-initialization hook
     void onComponentsReady(const Components::ComponentRegistry& registry) override {
         this->registry->discoverProviders(registry);
-        // Subscribe to future add/remove events
+        // Subscribe to future add/remove events. The hook's signature is const, the
+        // registry is not: Core owns it as a plain member, so the cast is well defined.
         auto& reg = const_cast<Components::ComponentRegistry&>(registry);
         reg.addListener(this);
         
