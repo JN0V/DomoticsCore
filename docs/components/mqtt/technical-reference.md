@@ -343,7 +343,7 @@ On a link durably slower than what the application publishes, messages are there
 
 ## Wildcard Subscription Patterns
 
-MQTT wildcards are supported in `subscribe()` and matched by `topicMatches()`:
+MQTT wildcards are supported in `subscribe()`; the broker does the matching. `topicMatches()` applies the same rules on the device, for a sketch that routes `EVENT_MESSAGE` by filter:
 
 | Pattern | Meaning | Example Filter | Matches | Does Not Match |
 |---------|---------|---------------|---------|----------------|
@@ -351,7 +351,7 @@ MQTT wildcards are supported in `subscribe()` and matched by `topicMatches()`:
 | `#` | Multi level (must be last) | `home/sensors/#` | `home/sensors/temp`, `home/sensors/a/b` | `home/other` |
 | Literal | Exact match | `home/light` | `home/light` | `home/lights` |
 
-The `topicMatches(filter, topic)` static method splits both strings on `/` and compares segment-by-segment. `+` matches any single segment; `#` matches all remaining segments.
+The `topicMatches(filter, topic)` static method walks both strings segment by segment without allocating. `+` matches any single segment, empty included; `#` matches all remaining segments and the parent level too (`home/sensors/#` matches `home/sensors`). A filter that opens on a wildcard does not match a topic starting with `$`.
 
 ---
 

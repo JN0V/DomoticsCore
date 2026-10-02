@@ -712,45 +712,28 @@ inline void MQTTComponent::mqttCallback(char* topic, byte* payload, unsigned int
     }
 }
 
-// Topic matching with wildcards (static)
+// MQTT 3.1.1 filter match, one segment at a time over the raw strings: no copy.
+// "a/#" also matches "a", and a filter opening on a wildcard never matches a '$' topic.
 inline bool MQTTComponent::topicMatches(const String& filter, const String& topic) {
-    if (filter == topic) return true;
-    if (filter == "#") return true;
-    
-    std::vector<String> filterParts;
-    std::vector<String> topicParts;
-    
-    int start = 0;
-    int end = filter.indexOf('/');
-    while (end >= 0) {
-        filterParts.push_back(filter.substring(start, end));
-        start = end + 1;
-        end = filter.indexOf('/', start);
-    }
-    filterParts.push_back(filter.substring(start));
-    
-    start = 0;
-    end = topic.indexOf('/');
-    while (end >= 0) {
-        topicParts.push_back(topic.substring(start, end));
-        start = end + 1;
-        end = topic.indexOf('/', start);
-    }
-    topicParts.push_back(topic.substring(start));
-    
-    size_t fi = 0, ti = 0;
-    while (fi < filterParts.size() && ti < topicParts.size()) {
-        if (filterParts[fi] == "#") {
-            return true;
+    const char* f = filter.c_str();
+    const char* t = topic.c_str();
+    if (*t == '$' && (*f == '+' || *f == '#')) return false;
+
+    while (true) {
+        if (*f == '#') return true;
+        if (*f == '+') {
+            while (*t && *t != '/') t++;
+            f++;
+        } else {
+            while (*f && *f != '/' && *f == *t) { f++; t++; }
+            if ((*f && *f != '/') || (*t && *t != '/')) return false;
         }
-        if (filterParts[fi] != "+" && filterParts[fi] != topicParts[ti]) {
-            return false;
-        }
-        fi++;
-        ti++;
+        // Both now sit on a separator or at their end.
+        if (*f == '\0') return *t == '\0';
+        if (*t == '\0') return f[1] == '#' && f[2] == '\0';
+        f++;
+        t++;
     }
-    
-    return fi == filterParts.size() && ti == topicParts.size();
 }
 
 } // namespace Components
