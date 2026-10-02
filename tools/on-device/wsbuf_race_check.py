@@ -4,10 +4,15 @@ that the other task's build could have written over.
 
     wsbuf_race_check.py <ip> [seconds] [pollers]
 
-A poll answer must be valid JSON, carry every context (the SSE build is a
-delta) and exactly one _sse hint. An SSE event must be valid JSON and carry no
-_sse hint (only a poll adds one). Exit 1 if anything was flagged. The vehicle
-that makes the two builds meet is probes/webui-buffer-race; against a stock
+The verdict rests on the _sse hint, which only the poll path writes: an SSE
+event carrying it, or a poll answer without exactly one, is the other task's
+build read back. Exit 1 on either, 2 when the run is too thin to say anything
+(fewer than 100 polls or SSE events, or more than 1 % of polls failing).
+
+Malformed SSE events and polls with fewer contexts than the first are printed
+but do not decide: SSE events also interleave on the wire with no poller at
+all (BUG-98), and a provider may legitimately drop a context. The vehicle that
+makes the two builds meet is probes/webui-buffer-race; against a stock
 firmware the SSE interval leaves the window almost always shut.
 """
 import json, sys, threading, time, urllib.request, http.client
@@ -95,5 +100,9 @@ for t in threads:
 print(stats)
 for k, s in samples:
     print(k, "|", s)
-bad = sum(v for k, v in stats.items() if k not in ("poll", "poll_err", "sse"))
-sys.exit(1 if bad else 0)
+if stats["sse"] < 100 or (POLLERS and stats["poll"] < 100) or stats["poll_err"] > stats["poll"] * 0.01:
+    print("VACUOUS: too few events or too many failed polls to judge")
+    sys.exit(2)
+crossed = stats["sse_poll_hint"] + stats["poll_sse_hint"]
+print("CROSSED" if crossed else "CLEAN", crossed)
+sys.exit(1 if crossed else 0)

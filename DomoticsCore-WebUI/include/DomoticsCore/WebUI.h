@@ -76,8 +76,9 @@ private:
 
     // Update buffer shared by the poll handler (web task) and the SSE broadcast
     // (loop task): bufferLock_ covers it from build to last read, not only the build.
+    // Taken before the registry's lock, never under it.
     static char wsBuffer_[WEBUI_WS_BUFFER_SIZE];
-    HAL::Platform::RecursiveLock bufferLock_;
+    static HAL::Platform::RecursiveLock bufferLock_;
 
     // Heap-staging diagnostics for /api/ui/schema (see WebUI/SchemaMemProbe.h)
     WebUI::SchemaMemProbes schemaProbes_;
@@ -497,7 +498,7 @@ private:
             AsyncWebServerResponse* response = nullptr;
             {
                 HAL::Platform::LockGuard guard(bufferLock_);
-                int len = buildUpdateJson(true);
+                int len = buildUpdateJson(true, forceNextUpdate);
                 if (len > 0) {
                     // Inject SSE hint into response so frontend can upgrade to SSE
                     if (webSocket->isSSEEnabled()) {
@@ -791,11 +792,11 @@ private:
     // (for SSE broadcast). The assembly lives in WebUI/UpdateBuilder.h (SIZE-1)
     // where native tests reach it — BUG-32's escaping and the crowding it can
     // cause are pinned there, not here.
-    int buildUpdateJson(bool forceFull) {
+    int buildUpdateJson(bool forceFull, bool forceNext) {
         return registry->withContextProviders([&](const std::map<String, IWebUIProvider*>& providers) {
             return WebUI::buildUpdateJson(wsBuffer_, sizeof(wsBuffer_), providers, config.deviceName,
                 HAL::Platform::getMillis(), HAL::Platform::getFreeHeap(),
-                getWebSocketClients(), forceFull, forceNextUpdate);
+                getWebSocketClients(), forceFull, forceNext);
         });
     }
 
@@ -813,17 +814,22 @@ private:
         }
 
         HAL::Platform::LockGuard guard(bufferLock_);
-        int len = buildUpdateJson(false);
+        // Cleared before the build: a client that connects during it keeps its full update.
+        const bool force = forceNextUpdate;
+        forceNextUpdate = false;
+        int len = buildUpdateJson(false, force);
         if (len > 0) {
             DLOG_D(LOG_WEB, "SSE broadcast: %d bytes, clients=%d", len, webSocket->getClientCount());
             webSocket->broadcast(wsBuffer_, len);
-            forceNextUpdate = false;
+        } else if (force) {
+            forceNextUpdate = true;
         }
     }
 };
 
 // Static member definition (single shared WS buffer — saves 2KB BSS vs two separate buffers)
 char WebUIComponent::wsBuffer_[WEBUI_WS_BUFFER_SIZE];
+HAL::Platform::RecursiveLock WebUIComponent::bufferLock_;
 
 } // namespace Components
 } // namespace DomoticsCore
