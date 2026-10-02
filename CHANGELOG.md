@@ -30,6 +30,30 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.12.1] - 2026-10-02
+
+> **On ESP8266, local time now follows the configured timezone.** It never
+> did: the SNTP client was started with `configTime(0, 0, ...)`, which resets
+> the C library's zone to GMT, so every ESP8266 ran on UTC whatever the
+> timezone, DST included. After updating, an ESP8266 configured for Paris
+> reads two hours later in summer. `getUnixTime()` is unchanged.
+
+### Fixed
+
+- `NTPComponent::getGMTOffset()` and `getISO8601()` were an hour short during
+  DST on every platform (`14:00+01:00` for 14:00 CEST); an offset under an
+  hour west of UTC printed as positive (`+00:30` for `-00:30`).
+- Shortening the NTP server list no longer leaves the removed servers polled.
+- Configuring more than three NTP servers logs a warning: the client uses three.
+- `library.properties` declares its dependencies and carries the release's
+  version; it had stayed at 2.0.0.
+
+### Changed
+
+- Tests: the native heap measurements no longer count glibc's tcache or the
+  tracker's own checkpoints, and native suites run through `env`, so on Linux
+  and macOS hosts only.
+
 ## [2.12.0] - 2026-10-01
 
 > **An ESP8266 System with fifteen Home Assistant entities or more no longer

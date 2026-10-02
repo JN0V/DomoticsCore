@@ -16,7 +16,7 @@ This document provides the context an AI coding agent needs to understand, navig
 | Field | Value |
 |-------|-------|
 | **Name** | DomoticsCore-Core |
-| **Version** | 1.13.1 (see `library.json`) |
+| **Version** | 1.13.2 (see `library.json`) |
 | **Role** | Foundation library -- runtime engine, component model, EventBus, logging, timers, memory management |
 | **Namespace** | `DomoticsCore` (top-level), `DomoticsCore::Components`, `DomoticsCore::Utils`, `DomoticsCore::Testing` |
 | **License** | MIT |

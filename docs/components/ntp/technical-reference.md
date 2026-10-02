@@ -124,7 +124,7 @@ Example: `CET-1CEST,M3.5.0,M10.5.0/3` means CET is UTC+1, CEST starts on the las
 
 Defined in `DomoticsCore/NTP.h`. Namespace: `DomoticsCore::Components`.
 
-Inherits from `IComponent`. Registered name: `"NTP"`. Current version: `"1.4.2"`.
+Inherits from `IComponent`. Registered name: `"NTP"`. Current version: `"1.4.3"`.
 
 ### Constructor and Destructor
 
@@ -133,7 +133,7 @@ explicit NTPComponent(const NTPConfig& cfg = NTPConfig());
 virtual ~NTPComponent();
 ```
 
-- **Constructor**: Initializes component metadata (`name = "NTP"`, `version = "1.4.2"`), stores the configuration, records boot time, and prepares the sync timeout timer in a disabled state.
+- **Constructor**: Initializes component metadata (`name = "NTP"`, `version = "1.4.3"`), stores the configuration, records boot time, and prepares the sync timeout timer in a disabled state.
 - **Destructor**: Calls `HAL::NTP::stop()` if the SNTP client was started, ensuring it is shut down cleanly.
 
 ### IComponent Lifecycle
@@ -505,6 +505,6 @@ The component ships with native unit tests in two suites, using the Unity test f
 
 1. **Stale class docstring in `NTPWebUI.h`**: Lines 67-71 reference four UI contexts (`ntp_status`, `ntp_dashboard`, `ntp_settings`, `ntp_detail`), but only `ntp_time` and `ntp_settings` are implemented in `buildContexts()`.
 
-2. **Version fallback mismatch**: `NTPWebUI::getWebUIVersion()` returns `"1.0.2"` when the NTP pointer is null (line 145), which does not match the current component version `1.4.2`.
+2. **Version fallback mismatch**: `NTPWebUI::getWebUIVersion()` returns `"1.0.2"` when the NTP pointer is null (line 145), which does not match the current component version `1.4.3`.
 
 3. **SPECIFICATIONS.md is outdated**: The specifications file is pinned at v0.1.0 and describes an older API surface (e.g., `getName()`/`getVersion()` virtual methods, a `NTPStatistics` struct without `lastFailTime`/`consecutiveFailures`, four WebUI contexts). It should be treated as historical reference only.
