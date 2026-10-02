@@ -2,7 +2,7 @@
 sources: [DomoticsCore-Core/library.json, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Platform_Arduino.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_HAL.h, DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h]
 checked: f734747
 verified: agent:documentalist
-judged: 1e9326b
+judged: 23b0933
 -->
 # DomoticsCore-Core
 
