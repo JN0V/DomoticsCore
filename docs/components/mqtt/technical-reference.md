@@ -351,7 +351,7 @@ MQTT wildcards are supported in `subscribe()`; the broker does the matching. `to
 | `#` | Multi level (must be last) | `home/sensors/#` | `home/sensors/temp`, `home/sensors/a/b` | `home/other` |
 | Literal | Exact match | `home/light` | `home/light` | `home/lights` |
 
-The `topicMatches(filter, topic)` static method walks both strings segment by segment without allocating. `+` matches any single segment, empty included; `#` matches all remaining segments and the parent level too (`home/sensors/#` matches `home/sensors`). A filter that opens on a wildcard does not match a topic starting with `$`.
+The `topicMatches(filter, topic)` static method walks both strings segment by segment without allocating. `+` matches any single segment, empty included; `#` matches all remaining segments and the parent level too (`home/sensors/#` matches `home/sensors`). A filter that opens on a wildcard does not match a topic starting with `$`. A malformed filter (`#` not last, `+` or `#` sharing a level with other characters) and an empty filter or topic match nothing.
 
 ---
 

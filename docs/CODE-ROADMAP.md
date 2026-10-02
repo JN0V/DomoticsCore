@@ -3178,13 +3178,17 @@ one worth a one-line change, and six rows that are not defects.
 - **Measured on the WROOM-32D** with `probes/webui-buffer-race` (an SSE interval
   of zero, 24 fields that change every build) and `wsbuf_race_check.py`, 90 s,
   three pollers and one SSE client: **377 of 6 842 SSE events carried the
-  poll's `"_sse"` hint**, which only the poll path writes, and some were two
-  documents spliced together. A stock firmware never showed it in 2 929 polls:
-  at a 5 s interval the window is almost always shut.
-- **Fixed**: `bufferLock_` is held from the build to the last read of the
-  buffer on both paths; the response copies the buffer, so the lock is released
-  before `send()`. Same run after the fix: **0** events with the hint. Lock order
-  is buffer, registry, then the event source's own, on both tasks.
+  poll's `"_sse"` hint**, which only the poll path writes (650 of 6 853 on a
+  second run, which also caught two poll answers that were not JSON). A stock
+  firmware never showed it in 2 929 polls: at a 5 s interval the window is
+  almost always shut.
+- **Fixed**: `bufferLock_`, static like the buffer, is held from the build to
+  the last read on both paths; the response copies the buffer, so the lock is
+  released before `send()`. It is taken before the registry's lock, never under
+  it. `forceNextUpdate` is now cleared before the SSE build rather than after,
+  so a client connecting during a build keeps its full update. After the fix:
+  **0** of 5 814, the check's verdict `CLEAN`. Pinned by the probe only: no
+  native suite can hold two tasks.
 
 ### BUG-98 — WebUI: SSE events interleave on the wire at sub-second intervals [LOW] — **NEW (2026-10-02, filed by BUG-97's board run)**
 
@@ -3193,8 +3197,8 @@ one worth a one-line change, and six rows that are not defects.
   the rest of their bytes appearing inside the next event: 151 of 10 046 in 60 s
   on the WROOM-32D **with no poller at all**, so it is not BUG-97's buffer.
 - **Consequence**: the browser's `JSON.parse` fails on both events and drops the
-  update. Not seen at the default 5 s interval; a sketch that lowers
-  `wsUpdateInterval` well under a second meets it.
+  update. LOW because it needs `wsUpdateInterval` well under a second, against
+  a 5 s default, and the next event repairs the view.
 - **Not yet known**: whether it is `AsyncEventSource` itself or `send()` being
   called from the loop task while the web task drains the queue. Reproduce with
   the same probe and `wsbuf_race_check.py <ip> 60 0`.
@@ -5892,6 +5896,8 @@ TDD with 100% coverage is a constitutional mandate. These components have critic
   (25 `operator new` calls for one match before, 0 after, counted in
   `test_mqtt_topic_match`). Writing the suite found it off the MQTT 3.1.1 rules
   twice: `a/#` did not match `a` (§4.7.1.2) and `#` matched `$SYS/...` (§4.7.2).
+  A malformed filter (`#` not last, a wildcard sharing its level), an empty
+  string or an invalid `String` now matches nothing.
 - **DC-10**: both casts are imposed by public signatures —
   `IComponent::onComponentsReady(const ComponentRegistry&)` and
   `IWebUIProvider::getWebUIContexts() const`. Changing either breaks every
