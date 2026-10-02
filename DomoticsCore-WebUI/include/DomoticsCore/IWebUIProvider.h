@@ -629,7 +629,7 @@ protected:
      */
     void ensureContextsCached() const {
         if (!contextsCached_) {
-            // Cast away const for lazy initialization
+            // Lazy fill behind a const interface; providers are registered by non-const pointer.
             auto* self = const_cast<CachingWebUIProvider*>(this);
             self->buildContexts(self->cachedContexts_);
             self->contextsCached_ = true;
