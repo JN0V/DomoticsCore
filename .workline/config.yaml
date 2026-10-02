@@ -21,6 +21,10 @@ roles:
       # A safety net on the tokens a night spends, all calls together. Past
       # it the rest waits; a doc whose parts it cuts is asked again later.
       ai-max-tokens: 400000
+      # The weekly sample (workline ADR-0015): the gardening vouches with
+      # Sonnet, so Opus reads. Nothing vouched for before the merge of #119,
+      # the first engine on main that earns `checked` (v0.2.1), is sampled.
+      sample: {judge: "claude:opus", after: ab2876ae9f5c20fa1128aae15e16f36c1bc3d118}
 routing:
   # Before a push, the committer checks the commits leaving the machine; the
   # documentalist only counts the docs they made suspect (ADR-0010). Docs are
