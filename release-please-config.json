@@ -1,0 +1,195 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "include-component-in-tag": true,
+  "bootstrap-sha": "ed4c0ec7f1ceb7f4d3e6c63a1a5f7aa975a3f8f7",
+  "packages": {
+    ".": {
+      "component": "DomoticsCore",
+      "include-component-in-tag": false,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "library.properties"
+        }
+      ]
+    },
+    "DomoticsCore-Core": {
+      "component": "DomoticsCore-Core",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        }
+      ]
+    },
+    "DomoticsCore-HomeAssistant": {
+      "component": "DomoticsCore-HomeAssistant",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "include/DomoticsCore/HomeAssistant.h"
+        }
+      ]
+    },
+    "DomoticsCore-LED": {
+      "component": "DomoticsCore-LED",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "include/DomoticsCore/LED.h"
+        }
+      ]
+    },
+    "DomoticsCore-MQTT": {
+      "component": "DomoticsCore-MQTT",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "include/DomoticsCore/MQTT_impl.h"
+        }
+      ]
+    },
+    "DomoticsCore-NTP": {
+      "component": "DomoticsCore-NTP",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "include/DomoticsCore/NTP.h"
+        }
+      ]
+    },
+    "DomoticsCore-OTA": {
+      "component": "DomoticsCore-OTA",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "src/OTA.cpp"
+        }
+      ]
+    },
+    "DomoticsCore-RemoteConsole": {
+      "component": "DomoticsCore-RemoteConsole",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "include/DomoticsCore/RemoteConsole.h"
+        }
+      ]
+    },
+    "DomoticsCore-Storage": {
+      "component": "DomoticsCore-Storage",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "include/DomoticsCore/Storage.h"
+        }
+      ]
+    },
+    "DomoticsCore-System": {
+      "component": "DomoticsCore-System",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        }
+      ]
+    },
+    "DomoticsCore-SystemInfo": {
+      "component": "DomoticsCore-SystemInfo",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "include/DomoticsCore/SystemInfo.h"
+        }
+      ]
+    },
+    "DomoticsCore-WebUI": {
+      "component": "DomoticsCore-WebUI",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "include/DomoticsCore/WebUI.h"
+        }
+      ]
+    },
+    "DomoticsCore-Wifi": {
+      "component": "DomoticsCore-Wifi",
+      "skip-changelog": true,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "library.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "generic",
+          "path": "include/DomoticsCore/Wifi.h"
+        }
+      ]
+    }
+  }
+}

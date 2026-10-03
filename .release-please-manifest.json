@@ -1,0 +1,15 @@
+{
+  ".": "2.13.0",
+  "DomoticsCore-Core": "1.14.0",
+  "DomoticsCore-HomeAssistant": "2.7.0",
+  "DomoticsCore-LED": "1.6.0",
+  "DomoticsCore-MQTT": "1.11.0",
+  "DomoticsCore-NTP": "1.4.3",
+  "DomoticsCore-OTA": "1.11.0",
+  "DomoticsCore-RemoteConsole": "1.7.3",
+  "DomoticsCore-Storage": "1.7.0",
+  "DomoticsCore-System": "1.11.0",
+  "DomoticsCore-SystemInfo": "1.8.0",
+  "DomoticsCore-WebUI": "1.13.0",
+  "DomoticsCore-Wifi": "1.8.0"
+}

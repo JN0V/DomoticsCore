@@ -1,18 +1,30 @@
+# Publishes a release of DomoticsCore to the PlatformIO registry:
+# release-please.yml calls it once it has tagged the merged release pull
+# request and written the release's notes. Called in release-please's run,
+# not on the tag's push. Run it by hand (Actions > Release & Publish > Run
+# workflow) with the tag to publish again after a failure; a tag pushed is
+# never moved.
 name: Release & Publish
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
+    inputs:
+      tag: {description: "the tag release-please made, v2.14.0", required: true, type: string}
+  workflow_dispatch:
+    inputs:
+      tag: {description: "the tag to publish, v2.14.0", required: true, type: string}
+
+permissions: {}
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
+        with: {ref: "refs/tags/${{ inputs.tag }}"}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -23,31 +35,8 @@ jobs:
         run: pip install platformio
 
       - name: Check version consistency
-        run: python tools/check_versions.py --verbose --check-tag
-
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Extract changelog for this version
-        id: changelog
-        run: |
-          # Extract the section for this version from CHANGELOG.md
-          version="${{ steps.version.outputs.version }}"
-          changelog=$(awk "/^## \[${version}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
-          # Write to file to preserve multiline
-          echo "$changelog" > /tmp/release_notes.md
-          if [ -z "$changelog" ]; then
-            echo "Release v${version}" > /tmp/release_notes.md
-          fi
-
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "DomoticsCore ${{ github.ref_name }}" \
-            --notes-file /tmp/release_notes.md || echo "Release already exists, skipping"
+        env: {TAG: "${{ inputs.tag }}"}
+        run: python tools/check_versions.py --verbose --check-tag --tag "$TAG"
 
       - name: Publish to PlatformIO Registry
         env:
