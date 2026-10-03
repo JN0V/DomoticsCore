@@ -43,93 +43,7 @@ All screenshots are anonymized (WiFi SSID, passwords, and internal IP addresses 
 
 ## 🚀 Quick Start (3 Minutes)
 
-### Option 1: Full System (Recommended for beginners)
-
-Everything automatic: WiFi, LED status, remote console, error recovery!
-
-```cpp
-#include <DomoticsCore/System.h>
-
-using namespace DomoticsCore;
-
-System* domotics = nullptr;
-
-void setup() {
-    Serial.begin(115200);
-    
-    // Full-stack configuration
-    SystemConfig config = SystemConfig::fullStack();
-    config.deviceName = "MyDevice";
-    config.wifiSSID = "YOUR_WIFI";
-    config.wifiPassword = "YOUR_PASSWORD";
-    config.ledPin = 2;  // Visual status on GPIO 2
-    
-    domotics = new System(config);
-    
-    // Add custom console commands
-    domotics->registerCommand("hello", [](const String& args) {
-        return String("Hello from DomoticsCore!\n");
-    });
-    
-    // Initialize - automatic WiFi, LED, Console, error handling
-    if (!domotics->begin()) {
-        DLOG_E(LOG_APP, "System initialization failed!");
-        while (1) {
-            domotics->loop();  // Keep LED error animation running
-            yield();
-        }
-    }
-    
-    DLOG_I(LOG_APP, "System ready!");
-}
-
-void loop() {
-    domotics->loop();  // Handles everything automatically
-    
-    // Your application code here
-}
-```
-
-**That's it!** LED patterns show system state, telnet console on port 23, error recovery built-in.
-
-**LED States:**
-- 🔵 Fast blink (200ms): Booting
-- 🟡 Slow blink (1000ms): WiFi connecting  
-- 🟢 Pulse (2000ms): WiFi connected
-- 🟢 Fade (1500ms): Services starting
-- 🟢 Breathing (3000ms): System ready
-- 🔴 **Fast blink (300ms): ERROR** (LED works even in error state!)
-
-### Option 2: Minimal Core (Advanced users)
-
-Use only what you need - build your own orchestration:
-
-```cpp
-#include <DomoticsCore/Core.h>
-#include <DomoticsCore/LED.h>
-#include <DomoticsCore/Wifi.h>
-
-using namespace DomoticsCore;
-
-Core core;
-
-void setup() {
-    // Add only the components you need
-    core.addComponent(std::make_unique<Components::LEDComponent>());
-    core.addComponent(std::make_unique<Components::WifiComponent>("SSID", "password"));
-    
-    // Initialize - automatic dependency resolution
-    CoreConfig config;
-    config.deviceName = "MinimalDevice";
-    core.begin(config);
-}
-
-void loop() {
-    core.loop();
-}
-```
-
-Binary size: **~300KB** (vs 1MB+ for full system)
+Two complete sketches — the full system with its LED states, and a minimal core — are in [Quick Start and Key Features](docs/project/quick-start-and-features.md).
 
 ## 📦 Installation
 
@@ -193,92 +107,11 @@ Every release entry in [CHANGELOG.md](CHANGELOG.md) opens with what a sketch
 sees — removed symbols, changed defaults, new behaviour — before the list of
 fixes. Read the entries between the version you run and the one you take.
 
-## 🧩 Available Components
-
-| Component | Version | Description | Size | Status |
-|-----------|---------|-------------|------|--------|
-| **Core** | 1.13.1 | Framework, registry, event bus, MemoryManager, HeapTracker | ~50KB | ✅ Stable |
-| **System** | 1.10.0 | High-level orchestration (batteries included) | ~100KB | ✅ Stable |
-| **WiFi** | 1.7.0 | Network connectivity with AP fallback | ~40KB | ✅ Stable |
-| **LED** | 1.6.0 | Visual status indicators (6 effects) | ~20KB | ✅ Stable |
-| **Storage** | 1.6.1 | NVS / LittleFS persistent data | ~30KB | ✅ Stable |
-| **RemoteConsole** | 1.7.2 | Telnet debugging console with WebUI integration | ~25KB | ✅ Stable |
-| **WebUI** | 1.12.0 | Web interface with WebSocket + SSE dual-mode | ~150KB | ✅ Stable |
-| **MQTT** | 1.10.0 | Message broker with auto-reconnect | ~40KB | ✅ Stable |
-| **NTP** | 1.4.2 | Time synchronization | ~15KB | ✅ Stable |
-| **OTA** | 1.11.0 | Over-the-air updates | ~30KB | ✅ Stable |
-| **HomeAssistant** | 2.6.0 | Auto-discovery integration | ~20KB | ✅ Stable |
-| **SystemInfo** | 1.7.0 | Real-time monitoring with charts | ~25KB | ✅ Stable |
-
-**Total with everything:** ~545KB flash, ~50KB RAM
-
-## 🌐 Platform Compatibility
-
-DomoticsCore includes a **Hardware Abstraction Layer (HAL)** for platform portability.
-
-| Platform | Status | WiFi | Storage | NTP | Full Framework |
-|----------|--------|------|---------|-----|----------------|
-| **ESP32** | ✅ Full Support | ✅ | ✅ NVS | ✅ SNTP | ✅ |
-| **ESP32-C3** | ✅ Full Support | ✅ | ✅ NVS | ✅ SNTP | ✅ (USB CDC) |
-| **ESP8266** | ⚠️ Partial | ✅ | ✅ LittleFS | ✅ sntp | ⚠️ (~80KB RAM, optimized) |
-| **AVR** | ❌ Not Suitable | ❌ | ❌ | ❌ | ❌ (2KB RAM) |
-| **ARM** | 🔬 Experimental | ⚠️ shields | ⚠️ | ⚠️ | ⚠️ |
-
-> **Note:** Arduino UNO (AVR ATmega328P) has only 2KB RAM - not enough for EventBus, JSON, or WebUI. Only LEDComponent could theoretically work.
-
-HAL headers are in `DomoticsCore-Core/include/DomoticsCore/HAL/`:
-- `Platform.h` - Platform detection macros
-- `WiFi.h` - Unified WiFi interface
-- `Storage.h` - Key-value storage abstraction
-- `NTP.h` - Time synchronization
-
 ## Versioning
 
 DomoticsCore uses [Semantic Versioning](https://semver.org/) with **per-component versions** and a **root framework version**:
 
-- **Root library**: The top-level `library.json` defines the `DomoticsCore` framework version (`X.Y.Z`).
-- **Component libraries**: Each `DomoticsCore-*` sub-library has its own `library.json` `version` and a matching `metadata.version` in its C++ component class.
-- **Propagation rules** (Model B):
-  - Bumping a component **patch** -> bump the **root patch**.
-  - Bumping a component **minor** -> bump the **root minor** (and reset root patch).
-  - Bumping a component **major** -> bump the **root major** (and reset root minor/patch).
-  - Only the changed component and the root are bumped; other components keep their current versions.
-
-### Versioning tools
-
-- **Consistency check** (used in CI):
-
-  ```bash
-  python tools/check_versions.py --verbose
-  ```
-
-  This script ensures that, for every `DomoticsCore-*` directory:
-
-  - `library.json.version` matches all `metadata.version = "X.Y.Z"` assignments under `include/` and `src/`.
-  - (Optionally) with `--check-tag`, the root `library.json.version` matches the Git tag `vX.Y.Z` when run on a tagged commit.
-
-- **Version bump helper**:
-
-  ```bash
-  # Bump MQTT component and propagate the same level to the root DomoticsCore version
-  python tools/bump_version.py MQTT minor
-
-  # Equivalent explicit component name
-  python tools/bump_version.py DomoticsCore-MQTT patch
-
-  # Bump only the root DomoticsCore version
-  python tools/bump_version.py root major
-
-  # Preview changes without modifying files
-  python tools/bump_version.py MQTT minor --dry-run --verbose
-  ```
-
-The bump script:
-
-- Reads the current component `library.json.version`.
-- Computes the new SemVer according to the requested level.
-- Updates the component `library.json` and all `metadata.version` assignments inside that component.
-- Bumps the root `library.json.version` by the same level whenever a component is bumped.
+The propagation rules and the `tools/check_versions.py` and `tools/bump_version.py` scripts are described in [Versioning and Roadmap](docs/project/versioning-and-roadmap.md).
 
 ## 📖 Documentation
 
@@ -289,6 +122,9 @@ The bump script:
 - **[Complete Documentation Index](docs/README.md)** - All guides and references
 - **Component READMEs** - See each `DomoticsCore-*/README.md`
 - **Examples** - 19 working examples in component directories
+- **[Quick Start and Key Features](docs/project/quick-start-and-features.md)** - Full and minimal sketches, error recovery, dependency resolution, LED states, Event Bus, chunked responses
+- **[Components and Project Layout](docs/project/components.md)** - Component versions and sizes, platform compatibility, project structure, more examples, acknowledgments
+- **[Versioning and Roadmap](docs/project/versioning-and-roadmap.md)** - Version propagation rules, versioning tools, roadmap
 
 ### Key Documentation
 
@@ -298,36 +134,6 @@ The bump script:
 - **Custom Components**: [docs/guides/custom-components.md](docs/guides/custom-components.md)
 - **Storage API**: [DomoticsCore-Storage/README.md](DomoticsCore-Storage/README.md)
 - **Observing a device in production** (crashes, reboots, memory): [docs/reliability/observing-a-device.md](docs/reliability/observing-a-device.md)
-
-## 📁 Project Structure
-
-```
-DomoticsCore/                      # Monorepo with 12 component packages
-├── DomoticsCore-Core/             # Essential framework, MemoryManager, HeapTracker
-├── DomoticsCore-System/           # High-level orchestration (batteries included)
-├── DomoticsCore-Wifi/             # Network connectivity
-├── DomoticsCore-LED/              # Visual status indicators
-├── DomoticsCore-Storage/          # Persistent data (NVS / LittleFS)
-├── DomoticsCore-RemoteConsole/    # Telnet debugging console
-├── DomoticsCore-WebUI/            # Web interface with WebSocket + SSE
-├── DomoticsCore-MQTT/             # Message broker client
-├── DomoticsCore-NTP/              # Time synchronization
-├── DomoticsCore-OTA/              # Firmware updates
-├── DomoticsCore-HomeAssistant/    # Auto-discovery integration
-├── DomoticsCore-SystemInfo/       # System monitoring
-├── docs/                          # Guides, architecture, reference docs
-├── tests/                         # Unit tests and mocks
-├── examples/                      # Examples index
-├── specs/                         # Feature specifications
-└── tools/                         # Version management scripts
-
-Each component has:
-├── include/                       # Public headers
-├── src/                           # Implementation (if needed)
-├── examples/                      # Working examples
-├── README.md                      # Component documentation
-└── library.json                   # Package metadata
-```
 
 ## 💡 Examples
 
@@ -348,38 +154,7 @@ Complete IoT device with:
 
 **Binary:** ~900KB flash, ~50KB RAM
 
-### Minimal Core
-
-**Location:** `DomoticsCore-Core/examples/01-CoreOnly/`
-
-Bare minimum:
-- ✅ Component registry
-- ✅ Logging system
-- ✅ Non-blocking timers
-
-**Binary:** ~250KB flash, ~15KB RAM
-
-### LED Status Patterns
-
-**Location:** `DomoticsCore-LED/examples/BasicLED/`
-
-Demonstrates all LED effects:
-- Solid on/off
-- Blink (configurable speed)
-- Fade in/out
-- Pulse/heartbeat
-- Breathing
-- Rainbow cycle
-
-### Component Development
-
-**Location:** `DomoticsCore-Core/examples/02-CoreWithDummyComponent/`
-
-Learn to build custom components:
-- Component lifecycle (begin/loop/shutdown)
-- Dependency declaration
-- Configuration management
-- Health monitoring
+More examples — minimal core, LED status patterns, component development — are described in [Components and Project Layout](docs/project/components.md).
 
 ### Event Bus Communication
 
@@ -394,71 +169,6 @@ Inter-component messaging:
 ### All Examples
 
 See [`examples/README.md`](examples/README.md) for the complete list of 19 working examples across all components.
-
-## 🔧 Key Features Deep Dive
-
-### Error Recovery
-
-System continues running even when components fail:
-
-```cpp
-if (!domotics->begin()) {
-    DLOG_E(LOG_APP, "Init failed!");
-    while (1) {
-        domotics->loop();  // LED shows ERROR, console still accessible
-        yield();
-    }
-}
-```
-
-LED fast-blinks (300ms) to indicate error state. Telnet console remains available for debugging.
-
-### Automatic Dependency Resolution
-
-Components declare dependencies, framework initializes in correct order:
-
-```cpp
-class MyComponent : public IComponent {
-    std::vector<Dependency> getDependencies() const override {
-        return {{"Storage", false}, {"Wifi", false}};  // Will init after these
-    }
-};
-```
-
-### Visual Status Indicators
-
-LED shows system state without serial console:
-
-- **BOOTING** → Fast blink (200ms)
-- **WIFI_CONNECTING** → Slow blink (1000ms)
-- **WIFI_CONNECTED** → Pulse (2000ms)
-- **READY** → Breathing (3000ms)
-- **ERROR** → Fast blink (300ms)
-- **OTA_UPDATE** → Solid on
-
-### Event Bus
-
-Decouple components with topic-based messaging:
-
-```cpp
-// Publisher (from within a component)
-struct TempData { float celsius; };
-emit("sensor/temperature", TempData{22.5}, true);  // sticky
-
-// Subscriber (typed API, from within a component)
-on<TempData>("sensor/temperature", [](const TempData& temp) {
-    Serial.printf("Temp: %.1f°C\n", temp.celsius);
-}, true);  // replayLast = true
-```
-
-### Chunked HTTP Responses
-
-WebUI handles large responses (>40KB) automatically:
-
-```cpp
-// Automatically uses chunked transfer encoding for large schemas
-webUI->serveSchema();  // Works even with 50KB+ JSON
-```
 
 ## 🤝 Contributing
 
@@ -477,56 +187,11 @@ See [Architecture Guide](docs/architecture.md) for design patterns.
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-Built on top of excellent ESP32 ecosystem:
-- **Arduino Core for ESP32**
-- **ESPAsyncWebServer** (3.x)
-- **AsyncTCP** (3.x)
-- **PubSubClient** (MQTT)
-- **ArduinoJson** (7.x)
-
 ## 📞 Support
 
 - **Issues**: [GitHub Issues](https://github.com/JN0V/DomoticsCore/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/JN0V/DomoticsCore/discussions)
 - **Documentation**: See `docs/` folder and component READMEs
-
-## 🗺️ Roadmap
-
-### Completed
-- ✅ PlatformIO Registry publication
-- ✅ ESP32-C3 full support (USB CDC serial)
-- ✅ MemoryManager for device-agnostic memory adaptation
-- ✅ HeapTracker for memory leak testing (native + hardware)
-- ✅ ESP8266 memory optimizations (4 spec phases completed)
-- ✅ WebUI SSE dual-mode transport
-- ✅ RemoteConsole WebUI integration
-- ✅ 37+ isolated unit tests with mock infrastructure
-
-### Current Priorities
-- ESP8266 full framework validation
-- Additional Home Assistant entity types
-- Performance profiling and optimization
-
-### Planned: Display Component (`DomoticsCore-Display`)
-
-OLED/screen support for boards with integrated displays (e.g. ESP32-C3 SuperMini 0.42" OLED).
-
-**Target hardware:** SSD1306-based I2C OLED displays (72x40, 128x64, 128x32)
-
-**Scope:**
-- New `DisplayComponent` following the existing HAL pattern (`Display_HAL.h` routing)
-- U8g2 library for driver support (only lib with native 72x40 constructor)
-- EventBus integration: subscribe to system events (WiFi status, MQTT, heap, uptime) for automatic display
-- WebUI provider for display configuration
-- Screen rotation via timer for small displays (4-5 text lines on 72x40)
-- I2C bus sharing with external sensors (address-based coexistence)
-
-**Constraints:**
-- ESP32-C3 single-core (160MHz): display updates must be infrequent to avoid competing with WiFi/MQTT
-- GPIO budget: I2C pins (SDA/SCL) are hardwired on integrated boards, reducing available GPIOs
-- 72x40 framebuffer is small (~360 bytes), no RAM concern
 
 ---
 
