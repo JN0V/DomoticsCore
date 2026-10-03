@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Core/include/DomoticsCore/ArduinoJsonString.h, DomoticsCore-Core/include/DomoticsCore/AuthDelay.h, DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_ESP32.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_ESP8266.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_HAL.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_Stub.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_ESP32.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_ESP8266.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_HAL.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_Stub.h, DomoticsCore-Core/include/DomoticsCore/FlightRecorder.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Platform_Arduino.h, DomoticsCore-Core/include/DomoticsCore/Platform_ESP32.h, DomoticsCore-Core/include/DomoticsCore/Platform_ESP8266.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Platform_Stub.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker_HAL.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker_Native.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/src/Core.cpp, DomoticsCore-Core/src/FlightRecorder.cpp, DomoticsCore-Core/src/IComponent.cpp]
+sources: [DomoticsCore-Core/include/DomoticsCore/ArduinoJsonString.h, DomoticsCore-Core/include/DomoticsCore/AuthDelay.h, DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_ESP32.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_ESP8266.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_HAL.h, DomoticsCore-Core/include/DomoticsCore/CoreLog_Stub.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_ESP32.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_ESP8266.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_HAL.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_Stub.h, DomoticsCore-Core/include/DomoticsCore/FlightRecorder.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Platform_Arduino.h, DomoticsCore-Core/include/DomoticsCore/Platform_ESP32.h, DomoticsCore-Core/include/DomoticsCore/Platform_ESP8266.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Platform_Stub.h, DomoticsCore-Core/include/DomoticsCore/StringParse.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker_HAL.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker_Native.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/src/Core.cpp, DomoticsCore-Core/src/FlightRecorder.cpp, DomoticsCore-Core/src/IComponent.cpp]
 checked: b6830c4
 verified: agent:documentalist
 -->
@@ -14,7 +14,7 @@ verified: agent:documentalist
 1. [Core](#1-core)
 2. [IComponent](#2-icomponent)
 3. [ComponentRegistry](#3-componentregistry)
-4. [ComponentConfig and Metadata](#4-componentconfig-and-metadata)
+4. [Component Status, Metadata and String Parsing](#4-component-status-metadata-and-string-parsing)
 5. [EventBus](#5-eventbus)
 6. [Logger](#6-logger)
 7. [Timer (NonBlockingDelay) and AuthDelay](#7-timer-nonblockingdelay-and-authdelay)
@@ -204,7 +204,7 @@ public:
 
 ---
 
-## 4. ComponentConfig and Metadata
+## 4. Component Status, Metadata and String Parsing
 
 **Header:** `DomoticsCore/ComponentConfig.h`
 **Namespace:** `DomoticsCore::Components`
@@ -240,67 +240,16 @@ struct ComponentMetadata {
 };
 ```
 
-### ConfigType Enum
+### digitsOnly
+
+**Header:** `DomoticsCore/StringParse.h`
+**Namespace:** `DomoticsCore::Utils`
 
 ```cpp
-enum class ConfigType {
-    String, Integer, Float, Boolean, IPAddress, Port
-};
+inline bool digitsOnly(const String& s);
 ```
 
-### ConfigParam
-
-```cpp
-struct ConfigParam {
-    String name;
-    ConfigType type;
-    bool required;
-    String defaultValue;
-    String description;
-    int minValue = INT_MIN;
-    int maxValue = INT_MAX;
-    size_t maxLength = 0;
-    std::vector<String> allowedValues;
-
-    // Fluent interface
-    ConfigParam& min(int minVal);
-    ConfigParam& max(int maxVal);
-    ConfigParam& length(size_t maxLen);
-    ConfigParam& options(const std::vector<String>& opts);
-};
-```
-
-### ComponentConfig Methods
-
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| **defineParameter** | `void defineParameter(const ConfigParam& param)` | Define a configuration parameter. Sets the default value if provided. Defining a name again replaces its definition; a new default replaces the stored value, an empty one leaves it. |
-| **setValue** | `void setValue(const String& name, const String& value)` | Set a parameter value. |
-| **getValue** | `String getValue(const String& name, const String& defaultVal = "") const` | Get raw string value. |
-| **getInt** | `int getInt(const String& name, int defaultVal = 0) const` | Get integer value. |
-| **getFloat** | `float getFloat(const String& name, float defaultVal = 0.0f) const` | Get float value. |
-| **getBool** | `bool getBool(const String& name, bool defaultVal = false) const` | Get boolean value. Accepts `true/false/1/0/yes/no/on/off`. |
-| **validate** | `ValidationResult validate() const` | Validate all defined parameters against their constraints. |
-| **getParameters** | `const std::vector<ConfigParam>& getParameters() const` | Get all parameter definitions. |
-| **hasParameter** | `bool hasParameter(const String& name) const` | Check if a value is set — a parameter defined without a default has none. |
-| **digitsOnly** | `static bool digitsOnly(const String& s)` | True when the string is one or more decimal digits and nothing else. The rule every numeric input a user types goes through, here and in the console's `level` command: `String::toInt()` is `atol()`, which reads `"4x"` as 4 and `"abc"` as 0. An empty string is not a number. |
-
-### ValidationResult
-
-```cpp
-struct ValidationResult {
-    ComponentStatus status;
-    String errorMessage;
-    String parameterName;
-
-    bool isValid() const;
-    String toString() const;
-};
-```
-
-Validation includes: required-field check, integer format and range, float format, boolean format, string length and allowed-values, IP address format (4 octets 0-255), and port range (1-65535). An empty value passes unless the parameter is required; the first failing parameter, in definition order, is the one reported.
-
-The numeric rule: an integer is an optional sign then decimal digits, nothing else, and fits in 32 bits (`"+5"` and `"05"` are integers, `" 5"`, `"5x"` and `"2147483648"` are not). A float is an optional sign, decimal digits with an optional point, an optional decimal exponent, nothing else, and is finite (`"1.5"`, `".5"`, `"5."` and `"1e3"` are floats; `"nan"`, `"inf"`, `"0x10"` and `"1e50"` are not). An IP octet and a port are decimal digits only (`"1.2.3.4x"` and `"+80"` are refused). `Port` checks 1–65535 and ignores `min()`/`max()`.
+True when the string is one or more decimal digits and nothing else. The rule every numeric input a user types goes through — the console's `level` command among them: `String::toInt()` is `atol()`, which reads `"4x"` as 4 and `"abc"` as 0. An empty string is not a number.
 
 ---
 
@@ -524,24 +473,16 @@ forgotten. All times are `millis()` values and survive its wrap.
 **Header:** `DomoticsCore/MemoryManager.h`
 **Namespace:** `DomoticsCore`
 
-Singleton that detects available heap at boot and provides adaptive configuration. Auto-detected during `Core::begin()`.
+Singleton that classifies the heap available at boot into a profile and derives the WebSocket client limit from it. Auto-detected during `Core::begin()`; `isLowMemory()` checks the live heap.
 
 ### MemoryProfile Enum
 
 | Profile | Free Heap | Description |
 |---------|-----------|-------------|
-| `FULL` | > 30 KB | All features enabled, maximum buffers |
-| `STANDARD` | 15-30 KB | Moderate reductions |
-| `MINIMAL` | 8-15 KB | Economy mode |
-| `CRITICAL` | < 8 KB | Emergency mode, minimal operation |
-
-### BufferType Enum
-
-`WebSocket`, `HttpResponse`, `JsonDocument`, `LogBuffer`
-
-### Feature Enum
-
-`WebSocketUpdates`, `ChartHistory`, `SettingsLazyLoad`, `SchemaCompression`, `FullDashboard`
+| `FULL` | > 30 KB | Ample heap |
+| `STANDARD` | 15-30 KB | Moderate heap |
+| `MINIMAL` | 8-15 KB | Constrained heap |
+| `CRITICAL` | < 8 KB | Near exhaustion |
 
 ### Supporting Structs
 
@@ -553,22 +494,8 @@ struct MemoryThresholds {
     // Below minimalMin = CRITICAL
 };
 
-struct ProfileBufferSizes {
-    size_t webSocket;
-    size_t httpResponse;
-    size_t jsonDocument;
-    size_t logBuffer;
-};
-
-struct ProfileIntervals {
-    uint32_t wsUpdateInterval;   // WebSocket update interval (ms)
-    uint32_t heapCheckInterval;  // How often to recheck heap (ms)
-};
-
 struct ProfileLimits {
     uint8_t maxWsClients;        // Max WebSocket clients
-    uint8_t maxProviders;        // Max WebUI providers
-    uint8_t chartHistoryPoints;  // Chart history depth
 };
 ```
 
@@ -580,35 +507,20 @@ struct ProfileLimits {
 | **detectProfile** | `MemoryProfile detectProfile() const` | Detect profile from current free heap. Called once in `Core::begin()`. |
 | **getProfile** | `MemoryProfile getProfile() const` | Returns cached profile; auto-detects on first call. |
 | **getProfileName** | `const char* getProfileName() const` | Human-readable profile name. |
-| **getBufferSize** | `size_t getBufferSize(BufferType type) const` | Adaptive buffer size for the current profile. |
-| **shouldEnable** | `bool shouldEnable(Feature feature) const` | Whether a feature should be enabled for the current profile. |
-| **getWsUpdateInterval** | `uint32_t getWsUpdateInterval() const` | WebSocket push interval (ms). |
 | **getMaxWsClients** | `uint8_t getMaxWsClients() const` | Max WebSocket clients. |
-| **getChartHistoryPoints** | `uint8_t getChartHistoryPoints() const` | Chart history depth. |
 | **getHeapAtBoot** | `uint32_t getHeapAtBoot() const` | Heap size when `detectProfile()` was called. |
-| **getCurrentFreeHeap** | `uint32_t getCurrentFreeHeap() const` | Live free heap query. |
 | **isLowMemory** | `bool isLowMemory() const` | Live check: free heap < MINIMAL threshold. |
-| **isCriticalMemory** | `bool isCriticalMemory() const` | Live check: free heap < half of MINIMAL threshold. |
 | **setThresholds** | `void setThresholds(const MemoryThresholds& t)` | Customize thresholds before `detectProfile()`. |
 | **getThresholds** | `const MemoryThresholds& getThresholds() const` | Get current thresholds. |
 
-### Profile Buffer Sizes
-
-| Profile | WebSocket | HttpResponse | JsonDocument | LogBuffer |
-|---------|-----------|-------------|-------------|-----------|
-| FULL | 8192 | 4096 | 8192 | 200 |
-| STANDARD | 4096 | 2048 | 4096 | 100 |
-| MINIMAL | 2048 | 1024 | 2048 | 50 |
-| CRITICAL | 1024 | 512 | 1024 | 20 |
-
 ### Profile Limits
 
-| Profile | Max WS Clients | Max Providers | Chart Points | WS Interval | Heap Check Interval |
-|---------|---------------|---------------|-------------|-------------|---------------------|
-| FULL | 8 | 32 | 60 | 2s | 60s |
-| STANDARD | 4 | 16 | 30 | 5s | 30s |
-| MINIMAL | 2 | 8 | 10 | 10s | 15s |
-| CRITICAL | 1 | 4 | 0 | disabled | 10s |
+| Profile | Max WS Clients |
+|---------|---------------|
+| FULL | 8 |
+| STANDARD | 4 |
+| MINIMAL | 2 |
+| CRITICAL | 1 |
 
 ---
 
@@ -998,49 +910,37 @@ The event queue is bounded by the **bytes it holds** — `QueueCost::kBudgetByte
 
 ### Defining Component Configuration
 
+A component takes a plain configuration struct with defaults, passed to its constructor and exposed through `getConfig()` / `setConfig()`. Values are checked where they are applied.
+
 ```cpp
+struct MyComponentConfig {
+    uint32_t interval = 5000;   // Poll interval (ms)
+    String host = "";           // Server hostname
+    bool enabled = true;
+};
+
 class MyComponent : public IComponent {
-    ComponentConfig config_;
+    MyComponentConfig config;
 
 public:
-    MyComponent() {
-        metadata = {"MyComp", "1.0.0", "", "My component"};
-
-        config_.defineParameter(
-            ConfigParam("interval", ConfigType::Integer, true, "5000", "Poll interval (ms)")
-                .min(100).max(60000)
-        );
-        config_.defineParameter(
-            ConfigParam("host", ConfigType::String, true, "", "Server hostname")
-                .length(64)
-        );
-        config_.defineParameter(
-            ConfigParam("enabled", ConfigType::Boolean, false, "true", "Enable feature")
-        );
+    explicit MyComponent(const MyComponentConfig& cfg = MyComponentConfig())
+        : config(cfg) {
+        metadata.name = "MyComp";
+        metadata.version = "1.0.0";
     }
 
     ComponentStatus begin() override {
-        auto result = config_.validate();
-        if (!result.isValid()) {
-            DLOG_E("MYCOMP", "Config error: %s", result.toString().c_str());
-            return result.status;
+        if (config.enabled && config.host.isEmpty()) {
+            DLOG_E("MYCOMP", "Config error: host is empty");
+            return ComponentStatus::ConfigError;
         }
-
-        int interval = config_.getInt("interval");
-        String host = config_.getValue("host");
-        bool enabled = config_.getBool("enabled");
-        // ... use values
+        // ... use config.interval, config.host
         return ComponentStatus::Success;
     }
+
+    MyComponentConfig getConfig() const { return config; }
+    void setConfig(const MyComponentConfig& cfg) { config = cfg; }
 };
 ```
 
-### Fluent Constraint API
-
-```cpp
-ConfigParam("port", ConfigType::Port, true, "1883", "Broker port");
-ConfigParam("mode", ConfigType::String, false, "auto", "Mode")
-    .options({"auto", "manual", "off"});
-ConfigParam("threshold", ConfigType::Integer, false, "50", "Threshold")
-    .min(0).max(100);
-```
+See [Component Configuration Pattern](../../architecture/component-configuration-pattern.md) for the full convention.

@@ -6,7 +6,7 @@ Core runtime for DomoticsCore: component model, registry, lifecycle, configurati
 
 - Component base class and lifecycle (`begin`, `loop`, `shutdown`)
 - Central `ComponentRegistry` for add/lookup by name and type
-- `ComponentConfig` for strongly-typed parameters
+- `ComponentStatus` and `ComponentMetadata` shared by every component
 - `EventBus` (publish/subscribe) for decoupled communication
 - Utilities: `Logger`, `Timer` (non-blocking delay)
 
@@ -44,7 +44,7 @@ Main behaviors:
 - **Component lifecycle**: each component gets `begin()`, `loop()`, `shutdown()` calls from the `Core`.
 - **Dependency resolution**: components declare dependencies via `getDependencies()`, initialized in topological order.
 - **Registry**: components can be resolved by type or name via `ComponentRegistry`.
-- **Configuration**: components declare typed configuration parameters through `ComponentConfig`.
+- **Configuration**: each component takes a plain config struct with defaults, passed to its constructor and exposed through `getConfig()` / `setConfig()`.
 - **Event bus**: publish/subscribe enables decoupled messaging between components.
 - **Lifecycle events**: `EVENT_COMPONENT_READY`, `EVENT_SYSTEM_READY`, `EVENT_STORAGE_READY`, `EVENT_NETWORK_READY`.
 - **Diagnostics**: `Logger` and `Timer` utilities help with non-blocking work and instrumentation.
@@ -52,13 +52,14 @@ Main behaviors:
 ## Public Headers
 
 - `Core.h`, `IComponent.h`, `ComponentRegistry.h`
-- `ComponentConfig.h`, `EventBus.h`, `Timer.h`, `Logger.h`
+- `ComponentConfig.h` (`ComponentStatus`, `ComponentMetadata`), `EventBus.h`, `Timer.h`, `Logger.h`
+- `StringParse.h` - `Utils::digitsOnly()` for user-typed numbers
 - `MemoryManager.h` - Runtime memory adaptation
 - `Testing/HeapTracker.h` - Memory leak detection for tests
 
 ## MemoryManager API
 
-The `MemoryManager` provides runtime memory profiling and adaptive configuration based on available heap. It detects the memory profile automatically during `Core::begin()` and logs the result.
+The `MemoryManager` classifies the heap available at boot into a profile and derives the WebSocket client limit from it. It detects the memory profile automatically during `Core::begin()` and logs the result.
 
 ```cpp
 #include <DomoticsCore/MemoryManager.h>
@@ -71,16 +72,8 @@ MemoryProfile profile = mm.getProfile();
 // Get profile name for logging
 DLOG_I("APP", "Memory profile: %s", mm.getProfileName());
 
-// Get adaptive buffer sizes
-size_t wsBuffer = mm.getBufferSize(BufferType::WebSocket);
-
-// Check if feature should be enabled
-if (mm.shouldEnable(Feature::ChartHistory)) {
-    // Store chart history
-}
-
-// Get adaptive timing intervals
-uint32_t wsInterval = mm.getWsUpdateInterval();
+// WebSocket client limit for the profile
+uint8_t maxClients = mm.getMaxWsClients();
 
 // Runtime low-memory checks
 if (mm.isLowMemory()) {
@@ -89,12 +82,12 @@ if (mm.isLowMemory()) {
 ```
 
 **Memory Profiles:**
-| Profile | Free Heap | WS Interval | Max Clients | Chart Points |
-|---------|-----------|-------------|-------------|--------------|
-| FULL | > 30KB | 2s | 8 | 60 |
-| STANDARD | 15-30KB | 5s | 4 | 30 |
-| MINIMAL | 8-15KB | 10s | 2 | 10 |
-| CRITICAL | < 8KB | disabled | 1 | 0 |
+| Profile | Free Heap | Max Clients |
+|---------|-----------|-------------|
+| FULL | > 30KB | 8 |
+| STANDARD | 15-30KB | 4 |
+| MINIMAL | 8-15KB | 2 |
+| CRITICAL | < 8KB | 1 |
 
 ## HeapTracker API (Testing)
 

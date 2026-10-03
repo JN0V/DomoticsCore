@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-WebUI/include/DomoticsCore/BaseWebUIComponents.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/ProviderRegistry.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/StreamingContextSerializer.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebResponse_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebServerManager.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebSocketHandler.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebUIConfig.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_ESP32.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_ESP8266.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_Stub.h]
+sources: [DomoticsCore-WebUI/include/DomoticsCore/BaseWebUIComponents.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/DeclaredApiHandler.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/ProviderRegistry.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/StreamingContextSerializer.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebResponse_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebServerManager.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebSocketHandler.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebUIConfig.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_ESP32.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_ESP8266.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_Stub.h]
 checked: 30ce588
 verified: agent:documentalist
 -->
@@ -204,7 +204,7 @@ Describes where and how a piece of component UI appears in the dashboard.
 | `presentation` | `WebUIPresentation` | How to display (Card, Gauge, Graph, StatusBadge, etc.). |
 | `priority` | `int` | Sort order (higher = displayed first). Default `0`. |
 | `fields` | `std::vector<WebUIField>` | The fields in this context. |
-| `apiEndpoint` / `apiEndpointPtr` | `String` / `const char*` | Optional API endpoint. |
+| `apiEndpoint` / `apiEndpointPtr` | `String` / `const char*` | Optional path served on `GET` with this context's data (see [`GET <withAPI path>`](#get-withapi-path)). |
 | `realTime` | `bool` | Enable real-time updates. Default `false`. |
 | `updateInterval` | `int` | Update interval in ms. Default `5000`. |
 | `alwaysInteractive` | `bool` | If true, controls remain enabled even when Settings lock is active. |
@@ -389,11 +389,9 @@ Static class providing reusable HTML widget generators. All methods are `static`
 | `button` | `static String button(const String& id, const String& text, bool isPrimary = false)` | Button element. `isPrimary=true` uses `btn btn-primary` class. |
 | `textInput` | `static String textInput(const String& id, const String& label, const String& placeholder = "", const String& value = "")` | Text input with label. |
 | `rangeSlider` | `static String rangeSlider(const String& id, const String& label, int min, int max, int value, int step = 1)` | Range slider input. |
-| `selectDropdown` | `static String selectDropdown(const String& id, const String& label, const String* options, int optionCount, int selectedIndex = 0)` | Select dropdown. Options use `"value\|label"` format. |
 | `fieldRow` | `static String fieldRow(const String& label, const String& valueId, const String& initialValue = "")` | Display-only label + value row. |
 | `fileInput` | `static String fileInput(const String& inputId, const String& buttonId, const String& labelId, const String& label, const String& buttonText = "Select File", const String& accept = ".bin,.bin.gz")` | File input with styled button. |
 | `buttonRow` | `static String buttonRow(const String& content)` | Container row for grouping buttons. |
-| `radioGroup` | `static String radioGroup(const String& name, const String& label, const String* options, int optionCount, int selectedIndex = 0)` | Radio button group. Options use `"value\|label"` format. |
 
 ### Chart Generator
 
@@ -544,6 +542,7 @@ Manages the `AsyncWebServer` instance and static asset serving.
 | `registerRoute` | `void registerRoute(const String& uri, WebRequestMethod method, ArRequestHandlerFunction handler)` | Register an HTTP route. |
 | `registerChunkedRoute` | `void registerChunkedRoute(const String& uri, WebRequestMethod method, std::function<void(AsyncWebServerRequest*)> handler)` | Register a route for chunked responses. |
 | `registerUploadRoute` | `void registerUploadRoute(const String& uri, ArRequestHandlerFunction handler, ArUploadHandlerFunction uploadHandler)` | Register a POST upload route. |
+| `hasRoute` | `bool hasRoute(const String& uri, uint8_t method) const` | Whether a route was registered for this path and method through one of the three methods above. |
 
 ### Static Asset Serving
 
@@ -671,6 +670,20 @@ Query params: `contextId`, `field`, `value`. Routes the action to the owning pro
 Returns `{"token":"..."}` — a per-boot CSRF token the page echoes on every state-changing request. Never carries CORS headers, so cross-origin script cannot read it; that is what makes it a CSRF defence.
 
 > **Integrators:** the token check is opt-in per route. The framework's own state-changing routes call it, but a custom route you register with `registerApiRoute(..., HTTP_POST, ...)` that mutates device state must gate itself — call `webui->checkCsrf(request)` (returns `bool`) and reply `403` when it fails, the same way `/api/ui/action` and `/api/ota/upload` do. A route that only reads state needs nothing.
+
+### `GET <withAPI path>`
+
+A path a context declares with `withAPI()` is served on `GET` by one handler (`DomoticsCore/WebUI/DeclaredApiHandler.h`), so a declared path costs no route of its own. The answer is a JSON object keyed by context id, holding each declaring context's `getWebUIData()`, or `null` when that is empty:
+
+```json
+{ "mycomp_status": { "enabled": true }, "mycomp_dash": null }
+```
+
+- Several contexts may declare the same path; each appears under its own id.
+- Behind `enableAuth` like the other API routes.
+- `POST` is not served: writes go through `POST /api/ui/action` with the CSRF token.
+- A path that already has an explicit `GET` route (`registerApiRoute` / `registerRoute`) keeps it; the declaration does not shadow it. A route added with `AsyncWebServer::on()` directly is not known to the handler.
+- `503` under 4 KB of free heap; `404` when no context declares the path any more.
 
 ### `GET /api/ui/context?id=X`
 

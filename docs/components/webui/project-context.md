@@ -44,6 +44,7 @@ This document provides structured context for AI assistants working on the Domot
 
 | File | Lines | Purpose |
 |------|-------|---------|
+| `DeclaredApiHandler.h` | 38 | Single `AsyncWebHandler` answering `GET` on every path declared with `withAPI()` |
 | `ProviderRegistry.h` | 345 | Context-to-provider map, provider discovery, enable/disable, schema chunk state |
 | `StreamingContextSerializer.h` | 921 | State-machine JSON serializer for chunked HTTP responses (zero intermediate allocation) |
 | `WebServerManager.h` | 149 | AsyncWebServer lifecycle, static asset serving, route registration |
@@ -228,7 +229,7 @@ A rendered settings field shows the schema's placeholder, not the stored value, 
 
 A refused field is drawn refused: the answer's `"error"` reason is written under the field the value was typed into, or on the card when no field is in cause. It is cleared when the next attempt starts, on entering edit mode and on cancel — never on a redraw, which happens every tick and would wipe it. A refusal that names nothing shows nothing: the field still reverts from the stored value at the next tick, and outside edit mode (`alwaysInteractive`, and every dashboard card) only once focus leaves it, since `updateCardData` skips the input holding focus.
 
-**The digits-only rule has three implementations**: `ComponentConfig::digitsOnly` (the shared one, also used by the console's `level` command), `ComponentConfig::parsesAsInt32` (which adds a sign and a range) and `webUIParseUnsigned` (which adds the `uint32_t` ceiling). Folding the last into the first would couple WebUI to Core's config class for four lines; measured and left alone, noted here so the next reader does not rediscover it as a defect.
+**The digits-only rule has two implementations**: `Utils::digitsOnly` (`DomoticsCore/StringParse.h`, used by the console's `level` command) and `webUIParseUnsigned`, which checks the digits while it accumulates the value and adds the `uint32_t` ceiling. Noted here so the next reader does not rediscover it as a defect.
 
 The host mocks under `tests/mocks/libraries/` (`ESPAsyncWebServer.h`, `AsyncEventSource.h`, `FS.h`, `pgmspace.h`) record calls and parse no HTTP. They prove handler logic and nothing about ESPAsyncWebServer: multipart parsing, the real `setRxTimeout` and every timing question are covered only by `tools/on-device/ota_upload_check.py`, which needs a board.
 

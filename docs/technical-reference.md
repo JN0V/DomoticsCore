@@ -451,23 +451,22 @@ Pre-defined tag constants: `LOG_CORE`, `LOG_WIFI`, `LOG_MQTT`, `LOG_HTTP`, `LOG_
 
 ### MemoryManager (`DomoticsCore-Core/include/DomoticsCore/MemoryManager.h`)
 
-Singleton providing adaptive memory profiles based on available heap at boot:
+Singleton classifying the heap available at boot into a profile, from which the WebSocket client limit is derived:
 
 ```cpp
 auto& mm = MemoryManager::instance();
 MemoryProfile profile = mm.getProfile();
 
-// Adaptive buffer sizing
-size_t bufSize = mm.getBufferSize(BufferType::JsonDocument);
+// Profile-derived limit
+uint8_t maxClients = mm.getMaxWsClients();
 
-// Feature gating
-if (mm.shouldEnable(Feature::ChartHistory)) {
+// Feature gating on the profile
+if (profile == MemoryProfile::FULL) {
     // Only on devices with enough memory
 }
 
-// Runtime checks
+// Runtime check: live heap below the MINIMAL threshold
 if (mm.isLowMemory()) { /* reduce allocations */ }
-if (mm.isCriticalMemory()) { /* emergency mode */ }
 ```
 
 ### Memory Profiles
@@ -481,21 +480,12 @@ enum class MemoryProfile {
 };
 ```
 
-| Profile | WebSocket Buffer | JSON Doc | HTTP Response | Log Buffer |
-|---------|-----------------|----------|---------------|------------|
-| FULL | 8192 | 8192 | 4096 | 200 |
-| STANDARD | 4096 | 4096 | 2048 | 100 |
-| MINIMAL | 2048 | 2048 | 1024 | 50 |
-| CRITICAL | 1024 | 1024 | 512 | 20 |
-
-**Additional Profile Limits:**
-
-| Profile | Max WS Clients | Max Providers | Chart History Points | WS Update Interval |
-|---------|---------------|---------------|---------------------|-------------------|
-| FULL | 8 | 32 | 60 | 2s |
-| STANDARD | 4 | 16 | 30 | 5s |
-| MINIMAL | 2 | 8 | 10 | 10s |
-| CRITICAL | 1 | 4 | 0 | disabled |
+| Profile | Max WS Clients |
+|---------|---------------|
+| FULL | 8 |
+| STANDARD | 4 |
+| MINIMAL | 2 |
+| CRITICAL | 1 |
 
 ### HeapTracker (`DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h`)
 

@@ -84,8 +84,8 @@ struct WifiConfig {
     bool enableAP = false;              // Enable AP alongside STA
     String apSSID = "";                 // AP SSID (auto-generated if empty)
     String apPassword = "";             // AP password (open if empty)
-    uint32_t reconnectInterval = 5000;  // Reconnection interval in ms
-    uint32_t connectionTimeout = 15000; // Connection timeout in ms
+    uint32_t reconnectInterval = 5000;  // Delay between connection attempts, in ms (0 keeps the current value)
+    uint32_t connectionTimeout = 15000; // How long one attempt may take, in ms (0 keeps the current value)
 };
 ```
 
@@ -291,7 +291,7 @@ The reconnection system is entirely non-blocking, complying with Constitution pr
 
 1. **Connection attempt**: `startConnection()` calls `HAL::WiFiHAL::connect()` and sets `isConnecting = true`.
 2. **Polling**: `loop()` polls `HAL::WiFiHAL::isConnected()` every 100 ms via `connectionTimer`.
-3. **Timeout**: If no connection after `CONNECTION_TIMEOUT` (15s), status is set to `TimeoutError`.
+3. **Timeout**: If no connection after `connectionTimeout` (15 s by default), status is set to `TimeoutError`. The next attempt starts once `reconnectInterval` has elapsed.
 4. **Retry**: When disconnected and `shouldConnect = true`, `reconnectTimer` (5s) triggers a new attempt.
 5. **Heap guard**: `startConnection()` defers if free heap < 2500 bytes (WiFi.begin needs ~1.5-2KB).
 6. **STA fallback**: During AP-to-STA transitions, a 30-second `staFallbackTimer_` monitors the attempt. On timeout, AP is restored and config saved with `autoConnect = false` to prevent boot loops.

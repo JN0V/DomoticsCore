@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Platform_Arduino.h, DomoticsCore-Core/include/DomoticsCore/Platform_Stub.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker_Native.h, DomoticsCore-Core/src/Core.cpp, DomoticsCore-Core/src/IComponent.cpp, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json]
+sources: [DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/include/DomoticsCore/StringParse.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Platform_Arduino.h, DomoticsCore-Core/include/DomoticsCore/Platform_Stub.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker_Native.h, DomoticsCore-Core/src/Core.cpp, DomoticsCore-Core/src/IComponent.cpp, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json]
 checked: 4cdb3e6
 judged: b678013
 verified: agent:documentalist
@@ -36,12 +36,13 @@ This document provides the context an AI coding agent needs to understand, navig
 | `Core.h` | `Core` class -- central runtime, owns `ComponentRegistry`, drives lifecycle |
 | `IComponent.h` | `IComponent` abstract base -- lifecycle hooks, dependency declaration, EventBus helpers, Core injection |
 | `ComponentRegistry.h` | `ComponentRegistry` -- registration, dependency resolution (Kahn's algorithm), coordinated init/loop/shutdown |
-| `ComponentConfig.h` | `ComponentStatus` enum, `ComponentMetadata`, `ConfigParam`, `ComponentConfig`, `ValidationResult` |
+| `ComponentConfig.h` | `ComponentStatus` enum, `statusToString()`, `ComponentMetadata` |
 | `EventBus.h` | `EventBus` -- queued pub/sub with topic strings, wildcard matching, sticky events |
 | `Events.h` | Core lifecycle event topic constants (`component/ready`, `system/ready`, `shutdown/start`, etc.) |
 | `Logger.h` | Logging macros (`DLOG_E/W/I/D/V`), `LoggerCallbacks`, predefined component tags |
 | `Timer.h` | `NonBlockingDelay` utility -- non-blocking interval timer using `HAL::getMillis()` |
-| `MemoryManager.h` | `MemoryManager` singleton -- runtime heap profiling, adaptive buffer sizes, feature flags |
+| `StringParse.h` | `Utils::digitsOnly()` -- the digits-only rule for user-typed numbers |
+| `MemoryManager.h` | `MemoryManager` singleton -- boot heap profile, WebSocket client limit, live low-memory check |
 | `Platform_HAL.h` | Platform detection routing header -- includes `Platform_ESP32.h`, `Platform_ESP8266.h`, or `Platform_Stub.h` |
 | `Platform_ESP32.h` | ESP32-specific HAL implementation |
 | `Platform_ESP8266.h` | ESP8266-specific HAL implementation (PROGMEM-optimized logging) |
@@ -85,8 +86,7 @@ This document provides the context an AI coding agent needs to understand, navig
 | `IComponent` | Abstract base for all components; defines lifecycle contract | "Define what a component is" |
 | `ComponentRegistry` | Registration, dependency resolution, coordinated init/loop/shutdown | "Manage component collection and ordering" |
 | `EventBus` | Queued publish/subscribe messaging | "Deliver messages between decoupled parties" |
-| `ComponentConfig` | Typed configuration parameters with validation | "Define and validate configuration" |
-| `MemoryManager` | Runtime memory profiling and adaptive sizing | "Adapt to available memory" |
+| `MemoryManager` | Boot heap profile and the WebSocket client limit derived from it | "Adapt to available memory" |
 | `NonBlockingDelay` | Interval timing without blocking | "Schedule periodic work" |
 | `HeapTracker` | Checkpoint-based heap monitoring for tests | "Detect memory leaks" |
 | `NativeAllocTracker` | Per-allocation heap tracking for native tests (singleton) | "Track individual allocations for leak diagnosis" |
@@ -94,9 +94,7 @@ This document provides the context an AI coding agent needs to understand, navig
 | `AllocationRecord` | Record of a single allocation (ptr, size, source location, freed flag) | "Describe one allocation event" |
 | `LoggerCallbacks` | Broadcast log messages to registered listeners (note: `removeCallback` currently clears ALL callbacks) | "Route log output" |
 | `MemoryThresholds` | Configurable heap thresholds for profile detection | "Define profile boundaries" |
-| `ProfileBufferSizes` | Buffer size configuration per profile | "Size buffers per profile" |
-| `ProfileIntervals` | Timing intervals per profile (WS update, heap check) | "Configure profile-specific timing" |
-| `ProfileLimits` | Resource limits per profile (WS clients, providers, chart points) | "Constrain resources per profile" |
+| `ProfileLimits` | Resource limits per profile (WS clients) | "Constrain resources per profile" |
 | `HeapCheckpoint` | Named checkpoint wrapping a `HeapSnapshot` | "Label a heap measurement" |
 | `MemoryTestResult` | Pass/fail result from heap stability assertions | "Report heap test outcome" |
 
@@ -198,8 +196,8 @@ The following constitution principles are especially relevant to Core developmen
 - Hard limit: 800 lines.
 - `ComponentRegistry.h` is currently ~378 lines. Watch for growth.
 - `EventBus.h` is currently ~283 lines.
-- `ComponentConfig.h` is currently ~408 lines.
-- `MemoryManager.h` is currently ~347 lines.
+- `ComponentConfig.h` is currently ~65 lines.
+- `MemoryManager.h` is currently ~201 lines.
 - `Platform_HAL.h` is currently ~368 lines.
 - `Platform_Stub.h` is currently ~630 lines (includes full `String` class stub). Watch the 800-line limit.
 
@@ -243,20 +241,6 @@ The following constitution principles are especially relevant to Core developmen
 4. Add a forwarding inline function in `Platform_HAL.h` in the `DomoticsCore::HAL` namespace.
 5. Never add `#ifdef` outside of HAL files.
 6. Write native tests using the stub implementation.
-
-### Extending the ComponentConfig Validation
-
-1. Add a new `ConfigType` value in `ComponentConfig.h`.
-2. Add a private `validateNewType()` method to `ComponentConfig`.
-3. Add a case to the `validateParameter()` switch statement.
-4. Write tests for valid input, invalid input, and edge cases.
-
-### Adding a New MemoryProfile-Aware Feature
-
-1. Add a new enum value to `Feature` in `MemoryManager.h`.
-2. Add the enable/disable logic to `MemoryManager::shouldEnable()`.
-3. Use `MemoryManager::instance().shouldEnable(Feature::NewFeature)` in your component.
-4. Document the profile thresholds.
 
 ### Creating a New Component (Consumer of Core)
 
