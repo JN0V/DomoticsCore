@@ -45,9 +45,9 @@ struct WifiConfig {
     String apSSID = "";                 // AP SSID (auto-generated if empty)
     String apPassword = "";             // AP password (open if empty)
     
-    // Advanced settings
-    uint32_t reconnectInterval = 5000;  // Reconnection interval in ms
-    uint32_t connectionTimeout = 15000; // Connection timeout in ms
+    // Timing (0 keeps the current value)
+    uint32_t reconnectInterval = 5000;  // Delay between connection attempts, in ms
+    uint32_t connectionTimeout = 15000; // How long one attempt may take, in ms
 };
 
 /**
@@ -100,7 +100,7 @@ private:
     // Non-blocking scan state
     bool scanInProgress = false;
     String lastScanSummary_;
-    static const unsigned long CONNECTION_TIMEOUT = 15000; // 15 seconds
+    unsigned long connectionTimeoutMs_ = 15000;
     
 public:
     /**
@@ -236,13 +236,9 @@ public:
                 emitNetworkReady(HAL::WiFiHAL::getAPIP());
                 
                 if (configSaveCallback_) {
-                    WifiConfig cfg;
-                    cfg.ssid = ssid;
-                    cfg.password = password;
+                    WifiConfig cfg = getConfig();   // keeps the timing fields
                     cfg.autoConnect = false;
                     cfg.enableAP = true;
-                    cfg.apSSID = apSSID_;
-                    cfg.apPassword = apPassword_;
                     configSaveCallback_(cfg);
                     DLOG_I(LOG_WIFI, "Config saved with autoConnect=false (prevents boot loop)");
                 }
@@ -272,7 +268,7 @@ public:
                     // Emit events to trigger immediate WebUI update
                     emit(WifiEvents::EVENT_STA_CONNECTED, true);
                     emitNetworkReady(HAL::WiFiHAL::getLocalIP());
-                } else if (HAL::Platform::getMillis() - connectionStartTime > CONNECTION_TIMEOUT) {
+                } else if (HAL::Platform::getMillis() - connectionStartTime > connectionTimeoutMs_) {
                     // Connection timeout
                     isConnecting = false;
                     DLOG_E(LOG_WIFI, "Wifi connection timeout - status: %d", HAL::WiFiHAL::getRawStatus());
@@ -622,8 +618,8 @@ public:
         cfg.enableAP = apEnabled;
         cfg.apSSID = apSSID_;
         cfg.apPassword = apPassword_;
-        cfg.reconnectInterval = 5000; // Default from constructor
-        cfg.connectionTimeout = CONNECTION_TIMEOUT;
+        cfg.reconnectInterval = reconnectTimer.getInterval();
+        cfg.connectionTimeout = connectionTimeoutMs_;
         return cfg;
     }
     
@@ -639,6 +635,9 @@ public:
         apEnabled = cfg.enableAP;
         apSSID_ = cfg.apSSID;
         apPassword_ = cfg.apPassword;
+        // Zero would time every attempt out at once, or retry on every loop(): keep the current value.
+        if (cfg.reconnectInterval) reconnectTimer.setInterval(cfg.reconnectInterval);
+        if (cfg.connectionTimeout) connectionTimeoutMs_ = cfg.connectionTimeout;
         
         DLOG_I(LOG_WIFI, "Config updated: SSID=%s, autoConnect=%d, AP=%s (enabled=%d)", 
                ssid.c_str(), wifiEnabled, apSSID_.c_str(), apEnabled);
@@ -704,13 +703,8 @@ public:
                 wifiEnabled = false;
                 shouldConnect = false;
                 if (configSaveCallback_) {
-                    WifiConfig cfg;
-                    cfg.ssid = ssid;
-                    cfg.password = password;
+                    WifiConfig cfg = getConfig();   // keeps the timing fields
                     cfg.autoConnect = false;
-                    cfg.enableAP = apEnabled;
-                    cfg.apSSID = apSSID_;
-                    cfg.apPassword = apPassword_;
                     configSaveCallback_(cfg);
                     DLOG_I(LOG_WIFI, "Config saved with autoConnect=false (heap guard)");
                 }
