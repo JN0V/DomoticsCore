@@ -56,8 +56,8 @@ struct SystemInfoConfig {
     String firmwareVersion = "1.0.0";
 
     // Diagnostic settings
-    bool enableDetailedInfo = true;     // Include detailed chip info
-    bool enableMemoryInfo = true;       // Include memory statistics
+    bool enableDetailedInfo = true;     // WebUI shows chip model, revision and CPU frequency
+    bool enableMemoryInfo = true;       // WebUI shows total heap, memory profile and the usage chart
     int updateInterval = 5000;          // Update interval in ms
 
     // Boot diagnostics settings
