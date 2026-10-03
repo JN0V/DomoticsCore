@@ -6,7 +6,7 @@
  */
 
 #include <DomoticsCore/AuthDelay.h>
-#include <DomoticsCore/ComponentConfig.h>  // digitsOnly, shared with the WebUI fields
+#include <DomoticsCore/StringParse.h>
 #include <DomoticsCore/IComponent.h>
 #include <DomoticsCore/Logger.h>
 #include <DomoticsCore/CoreLog_HAL.h>
@@ -611,7 +611,7 @@ private:
             // Digits only, then the range: toInt() is atol(), which reads "3x"
             // as 3 and "abc" as 0 — LOG_LEVEL_NONE, silencing the log on a typo.
             // The range is the Logger's own, the one the WebUI route lists.
-            if (!ComponentConfig::digitsOnly(args) || args.toInt() > LOG_LEVEL_VERBOSE) {
+            if (!Utils::digitsOnly(args) || args.toInt() > LOG_LEVEL_VERBOSE) {
                 return String("Invalid level. Use 0-5 (NONE/ERROR/WARN/INFO/DEBUG/VERBOSE)\n");
             }
             int level = args.toInt();

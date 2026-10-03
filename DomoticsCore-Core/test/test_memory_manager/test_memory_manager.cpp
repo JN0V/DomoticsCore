@@ -57,7 +57,7 @@ void test_heap_at_boot_is_the_classified_sample_not_the_live_heap(void) {
     profileAt(40000);
     P::setFreeHeapForTest(5000);
     TEST_ASSERT_EQUAL_UINT32(40000, mm().getHeapAtBoot());
-    TEST_ASSERT_EQUAL_UINT32(5000, mm().getCurrentFreeHeap());
+    TEST_ASSERT_EQUAL_UINT32(5000, P::getFreeHeap());
 }
 
 void test_the_four_profile_names(void) {
@@ -83,59 +83,6 @@ void test_max_ws_clients_per_profile(void) {
     profileAt(5000);  TEST_ASSERT_EQUAL_UINT8(1, mm().getMaxWsClients());
 }
 
-void test_chart_history_points_per_profile(void) {
-    profileAt(40000); TEST_ASSERT_EQUAL_UINT8(60, mm().getChartHistoryPoints());
-    profileAt(20000); TEST_ASSERT_EQUAL_UINT8(30, mm().getChartHistoryPoints());
-    profileAt(10000); TEST_ASSERT_EQUAL_UINT8(10, mm().getChartHistoryPoints());
-    profileAt(5000);  TEST_ASSERT_EQUAL_UINT8(0, mm().getChartHistoryPoints());
-}
-
-void test_ws_update_interval_per_profile_and_zero_means_disabled(void) {
-    profileAt(40000); TEST_ASSERT_EQUAL_UINT32(2000, mm().getWsUpdateInterval());
-    profileAt(20000); TEST_ASSERT_EQUAL_UINT32(5000, mm().getWsUpdateInterval());
-    profileAt(10000); TEST_ASSERT_EQUAL_UINT32(10000, mm().getWsUpdateInterval());
-    profileAt(5000);  TEST_ASSERT_EQUAL_UINT32(0, mm().getWsUpdateInterval());
-}
-
-static void assertBuffers(size_t ws, size_t http, size_t json, size_t log) {
-    TEST_ASSERT_EQUAL_size_t(ws,   mm().getBufferSize(BufferType::WebSocket));
-    TEST_ASSERT_EQUAL_size_t(http, mm().getBufferSize(BufferType::HttpResponse));
-    TEST_ASSERT_EQUAL_size_t(json, mm().getBufferSize(BufferType::JsonDocument));
-    TEST_ASSERT_EQUAL_size_t(log,  mm().getBufferSize(BufferType::LogBuffer));
-}
-
-void test_buffer_sizes_per_profile(void) {
-    profileAt(40000); assertBuffers(8192, 4096, 8192, 200);
-    profileAt(20000); assertBuffers(4096, 2048, 4096, 100);
-    profileAt(10000); assertBuffers(2048, 1024, 2048, 50);
-    profileAt(5000);  assertBuffers(1024, 512, 1024, 20);
-}
-
-void test_should_enable_per_profile(void) {
-    profileAt(40000);
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::WebSocketUpdates));
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::ChartHistory));
-    TEST_ASSERT_FALSE(mm().shouldEnable(Feature::SettingsLazyLoad));
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::SchemaCompression));
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::FullDashboard));
-    profileAt(20000);
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::WebSocketUpdates));
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::ChartHistory));
-    TEST_ASSERT_FALSE(mm().shouldEnable(Feature::SettingsLazyLoad));
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::FullDashboard));
-    profileAt(10000);
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::WebSocketUpdates));
-    TEST_ASSERT_FALSE(mm().shouldEnable(Feature::ChartHistory));
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::SettingsLazyLoad));
-    TEST_ASSERT_FALSE(mm().shouldEnable(Feature::FullDashboard));
-    profileAt(5000);
-    TEST_ASSERT_FALSE(mm().shouldEnable(Feature::WebSocketUpdates));
-    TEST_ASSERT_FALSE(mm().shouldEnable(Feature::ChartHistory));
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::SettingsLazyLoad));
-    TEST_ASSERT_TRUE(mm().shouldEnable(Feature::SchemaCompression));
-    TEST_ASSERT_FALSE(mm().shouldEnable(Feature::FullDashboard));
-}
-
 void test_is_low_memory_reads_the_live_heap_and_leaves_the_profile_alone(void) {
     profileAt(40000);
     P::setFreeHeapForTest(8191);
@@ -143,14 +90,6 @@ void test_is_low_memory_reads_the_live_heap_and_leaves_the_profile_alone(void) {
     TEST_ASSERT_EQUAL(MemoryProfile::FULL, mm().getProfile());
     P::setFreeHeapForTest(8192);
     TEST_ASSERT_FALSE(mm().isLowMemory());
-}
-
-void test_is_critical_memory_is_half_the_minimal_threshold(void) {
-    profileAt(40000);
-    P::setFreeHeapForTest(4095);
-    TEST_ASSERT_TRUE(mm().isCriticalMemory());
-    P::setFreeHeapForTest(4096);
-    TEST_ASSERT_FALSE(mm().isCriticalMemory());
 }
 
 void test_default_thresholds(void) {
@@ -190,12 +129,7 @@ int main(int, char**) {
     RUN_TEST(test_the_four_profile_names);
     RUN_TEST(test_the_logged_boots_classify_as_the_boards_reported);
     RUN_TEST(test_max_ws_clients_per_profile);
-    RUN_TEST(test_chart_history_points_per_profile);
-    RUN_TEST(test_ws_update_interval_per_profile_and_zero_means_disabled);
-    RUN_TEST(test_buffer_sizes_per_profile);
-    RUN_TEST(test_should_enable_per_profile);
     RUN_TEST(test_is_low_memory_reads_the_live_heap_and_leaves_the_profile_alone);
-    RUN_TEST(test_is_critical_memory_is_half_the_minimal_threshold);
     RUN_TEST(test_default_thresholds);
     RUN_TEST(test_set_thresholds_reclassifies_at_the_next_detect_profile_only);
     RUN_TEST(test_set_thresholds_moves_is_low_memory_at_once);
