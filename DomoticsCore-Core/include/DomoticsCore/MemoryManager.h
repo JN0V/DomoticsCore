@@ -18,8 +18,8 @@
  *     // Use reduced features
  * }
  *
- * // Get adaptive buffer size:
- * size_t bufSize = MemoryManager::instance().getBufferSize(BufferType::WebSocket);
+ * // Check the live heap before an expensive step:
+ * if (MemoryManager::instance().isLowMemory()) { ... }
  * @endcode
  */
 
@@ -38,27 +38,6 @@ enum class MemoryProfile {
 };
 
 /**
- * @brief Buffer types that can be sized adaptively
- */
-enum class BufferType {
-    WebSocket,      ///< WebSocket message buffer
-    HttpResponse,   ///< HTTP response buffer
-    JsonDocument,   ///< ArduinoJson document size
-    LogBuffer       ///< Logging buffer
-};
-
-/**
- * @brief Feature flags that can be enabled/disabled based on profile
- */
-enum class Feature {
-    WebSocketUpdates,   ///< Real-time WebSocket push updates
-    ChartHistory,       ///< Store chart data history
-    SettingsLazyLoad,   ///< Lazy-load settings contexts
-    SchemaCompression,  ///< Compress schema responses
-    FullDashboard       ///< Show all dashboard contexts
-};
-
-/**
  * @brief Memory profile thresholds (in bytes)
  *
  * These can be adjusted based on real-world testing.
@@ -72,30 +51,10 @@ struct MemoryThresholds {
 };
 
 /**
- * @brief Buffer sizes for each profile (in bytes)
- */
-struct ProfileBufferSizes {
-    size_t webSocket;
-    size_t httpResponse;
-    size_t jsonDocument;
-    size_t logBuffer;
-};
-
-/**
- * @brief Timing intervals for each profile (in milliseconds)
- */
-struct ProfileIntervals {
-    uint32_t wsUpdateInterval;      ///< WebSocket update interval
-    uint32_t heapCheckInterval;     ///< How often to recheck heap
-};
-
-/**
  * @brief Limits for each profile
  */
 struct ProfileLimits {
     uint8_t maxWsClients;       ///< Max WebSocket clients
-    uint8_t maxProviders;       ///< Max WebUI providers
-    uint8_t chartHistoryPoints; ///< Chart history depth
 };
 
 /**
@@ -171,65 +130,10 @@ public:
     }
 
     /**
-     * @brief Get adaptive buffer size for specified type
-     */
-    size_t getBufferSize(BufferType type) const {
-        const auto& sizes = getBufferSizes();
-        switch (type) {
-            case BufferType::WebSocket:    return sizes.webSocket;
-            case BufferType::HttpResponse: return sizes.httpResponse;
-            case BufferType::JsonDocument: return sizes.jsonDocument;
-            case BufferType::LogBuffer:    return sizes.logBuffer;
-            default:                       return 1024;
-        }
-    }
-
-    /**
-     * @brief Check if a feature should be enabled for current profile
-     */
-    bool shouldEnable(Feature feature) const {
-        MemoryProfile p = getProfile();
-
-        switch (feature) {
-            case Feature::WebSocketUpdates:
-                return p != MemoryProfile::CRITICAL;
-
-            case Feature::ChartHistory:
-                return p == MemoryProfile::FULL || p == MemoryProfile::STANDARD;
-
-            case Feature::SettingsLazyLoad:
-                return p == MemoryProfile::MINIMAL || p == MemoryProfile::CRITICAL;
-
-            case Feature::SchemaCompression:
-                return true;  // Always beneficial
-
-            case Feature::FullDashboard:
-                return p == MemoryProfile::FULL || p == MemoryProfile::STANDARD;
-
-            default:
-                return true;
-        }
-    }
-
-    /**
-     * @brief Get WebSocket update interval for current profile
-     */
-    uint32_t getWsUpdateInterval() const {
-        return getIntervals().wsUpdateInterval;
-    }
-
-    /**
      * @brief Get max WebSocket clients for current profile
      */
     uint8_t getMaxWsClients() const {
         return getLimits().maxWsClients;
-    }
-
-    /**
-     * @brief Get chart history points for current profile
-     */
-    uint8_t getChartHistoryPoints() const {
-        return getLimits().chartHistoryPoints;
     }
 
     /**
@@ -240,13 +144,6 @@ public:
     }
 
     /**
-     * @brief Get current free heap
-     */
-    uint32_t getCurrentFreeHeap() const {
-        return HAL::getFreeHeap();
-    }
-
-    /**
      * @brief Check if we're in a low memory situation right now
      *
      * This is a runtime check, not the boot-time profile.
@@ -254,13 +151,6 @@ public:
      */
     bool isLowMemory() const {
         return HAL::getFreeHeap() < thresholds_.minimalMin;
-    }
-
-    /**
-     * @brief Check if we're in critical memory situation
-     */
-    bool isCriticalMemory() const {
-        return HAL::getFreeHeap() < (thresholds_.minimalMin / 2);
     }
 
     /**
@@ -285,49 +175,13 @@ private:
     MemoryManager& operator=(const MemoryManager&) = delete;
 
     /**
-     * @brief Get buffer sizes for current profile
-     */
-    const ProfileBufferSizes& getBufferSizes() const {
-        static const ProfileBufferSizes full     = { 8192, 4096, 8192, 200 };
-        static const ProfileBufferSizes standard = { 4096, 2048, 4096, 100 };
-        static const ProfileBufferSizes minimal  = { 2048, 1024, 2048, 50 };
-        static const ProfileBufferSizes critical = { 1024, 512,  1024, 20 };
-
-        switch (getProfile()) {
-            case MemoryProfile::FULL:     return full;
-            case MemoryProfile::STANDARD: return standard;
-            case MemoryProfile::MINIMAL:  return minimal;
-            case MemoryProfile::CRITICAL: return critical;
-            default:                      return standard;
-        }
-    }
-
-    /**
-     * @brief Get timing intervals for current profile
-     */
-    const ProfileIntervals& getIntervals() const {
-        static const ProfileIntervals full     = { 2000, 60000 };   // 2s updates, 1min heap check
-        static const ProfileIntervals standard = { 5000, 30000 };   // 5s updates
-        static const ProfileIntervals minimal  = { 10000, 15000 };  // 10s updates
-        static const ProfileIntervals critical = { 0, 10000 };      // No updates (0 = disabled)
-
-        switch (getProfile()) {
-            case MemoryProfile::FULL:     return full;
-            case MemoryProfile::STANDARD: return standard;
-            case MemoryProfile::MINIMAL:  return minimal;
-            case MemoryProfile::CRITICAL: return critical;
-            default:                      return standard;
-        }
-    }
-
-    /**
      * @brief Get limits for current profile
      */
     const ProfileLimits& getLimits() const {
-        static const ProfileLimits full     = { 8, 32, 60 };   // 8 clients, 32 providers, 60 chart points
-        static const ProfileLimits standard = { 4, 16, 30 };
-        static const ProfileLimits minimal  = { 2, 8, 10 };
-        static const ProfileLimits critical = { 1, 4, 0 };     // No chart history
+        static const ProfileLimits full     = { 8 };
+        static const ProfileLimits standard = { 4 };
+        static const ProfileLimits minimal  = { 2 };
+        static const ProfileLimits critical = { 1 };
 
         switch (getProfile()) {
             case MemoryProfile::FULL:     return full;

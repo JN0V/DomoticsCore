@@ -9,11 +9,12 @@
  * \section features Features
  * - Component base class and lifecycle (begin, loop, shutdown)
  * - Central ComponentRegistry for add/lookup by name and type
- * - ComponentConfig for strongly-typed parameters
+ * - ComponentStatus and ComponentMetadata shared by every component
  * - EventBus (publish/subscribe) for decoupled communication
  * - Utilities: Logger, Timer (non-blocking delay)
  *
  * \section headers Public Headers
  * - Core.h, IComponent.h, ComponentRegistry.h
  * - ComponentConfig.h, EventBus.h, Timer.h, Logger.h
+ * - StringParse.h (Utils::digitsOnly), MemoryManager.h
  */
