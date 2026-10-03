@@ -114,7 +114,7 @@ Three ready-to-use examples are included:
 
 ## Version
 
-Current version: **1.10.0** (as declared in `library.json` and `metadata.version`).
+Current version: **1.11.0** (as declared in `library.json` and `metadata.version`).
 
 ## License
 

@@ -207,6 +207,16 @@ the DST offset; TEST-5, CI-6, CI-14; CI-21 filed). A patch: fixes only.
 projects, read from #116's CI. The release gate is not claimed: 15 MEDIUM
 open.
 
+**The sixteenth ships as v2.13.0** (2026-10-03), four lots: #118 (DC-2, DC-3,
+DC-9, DC-10, MEM-4; BUG-97 filed and fixed, BUG-98 filed), #127 (DC-1, DC-13,
+DC-14, DC-15, DC-17; BUG-99), #128 (BUG-59, PERSIST-1, ARCH-1) and #129
+(TEST-11, DC-12; DC-20 filed). A minor that removes public API, said at the
+top of its entry. **Nine components move** — Core 1.14.0, WebUI 1.13.0,
+Wifi 1.8.0, SystemInfo 1.8.0, HomeAssistant 2.7.0, MQTT 1.11.0, Storage
+1.7.0, System 1.11.0 (minor); RemoteConsole 1.7.3 (patch). Native 1 420 over
+15 projects and the jsdom suite 7/7, read from #129's CI. **The release gate
+holds: no MEDIUM open**, 56 LOW.
+
 | WebUI | BUG-45 | 2026-09-20 — what five settings fields accept. A numeric field is digits only (BUG-40's rule on the WebUI surface) and the range policy stays the field's: refused where a range exists, clamped where a slider clamps. Six providers answer `"{}"` for a context they ignore and `UpdateBuilder` tolerates `"null"` at the sink. The refusal *shape* was left alone — it contradicts `ba901c4` — and became BUG-51; the adversarial review opened BUG-52 and BUG-53 and caught a vacuous width guard, an unpinned schema/dispatch coupling and a forced `String` copy on the broadcast path. Native 1 160 → 1 173; a browser on the WROOM-32D each side of two fixes; ESP8266 +164 B RAM, +580 B flash |
 | HomeAssistant, three examples | BUG-46, BUG-61 (filed) | **PR #83** — 2026-09-23: the decision memo went through the adversarial lens before any code, and the diff went through it after — which found the fix reintroducing its own defect (a live publish not invalidating the slot the outage still held) and the three examples gating the event-driven publish on `isMQTTConnected()`, which would have made it inert. A coalescing store in the component, 12 bytes standing and a 2 048-byte budget, drained four per `loop()`. Native 1 217 → 1 220 locally, eight removal checks; WROOM-32D `pending` 0 → 6 → 2 → 0 against a broker stopped and started, and nothing at all with the hold removed. **BUG-46 closed, BUG-61 filed**: 28 → 27 M, 53 → 54 L, 183 → 184 items, 115 → 116 resolved |
 | Docs | deferred-work purge | 2026-09-20 — `docs/deferred-work.md` had 62 entries and 5 ever closed, 42 of them added in fifteen days, none of them counted by the tracking summary. Read one by one: **34 became nineteen items** — SEC-15 and BUG-47 (MEDIUM); MEM-7, MEM-8, BUG-48, BUG-49, BUG-50, TEST-10, CI-16, CI-17, CI-18, DC-18, DC-19, OBS-8, DOC-2, LO-33 to LO-36 (LOW) — 5 folded into the entries that parked them (SEC-4, SEC-6, CI-11, BUG-45, LO-2), 6 became `project-context.md` or ADR notes, 15 deleted as done or already recorded, 2 kept as decisions. Rule in the file's header: a finding with a visible consequence takes an id when it is written. Docs only, no code |
