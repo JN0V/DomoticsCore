@@ -274,35 +274,6 @@ public:
     }
 
     /**
-     * Generate a select dropdown
-     * @param id DOM ID for the select element
-     * @param label Label text
-     * @param options Array of option values/labels (format: "value|label" or just "value")
-     * @param optionCount Number of options in array
-     * @param selectedIndex Index of initially selected option (default 0)
-     * @return HTML string for select dropdown
-     */
-    static String selectDropdown(const String& id, const String& label, const String* options, int optionCount, int selectedIndex = 0) {
-        String html = "<div class=\"field-row\">";
-        html += "<span class=\"field-label\">" + label + "</span>";
-        html += "<select class=\"field-input\" id=\"" + id + "\">";
-        
-        for (int i = 0; i < optionCount; i++) {
-            String opt = options[i];
-            int pipeIdx = opt.indexOf('|');
-            String value = pipeIdx >= 0 ? opt.substring(0, pipeIdx) : opt;
-            String text = pipeIdx >= 0 ? opt.substring(pipeIdx + 1) : opt;
-            
-            html += "<option value=\"" + value + "\"";
-            if (i == selectedIndex) html += " selected";
-            html += ">" + text + "</option>";
-        }
-        
-        html += "</select></div>";
-        return html;
-    }
-
-    /**
      * Generate a field row with label and value
      * @param label Label text
      * @param valueId DOM ID for the value span
@@ -346,37 +317,6 @@ public:
         return "<div class=\"field-row\" style=\"display: flex; gap: 0.5rem;\">" + content + "</div>";
     }
 
-    /**
-     * Generate a radio button group
-     * @param name Name attribute for the radio group (all radios share this)
-     * @param label Label text for the group
-     * @param options Array of option values/labels (format: "value|label" or just "value")
-     * @param optionCount Number of options in array
-     * @param selectedIndex Index of initially selected option (default 0)
-     * @return HTML string for radio group
-     */
-    static String radioGroup(const String& name, const String& label, const String* options, int optionCount, int selectedIndex = 0) {
-        String html = "<div class=\"field-row\" style=\"margin-bottom: 1rem;\">";
-        html += "<span class=\"field-label\">" + label + "</span>";
-        html += "<div style=\"display: flex; gap: 1rem;\">";
-        
-        for (int i = 0; i < optionCount; i++) {
-            String opt = options[i];
-            int pipeIdx = opt.indexOf('|');
-            String value = pipeIdx >= 0 ? opt.substring(0, pipeIdx) : opt;
-            String text = pipeIdx >= 0 ? opt.substring(pipeIdx + 1) : opt;
-            
-            html += "<label style=\"display: flex; align-items: center; gap: 0.25rem; cursor: pointer;\">";
-            html += "<input type=\"radio\" name=\"" + name + "\" value=\"" + value + "\" id=\"" + name + "_" + value + "\"";
-            if (i == selectedIndex) html += " checked";
-            html += ">";
-            html += "<span>" + text + "</span>";
-            html += "</label>";
-        }
-        
-        html += "</div></div>";
-        return html;
-    }
 };
 
 } // namespace WebUI
