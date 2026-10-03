@@ -98,16 +98,8 @@ html += BaseWebUIComponents::button("submitBtn", "Submit", true); // primary sty
 // Text inputs
 html += BaseWebUIComponents::textInput("url", "URL", "https://...");
 
-// Radio groups
-String options[] = {"opt1|Option 1", "opt2|Option 2"};
-html += BaseWebUIComponents::radioGroup("myRadio", "Select", options, 2, 0);
-
 // Range sliders
 html += BaseWebUIComponents::rangeSlider("brightness", "Brightness", 0, 255, 128);
-
-// Select dropdowns
-String opts[] = {"wifi|WiFi", "eth|Ethernet"};
-html += BaseWebUIComponents::selectDropdown("mode", "Mode", opts, 2, 0);
 
 // Field rows (label + value display)
 html += BaseWebUIComponents::fieldRow("Status", "statusValue", "Ready");

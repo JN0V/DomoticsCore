@@ -61,8 +61,8 @@ Configuration struct passed to the `SystemInfoComponent` constructor.
 | `deviceName` | `String` | `"DomoticsCore Device"` | Human-readable device name. Typically overridden by `System` from `SystemConfig`. |
 | `manufacturer` | `String` | `"DomoticsCore"` | Manufacturer string shown in UI. |
 | `firmwareVersion` | `String` | `"1.0.0"` | Firmware version string shown in UI. |
-| `enableDetailedInfo` | `bool` | `true` | Include detailed chip/flash information in metrics collection. |
-| `enableMemoryInfo` | `bool` | `true` | Include memory statistics (heap, sketch size) in metrics collection. |
+| `enableDetailedInfo` | `bool` | `true` | The WebUI shows the chip model, revision and CPU frequency (`chip`, `revision`, `cpu_freq` in `system_info`). |
+| `enableMemoryInfo` | `bool` | `true` | The WebUI shows the total heap, the memory profile and the usage chart (`total_heap`, `mem_profile` in `system_info`; `heap_usage` in `system_metrics`). |
 | `updateInterval` | `int` | `5000` | Minimum interval (in milliseconds) between metric refreshes in `loop()`. |
 | `enableBootDiagnostics` | `bool` | `true` | Capture volatile boot diagnostics (reset reason, heap snapshot) during `begin()`. |
 
@@ -196,11 +196,11 @@ Returns `config.updateInterval` (milliseconds).
 
 #### `bool isDetailedInfoEnabled() const`
 
-Returns `config.enableDetailedInfo`.
+Returns `config.enableDetailedInfo`. See [Diagnostic flags](#diagnostic-flags).
 
 #### `bool isMemoryInfoEnabled() const`
 
-Returns `config.enableMemoryInfo`.
+Returns `config.enableMemoryInfo`. See [Diagnostic flags](#diagnostic-flags).
 
 ### Utility Methods
 
@@ -301,6 +301,8 @@ Static hardware information. Fields use `WebUIFieldType::Display` (read-only).
 | `total_heap` | Total Heap | Total heap in KB |
 | `mem_profile` | Mem Profile | Current `MemoryManager` profile name |
 
+`chip`, `revision` and `cpu_freq` are present only with `enableDetailedInfo`; `total_heap` and `mem_profile` only with `enableMemoryInfo`.
+
 #### 2. `system_metrics` -- System Metrics (Dashboard, Real-Time)
 
 Real-time metrics with chart visualisation. Configured with `withRealTime(2000)` for 2-second WebSocket push updates.
@@ -309,6 +311,8 @@ Real-time metrics with chart visualisation. Configured with `withRealTime(2000)`
 |----------|-------|------|------|
 | `cpu_load` | CPU Load | Chart | % |
 | `heap_usage` | Memory Usage | Chart | % (calculated as used/total * 100) |
+
+`heap_usage` is present only with `enableMemoryInfo`.
 
 #### 3. `system_settings` -- Device Settings (Settings Page)
 
@@ -333,10 +337,14 @@ Returns `sys->metadata.version` (typically `"1.4.0"`).
 Returns a JSON string with field values for the requested context:
 
 - **`system_info`:** Static device/hardware fields as JSON object.
-- **`system_metrics`:** `cpu_load` (float) and `heap_usage` (float, percentage).
+- **`system_metrics`:** `cpu_load` (float) and `heap_usage` (float, percentage, with `enableMemoryInfo`).
 - **`system_settings`:** `device_name` string.
 
 Returns `"{}"` for unknown context IDs or if the component pointer is null.
+
+#### Diagnostic flags
+
+`enableDetailedInfo` and `enableMemoryInfo` remove their fields from both the schema and the data. Both read the flags as they were when the schema was first built, so the two always agree; a change through `setConfig()` takes effect in both after `invalidateContextCache()`. Set the flags before the WebUI first asks for the schema.
 
 #### `String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params)`
 

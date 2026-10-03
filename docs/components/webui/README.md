@@ -108,6 +108,7 @@ ptr->registerApiRoute("/api/sensor", HTTP_GET, [](AsyncWebServerRequest* req) {
 | `/api/components` | GET | yes | List registered providers |
 | `/api/components/enable` | POST | yes + token | Enable/disable a provider at runtime |
 | `/api/system/info` | GET | yes | Uptime, heap, and client count |
+| path given to `withAPI()` | GET | yes | Data of every context declaring that path, keyed by context id; an explicit `GET` route on the same path wins |
 | `/style.css`, `/app.js` | GET | no | Static assets, served in multi-file mode only |
 
 **Auth** means: with `enableAuth` on, the route answers `401` with a challenge until the request carries the device's credentials; every gate reads the live configuration, so a runtime change applies to the page, the API and the stream alike. **Token** means the route also refuses `403` without this boot's CSRF token. Routes other components register through `registerApiRoute()` gate themselves; the System component's own route (`/api/system/coredump`) is described in its reference, and `/api/ntp/timezones` in the NTP component's.
