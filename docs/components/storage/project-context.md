@@ -17,7 +17,7 @@ This document provides machine-readable context for AI assistants working on the
 | Field | Value |
 |-------|-------|
 | Component name | DomoticsCore-Storage |
-| Version | 1.6.1 |
+| Version | 1.7.0 |
 | Metadata name | `"Storage"` (default) or custom via `StorageConfig::componentName` |
 | Category | Storage |
 | License | MIT |
@@ -176,7 +176,7 @@ This section maps DomoticsCore-Storage design decisions to specific constitution
 | XI. Centralized Storage | All persistence via Storage component | This IS the centralized storage component; other components must use it |
 | XII. Multi-Registry | PlatformIO + Arduino compatible | `library.json` present; `include/` and `examples/` follow standard layouts |
 | XIV. Memory Leak Prevention | Heap stability | Cache bounded by `maxEntries`; `shrink_to_fit` should be applied after `clear()`/`remove()` in vectors |
-| XV. Semantic Versioning | `library.json` matches `metadata.version` | Both set to `1.6.1` |
+| XV. Semantic Versioning | `library.json` matches `metadata.version` | Both set to `1.7.0` |
 
 ---
 
