@@ -197,7 +197,9 @@ public:
                 return "{\"success\":true}";
             } else if (field == "scan_networks") {
                 if (!wifi->startScanAsync()) {
-                    return "{\"success\":false,\"error\":\"Scan already running\"}";
+                    return wifi->getLastScanSummary() == "Scan failed"
+                        ? "{\"success\":false,\"error\":\"Scan did not start\"}"
+                        : "{\"success\":false,\"error\":\"Scan already running\"}";
                 }
                 return "{\"success\":true}";
             } else if (field == "ap_enabled") {

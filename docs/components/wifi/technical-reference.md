@@ -302,11 +302,14 @@ The reconnection system is entirely non-blocking, complying with Constitution pr
 
 Non-blocking network scanning avoids watchdog resets on ESP8266:
 
-1. Call `startScanAsync()` -- issues `HAL::WiFiHAL::scanNetworks(true)` and sets `scanInProgress = true`. It returns `false` if a scan is already running: the SDK holds a single result set.
+1. Call `startScanAsync()` -- issues `HAL::WiFiHAL::scanNetworks(true)` and sets `scanInProgress = true`. It returns `false` if a scan is already running (the SDK holds a single result set), or if the SDK refuses to start it, in which case the summary reads `Scan failed` at once. The blocking `scanNetworks(vector)` is refused while an async scan runs.
 2. `loop()` polls `HAL::WiFiHAL::scanComplete()`, before the AP-mode return so the poll also runs with no configured SSID:
    - Returns `-2` on failure.
    - Returns `-1` while in progress.
    - Returns `>= 0` with network count when done.
+   - On `-2` the summary reads `Scan failed` and the result list is released, so a result landing later is not kept.
+   - On ESP32 the Arduino core (2.0.17) reports `-2` after 6 s, but with an AP running the SDK needs 6-8 s and still delivers; the ESP32 HAL reads that `-2` as `-1` until 15 s after the start (`WifiScanDeadline.h`). A scan that really fails is therefore reported at 15 s.
+   - A scan still at `-1` 20 s after it started is given up the same way: the guard for a platform whose SDK never answers.
 3. Results (up to 10 networks) are formatted as comma-separated "SSID (RSSI dBm)" and stored in `lastScanSummary_`. A scan that completes with no networks stores `No networks found`, so an empty summary means only that no scan has run.
 4. Retrieve results with `getLastScanSummary()`.
 
@@ -425,7 +428,7 @@ All settings changes go through `handleWebUIRequest()` with `contextId = "wifi_s
 - **wifi_enabled = false**: Disables STA via `setSTACredentials()`.
 - **ap_enabled toggle**: Uses full Get/Override/Set pattern on `WifiConfig`.
 - **ap_ssid change**: Applied immediately if AP is running (Get/Override/Set pattern); stored as `pendingApSsid` if AP is disabled.
-- **scan_networks**: Triggers `startScanAsync()`; answers `Scan already running` when one is in flight. The result is read back from the component by `getWebUIData("wifi_scan")`, which answers `No scan yet` until the first scan.
+- **scan_networks**: Triggers `startScanAsync()`; answers `Scan already running` when one is in flight, `Scan did not start` when the SDK refused it. The result is read back from the component by `getWebUIData("wifi_scan")`, which answers `No scan yet` until the first scan.
 
 ---
 

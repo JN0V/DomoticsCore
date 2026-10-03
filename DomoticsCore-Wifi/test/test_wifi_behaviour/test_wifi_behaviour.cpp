@@ -32,6 +32,7 @@
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Wifi.h>
 #include <DomoticsCore/WifiEvents.h>
+#include <DomoticsCore/WifiScanDeadline.h>
 
 #include <vector>
 
@@ -228,6 +229,57 @@ void test_zero_timing_fields_keep_the_defaults(void) {
     WifiConfig back = wifiPtr->getConfig();
     TEST_ASSERT_EQUAL_UINT32(15000, back.connectionTimeout);
     TEST_ASSERT_EQUAL_UINT32(5000, back.reconnectInterval);
+}
+
+// A scan the SDK never answers is given up at its deadline: the card says so,
+// the flag is released and the next scan can start.
+void test_an_unanswered_scan_is_given_up_at_its_deadline(void) {
+    buildStaFixture();
+    HAL::WiFiImpl::setScanFailedForTest(-1);   // started, and running for ever
+    TEST_ASSERT_TRUE(wifiPtr->startScanAsync());
+
+    HAL::Platform::advanceMillisForTest(19999);
+    testCore->loop();
+    TEST_ASSERT_EQUAL_STRING("Scanning...", wifiPtr->getLastScanSummary().c_str());
+    TEST_ASSERT_FALSE(wifiPtr->startScanAsync());
+
+    const int deletesBefore = HAL::WiFiImpl::scanDeleteCallsForTest;
+    HAL::Platform::advanceMillisForTest(2);
+    testCore->loop();
+    TEST_ASSERT_EQUAL_STRING("Scan failed", wifiPtr->getLastScanSummary().c_str());
+    TEST_ASSERT_EQUAL_INT(deletesBefore + 1, HAL::WiFiImpl::scanDeleteCallsForTest);
+    TEST_ASSERT_TRUE(wifiPtr->startScanAsync());
+}
+
+// The core's early -2 is a scan still running, until our own deadline.
+void test_an_early_scan_failure_is_masked_until_the_deadline(void) {
+    using HAL::WiFiHAL::maskEarlyScanFailure;
+    using HAL::WiFiHAL::ASYNC_SCAN_DEADLINE_MS;
+    TEST_ASSERT_EQUAL_INT(-1, maskEarlyScanFailure(-2, 1000, 1000 + 6001));
+    TEST_ASSERT_EQUAL_INT(-1, maskEarlyScanFailure(-2, 1000, 1000 + ASYNC_SCAN_DEADLINE_MS - 1));
+    TEST_ASSERT_EQUAL_INT(-2, maskEarlyScanFailure(-2, 1000, 1000 + ASYNC_SCAN_DEADLINE_MS));
+    TEST_ASSERT_EQUAL_INT(-2, maskEarlyScanFailure(-2, 0, 5000));          // no async start outstanding
+    TEST_ASSERT_EQUAL_INT(4, maskEarlyScanFailure(4, 1000, 2000));          // results pass through
+    TEST_ASSERT_EQUAL_INT(-1, maskEarlyScanFailure(-1, 1000, 99000));
+    TEST_ASSERT_EQUAL_INT(-1, maskEarlyScanFailure(-2, 0xFFFFF000u, 0x00000800u));  // across the wrap
+}
+
+void test_a_scan_the_sdk_refuses_to_start_fails_at_once(void) {
+    buildStaFixture();
+    HAL::WiFiImpl::setScanFailedForTest(-2);
+    TEST_ASSERT_FALSE(wifiPtr->startScanAsync());
+    TEST_ASSERT_EQUAL_STRING("Scan failed", wifiPtr->getLastScanSummary().c_str());
+    HAL::WiFiImpl::setScannedNetworksForTest({{String("Net"), -40}});
+    TEST_ASSERT_TRUE(wifiPtr->startScanAsync());   // nothing was left held
+}
+
+void test_a_blocking_scan_is_refused_while_an_async_one_runs(void) {
+    buildStaFixture();
+    HAL::WiFiImpl::setScanFailedForTest(-1);
+    TEST_ASSERT_TRUE(wifiPtr->startScanAsync());
+    std::vector<String> networks;
+    TEST_ASSERT_FALSE(wifiPtr->scanNetworks(networks));
+    TEST_ASSERT_EQUAL_STRING("Scanning...", wifiPtr->getLastScanSummary().c_str());
 }
 
 void test_disconnect_stops_reconnection(void) {
@@ -580,6 +632,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_empty_ssid_preconfigured_ap);
     RUN_TEST(test_ap_only_update_skips_restart_when_already_running);
     RUN_TEST(test_stale_config_wifi_enabled_without_ssid_is_disabled);
+    RUN_TEST(test_an_unanswered_scan_is_given_up_at_its_deadline);
+    RUN_TEST(test_an_early_scan_failure_is_masked_until_the_deadline);
+    RUN_TEST(test_a_scan_the_sdk_refuses_to_start_fails_at_once);
+    RUN_TEST(test_a_blocking_scan_is_refused_while_an_async_one_runs);
     RUN_TEST(test_timing_fields_round_trip);
     RUN_TEST(test_configured_timeout_and_reconnect_interval_apply);
     RUN_TEST(test_zero_timing_fields_keep_the_defaults);
