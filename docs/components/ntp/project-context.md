@@ -208,4 +208,4 @@ Create a new `NTP_<Platform>.h` file implementing the `DomoticsCore::HAL::NTPImp
 
 ### Changing the version
 
-Use `tools/bump_version.py NTP <major|minor|patch>` per constitution Principle XV. Do not manually edit version strings.
+Versions move through release-please's release pull request, from the commit types, per constitution Principle XV. Do not manually edit version strings.

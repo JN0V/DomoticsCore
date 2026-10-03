@@ -292,7 +292,7 @@ With multiple developers:
 | Storage | No direct Preferences, uses StorageComponent | ☐ |
 | Multi-Registry | Compatible with PlatformIO AND Arduino | ☐ |
 | Anti-Pattern | No early-init, singletons, god objects | ☐ |
-| Versioning | Used bump_version.py, consistency verified | ☐ |
+| Versioning | Commit types give the level, consistency verified | ☐ |
 
 **Embedded Targets (from Constitution):**
 - Core Only: < 300KB flash, < 20KB RAM

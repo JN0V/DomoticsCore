@@ -48,7 +48,7 @@
 | **XI. Storage** | No direct Preferences access? Uses StorageComponent? | ☐ |
 | **XII. Multi-Registry** | Compatible with PlatformIO AND Arduino registries? | ☐ |
 | **XIII. Anti-Pattern** | No early-init, singletons, god objects, circular deps? | ☐ |
-| **XIV. Versioning** | Using bump_version.py? Version consistency checked? | ☐ |
+| **XIV. Versioning** | Commit types say the level? Version consistency checked? | ☐ |
 
 **Embedded Constraints Check:**
 - [ ] Flash target: Core < 300KB, Full < 1MB

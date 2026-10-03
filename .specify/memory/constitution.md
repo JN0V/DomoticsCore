@@ -275,33 +275,19 @@ DomoticsCore uses [Semantic Versioning](https://semver.org/) with per-component 
 - **Root library**: Top-level `library.json` defines the DomoticsCore framework version (`X.Y.Z`)
 - **Component libraries**: Each `DomoticsCore-*` has its own `library.json` version and matching `metadata.version` in C++ code
 
-**Propagation Rules:**
-
-| Component Change | Root Change | Reset |
-|------------------|-------------|-------|
-| Component **PATCH** | Root **PATCH** | None |
-| Component **MINOR** | Root **MINOR** | Reset root patch |
-| Component **MAJOR** | Root **MAJOR** | Reset root minor/patch |
-
-**Important**: Only the changed component and root are bumped; other components keep their current versions.
+**How versions move:** release-please (`release-please-config.json`) computes them from the conventional commits — a component only when its folder changed, the root by the highest level of any change — and keeps them in one release pull request; merging it is the decision to release.
 
 **Required Tools:**
 ```bash
 # Check version consistency (CI)
 python tools/check_versions.py --verbose
-
-# Bump component version (propagates to root)
-python tools/bump_version.py MQTT minor
-
-# Preview changes without modifying
-python tools/bump_version.py MQTT minor --dry-run --verbose
 ```
 
 **Version Bump Rules:**
-- MUST use `tools/bump_version.py` for all version changes
-- MUST NOT manually edit version numbers in multiple files
-- MUST verify consistency with `tools/check_versions.py` before commit
-- `library.json.version` MUST match all `metadata.version` assignments in component code
+- Versions MUST move only through release-please's release pull request
+- MUST NOT manually edit version numbers; to force one, set `release-as` on its package in `release-please-config.json`, the reason in that commit
+- Commit types MUST say the level: `fix` a patch, `feat` a minor, `!` or `BREAKING CHANGE:` a major
+- `library.json.version` MUST match all `metadata.version` assignments in component code (`tools/check_versions.py`)
 
 **Rationale**: Consistent versioning ensures dependency resolution works correctly across PlatformIO and Arduino registries, and users can trust version numbers to indicate breaking changes.
 
