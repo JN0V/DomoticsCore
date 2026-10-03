@@ -99,6 +99,9 @@ private:
     String apPassword_;
     // Non-blocking scan state
     bool scanInProgress = false;
+    uint32_t scanStartedAt_ = 0;
+    // Past this, an unanswered scan is given up so the next one can start.
+    static constexpr uint32_t SCAN_DEADLINE_MS = 20000;
     String lastScanSummary_;
     unsigned long connectionTimeoutMs_ = 15000;
     
@@ -485,6 +488,11 @@ public:
     }
     
     bool scanNetworks(std::vector<String>& networks) {
+        // The SDK holds one scan at a time: a blocking one would restart the async one.
+        if (scanInProgress) {
+            DLOG_W(LOG_WIFI, "Scan refused: an async scan is running");
+            return false;
+        }
         int n = HAL::WiFiHAL::scanNetworks(false);
         networks.clear();
         networks.shrink_to_fit();
@@ -533,13 +541,19 @@ public:
         return true;
     }
 
-    // Start a non-blocking scan. Returns false when one is already running:
-    // the SDK holds a single result set, so a second scan would be ignored.
+    // Start a non-blocking scan. Returns false when one is already running (the
+    // SDK holds a single result set) or when the SDK refuses to start it.
     bool startScanAsync() {
         if (scanInProgress) return false;
-        HAL::WiFiHAL::scanNetworks(true /* async */);
-        scanInProgress = true;
+        scanStartedAt_ = HAL::Platform::getMillis();   // before the flag: loop() reads both
+        const int16_t started = HAL::WiFiHAL::scanNetworks(true /* async */);
+        if (started == -2) {
+            DLOG_W(LOG_WIFI, "Wifi async scan did not start");
+            lastScanSummary_ = "Scan failed";
+            return false;
+        }
         lastScanSummary_ = "Scanning...";
+        scanInProgress = true;
         DLOG_I(LOG_WIFI, "Started async WiFi scan");
         return true;
     }
@@ -834,8 +848,14 @@ private:
     void pollScanCompletion() {
         if (scanInProgress) {
             int res = HAL::WiFiHAL::scanComplete();
-            if (res == -2) {  // WIFI_SCAN_FAILED
+            if (res == -1 && HAL::Platform::getMillis() - scanStartedAt_ > SCAN_DEADLINE_MS) {
+                DLOG_W(LOG_WIFI, "Wifi async scan unanswered after %u ms", (unsigned)SCAN_DEADLINE_MS);
+                HAL::WiFiHAL::scanDelete();
+                lastScanSummary_ = "Scan failed";
+                scanInProgress = false;
+            } else if (res == -2) {  // WIFI_SCAN_FAILED
                 DLOG_W(LOG_WIFI, "Wifi async scan failed");
+                HAL::WiFiHAL::scanDelete();   // a result landing later is not kept
                 lastScanSummary_ = "Scan failed";
                 scanInProgress = false;
             } else if (res >= 0) {
