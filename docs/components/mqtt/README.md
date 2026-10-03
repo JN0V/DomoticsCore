@@ -3,6 +3,7 @@ sources: [DomoticsCore-MQTT/library.json, DomoticsCore-MQTT/include/DomoticsCore
 checked: ae5715e
 judged: 684649e
 verified: agent:documentalist
+judged-in-parts: 9014958
 -->
 
 # DomoticsCore-MQTT
