@@ -169,7 +169,7 @@ void test_connection_timeout_then_same_tick_retry(void) {
     buildStaFixture();
     const auto& st = HAL::WiFiImpl::stubWifiState();
 
-    HAL::Platform::advanceMillisForTest(15001);  // past CONNECTION_TIMEOUT
+    HAL::Platform::advanceMillisForTest(15001);  // past the default 15 s timeout
     testCore->loop();
 
     TEST_ASSERT_EQUAL_INT((int)ComponentStatus::TimeoutError, (int)wifiPtr->getLastStatus());
@@ -180,6 +180,54 @@ void test_connection_timeout_then_same_tick_retry(void) {
     // fires. Reorder loop() and this red tells you the retry latency changed.
     TEST_ASSERT_EQUAL_UINT(2, st.connectCalls);
     TEST_ASSERT_TRUE(wifiPtr->isConnectionInProgress());
+}
+
+// The two timing fields reach the component and come back from getConfig().
+static void buildStaFixtureWithTiming(uint32_t timeoutMs, uint32_t reconnectMs) {
+    testCore = new Core();
+    subscribeAll();
+    auto wifi = std::make_unique<WifiComponent>("Net", "pw");
+    WifiConfig cfg = wifi->getConfig();
+    cfg.connectionTimeout = timeoutMs;
+    cfg.reconnectInterval = reconnectMs;
+    wifi->setConfig(cfg);
+    wifiPtr = wifi.get();
+    testCore->addComponent(std::move(wifi));
+    testCore->begin();
+}
+
+void test_timing_fields_round_trip(void) {
+    buildStaFixtureWithTiming(3000, 60000);
+    WifiConfig back = wifiPtr->getConfig();
+    TEST_ASSERT_EQUAL_UINT32(3000, back.connectionTimeout);
+    TEST_ASSERT_EQUAL_UINT32(60000, back.reconnectInterval);
+}
+
+void test_configured_timeout_and_reconnect_interval_apply(void) {
+    buildStaFixtureWithTiming(3000, 60000);
+    const auto& st = HAL::WiFiImpl::stubWifiState();
+    TEST_ASSERT_EQUAL_UINT(1, st.connectCalls);
+
+    HAL::Platform::advanceMillisForTest(3001);   // past the configured timeout, not the default
+    testCore->loop();
+    TEST_ASSERT_EQUAL_INT((int)ComponentStatus::TimeoutError, (int)wifiPtr->getLastStatus());
+    TEST_ASSERT_EQUAL_UINT(1, st.connectCalls);  // the 60 s interval has not elapsed
+
+    HAL::Platform::advanceMillisForTest(30000);  // t = 33001: the 5 s default would have retried
+    testCore->loop();
+    TEST_ASSERT_EQUAL_UINT(1, st.connectCalls);
+
+    HAL::Platform::advanceMillisForTest(30000);  // 60 s after the config was applied
+    testCore->loop();
+    TEST_ASSERT_EQUAL_UINT(2, st.connectCalls);
+}
+
+// Zero would time every attempt out at once, or retry on every loop(): the defaults stay.
+void test_zero_timing_fields_keep_the_defaults(void) {
+    buildStaFixtureWithTiming(0, 0);
+    WifiConfig back = wifiPtr->getConfig();
+    TEST_ASSERT_EQUAL_UINT32(15000, back.connectionTimeout);
+    TEST_ASSERT_EQUAL_UINT32(5000, back.reconnectInterval);
 }
 
 void test_disconnect_stops_reconnection(void) {
@@ -532,6 +580,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_empty_ssid_preconfigured_ap);
     RUN_TEST(test_ap_only_update_skips_restart_when_already_running);
     RUN_TEST(test_stale_config_wifi_enabled_without_ssid_is_disabled);
+    RUN_TEST(test_timing_fields_round_trip);
+    RUN_TEST(test_configured_timeout_and_reconnect_interval_apply);
+    RUN_TEST(test_zero_timing_fields_keep_the_defaults);
 
     return UNITY_END();
 }
