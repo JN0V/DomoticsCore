@@ -224,6 +224,9 @@ Extend `CachingWebUIProvider`, implement `buildContexts()`, `getWebUIName()`, `g
 | `test_webui_component` | `test/test_webui_component/test_webui_component.cpp` | native / ESP32 | API routes, provider lifecycle, config persistence |
 | `test_schema_memory` | `test/test_schema_memory/test_schema_memory.cpp` | ESP32 | Heap profiling during schema generation (has own `platformio.ini`) |
 | `test_heap_esp8266` | `test/test_heap_esp8266/test_heap_esp8266.cpp` | ESP8266 | Low-heap behavior, combined asset mode, fragmentation |
+| front end | `webui_test/app.test.js` | Node + jsdom | `app.js` against a scripted fetch: field ids, Cancel, refusal display, the CSRF header |
+
+The front-end suite runs `webui_src/app.js` in jsdom, the one npm dependency, pinned by `package-lock.json`: `cd webui_test && npm ci && npm test`. Its harness replaces the app's `init()` and removes the page's `DOMContentLoaded` bootstrap, so nothing polls; a test builds the cards it needs and drives them, and an exception inside a handler fails the case. It proves what the page draws and sends, not how a browser lays it out, and it does not run the custom JavaScript a component injects.
 
 A rendered settings field shows the schema's placeholder, not the stored value, until the first SSE tick redraws it — roughly five seconds after load. Anything that drives the page must wait for the field to carry the stored value before editing it: setting a field to the value the device already holds fires no `change` event, so `applySave()` posts nothing and the run looks like a clean negative while measuring nothing.
 
