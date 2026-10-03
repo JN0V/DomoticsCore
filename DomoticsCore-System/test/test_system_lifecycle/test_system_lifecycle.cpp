@@ -70,6 +70,45 @@ void test_begin_reaches_ready(void) {
     TEST_ASSERT_EQUAL(SystemState::READY, sys.getState());
 }
 
+// The steps after core.begin() run only above a heap floor; below it the system
+// still reaches READY with them skipped. Boot diagnostics is the step a test can see.
+static SystemConfig withBootDiagnostics() {
+    SystemConfig cfg = SystemConfig::minimal();
+    cfg.enableStorage = true;
+    cfg.enableSystemInfo = true;
+    return cfg;
+}
+
+static bool bootCountStored(System& sys) {
+    auto* storage = sys.getCore().getComponent<Components::StorageComponent>("Storage");
+    return storage && storage->exists("boot_count");
+}
+
+void test_post_init_steps_run_with_enough_heap(void) {
+    System sys(withBootDiagnostics());
+    TEST_ASSERT_TRUE(sys.begin());
+    TEST_ASSERT_TRUE(bootCountStored(sys));
+}
+
+void test_post_init_steps_run_at_exactly_the_heap_floor(void) {
+    HAL::Platform::setFreeHeapForTest(System::MIN_HEAP_POST_INIT);
+    System sys(withBootDiagnostics());
+    bool ok = sys.begin();
+    HAL::Platform::resetFreeHeapForTest();
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_TRUE(bootCountStored(sys));
+}
+
+void test_post_init_steps_are_skipped_below_the_heap_floor(void) {
+    HAL::Platform::setFreeHeapForTest(System::MIN_HEAP_POST_INIT - 1);
+    System sys(withBootDiagnostics());
+    bool ok = sys.begin();
+    HAL::Platform::resetFreeHeapForTest();
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL(SystemState::READY, sys.getState());
+    TEST_ASSERT_FALSE(bootCountStored(sys));
+}
+
 void test_boot_goes_straight_from_booting_to_ready(void) {
     // WIFI_CONNECTING, WIFI_CONNECTED and SERVICES_STARTING are declared and
     // have LED patterns, but no code path enters them during a normal boot.
@@ -994,6 +1033,9 @@ int main(int argc, char** argv) {
 
     RUN_TEST(test_a_fresh_system_is_booting);
     RUN_TEST(test_begin_reaches_ready);
+    RUN_TEST(test_post_init_steps_run_with_enough_heap);
+    RUN_TEST(test_post_init_steps_run_at_exactly_the_heap_floor);
+    RUN_TEST(test_post_init_steps_are_skipped_below_the_heap_floor);
     RUN_TEST(test_boot_goes_straight_from_booting_to_ready);
     RUN_TEST(test_state_callback_receives_both_ends_of_the_transition);
     RUN_TEST(test_state_callbacks_are_capped_at_eight);

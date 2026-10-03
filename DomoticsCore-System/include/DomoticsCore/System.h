@@ -142,8 +142,8 @@ public:
      * @return true if initialization successful
      */
     bool begin() {
-        // OBS-3: the first act — what the last death left in RTC, before any
-        // component runs. Held until step 6 has persisted it.
+        // The first act: what the last death left in RTC, before any component
+        // runs. Held until the post-init steps have persisted it.
         FlightRecorder::instance().begin(true);
         if (initialized) {
             DLOG_W(LOG_SYSTEM, "System already initialized");
@@ -154,76 +154,24 @@ public:
         autoDetectModel();
         state = SystemState::BOOTING;
         
-        // 1. Register components
-        registerLEDComponent();
-        registerStorageComponent();
-        registerWifiComponent();
-        registerConsoleComponent();
-        registerOptionalComponents();
-        
-        // 2. Initialize Core
+        registerComponents();
         if (!core.begin()) {
             DLOG_E(LOG_SYSTEM, "Core initialization failed!");
             setState(SystemState::ERROR);
             return false;
         }
-        
-        // Heap guard threshold for post-init steps
-        static constexpr uint32_t MIN_HEAP_POST_INIT = 3072;
+        runPostInitSteps();
+        armLoopWatchdog();
 
-        // 3. Load configurations from Storage
-        if (HAL::getFreeHeap() >= MIN_HEAP_POST_INIT) {
-            SystemHelpers::loadAllConfigs(core, config, wifi);
-        } else {
-            DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping config loading", (unsigned)HAL::getFreeHeap());
-        }
-        
-        // 4. Register WebUI providers
-        if (HAL::getFreeHeap() >= MIN_HEAP_POST_INIT) {
-            SystemHelpers::setupWebUIProviders(core, config, webUIProviders, wifi, console);
-        } else {
-            DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping WebUI providers", (unsigned)HAL::getFreeHeap());
-        }
-        
-        // 5. Setup event orchestration
-        if (HAL::getFreeHeap() >= MIN_HEAP_POST_INIT) {
-            setupEventOrchestration();
-        } else {
-            DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping event orchestration", (unsigned)HAL::getFreeHeap());
-        }
-        
-        // 6. Initialize boot diagnostics persistence
-        if (HAL::getFreeHeap() >= MIN_HEAP_POST_INIT) {
-            initBootDiagnosticsPersistence();
-        } else {
-            DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping boot diagnostics", (unsigned)HAL::getFreeHeap());
-        }
-        // OBS-5: what the crash topic will say, read while the promoted record
-        // is still the one on record; bootCount_ says whether step 6 ran.
-        SystemHelpers::captureLastDeath(core, config, bootCount_ != 0, lastDeath_);
-        // Persisted or not, the promoted record has had its chance: the fresh
-        // one takes RTC now (OBS-3).
-        FlightRecorder::instance().acknowledge();
-        
-        // 6b. Loop watchdog (OBS-7). ESP32 only in effect: the Arduino core
-        // leaves loopTask off the task watchdog, so a stuck loop() hangs forever
-        // instead of rebooting. loop() feeds it; expiry is a panic, hence a core dump.
-        if (config.loopWatchdogSeconds > 0) {
-            if (HAL::Platform::enableLoopWatchdog(config.loopWatchdogSeconds)) {
-                DLOG_I(LOG_SYSTEM, "Loop watchdog armed: %lu s", (unsigned long)config.loopWatchdogSeconds);
-            } else if (HAL::Platform::supportsLoopWatchdog()) {
-                DLOG_W(LOG_SYSTEM, "Loop watchdog requested (%lu s) but did not arm", (unsigned long)config.loopWatchdogSeconds);
-            }
-        }
-
-        // 7. System Ready
         setState(SystemState::READY);
         printReadyBanner();
-        
         initialized = true;
         return true;
     }
     
+    /** @brief Each step after core.begin() runs only with at least this much free heap. */
+    static constexpr uint32_t MIN_HEAP_POST_INIT = 3072;
+
     /**
      * @brief Main loop - call this in Arduino loop()
      */
@@ -257,6 +205,48 @@ public:
     
 private:
     // ========== Initialization Helpers ==========
+
+    void registerComponents() {
+        registerLEDComponent();
+        registerStorageComponent();
+        registerWifiComponent();
+        registerConsoleComponent();
+        registerOptionalComponents();
+    }
+
+    template <typename Step>
+    static void ifHeapAllows(const char* skipped, Step step) {
+        if (HAL::getFreeHeap() >= MIN_HEAP_POST_INIT) {
+            step();
+        } else {
+            DLOG_W(LOG_SYSTEM, "Low heap (%u), skipping %s", (unsigned)HAL::getFreeHeap(), skipped);
+        }
+    }
+
+    void runPostInitSteps() {
+        ifHeapAllows("config loading", [this] { SystemHelpers::loadAllConfigs(core, config, wifi); });
+        ifHeapAllows("WebUI providers", [this] {
+            SystemHelpers::setupWebUIProviders(core, config, webUIProviders, wifi, console);
+        });
+        ifHeapAllows("event orchestration", [this] { setupEventOrchestration(); });
+        ifHeapAllows("boot diagnostics", [this] { initBootDiagnosticsPersistence(); });
+        // What the crash topic will say, read while the promoted record is still
+        // the one on record; bootCount_ says whether the persistence step ran.
+        SystemHelpers::captureLastDeath(core, config, bootCount_ != 0, lastDeath_);
+        // Persisted or not, the promoted record has had its chance: the fresh one takes RTC now.
+        FlightRecorder::instance().acknowledge();
+    }
+
+    // ESP32 only in effect: the Arduino core leaves loopTask off the task watchdog,
+    // so a stuck loop() would hang forever. loop() feeds it; expiry panics, hence a core dump.
+    void armLoopWatchdog() {
+        if (config.loopWatchdogSeconds == 0) return;
+        if (HAL::Platform::enableLoopWatchdog(config.loopWatchdogSeconds)) {
+            DLOG_I(LOG_SYSTEM, "Loop watchdog armed: %lu s", (unsigned long)config.loopWatchdogSeconds);
+        } else if (HAL::Platform::supportsLoopWatchdog()) {
+            DLOG_W(LOG_SYSTEM, "Loop watchdog requested (%lu s) but did not arm", (unsigned long)config.loopWatchdogSeconds);
+        }
+    }
     
     void printBanner() {
         DLOG_I(LOG_SYSTEM, "========================================");
