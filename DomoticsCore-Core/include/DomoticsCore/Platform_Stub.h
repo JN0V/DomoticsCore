@@ -406,11 +406,12 @@ inline uint8_t getChipRevision() {
     return 0;
 }
 
-/**
- * @brief Get unique chip ID (stub - always 0)
- */
+/** @brief Chip id a test sets; 0 unless it does. */
+inline uint64_t stubbedChipIdForTest = 0;
+inline void setChipIdForTest(uint64_t id) { stubbedChipIdForTest = id; }
+
 inline uint64_t getChipId() {
-    return 0;
+    return stubbedChipIdForTest;
 }
 
 /**

@@ -200,6 +200,22 @@ inline void loadDeviceName(Core& core, SystemConfig& config) {
 }
 
 /**
+ * @brief The AP SSID a device gets when none is configured: its name and eight hex
+ *        digits of its chip id, within the 32 bytes an SSID may hold.
+ *
+ * The upper word of a 64-bit id (ESP32) when it has one, else the lower word: a
+ * 32-bit id (ESP8266) shifted right by 32 is 0 on every board.
+ */
+inline String defaultApSsid(const String& deviceName) {
+    const uint64_t chipId = HAL::getChipId();
+    const uint32_t upper = static_cast<uint32_t>(chipId >> 32);
+    const uint32_t suffix = upper ? upper : static_cast<uint32_t>(chipId);
+    char buf[33];   // 23 + '-' + 8 hex + NUL
+    snprintf(buf, sizeof(buf), "%.23s-%08X", deviceName.c_str(), (unsigned)suffix);
+    return String(buf);
+}
+
+/**
  * @brief Load WiFi configuration from Storage
  */
 inline void loadWifiConfig(Core& core, const SystemConfig& config, Components::WifiComponent* wifi) {
@@ -218,10 +234,9 @@ inline void loadWifiConfig(Core& core, const SystemConfig& config, Components::W
     wifiConfig.apSSID = storage->getString("wifi_ap_ssid", wifiConfig.apSSID);
     wifiConfig.apPassword = storage->getString("wifi_ap_pass", wifiConfig.apPassword);
     
-    // Auto-generate AP SSID if empty
+    // A saved empty AP SSID means the default one.
     if (wifiConfig.enableAP && wifiConfig.apSSID.isEmpty()) {
-        uint64_t chipid = HAL::getChipId();
-        wifiConfig.apSSID = config.deviceName + "-" + String((uint32_t)(chipid >> 32), HEX);
+        wifiConfig.apSSID = defaultApSsid(config.deviceName);
     }
     
     if (!wifiConfig.ssid.isEmpty()) {
