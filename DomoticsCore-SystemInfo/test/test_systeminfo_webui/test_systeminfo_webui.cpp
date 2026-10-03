@@ -38,6 +38,82 @@ static bool ok(const String& r) { return r.indexOf("\"success\":true") >= 0; }
 void setUp() {}
 void tearDown() {}
 
+// --- the two diagnostic flags remove their fields from schema and data ------------
+static bool hasField(SystemInfoWebUI& provider, const char* ctxId, const char* field) {
+    bool found = false;
+    provider.forEachContext([&](const DomoticsCore::Components::WebUIContext& ctx) {
+        if (strcmp(ctx.getContextIdCStr(), ctxId) != 0) return true;
+        for (const auto& f : ctx.fields) if (strcmp(f.getNameCStr(), field) == 0) found = true;
+        return false;
+    });
+    return found;
+}
+
+static bool dataHas(SystemInfoWebUI& provider, const char* ctxId, const char* key) {
+    return provider.getWebUIData(ctxId).indexOf(String("\"") + key + "\"") >= 0;
+}
+
+static SystemInfoConfig flags(bool detailed, bool memory) {
+    SystemInfoConfig cfg;
+    cfg.enableDetailedInfo = detailed;
+    cfg.enableMemoryInfo = memory;
+    return cfg;
+}
+
+void test_both_flags_on_show_chip_and_memory(void) {
+    SystemInfoComponent sys(flags(true, true));
+    SystemInfoWebUI provider(&sys);
+    const char* info[] = {"chip", "revision", "cpu_freq", "total_heap", "mem_profile"};
+    for (const char* f : info) {
+        TEST_ASSERT_TRUE_MESSAGE(hasField(provider, "system_info", f), f);
+        TEST_ASSERT_TRUE_MESSAGE(dataHas(provider, "system_info", f), f);
+    }
+    TEST_ASSERT_TRUE(hasField(provider, "system_metrics", "heap_usage"));
+    TEST_ASSERT_TRUE(dataHas(provider, "system_metrics", "heap_usage"));
+}
+
+void test_detailed_info_off_drops_the_chip_fields(void) {
+    SystemInfoComponent sys(flags(false, true));
+    SystemInfoWebUI provider(&sys);
+    const char* chip[] = {"chip", "revision", "cpu_freq"};
+    for (const char* f : chip) {
+        TEST_ASSERT_FALSE_MESSAGE(hasField(provider, "system_info", f), f);
+        TEST_ASSERT_FALSE_MESSAGE(dataHas(provider, "system_info", f), f);
+    }
+    TEST_ASSERT_TRUE(hasField(provider, "system_info", "total_heap"));
+    TEST_ASSERT_TRUE(hasField(provider, "system_info", "firmware"));
+}
+
+void test_memory_info_off_drops_the_memory_fields(void) {
+    SystemInfoComponent sys(flags(true, false));
+    SystemInfoWebUI provider(&sys);
+    const char* mem[] = {"total_heap", "mem_profile"};
+    for (const char* f : mem) {
+        TEST_ASSERT_FALSE_MESSAGE(hasField(provider, "system_info", f), f);
+        TEST_ASSERT_FALSE_MESSAGE(dataHas(provider, "system_info", f), f);
+    }
+    TEST_ASSERT_FALSE(hasField(provider, "system_metrics", "heap_usage"));
+    TEST_ASSERT_FALSE(dataHas(provider, "system_metrics", "heap_usage"));
+    TEST_ASSERT_TRUE(hasField(provider, "system_metrics", "cpu_load"));
+    TEST_ASSERT_TRUE(hasField(provider, "system_info", "chip"));
+}
+
+// A flag changed after the schema was built leaves schema and data in step until
+// the cache is invalidated; then both follow it.
+void test_a_later_flag_change_keeps_schema_and_data_together(void) {
+    SystemInfoComponent sys(flags(true, true));
+    SystemInfoWebUI provider(&sys);
+    TEST_ASSERT_TRUE(hasField(provider, "system_info", "total_heap"));
+
+    sys.setConfig(flags(true, false));
+    TEST_ASSERT_TRUE(hasField(provider, "system_info", "total_heap"));
+    TEST_ASSERT_TRUE(dataHas(provider, "system_info", "total_heap"));
+
+    provider.invalidateContextCache();
+    TEST_ASSERT_FALSE(hasField(provider, "system_info", "total_heap"));
+    TEST_ASSERT_FALSE(dataHas(provider, "system_info", "total_heap"));
+}
+
 // --- a normal name is accepted and stored ---------------------------------------
 void test_a_normal_name_is_accepted(void) {
     SystemInfoComponent sys;
@@ -162,6 +238,10 @@ int main(int, char**) {
     RUN_TEST(test_the_context_the_header_posts_is_the_one_that_renames);
     RUN_TEST(test_a_request_without_a_value_is_refused);
     RUN_TEST(test_getwebuidata_carries_the_device_name);
+    RUN_TEST(test_both_flags_on_show_chip_and_memory);
+    RUN_TEST(test_detailed_info_off_drops_the_chip_fields);
+    RUN_TEST(test_memory_info_off_drops_the_memory_fields);
+    RUN_TEST(test_a_later_flag_change_keeps_schema_and_data_together);
     RUN_TEST(test_a_null_component_is_refused_rather_than_dereferenced);
     return UNITY_END();
 }

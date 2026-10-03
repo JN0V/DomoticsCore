@@ -31,26 +31,42 @@ private:
     };
     LazyState<SystemInfoState> systemInfoState;
 
+    // The diagnostic flags as the schema was built with them: the data follows the
+    // schema, so a flag changed later waits for invalidateContextCache().
+    bool showDetailed_ = true;
+    bool showMemory_ = true;
+
 protected:
     // CachingWebUIProvider: build contexts once, they're cached
     void buildContexts(std::vector<WebUIContext>& contexts) override {
         if (!sys) return;
 
+        // A field left out of the schema must also be left out of the data.
+        showDetailed_ = sys->getConfig().enableDetailedInfo;
+        showMemory_ = sys->getConfig().enableMemoryInfo;
+
         // Dashboard: Static hardware info - placeholder values, real values from getWebUIData()
-        contexts.push_back(WebUIContext::dashboard("system_info", "Device Information")
-            .withField(WebUIField("manufacturer", "Manufacturer", WebUIFieldType::Display, "", "", true))
-            .withField(WebUIField("firmware", "Firmware", WebUIFieldType::Display, "", "", true))
-            .withField(WebUIField("chip", "Chip", WebUIFieldType::Display, "", "", true))
-            .withField(WebUIField("revision", "Revision", WebUIFieldType::Display, "", "", true))
-            .withField(WebUIField("cpu_freq", "CPU Freq", WebUIFieldType::Display, "", "", true))
-            .withField(WebUIField("total_heap", "Total Heap", WebUIFieldType::Display, "", "", true))
-            .withField(WebUIField("mem_profile", "Mem Profile", WebUIFieldType::Display, "", "", true)));
+        WebUIContext info = WebUIContext::dashboard("system_info", "Device Information");
+        info.withField(WebUIField("manufacturer", "Manufacturer", WebUIFieldType::Display, "", "", true))
+            .withField(WebUIField("firmware", "Firmware", WebUIFieldType::Display, "", "", true));
+        if (showDetailed_) {
+            info.withField(WebUIField("chip", "Chip", WebUIFieldType::Display, "", "", true))
+                .withField(WebUIField("revision", "Revision", WebUIFieldType::Display, "", "", true))
+                .withField(WebUIField("cpu_freq", "CPU Freq", WebUIFieldType::Display, "", "", true));
+        }
+        if (showMemory_) {
+            info.withField(WebUIField("total_heap", "Total Heap", WebUIFieldType::Display, "", "", true))
+                .withField(WebUIField("mem_profile", "Mem Profile", WebUIFieldType::Display, "", "", true));
+        }
+        contexts.push_back(info);
 
         // Dashboard: Real-time metrics with charts
-        contexts.push_back(WebUIContext::dashboard("system_metrics", "System Metrics")
-            .withField(WebUIField("cpu_load", "CPU Load", WebUIFieldType::Chart, "", "%"))
-            .withField(WebUIField("heap_usage", "Memory Usage", WebUIFieldType::Chart, "", "%"))
-            .withRealTime(2000));
+        WebUIContext live = WebUIContext::dashboard("system_metrics", "System Metrics");
+        live.withField(WebUIField("cpu_load", "CPU Load", WebUIFieldType::Chart, "", "%"));
+        if (showMemory_) {
+            live.withField(WebUIField("heap_usage", "Memory Usage", WebUIFieldType::Chart, "", "%"));
+        }
+        contexts.push_back(live.withRealTime(2000));
 
         // Settings: Device Name only
         contexts.push_back(WebUIContext::settings("system_settings", "Device Settings")
@@ -72,6 +88,7 @@ public:
 
     String getWebUIData(const String& contextId) override {
         if (!sys) return "{}";
+        ensureContextsCached();
         const auto& metrics = sys->getMetrics();
         const auto& cfg = sys->getConfig();
 
@@ -79,19 +96,25 @@ public:
             JsonDocument doc;
             doc["manufacturer"] = cfg.manufacturer;
             doc["firmware"] = cfg.firmwareVersion;
-            doc["chip"] = metrics.chipModel;
-            doc["revision"] = metrics.chipRevision;
-            doc["cpu_freq"] = String((uint32_t)metrics.cpuFreq) + " MHz";
-            doc["total_heap"] = String(metrics.totalHeap / 1024) + " KB";
-            doc["mem_profile"] = MemoryManager::instance().getProfileName();
+            if (showDetailed_) {
+                doc["chip"] = metrics.chipModel;
+                doc["revision"] = metrics.chipRevision;
+                doc["cpu_freq"] = String((uint32_t)metrics.cpuFreq) + " MHz";
+            }
+            if (showMemory_) {
+                doc["total_heap"] = String(metrics.totalHeap / 1024) + " KB";
+                doc["mem_profile"] = MemoryManager::instance().getProfileName();
+            }
             String json; serializeJson(doc, json); return json;
 
         } else if (contextId == "system_metrics") {
             JsonDocument doc;
             doc["cpu_load"] = metrics.cpuLoad;
-            float heapPercent = metrics.totalHeap > 0 ?
-                ((float)(metrics.totalHeap - metrics.freeHeap) / metrics.totalHeap) * 100.0f : 0.0f;
-            doc["heap_usage"] = heapPercent;
+            if (showMemory_) {
+                float heapPercent = metrics.totalHeap > 0 ?
+                    ((float)(metrics.totalHeap - metrics.freeHeap) / metrics.totalHeap) * 100.0f : 0.0f;
+                doc["heap_usage"] = heapPercent;
+            }
             String json; serializeJson(doc, json); return json;
 
         } else if (contextId == "system_settings") {
