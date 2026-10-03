@@ -1,6 +1,6 @@
 /**
  * @file test_webui_component.cpp
- * @brief WebUI component: WebUIConfig, WebUIField, WebUIContext, location, presentation and LazyState.
+ * @brief WebUI component: WebUIConfig, WebUIField, WebUIContext, location and LazyState.
  */
 
 #include <unity.h>
@@ -239,13 +239,12 @@ void test_webui_field_all_types() {
 // ============================================================================
 
 void test_webui_context_basic_construction() {
-    WebUIContext ctx("test_ctx", "Test Context", "dc-test", WebUILocation::Dashboard, WebUIPresentation::Card);
+    WebUIContext ctx("test_ctx", "Test Context", "dc-test", WebUILocation::Dashboard);
 
     TEST_ASSERT_EQUAL_STRING("test_ctx", ctx.getContextIdCStr());
     TEST_ASSERT_EQUAL_STRING("Test Context", ctx.getTitleCStr());
     TEST_ASSERT_EQUAL_STRING("dc-test", ctx.getIconCStr());
     TEST_ASSERT_EQUAL(WebUILocation::Dashboard, ctx.location);
-    TEST_ASSERT_EQUAL(WebUIPresentation::Card, ctx.presentation);
     TEST_ASSERT_EQUAL_INT(0, ctx.priority);
     TEST_ASSERT_FALSE(ctx.realTime);
     TEST_ASSERT_EQUAL_INT(5000, ctx.updateInterval);
@@ -258,15 +257,6 @@ void test_webui_context_factory_dashboard() {
     TEST_ASSERT_EQUAL_STRING("Dashboard Card", ctx.getTitleCStr());
     TEST_ASSERT_EQUAL_STRING("dc-dashboard", ctx.getIconCStr());
     TEST_ASSERT_EQUAL(WebUILocation::Dashboard, ctx.location);
-    TEST_ASSERT_EQUAL(WebUIPresentation::Card, ctx.presentation);
-}
-
-void test_webui_context_factory_gauge() {
-    auto ctx = WebUIContext::gauge("gauge_id", "Gauge Title");
-
-    TEST_ASSERT_EQUAL_STRING("gauge_id", ctx.getContextIdCStr());
-    TEST_ASSERT_EQUAL(WebUILocation::Dashboard, ctx.location);
-    TEST_ASSERT_EQUAL(WebUIPresentation::Gauge, ctx.presentation);
 }
 
 void test_webui_context_factory_status_badge() {
@@ -274,7 +264,6 @@ void test_webui_context_factory_status_badge() {
 
     TEST_ASSERT_EQUAL_STRING("status_id", ctx.getContextIdCStr());
     TEST_ASSERT_EQUAL(WebUILocation::HeaderStatus, ctx.location);
-    TEST_ASSERT_EQUAL(WebUIPresentation::StatusBadge, ctx.presentation);
     // Icon is stored in icon field, rendered by frontend JS
     TEST_ASSERT_EQUAL_STRING("dc-wifi", ctx.getIconCStr());
 }
@@ -284,7 +273,14 @@ void test_webui_context_factory_header_info() {
 
     TEST_ASSERT_EQUAL_STRING("time_id", ctx.getContextIdCStr());
     TEST_ASSERT_EQUAL(WebUILocation::HeaderInfo, ctx.location);
-    TEST_ASSERT_EQUAL(WebUIPresentation::Text, ctx.presentation);
+}
+
+void test_webui_context_factory_quick_control() {
+    auto ctx = WebUIContext::quickControl("qc_id", "Quick");
+
+    TEST_ASSERT_EQUAL_STRING("qc_id", ctx.getContextIdCStr());
+    TEST_ASSERT_EQUAL(WebUILocation::QuickControls, ctx.location);
+    TEST_ASSERT_EQUAL_STRING("dc-settings", ctx.getIconCStr());
 }
 
 void test_webui_context_factory_settings() {
@@ -292,7 +288,6 @@ void test_webui_context_factory_settings() {
 
     TEST_ASSERT_EQUAL_STRING("settings_id", ctx.getContextIdCStr());
     TEST_ASSERT_EQUAL(WebUILocation::Settings, ctx.location);
-    TEST_ASSERT_EQUAL(WebUIPresentation::Card, ctx.presentation);
 }
 
 void test_webui_context_fluent_with_field() {
@@ -369,7 +364,7 @@ void test_webui_context_copy_constructor() {
 }
 
 // ============================================================================
-// WebUILocation and WebUIPresentation Tests
+// WebUILocation Tests
 // ============================================================================
 
 void test_webui_locations_enum() {
@@ -383,23 +378,6 @@ void test_webui_locations_enum() {
 
     TEST_ASSERT_NOT_EQUAL(loc1, loc2);
     TEST_ASSERT_NOT_EQUAL(loc3, loc6);
-}
-
-void test_webui_presentations_enum() {
-    // Verify all presentation enum values are accessible
-    WebUIPresentation p1 = WebUIPresentation::Card;
-    WebUIPresentation p2 = WebUIPresentation::Gauge;
-    WebUIPresentation p3 = WebUIPresentation::Graph;
-    WebUIPresentation p4 = WebUIPresentation::StatusBadge;
-    WebUIPresentation p5 = WebUIPresentation::ProgressBar;
-    WebUIPresentation p6 = WebUIPresentation::Table;
-    WebUIPresentation p7 = WebUIPresentation::Toggle;
-    WebUIPresentation p8 = WebUIPresentation::Slider;
-    WebUIPresentation p9 = WebUIPresentation::Text;
-    WebUIPresentation p10 = WebUIPresentation::Button;
-
-    TEST_ASSERT_NOT_EQUAL(p1, p2);
-    TEST_ASSERT_NOT_EQUAL(p9, p10);
 }
 
 // ============================================================================
@@ -534,9 +512,9 @@ int main() {
     // WebUIContext tests
     RUN_TEST(test_webui_context_basic_construction);
     RUN_TEST(test_webui_context_factory_dashboard);
-    RUN_TEST(test_webui_context_factory_gauge);
     RUN_TEST(test_webui_context_factory_status_badge);
     RUN_TEST(test_webui_context_factory_header_info);
+    RUN_TEST(test_webui_context_factory_quick_control);
     RUN_TEST(test_webui_context_factory_settings);
     RUN_TEST(test_webui_context_fluent_with_field);
     RUN_TEST(test_webui_context_fluent_with_multiple_fields);
@@ -549,7 +527,6 @@ int main() {
 
     // Enum tests
     RUN_TEST(test_webui_locations_enum);
-    RUN_TEST(test_webui_presentations_enum);
 
     // LazyState tests
     RUN_TEST(test_lazy_state_initial_uninitialized);

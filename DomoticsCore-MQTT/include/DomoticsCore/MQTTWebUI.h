@@ -84,7 +84,7 @@ protected:
 
         // Component detail with statistics - placeholder values
         WebUIContext detail = WebUIContext("mqtt_detail", "MQTT Client", "dc-mqtt",
-                                          WebUILocation::ComponentDetail, WebUIPresentation::Card);
+                                          WebUILocation::ComponentDetail);
 
         detail.withField(WebUIField("broker_addr", "Broker", WebUIFieldType::Text, ""))
               .withField(WebUIField("state", "Connection State", WebUIFieldType::Status, "Disconnected"))

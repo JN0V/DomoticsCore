@@ -21,7 +21,6 @@ void serializeContextToJson(JsonObject& obj, const WebUIContext& context) {
     obj["title"] = context.getTitleCStr();
     obj["icon"] = context.getIconCStr();
     obj["location"] = (int)context.location;
-    obj["presentation"] = (int)context.presentation;
     obj["priority"] = context.priority;
     obj["apiEndpoint"] = context.getApiEndpointCStr();
     obj["alwaysInteractive"] = context.alwaysInteractive;
@@ -154,7 +153,7 @@ void test_integration_detect_dangling_string_pointers() {
             // BAD: Using a temporary String that will be destroyed
             String tempValue = "temp_value_" + String(HAL::getMillis());
             ctxs.push_back(WebUIContext{"bad_ctx", "Bad", "dc-warning", 
-                                        WebUILocation::Dashboard, WebUIPresentation::Card}
+                                        WebUILocation::Dashboard}
                 .withField(WebUIField("bad_field", "Bad", WebUIFieldType::Text, tempValue.c_str())));
         }
     public:
@@ -171,7 +170,7 @@ void test_integration_detect_dangling_string_pointers() {
         void buildContexts(std::vector<WebUIContext>& ctxs) override {
             // GOOD: Using static string literal
             ctxs.push_back(WebUIContext{"good_ctx", "Good", "dc-check", 
-                                        WebUILocation::Dashboard, WebUIPresentation::Card}
+                                        WebUILocation::Dashboard}
                 .withField(WebUIField("good_field", "Good", WebUIFieldType::Text, "static_value")));
         }
     public:

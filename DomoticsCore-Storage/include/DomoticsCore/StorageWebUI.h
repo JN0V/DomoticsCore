@@ -24,7 +24,7 @@ protected:
 
         // Component detail - placeholder values, real values from getWebUIData()
         ctxs.push_back(WebUIContext{
-            "storage_component", "Storage", "dc-info", WebUILocation::ComponentDetail, WebUIPresentation::Card
+            "storage_component", "Storage", "dc-info", WebUILocation::ComponentDetail
         }
         .withField(WebUIField("namespace", "Namespace", WebUIFieldType::Display, "", "", true))
         .withField(WebUIField("entries", "Used Entries", WebUIFieldType::Display, "0", "", true))

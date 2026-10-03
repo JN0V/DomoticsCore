@@ -201,7 +201,6 @@ Describes where and how a piece of component UI appears in the dashboard.
 | `title` / `titlePtr` | `String` / `const char*` | Display title. |
 | `icon` / `iconPtr` | `String` / `const char*` | Icon class name. |
 | `location` | `WebUILocation` | Where to display (Dashboard, HeaderStatus, Settings, etc.). |
-| `presentation` | `WebUIPresentation` | How to display (Card, Gauge, Graph, StatusBadge, etc.). |
 | `priority` | `int` | Sort order (higher = displayed first). Default `0`. |
 | `fields` | `std::vector<WebUIField>` | The fields in this context. |
 | `apiEndpoint` / `apiEndpointPtr` | `String` / `const char*` | Optional path served on `GET` with this context's data (see [`GET <withAPI path>`](#get-withapi-path)). |
@@ -233,15 +232,15 @@ WebUIContext& withCustomJsDynamic(const String& js);      // heap
 
 Each factory has both `const char*` and `String` overloads:
 
-| Factory | Location | Presentation | Default Icon |
-|---------|----------|-------------|--------------|
-| `dashboard(id, title, icon)` | Dashboard | Card | `fas fa-tachometer-alt` |
-| `gauge(id, title, icon)` | Dashboard | Gauge | `fas fa-gauge` |
-| `statusBadge(id, title, icon)` | HeaderStatus | StatusBadge | `dc-info` |
-| `headerInfo(id, label, icon)` | HeaderInfo | Text | `dc-info` |
-| `graph(id, title, icon)` | ComponentDetail | Graph | `dc-chart` |
-| `quickControl(id, title, icon)` | QuickControls | Toggle | `dc-settings` |
-| `settings(id, title, icon)` | Settings | Card | `dc-cog` |
+| Factory | Location | Default Icon |
+|---------|----------|--------------|
+| `dashboard(id, title, icon)` | Dashboard | `fas fa-tachometer-alt` |
+| `statusBadge(id, title, icon)` | HeaderStatus | `dc-info` |
+| `headerInfo(id, label, icon)` | HeaderInfo | `dc-info` |
+| `quickControl(id, title, icon)` | QuickControls | `dc-settings` |
+| `settings(id, title, icon)` | Settings | `dc-cog` |
+
+The location decides how a context is drawn: a card on the Dashboard, in Settings and in the component details, a badge in HeaderStatus, a line in HeaderInfo. QuickControls is not drawn by the current page: a context there reaches the schema and is shown nowhere. How each value is drawn is its field's `WebUIFieldType`; a new kind of display (a gauge, a table) is added as a field type.
 
 ### Hybrid String Accessors
 
@@ -313,21 +312,6 @@ WebUIField& api(const char* endpoint);
 | `QuickControls` | Sidebar quick actions |
 | `Settings` | Settings / configuration area |
 | `HeaderInfo` | Main header info zone (time, uptime) |
-
-### WebUIPresentation
-
-| Value | Description |
-|-------|-------------|
-| `Card` | Standard card layout |
-| `Gauge` | Circular gauge / meter |
-| `Graph` | Time-series chart |
-| `StatusBadge` | Small status indicator |
-| `ProgressBar` | Progress / percentage bar |
-| `Table` | Tabular data |
-| `Toggle` | On/off switch |
-| `Slider` | Range control |
-| `Text` | Simple text display |
-| `Button` | Action button |
 
 ### WebUIFieldType
 
@@ -406,7 +390,7 @@ static WebUIContext createLineChart(
 );
 ```
 
-Returns a full `WebUIContext` (location: Dashboard, presentation: Card) containing custom HTML, CSS, and JavaScript for a real-time scrolling line chart. The CSS is stored in a `static const char[] PROGMEM` to avoid heap allocation.
+Returns a full `WebUIContext` (location: Dashboard) containing custom HTML, CSS, and JavaScript for a real-time scrolling line chart. The CSS is stored in a `static const char[] PROGMEM` to avoid heap allocation.
 
 ---
 
@@ -478,7 +462,7 @@ State machine that serializes a `WebUIContext` to JSON, writing directly to a by
 
 ### State Machine
 
-The serializer walks through states in order: `OpenBrace` -> `ContextId` -> `Title` -> `Icon` -> `Location` -> `Presentation` -> `Priority` -> `ApiEndpoint` -> `AlwaysInteractive` -> optional `CustomHtml/Css/Js` -> `Fields` array (each field has its own sub-state machine) -> `CloseBrace` -> `Complete`.
+The serializer walks through states in order: `OpenBrace` -> `ContextId` -> `Title` -> `Icon` -> `Location` -> `Priority` -> `ApiEndpoint` -> `AlwaysInteractive` -> optional `CustomHtml/Css/Js` -> `Fields` array (each field has its own sub-state machine) -> `CloseBrace` -> `Complete`.
 
 All JSON string values are properly escaped (quotes, backslashes, control characters). Large custom HTML/CSS/JS strings are streamed incrementally.
 

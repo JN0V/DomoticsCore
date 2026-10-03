@@ -101,7 +101,7 @@ protected:
 
         // Components tab - compact status display
         ctxs.push_back(WebUIContext{
-            "wifi_component", "WiFi", "dc-wifi", WebUILocation::ComponentDetail, WebUIPresentation::Card
+            "wifi_component", "WiFi", "dc-wifi", WebUILocation::ComponentDetail
         }
         .withField(WebUIField("mode", "Mode", WebUIFieldType::Display, "AP", "", true))
         .withField(WebUIField("ssid_now", "Network", WebUIFieldType::Display, "", "", true))
