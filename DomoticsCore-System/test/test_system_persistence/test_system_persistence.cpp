@@ -183,14 +183,8 @@ void test_ap_settings_are_restored(void) {
 }
 
 void test_an_absent_ap_ssid_keeps_the_one_the_component_already_has(void) {
-    // loadWifiConfig() carries a branch that builds an AP SSID from the device
-    // name when the stored one is empty. It does not fire here, and as far as
-    // this suite can tell it never fires: WifiComponent::begin() has already
-    // fallen back to AP mode and named itself "DomoticsCore-<MAC>", so the SSID
-    // the loader inspects is never empty. See PERSIST-1 in CODE-ROADMAP.
-    //
-    // The behaviour is pinned as it is rather than as the branch intends, so
-    // whoever settles PERSIST-1 sees this test change with it.
+    // With no AP SSID stored, the loader keeps the one the component already
+    // holds, here the "DomoticsCore-<MAC>" of a component begun without one.
     Fixture f;
     f.storage->putString("wifi_ssid", "HomeNet");
     f.storage->putBool("wifi_ap_en", true);
@@ -204,6 +198,46 @@ void test_an_absent_ap_ssid_keeps_the_one_the_component_already_has(void) {
     TEST_ASSERT_FALSE(apSSID.isEmpty());
     TEST_ASSERT_FALSE(apSSID.startsWith(String("Kitchen-")));
     TEST_ASSERT_TRUE(apSSID.startsWith(String("DomoticsCore-")));
+}
+
+// The settings form can save an empty AP SSID; the device must still come up
+// under the name registration gives it, not under a second spelling of it.
+void test_an_empty_stored_ap_ssid_gets_the_registration_name(void) {
+    Fixture f;
+    f.storage->putString("wifi_ssid", "HomeNet");
+    f.storage->putBool("wifi_ap_en", true);
+    f.storage->putString("wifi_ap_ssid", "");
+
+    SystemConfig config = storageEnabled();
+    config.deviceName = "Kitchen";
+    loadWifiConfig(f.core, config, f.wifi);
+
+    TEST_ASSERT_EQUAL_STRING(defaultApSsid("Kitchen").c_str(), f.wifi->getConfig().apSSID.c_str());
+}
+
+// Upper case, eight digits, from the upper word of a 64-bit id.
+void test_the_default_ap_ssid_reads_the_upper_word_of_a_64_bit_id(void) {
+    HAL::Platform::setChipIdForTest(0x0000F6E5A1B2C3D4ull);
+    String ssid = defaultApSsid("Kitchen");
+    HAL::Platform::setChipIdForTest(0);
+    TEST_ASSERT_EQUAL_STRING("Kitchen-0000F6E5", ssid.c_str());
+}
+
+// A 32-bit id has no upper word: its lower word tells two boards apart.
+void test_the_default_ap_ssid_reads_a_32_bit_id_whole(void) {
+    HAL::Platform::setChipIdForTest(0x00A1B2C3ull);
+    String ssid = defaultApSsid("Kitchen");
+    HAL::Platform::setChipIdForTest(0);
+    TEST_ASSERT_EQUAL_STRING("Kitchen-00A1B2C3", ssid.c_str());
+}
+
+// An SSID holds 32 bytes: the name gives way, the suffix does not.
+void test_the_default_ap_ssid_fits_an_ssid(void) {
+    HAL::Platform::setChipIdForTest(0x12345678ull);
+    String ssid = defaultApSsid("A-very-long-device-name-for-the-garden-shed");
+    HAL::Platform::setChipIdForTest(0);
+    TEST_ASSERT_EQUAL_UINT(32u, ssid.length());
+    TEST_ASSERT_EQUAL_STRING("A-very-long-device-name-12345678", ssid.c_str());
 }
 
 void test_an_explicit_ssid_in_code_beats_the_stored_one(void) {
@@ -532,6 +566,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_wifi_credentials_are_restored);
     RUN_TEST(test_ap_settings_are_restored);
     RUN_TEST(test_an_absent_ap_ssid_keeps_the_one_the_component_already_has);
+    RUN_TEST(test_an_empty_stored_ap_ssid_gets_the_registration_name);
+    RUN_TEST(test_the_default_ap_ssid_reads_the_upper_word_of_a_64_bit_id);
+    RUN_TEST(test_the_default_ap_ssid_reads_a_32_bit_id_whole);
+    RUN_TEST(test_the_default_ap_ssid_fits_an_ssid);
     RUN_TEST(test_an_explicit_ssid_in_code_beats_the_stored_one);
     RUN_TEST(test_an_empty_stored_ssid_leaves_the_component_alone);
     RUN_TEST(test_a_null_wifi_component_is_survived);

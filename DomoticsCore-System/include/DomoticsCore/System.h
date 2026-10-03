@@ -321,12 +321,7 @@ private:
         
         if (config.wifiSSID.isEmpty() && config.wifiAutoConfig) {
             String apSSID = config.wifiAPSSID;
-            if (apSSID.isEmpty()) {
-                uint64_t chipid = HAL::getChipId();
-                char apBuf[64];
-                snprintf(apBuf, sizeof(apBuf), "%s-%08X", config.deviceName.c_str(), (uint32_t)(chipid >> 32));
-                apSSID = apBuf;
-            }
+            if (apSSID.isEmpty()) apSSID = SystemHelpers::defaultApSsid(config.deviceName);
             wifi->enableAP(apSSID, config.wifiAPPassword);
             DLOG_I(LOG_SYSTEM, "✓ WiFi AP mode enabled: %s", apSSID.c_str());
         }

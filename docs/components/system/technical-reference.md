@@ -109,7 +109,7 @@ All fields have sensible defaults. Fields are grouped by functional area.
 | `wifiAutoConfig` | `bool` | `true` | Enables automatic AP mode when no SSID is configured |
 | `wifiSSID` | `String` | `""` | Station mode SSID. Empty triggers AP mode if `wifiAutoConfig` is true |
 | `wifiPassword` | `String` | `""` | Station mode password |
-| `wifiAPSSID` | `String` | `""` | AP SSID. Auto-generated as `{deviceName}-{chipIdHex}` if empty |
+| `wifiAPSSID` | `String` | `""` | AP SSID. Empty means `{deviceName}-{XXXXXXXX}`: the name cut to 23 characters, then eight upper-case hex digits of the chip id (its upper word on ESP32, the whole 32-bit id on ESP8266). A stored empty AP SSID gets the same name |
 | `wifiAPPassword` | `String` | `""` | AP password. Empty creates an open access point |
 
 ### LED
