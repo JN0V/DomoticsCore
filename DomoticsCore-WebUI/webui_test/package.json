@@ -1,0 +1,14 @@
+{
+  "name": "domoticscore-webui-test",
+  "private": true,
+  "description": "Runs webui_src/app.js in jsdom: the front end every firmware ships.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test app.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "24.1.3"
+  }
+}
