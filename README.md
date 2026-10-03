@@ -1,12 +1,12 @@
 <!-- workline
 sources: [library.json, library.properties, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, tools/check_versions.py, tools/bump_version.py]
 checked: d54dae8
-judged-in-parts: 25bc3f1
+judged-in-parts: ed7add7
 -->
 
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-2.12.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v2.0.0)
+[![Version](https://img.shields.io/badge/version-2.12.1-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v2.0.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32%20|%20ESP32--C3%20|%20ESP8266-orange.svg)](https://platformio.org/)
 
@@ -197,7 +197,7 @@ fixes. Read the entries between the version you run and the one you take.
 
 | Component | Version | Description | Size | Status |
 |-----------|---------|-------------|------|--------|
-| **Core** | 1.13.1 | Framework, registry, event bus, MemoryManager, HeapTracker | ~50KB | ✅ Stable |
+| **Core** | 1.13.2 | Framework, registry, event bus, MemoryManager, HeapTracker | ~50KB | ✅ Stable |
 | **System** | 1.10.0 | High-level orchestration (batteries included) | ~100KB | ✅ Stable |
 | **WiFi** | 1.7.0 | Network connectivity with AP fallback | ~40KB | ✅ Stable |
 | **LED** | 1.6.0 | Visual status indicators (6 effects) | ~20KB | ✅ Stable |
@@ -205,7 +205,7 @@ fixes. Read the entries between the version you run and the one you take.
 | **RemoteConsole** | 1.7.2 | Telnet debugging console with WebUI integration | ~25KB | ✅ Stable |
 | **WebUI** | 1.12.0 | Web interface with WebSocket + SSE dual-mode | ~150KB | ✅ Stable |
 | **MQTT** | 1.10.0 | Message broker with auto-reconnect | ~40KB | ✅ Stable |
-| **NTP** | 1.4.2 | Time synchronization | ~15KB | ✅ Stable |
+| **NTP** | 1.4.3 | Time synchronization | ~15KB | ✅ Stable |
 | **OTA** | 1.11.0 | Over-the-air updates | ~30KB | ✅ Stable |
 | **HomeAssistant** | 2.6.0 | Auto-discovery integration | ~20KB | ✅ Stable |
 | **SystemInfo** | 1.7.0 | Real-time monitoring with charts | ~25KB | ✅ Stable |
