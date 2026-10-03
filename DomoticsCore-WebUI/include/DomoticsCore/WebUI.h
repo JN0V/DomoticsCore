@@ -52,7 +52,7 @@ class WebUIComponent : public IComponent, public CachingWebUIProvider, public Co
 private:
     WebUIConfig config;
     
-    // Sub-managers
+    // Sub-managers. webServer first: it owns the SSE source and must outlive webSocket.
     std::unique_ptr<WebUI::WebServerManager> webServer;
     std::unique_ptr<WebUI::WebSocketHandler> webSocket;
     std::unique_ptr<WebUI::ProviderRegistry> registry;

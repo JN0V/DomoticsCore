@@ -336,6 +336,7 @@ public:
     explicit AsyncWebServer(uint16_t port) : port_(port) { instances().push_back(this); }
 
     ~AsyncWebServer() {
+        for (auto* handler : handlers) delete handler;
         auto& all = instances();
         for (auto it = all.begin(); it != all.end(); ++it) {
             if (*it == this) { all.erase(it); break; }
@@ -370,7 +371,14 @@ public:
                                        std::move(uploadHandler), true});
     }
 
+    // Owns the handler, as the library does.
     void addHandler(AsyncWebHandler* handler) { handlers.push_back(handler); }
+    bool removeHandler(AsyncWebHandler* handler) {
+        for (auto it = handlers.begin(); it != handlers.end(); ++it) {
+            if (*it == handler) { delete handler; handlers.erase(it); return true; }
+        }
+        return false;
+    }
     void begin() { running = true; }
     void end() { running = false; endCalls++; }
     uint16_t port() const { return port_; }
