@@ -43,7 +43,7 @@ std::string serializeContextToStdString(const WebUIContext& ctx) {
 // Test basic context serialization
 void test_basic_context_serialization(void) {
     WebUIContext ctx("test_id", "Test Title", "test-icon",
-                     WebUILocation::Dashboard, WebUIPresentation::Card);
+                     WebUILocation::Dashboard);
     ctx.withField(WebUIField("field1", "Field One", WebUIFieldType::Text, "value1"));
     ctx.priority = 10;
     ctx.apiEndpoint = "/api/test";
@@ -62,7 +62,7 @@ void test_basic_context_serialization(void) {
     TEST_ASSERT_EQUAL_STRING("Test Title", doc["title"].as<const char*>());
     TEST_ASSERT_EQUAL_STRING("test-icon", doc["icon"].as<const char*>());
     TEST_ASSERT_EQUAL(0, doc["location"].as<int>()); // Dashboard = 0
-    TEST_ASSERT_EQUAL(0, doc["presentation"].as<int>()); // Card = 0
+    TEST_ASSERT_TRUE(doc["presentation"].isNull());   // the page renders by location and field type
     TEST_ASSERT_EQUAL(10, doc["priority"].as<int>());
     TEST_ASSERT_EQUAL_STRING("/api/test", doc["apiEndpoint"].as<const char*>());
 
@@ -77,7 +77,7 @@ void test_basic_context_serialization(void) {
 // Test context with special characters that need escaping
 void test_json_escaping(void) {
     WebUIContext ctx("escape_test", "Title with \"quotes\"", "icon",
-                     WebUILocation::Dashboard, WebUIPresentation::Card);
+                     WebUILocation::Dashboard);
     ctx.withField(WebUIField("field1", "Label\nwith\nnewlines", WebUIFieldType::Text,
                              "value\\with\\backslash"));
 
@@ -99,7 +99,7 @@ void test_json_escaping(void) {
 // Test context with large customHtml/customCss/customJs
 void test_large_custom_content(void) {
     WebUIContext ctx("custom_test", "Custom Test", "icon",
-                     WebUILocation::Settings, WebUIPresentation::Card);
+                     WebUILocation::Settings);
 
     // Simulate large HTML content like in LEDWebUI
     const char* largeHtml = R"(
@@ -163,7 +163,7 @@ void test_large_custom_content(void) {
 // Test multiple fields with options
 void test_field_with_options(void) {
     WebUIContext ctx("select_test", "Select Test", "icon",
-                     WebUILocation::Settings, WebUIPresentation::Card);
+                     WebUILocation::Settings);
 
     WebUIField selectField("effect", "Effect", WebUIFieldType::Select, "Solid");
     selectField.choices({"Solid", "Blink", "Fade", "Pulse"});
@@ -186,7 +186,7 @@ void test_field_with_options(void) {
 // Regression: an option-label key/value pair may span any HTTP response chunk.
 void test_option_labels_across_chunk_boundaries(void) {
     WebUIContext ctx("option_labels", "Option Labels", "icon",
-                     WebUILocation::Settings, WebUIPresentation::Card);
+                     WebUILocation::Settings);
     WebUIField field("mode", "Mode", WebUIFieldType::Select, "option_b");
     field.addOption("option_a", "First Option")
          .addOption("option_b", "Second Option")
@@ -324,7 +324,7 @@ void test_serialize_multiple_contexts(void) {
 // Test chunked writing (simulates small buffer conditions)
 void test_chunked_serialization(void) {
     WebUIContext ctx("chunked_test", "Chunked Test", "icon",
-                     WebUILocation::Dashboard, WebUIPresentation::Card);
+                     WebUILocation::Dashboard);
     ctx.withField(WebUIField("field1", "Field One", WebUIFieldType::Text, "value1"));
     ctx.withField(WebUIField("field2", "Field Two", WebUIFieldType::Number, "42"));
     ctx.withCustomHtml("<div>Custom HTML Content</div>");
@@ -366,13 +366,13 @@ void test_chunked_serialization(void) {
 void test_hybrid_ptr_vs_string_identical_json(void) {
     // Context built with const char* (Ptr path)
     WebUIContext ptrCtx("hybrid_test", "Hybrid Title", "dc-test",
-                        WebUILocation::Dashboard, WebUIPresentation::Card);
+                        WebUILocation::Dashboard);
     ptrCtx.withField(WebUIField("sensor", "Sensor Value", WebUIFieldType::Number, "42", "°C"));
     ptrCtx.withAPI("/api/hybrid");
 
     // Context built with String (String path)
     WebUIContext strCtx(String("hybrid_test"), String("Hybrid Title"), String("dc-test"),
-                        WebUILocation::Dashboard, WebUIPresentation::Card);
+                        WebUILocation::Dashboard);
     strCtx.withField(WebUIField(String("sensor"), String("Sensor Value"), WebUIFieldType::Number, String("42"), String("°C")));
     strCtx.withAPI(String("/api/hybrid"));
 

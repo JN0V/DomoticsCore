@@ -71,7 +71,7 @@ protected:
         // Simulate WifiWebUI (5 contexts)
         ctxs.push_back(WebUIContext::statusBadge("wifi_status", "WiFi", "dc-wifi").withRealTime(2000));
         ctxs.push_back(WebUIContext::statusBadge("ap_status", "AP", "dc-ap").withRealTime(2000));
-        ctxs.push_back(WebUIContext{"wifi_component", "WiFi", "dc-wifi", WebUILocation::ComponentDetail, WebUIPresentation::Card}
+        ctxs.push_back(WebUIContext{"wifi_component", "WiFi", "dc-wifi", WebUILocation::ComponentDetail}
             .withField(WebUIField("connected", "Connected", WebUIFieldType::Display, "No", "", true))
             .withField(WebUIField("ssid_now", "SSID", WebUIFieldType::Display, "", "", true))
             .withField(WebUIField("ip", "IP", WebUIFieldType::Display, "0.0.0.0", "", true))
@@ -118,7 +118,7 @@ protected:
             .withField(WebUIField("device_name", "Device Name", WebUIFieldType::Text, "")));
         
         // Simulate RemoteConsoleWebUI (2 contexts)
-        ctxs.push_back(WebUIContext{"console_component", "Remote Console", "dc-plug", WebUILocation::ComponentDetail, WebUIPresentation::Card}
+        ctxs.push_back(WebUIContext{"console_component", "Remote Console", "dc-plug", WebUILocation::ComponentDetail}
             .withField(WebUIField("status", "Status", WebUIFieldType::Display, "Active", "", true))
             .withField(WebUIField("port", "Port", WebUIFieldType::Display, "23 (Telnet)", "", true)));
         ctxs.push_back(WebUIContext::settings("console_settings", "Remote Console")

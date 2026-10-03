@@ -152,6 +152,17 @@ void test_a_provider_gone_since_can_handle_answers_404() {
     TEST_ASSERT_EQUAL_INT(404, request.sentCode);
 }
 
+// The context endpoint serializes through WebUI.h, not the streaming serializer.
+void test_the_context_endpoint_sends_no_presentation() {
+    Fixture f;
+    AsyncWebServerRequest request;
+    request.addParam("id", "alpha");
+    TEST_ASSERT_TRUE(f.get(request, "/api/ui/context"));
+    TEST_ASSERT_EQUAL_INT(200, request.sentCode);
+    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("\"location\"") >= 0, request.sentBody.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("presentation") < 0, request.sentBody.c_str());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_a_declared_path_answers_with_its_context_data);
@@ -163,5 +174,6 @@ int main(int, char**) {
     RUN_TEST(test_auth_applies_to_a_declared_path);
     RUN_TEST(test_low_memory_answers_503);
     RUN_TEST(test_a_provider_gone_since_can_handle_answers_404);
+    RUN_TEST(test_the_context_endpoint_sends_no_presentation);
     return UNITY_END();
 }

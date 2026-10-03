@@ -794,7 +794,6 @@ private:
         obj["title"] = context.getTitleCStr();
         obj["icon"] = context.getIconCStr();
         obj["location"] = (int)context.location;
-        obj["presentation"] = (int)context.presentation;
         obj["priority"] = context.priority;
         obj["apiEndpoint"] = context.getApiEndpointCStr();
         obj["alwaysInteractive"] = context.alwaysInteractive;

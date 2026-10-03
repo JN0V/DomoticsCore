@@ -132,7 +132,8 @@ inline bool webUIParseUnsigned(const String& value, uint32_t& out) {
 
 /**
  * Enhanced WebUI system with multi-context support
- * Allows components to display data in multiple locations with different presentations
+ * A context's location decides where and how it is drawn; each field's type decides
+ * how its value is. A new kind of display is a new field type.
  */
 
 enum class WebUILocation {
@@ -142,19 +143,6 @@ enum class WebUILocation {
     QuickControls,      // Sidebar quick actions
     Settings,           // Settings/configuration area
     HeaderInfo          // Main header info zone (time, uptime, etc.) - NEW: Added at end to preserve existing enum values
-};
-
-enum class WebUIPresentation {
-    Card,              // Standard card layout
-    Gauge,             // Circular gauge/meter
-    Graph,             // Time-series chart
-    StatusBadge,       // Small status indicator
-    ProgressBar,       // Progress/percentage bar
-    Table,             // Tabular data
-    Toggle,            // On/off switch
-    Slider,            // Range control
-    Text,              // Simple text display
-    Button             // Action button
 };
 
 enum class WebUIFieldType {
@@ -289,7 +277,6 @@ struct WebUIContext {
     String title;                   // Context title (dynamic storage)
     String icon;                    // Icon class/name (dynamic storage)
     WebUILocation location;         // Where to display
-    WebUIPresentation presentation; // How to display
     int priority = 0;               // Display order (higher = first)
     
     // Hybrid static pointers for identity fields — when non-null, take priority over String
@@ -318,19 +305,19 @@ struct WebUIContext {
 
     // Constructor with const char* — stores pointers directly, no String allocation
     WebUIContext(const char* id, const char* t, const char* ic,
-                 WebUILocation loc, WebUIPresentation pres = WebUIPresentation::Card)
-        : location(loc), presentation(pres),
+                 WebUILocation loc)
+        : location(loc),
           contextIdPtr(id), titlePtr(t), iconPtr(ic) {}
 
     // Constructor with String (for backward compatibility)
     WebUIContext(const String& id, const String& t, const String& ic,
-                 WebUILocation loc, WebUIPresentation pres = WebUIPresentation::Card)
-        : contextId(id), title(t), icon(ic), location(loc), presentation(pres) {}
+                 WebUILocation loc)
+        : contextId(id), title(t), icon(ic), location(loc) {}
 
     // Copy constructor - preserves hybrid state for all Ptr/String pairs
     WebUIContext(const WebUIContext& other)
         : contextId(other.contextId), title(other.title), icon(other.icon),
-          location(other.location), presentation(other.presentation), priority(other.priority),
+          location(other.location), priority(other.priority),
           contextIdPtr(other.contextIdPtr), titlePtr(other.titlePtr),
           iconPtr(other.iconPtr), apiEndpointPtr(other.apiEndpointPtr),
           customHtml(other.customHtml), customCss(other.customCss), customJs(other.customJs),
@@ -345,7 +332,6 @@ struct WebUIContext {
             title = other.title;
             icon = other.icon;
             location = other.location;
-            presentation = other.presentation;
             priority = other.priority;
             contextIdPtr = other.contextIdPtr;
             titlePtr = other.titlePtr;
@@ -458,48 +444,36 @@ struct WebUIContext {
     
     // Factory methods — const char* overloads store pointers directly (zero heap)
     static WebUIContext dashboard(const char* id, const char* title, const char* icon = "fas fa-tachometer-alt") {
-        return WebUIContext(id, title, icon, WebUILocation::Dashboard, WebUIPresentation::Card);
-    }
-    static WebUIContext gauge(const char* id, const char* title, const char* icon = "fas fa-gauge") {
-        return WebUIContext(id, title, icon, WebUILocation::Dashboard, WebUIPresentation::Gauge);
+        return WebUIContext(id, title, icon, WebUILocation::Dashboard);
     }
     static WebUIContext statusBadge(const char* id, const char* title, const char* icon = "dc-info") {
-        return WebUIContext(id, title, icon, WebUILocation::HeaderStatus, WebUIPresentation::StatusBadge);
+        return WebUIContext(id, title, icon, WebUILocation::HeaderStatus);
     }
     static WebUIContext headerInfo(const char* id, const char* label, const char* icon = "dc-info") {
-        return WebUIContext(id, label, icon, WebUILocation::HeaderInfo, WebUIPresentation::Text);
-    }
-    static WebUIContext graph(const char* id, const char* title, const char* icon = "dc-chart") {
-        return WebUIContext(id, title, icon, WebUILocation::ComponentDetail, WebUIPresentation::Graph);
+        return WebUIContext(id, label, icon, WebUILocation::HeaderInfo);
     }
     static WebUIContext quickControl(const char* id, const char* title, const char* icon = "dc-settings") {
-        return WebUIContext(id, title, icon, WebUILocation::QuickControls, WebUIPresentation::Toggle);
+        return WebUIContext(id, title, icon, WebUILocation::QuickControls);
     }
     static WebUIContext settings(const char* id, const char* title, const char* icon = "dc-cog") {
-        return WebUIContext(id, title, icon, WebUILocation::Settings, WebUIPresentation::Card);
+        return WebUIContext(id, title, icon, WebUILocation::Settings);
     }
 
     // Factory methods — String overloads for backward compatibility
     static WebUIContext dashboard(const String& id, const String& title, const String& icon = "fas fa-tachometer-alt") {
-        return WebUIContext(id, title, icon, WebUILocation::Dashboard, WebUIPresentation::Card);
-    }
-    static WebUIContext gauge(const String& id, const String& title, const String& icon = "fas fa-gauge") {
-        return WebUIContext(id, title, icon, WebUILocation::Dashboard, WebUIPresentation::Gauge);
+        return WebUIContext(id, title, icon, WebUILocation::Dashboard);
     }
     static WebUIContext statusBadge(const String& id, const String& title, const String& icon = "dc-info") {
-        return WebUIContext(id, title, icon, WebUILocation::HeaderStatus, WebUIPresentation::StatusBadge);
+        return WebUIContext(id, title, icon, WebUILocation::HeaderStatus);
     }
     static WebUIContext headerInfo(const String& id, const String& label, const String& icon = "dc-info") {
-        return WebUIContext(id, label, icon, WebUILocation::HeaderInfo, WebUIPresentation::Text);
-    }
-    static WebUIContext graph(const String& id, const String& title, const String& icon = "dc-chart") {
-        return WebUIContext(id, title, icon, WebUILocation::ComponentDetail, WebUIPresentation::Graph);
+        return WebUIContext(id, label, icon, WebUILocation::HeaderInfo);
     }
     static WebUIContext quickControl(const String& id, const String& title, const String& icon = "dc-settings") {
-        return WebUIContext(id, title, icon, WebUILocation::QuickControls, WebUIPresentation::Toggle);
+        return WebUIContext(id, title, icon, WebUILocation::QuickControls);
     }
     static WebUIContext settings(const String& id, const String& title, const String& icon = "dc-cog") {
-        return WebUIContext(id, title, icon, WebUILocation::Settings, WebUIPresentation::Card);
+        return WebUIContext(id, title, icon, WebUILocation::Settings);
     }
 };
 
