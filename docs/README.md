@@ -253,6 +253,6 @@ docs/
 
 ---
 
-**DomoticsCore Version:** 2.12.1 | **Documentation Last Updated:** 2026-03-10
+**DomoticsCore Version:** 2.13.0 <!-- x-release-please-version -->
 
 **License:** See main repository [LICENSE](../LICENSE) file.
