@@ -174,6 +174,8 @@ public:
     }
 
     size_t contentLength() const { return contentLength_; }
+    WebRequestMethod method() const { return method_; }
+    const String& url() const { return url_; }
 
     /// Credentials set by setCredentials() arrive as an Authorization header, as on the wire.
     bool hasHeader(const String& name) const {
@@ -267,6 +269,8 @@ public:
     // --- what a test sets before the call, and reads after ---------------------
 
     void setContentLength(size_t length) { contentLength_ = length; }
+    void setUrl(const String& url) { url_ = url; }
+    void setMethod(WebRequestMethod method) { method_ = method; }
     void addHeader(const String& name, const String& value) { headers_.emplace_back(name, value); }
     void addParam(const String& name, const String& value, bool post = false) {
         params_.emplace_back(name, value, post);
@@ -309,6 +313,8 @@ public:
 
 private:
     size_t contentLength_ = 0;
+    String url_ = "/";
+    WebRequestMethod method_ = HTTP_GET;
     std::vector<AsyncWebHeader> headers_;
     std::vector<AsyncWebParameter> params_;
     String credentialUser;
@@ -329,6 +335,8 @@ struct RecordedRoute {
 class AsyncWebHandler {
 public:
     virtual ~AsyncWebHandler() = default;
+    virtual bool canHandle(AsyncWebServerRequest* request) const { (void)request; return false; }
+    virtual void handleRequest(AsyncWebServerRequest* request) { (void)request; }
 };
 
 class AsyncWebServer {
@@ -336,6 +344,7 @@ public:
     explicit AsyncWebServer(uint16_t port) : port_(port) { instances().push_back(this); }
 
     ~AsyncWebServer() {
+        for (auto* handler : handlers) delete handler;
         auto& all = instances();
         for (auto it = all.begin(); it != all.end(); ++it) {
             if (*it == this) { all.erase(it); break; }
@@ -370,7 +379,33 @@ public:
                                        std::move(uploadHandler), true});
     }
 
+    // Owns the handler, as the library does.
     void addHandler(AsyncWebHandler* handler) { handlers.push_back(handler); }
+    bool removeHandler(AsyncWebHandler* handler) {
+        for (auto it = handlers.begin(); it != handlers.end(); ++it) {
+            if (*it == handler) { delete handler; handlers.erase(it); return true; }
+        }
+        return false;
+    }
+
+    /// Routes first, matched exactly on uri and method, then the first handler that
+    /// accepts the request. False when nothing does. Not the library's order: it
+    /// walks one list in insertion order and also matches "uri/..." on a route.
+    bool dispatch(AsyncWebServerRequest& request) {
+        for (auto& route : routes) {
+            if (route.uri == request.url() && (route.method & request.method())) {
+                route.handler(&request);
+                return true;
+            }
+        }
+        for (auto* handler : handlers) {
+            if (handler->canHandle(&request)) {
+                handler->handleRequest(&request);
+                return true;
+            }
+        }
+        return false;
+    }
     void begin() { running = true; }
     void end() { running = false; endCalls++; }
     uint16_t port() const { return port_; }

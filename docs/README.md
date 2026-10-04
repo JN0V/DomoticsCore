@@ -3,6 +3,7 @@ sources: [library.json, library.properties, DomoticsCore-Core/library.json, Domo
 checked: 436872f
 verified: agent:documentalist
 judged: 23b0933
+judged-in-parts: 7ffbca2
 -->
 # DomoticsCore Documentation
 
@@ -187,8 +188,9 @@ DomoticsCore Framework
 
 ```
 Core (foundation - no dependencies)
-  ├── LED, Storage, SystemInfo, RemoteConsole, NTP, OTA
+  ├── LED, Storage, SystemInfo, NTP, OTA
   ├── Wifi
+  │   ├── RemoteConsole
   │   └── MQTT
   │       └── HomeAssistant
   └── WebUI (*WebUI providers for each component)

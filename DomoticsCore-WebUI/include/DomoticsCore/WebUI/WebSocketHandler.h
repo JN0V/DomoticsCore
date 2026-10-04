@@ -31,8 +31,10 @@ public:
 private:
     WebUIConfig config;
     
-    // SSE source — only created when heap is sufficient
+    // SSE source — only created when heap is sufficient. The server owns it once
+    // added, and outlives this handler (WebUIComponent declares it first).
     AsyncEventSource* sseSource = nullptr;
+    AsyncWebServer* server_ = nullptr;
     bool sseEnabled = false;
     unsigned long lastSseBroadcast = 0;
 
@@ -51,7 +53,7 @@ public:
     ~WebSocketHandler() {
         if (sseSource) {
             sseSource->close();
-            delete sseSource;
+            server_->removeHandler(sseSource);  // the server deletes it
             sseSource = nullptr;
         }
     }
@@ -81,6 +83,7 @@ public:
                 });
             }
             server->addHandler(sseSource);
+            server_ = server;
             sseEnabled = true;
             DLOG_I(LOG_WEB, "SSE mode enabled on /api/ui/events (heap=%u)", (unsigned)heap);
         } else {

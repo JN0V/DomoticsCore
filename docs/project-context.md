@@ -1,5 +1,5 @@
 <!-- workline
-sources: [library.json, library.properties, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, tools/bump_version.py, tools/check_versions.py, .github/workflows/version-check.yml, .github/workflows/release.yml, .github/workflows/test-github-install.yml, .specify/memory/constitution.md]
+sources: [library.json, library.properties, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, tools/check_versions.py, release-please-config.json, .github/workflows/release-please.yml, .github/workflows/version-check.yml, .github/workflows/release.yml, .github/workflows/test-github-install.yml, .specify/memory/constitution.md]
 checked: 4cdb3e6
 verified: agent:documentalist
 -->
@@ -121,12 +121,12 @@ Each component optionally provides a `*WebUI` class implementing `IWebUIProvider
   - `run_all_tests.sh` -- Runs native platform tests
   - `check_everything.sh` -- Full build + test
   - `tools/local_ci.sh` -- Local CI simulation
-  - `tools/bump_version.py` -- Semantic version bumping
   - `tools/check_versions.py` -- Version consistency validation
 - **CI**: GitHub Actions (`.github/workflows/`)
   - `version-check.yml` -- Version consistency on push/PR
   - `test-github-install.yml` -- Test installation from GitHub
-  - `release.yml` -- GitHub Release + PlatformIO publish on `v*` tags
+  - `release-please.yml` -- the release pull request; on its merge, tags and GitHub releases
+  - `release.yml` -- PlatformIO publish, called by `release-please.yml`
 
 ## Testing Strategy
 
@@ -148,7 +148,7 @@ Each component optionally provides a `*WebUI` class implementing `IWebUIProvider
 - **File Size Limit**: 800 lines maximum per file (excluding blanks/comments).
 - **EventBus for Communication**: No direct component-to-component references.
 - **Centralized Storage**: No direct Preferences/SPIFFS access.
-- **Semantic Versioning**: Use `tools/bump_version.py`, never manual edits.
+- **Semantic Versioning**: Versions move only through release-please's release pull request, never manual edits.
 - **All documentation in English**.
 
 Before making ANY code change, read the full constitution: `.specify/memory/constitution.md`

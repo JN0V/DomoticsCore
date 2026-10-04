@@ -11,9 +11,16 @@ using namespace DomoticsCore;
 static Core* core = nullptr;
 static Components::WifiComponent* wifi = nullptr;
 
+#ifndef SCAN_ROUNDS
+#define SCAN_ROUNDS 2
+#endif
+
 static uint8_t round_ = 0;
 static uint32_t startedAt = 0;
 static bool waiting = false;
+
+// Prints when the SDK itself ends a scan; scan_done_esp32.cpp defines it there.
+__attribute__((weak)) void listenForScanDone(const uint8_t*, const uint32_t*) {}
 
 // The summary carries the names of every network in the room. Report its shape,
 // never its text.
@@ -43,6 +50,7 @@ void setup() {
     CoreConfig cfg;
     cfg.deviceName = "ScanProbe";
     core->begin(cfg);
+    listenForScanDone(&round_, &startedAt);
 
     Serial.printf("SCANAP mode=%d apEnabled=%d heap=%u\n",
                   (int)HAL::WiFiHAL::getMode(), (int)wifi->isAPEnabled(),
@@ -52,7 +60,7 @@ void setup() {
 void loop() {
     core->loop();
 
-    if (!waiting && round_ < 2) {
+    if (!waiting && round_ < SCAN_ROUNDS) {
         round_++;
         startedAt = millis();
         const bool started = wifi->startScanAsync();
@@ -61,7 +69,7 @@ void loop() {
             // The previous round never released the flag. Waiting here would
             // report its summary as this round's harvest.
             Serial.println("SCANAP FAILED: the scan was refused, the flag was not released");
-            round_ = 2;
+            round_ = SCAN_ROUNDS;
             return;
         }
         // A second call while one runs must be refused.
@@ -80,8 +88,8 @@ void loop() {
                 report("harvested", summary);
                 waiting = false;
                 delay(2000);
-            } else if (millis() - startedAt > 20000) {
-                Serial.println("SCANAP FAILED: still Scanning... after 20 s");
+            } else if (millis() - startedAt > 25000) {
+                Serial.println("SCANAP FAILED: still Scanning... after 25 s");
                 waiting = false;
             }
         }

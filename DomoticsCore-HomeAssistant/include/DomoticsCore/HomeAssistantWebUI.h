@@ -89,7 +89,7 @@ protected:
 
         // Component detail - Full statistics - placeholder values
         contexts.push_back(WebUIContext("ha_detail", "Home Assistant Details", "dc-home-assistant",
-                                       WebUILocation::ComponentDetail, WebUIPresentation::Card)
+                                       WebUILocation::ComponentDetail)
             .withField(WebUIField("entity_count", "Total Entities", WebUIFieldType::Display, "0", "", true))
             .withField(WebUIField("discovery_count", "Discovery Publishes", WebUIFieldType::Display, "0", "", true))
             .withField(WebUIField("discovery_refused", "Configs Refused (too long)", WebUIFieldType::Display, "0", "", true))

@@ -11,6 +11,7 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
+#include "WifiScanDeadline.h"
 
 namespace DomoticsCore {
 namespace HAL {
@@ -65,7 +66,13 @@ inline int32_t getRSSI() { return WiFi.RSSI(); }
 inline String getMacAddress() { return WiFi.macAddress(); }
 inline void setHostname(const char* hostname) { WiFi.setHostname(hostname); }
 inline void setAutoReconnect(bool enabled) { WiFi.setAutoReconnect(enabled); }
-inline int16_t scanNetworks(bool async) { return WiFi.scanNetworks(async); }
+inline uint32_t& asyncScanStartedAt() { static uint32_t t = 0; return t; }  // 0: none outstanding
+
+inline int16_t scanNetworks(bool async) {
+    const int16_t r = WiFi.scanNetworks(async);
+    if (async) asyncScanStartedAt() = (r == WIFI_SCAN_RUNNING) ? (millis() | 1) : 0;
+    return r;
+}
 inline String getScannedSSID(uint8_t index) { return WiFi.SSID(index); }
 inline int32_t getScannedRSSI(uint8_t index) { return WiFi.RSSI(index); }
 
@@ -82,8 +89,12 @@ inline WiFiHAL::Mode getMode() {
 
 inline String getAPSSID() { return WiFi.softAPSSID(); }
 inline uint8_t getAPStationCount() { return WiFi.softAPgetStationNum(); }
-inline int16_t scanComplete() { return WiFi.scanComplete(); }
-inline void scanDelete() { WiFi.scanDelete(); }
+inline int16_t scanComplete() {
+    const int16_t r = WiFiHAL::maskEarlyScanFailure(WiFi.scanComplete(), asyncScanStartedAt(), millis());
+    if (r != WIFI_SCAN_RUNNING) asyncScanStartedAt() = 0;
+    return r;
+}
+inline void scanDelete() { WiFi.scanDelete(); asyncScanStartedAt() = 0; }
 inline void disconnectAndOff() { WiFi.disconnect(true); WiFi.mode(WIFI_OFF); }
 inline uint8_t getRawStatus() { return (uint8_t)WiFi.status(); }
 

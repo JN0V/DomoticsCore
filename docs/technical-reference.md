@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/WifiEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-NTP/include/DomoticsCore/NTPEvents.h, DomoticsCore-OTA/include/DomoticsCore/OTAEvents.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEvents.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_HAL.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_HAL.h, DomoticsCore-NTP/include/DomoticsCore/NTP_HAL.h, DomoticsCore-Storage/include/DomoticsCore/Storage_HAL.h, DomoticsCore-OTA/include/DomoticsCore/Update_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-Storage/include/DomoticsCore/Storage.h, library.json, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, tools/bump_version.py, tools/check_versions.py, .github/workflows/version-check.yml, .github/workflows/test-github-install.yml, .github/workflows/release.yml]
+sources: [DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/WifiEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-NTP/include/DomoticsCore/NTPEvents.h, DomoticsCore-OTA/include/DomoticsCore/OTAEvents.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEvents.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi_HAL.h, DomoticsCore-Wifi/include/DomoticsCore/WiFiServer_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_HAL.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_HAL.h, DomoticsCore-NTP/include/DomoticsCore/NTP_HAL.h, DomoticsCore-Storage/include/DomoticsCore/Storage_HAL.h, DomoticsCore-OTA/include/DomoticsCore/Update_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-Storage/include/DomoticsCore/Storage.h, library.json, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, tools/check_versions.py, release-please-config.json, .github/workflows/release-please.yml, .github/workflows/version-check.yml, .github/workflows/test-github-install.yml, .github/workflows/release.yml]
 checked: f0a5518
 verified: agent:documentalist
 -->
@@ -353,10 +353,6 @@ Providers contribute to 6 UI locations via `WebUILocation`:
 
 The WebUI uses `WebUIField` and `WebUIContext` fluent builders (not `BaseWebUIComponents`). Available `WebUIFieldType` values: `Text`, `Number`, `Float`, `Boolean`, `Select`, `Slider`, `Color`, `Button`, `Display`, `Chart`, `Status`, `Progress`, `Password`, `File`, `Multiselect`. Multiselect uses the same options as Select and represents selected values as a JSON array. Set initial values with `.values({...})`; action handlers receive the array serialized as JSON in their string `value` parameter.
 
-### Presentation Styles
-
-`WebUIPresentation` enum: `Card`, `Gauge`, `Graph`, `StatusBadge`, `ProgressBar`, `Table`, `Toggle`, `Slider`, `Text`, `Button`.
-
 ### Embedded Assets
 
 Web frontend files (HTML/CSS/JS) are compiled into `Generated/WebUIAssets.h` via `embed_webui.py`. Assets are gzip-compressed and served with proper headers.
@@ -451,23 +447,22 @@ Pre-defined tag constants: `LOG_CORE`, `LOG_WIFI`, `LOG_MQTT`, `LOG_HTTP`, `LOG_
 
 ### MemoryManager (`DomoticsCore-Core/include/DomoticsCore/MemoryManager.h`)
 
-Singleton providing adaptive memory profiles based on available heap at boot:
+Singleton classifying the heap available at boot into a profile, from which the WebSocket client limit is derived:
 
 ```cpp
 auto& mm = MemoryManager::instance();
 MemoryProfile profile = mm.getProfile();
 
-// Adaptive buffer sizing
-size_t bufSize = mm.getBufferSize(BufferType::JsonDocument);
+// Profile-derived limit
+uint8_t maxClients = mm.getMaxWsClients();
 
-// Feature gating
-if (mm.shouldEnable(Feature::ChartHistory)) {
+// Feature gating on the profile
+if (profile == MemoryProfile::FULL) {
     // Only on devices with enough memory
 }
 
-// Runtime checks
+// Runtime check: live heap below the MINIMAL threshold
 if (mm.isLowMemory()) { /* reduce allocations */ }
-if (mm.isCriticalMemory()) { /* emergency mode */ }
 ```
 
 ### Memory Profiles
@@ -481,21 +476,12 @@ enum class MemoryProfile {
 };
 ```
 
-| Profile | WebSocket Buffer | JSON Doc | HTTP Response | Log Buffer |
-|---------|-----------------|----------|---------------|------------|
-| FULL | 8192 | 8192 | 4096 | 200 |
-| STANDARD | 4096 | 4096 | 2048 | 100 |
-| MINIMAL | 2048 | 2048 | 1024 | 50 |
-| CRITICAL | 1024 | 1024 | 512 | 20 |
-
-**Additional Profile Limits:**
-
-| Profile | Max WS Clients | Max Providers | Chart History Points | WS Update Interval |
-|---------|---------------|---------------|---------------------|-------------------|
-| FULL | 8 | 32 | 60 | 2s |
-| STANDARD | 4 | 16 | 30 | 5s |
-| MINIMAL | 2 | 8 | 10 | 10s |
-| CRITICAL | 1 | 4 | 0 | disabled |
+| Profile | Max WS Clients |
+|---------|---------------|
+| FULL | 8 |
+| STANDARD | 4 |
+| MINIMAL | 2 |
+| CRITICAL | 1 |
 
 ### HeapTracker (`DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h`)
 
@@ -583,7 +569,6 @@ for (auto& s : sensors) {
 | `run_all_tests.sh` | Root | Runs all native platform tests |
 | `check_everything.sh` | Root | Full validation (build + test combined) |
 | `tools/local_ci.sh` | `tools/` | Local CI simulation (mirrors GitHub Actions pipeline) |
-| `tools/bump_version.py` | `tools/` | Semantic version bumping across all `library.json` files |
 | `tools/check_versions.py` | `tools/` | Validates version consistency across all components |
 
 ### CI/CD
@@ -594,14 +579,14 @@ GitHub Actions in `.github/workflows/`:
 |----------|---------|---------|
 | `version-check.yml` | Push/PR to main, master, develop | Runs `check_versions.py` to validate version consistency |
 | `test-github-install.yml` | Push/PR | Creates a test project, installs DomoticsCore from the current commit, and verifies compilation on ESP32 |
-| `release.yml` | Push tag `v*` | Runs version check, extracts changelog, creates GitHub Release, publishes to PlatformIO Registry |
+| `release-please.yml` | Push to main | Keeps the release pull request; on its merge, tags the commit and writes the GitHub releases, then calls `release.yml` |
+| `release.yml` | Called by `release-please.yml`, or by hand with a tag | Runs version check, publishes to PlatformIO Registry |
 
 **Release process:**
-1. Tag a commit with `v*` (e.g., `v2.0.0`)
-2. `release.yml` runs `check_versions.py --check-tag` to validate the tag matches `library.json`
-3. Extracts the corresponding section from `CHANGELOG.md`
-4. Creates a GitHub Release with the changelog as release notes
-5. Publishes to PlatformIO Registry via `pio pkg publish`
+1. release-please keeps one pull request open, "chore: release main", with the next versions (from the conventional commits since the last release) and `CHANGELOG.md`
+2. A person merges it: release-please tags the merged commit (`vX.Y.Z`, and `DomoticsCore-<Component>-vX.Y.Z` per component released) and writes the GitHub releases' notes
+3. `release.yml` runs `check_versions.py --check-tag` against that tag
+4. Publishes to PlatformIO Registry via `pio pkg publish`
 
 ---
 

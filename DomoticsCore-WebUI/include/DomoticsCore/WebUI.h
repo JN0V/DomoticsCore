@@ -28,6 +28,7 @@
 
 // New modular headers
 #include "DomoticsCore/WebUI/WebUIConfig.h"
+#include "DomoticsCore/WebUI/DeclaredApiHandler.h"
 #include "DomoticsCore/WebUI/ProviderRegistry.h"
 #include "DomoticsCore/WebUI/WebServerManager.h"
 #include "DomoticsCore/WebUI/WebSocketHandler.h"
@@ -52,10 +53,11 @@ class WebUIComponent : public IComponent, public CachingWebUIProvider, public Co
 private:
     WebUIConfig config;
     
-    // Sub-managers
+    // Sub-managers, destroyed in reverse: the registry outlives the server whose
+    // handlers read it, and the server outlives webSocket, whose SSE source it owns.
+    std::unique_ptr<WebUI::ProviderRegistry> registry;
     std::unique_ptr<WebUI::WebServerManager> webServer;
     std::unique_ptr<WebUI::WebSocketHandler> webSocket;
-    std::unique_ptr<WebUI::ProviderRegistry> registry;
 
     // State
     bool forceNextUpdate = false; // force full contexts send on next tick (e.g., after WS reconnect)
@@ -94,7 +96,7 @@ public:
         : config(cfg) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "WebUI";
-        metadata.version = "1.12.0";
+        metadata.version = "1.13.0";  // x-release-please-version
         metadata.author = "DomoticsCore";
         metadata.description = "Web dashboard and API component";
 
@@ -469,6 +471,57 @@ private:
         }
     }
     
+    // Whether some context declares this path with withAPI() and no route serves a GET on it.
+    bool servesDeclaredApi(const String& path) const {
+        if (webServer->hasRoute(path, HTTP_GET)) return false;
+        return registry->withContextProviders([&](const std::map<String, IWebUIProvider*>& providers) {
+            for (const auto& entry : providers) {
+                bool declared = false;
+                entry.second->forEachContext([&](const WebUIContext& ctx) {
+                    if (entry.first != ctx.getContextIdCStr()) return true;
+                    declared = path == ctx.getApiEndpointCStr();
+                    return false;
+                });
+                if (declared) return true;
+            }
+            return false;
+        });
+    }
+
+    // The data of every context declaring the path, keyed by context id.
+    void answerDeclaredApi(AsyncWebServerRequest* request) {
+        if (config.enableAuth && !authorize(request)) return request->requestAuthentication();
+        if (HAL::Platform::getFreeHeap() < 4096) {
+            return request->send(503, "application/json", "{\"error\":\"low memory\"}");
+        }
+        const String& path = request->url();
+        String body = "{";
+        registry->withContextProviders([&](const std::map<String, IWebUIProvider*>& providers) {
+            for (const auto& entry : providers) {
+                bool declared = false;
+                entry.second->forEachContext([&](const WebUIContext& ctx) {
+                    if (entry.first != ctx.getContextIdCStr()) return true;
+                    declared = path == ctx.getApiEndpointCStr();
+                    return false;
+                });
+                if (!declared) continue;
+                if (body.length() > 1) body += ',';
+                body += '"';
+                body += entry.first;
+                body += "\":";
+                String data = entry.second->getWebUIData(entry.first);
+                body += data.length() ? data : String("null");
+            }
+        });
+        if (body.length() == 1) {   // its provider went away since canHandle()
+            return request->send(404, "application/json", "{\"error\":\"Not found\"}");
+        }
+        body += '}';
+        AsyncWebServerResponse* response = request->beginResponse(200, "application/json", body);
+        addCorsHeaders(response);
+        request->send(response);
+    }
+
     void setupApiRoutes() {
         // Polling endpoint for real-time updates AND schema delivery
         // Use ?schema=1 to get schema (avoids separate TCP connection that fails during TIME_WAIT)
@@ -726,6 +779,13 @@ private:
 
             schemaProbes_.logQueued(probe);
         });
+
+        // Last, so every route above is found first; hasRoute() covers the later ones.
+        if (webServer->getServer()) {
+            webServer->getServer()->addHandler(new WebUI::DeclaredApiHandler(
+                [this](const String& path) { return servesDeclaredApi(path); },
+                [this](AsyncWebServerRequest* request) { answerDeclaredApi(request); }));
+        }
     }
     
     // Duplicated helper to keep compilation working until I move it to a shared util or ProviderRegistry
@@ -734,7 +794,6 @@ private:
         obj["title"] = context.getTitleCStr();
         obj["icon"] = context.getIconCStr();
         obj["location"] = (int)context.location;
-        obj["presentation"] = (int)context.presentation;
         obj["priority"] = context.priority;
         obj["apiEndpoint"] = context.getApiEndpointCStr();
         obj["alwaysInteractive"] = context.alwaysInteractive;

@@ -45,9 +45,9 @@ struct WifiConfig {
     String apSSID = "";                 // AP SSID (auto-generated if empty)
     String apPassword = "";             // AP password (open if empty)
     
-    // Advanced settings
-    uint32_t reconnectInterval = 5000;  // Reconnection interval in ms
-    uint32_t connectionTimeout = 15000; // Connection timeout in ms
+    // Timing (0 keeps the current value)
+    uint32_t reconnectInterval = 5000;  // Delay between connection attempts, in ms
+    uint32_t connectionTimeout = 15000; // How long one attempt may take, in ms
 };
 
 /**
@@ -99,8 +99,11 @@ private:
     String apPassword_;
     // Non-blocking scan state
     bool scanInProgress = false;
+    uint32_t scanStartedAt_ = 0;
+    // Past this, an unanswered scan is given up so the next one can start.
+    static constexpr uint32_t SCAN_DEADLINE_MS = 20000;
     String lastScanSummary_;
-    static const unsigned long CONNECTION_TIMEOUT = 15000; // 15 seconds
+    unsigned long connectionTimeoutMs_ = 15000;
     
 public:
     /**
@@ -119,7 +122,7 @@ public:
         rebootTimer_.disable();       // Only enabled when reboot-to-STA is pending
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "Wifi";
-        metadata.version = "1.7.0";
+        metadata.version = "1.8.0";  // x-release-please-version
         metadata.author = "DomoticsCore";
         metadata.description = "Wifi connectivity management component";
     }
@@ -236,13 +239,9 @@ public:
                 emitNetworkReady(HAL::WiFiHAL::getAPIP());
                 
                 if (configSaveCallback_) {
-                    WifiConfig cfg;
-                    cfg.ssid = ssid;
-                    cfg.password = password;
+                    WifiConfig cfg = getConfig();   // keeps the timing fields
                     cfg.autoConnect = false;
                     cfg.enableAP = true;
-                    cfg.apSSID = apSSID_;
-                    cfg.apPassword = apPassword_;
                     configSaveCallback_(cfg);
                     DLOG_I(LOG_WIFI, "Config saved with autoConnect=false (prevents boot loop)");
                 }
@@ -272,7 +271,7 @@ public:
                     // Emit events to trigger immediate WebUI update
                     emit(WifiEvents::EVENT_STA_CONNECTED, true);
                     emitNetworkReady(HAL::WiFiHAL::getLocalIP());
-                } else if (HAL::Platform::getMillis() - connectionStartTime > CONNECTION_TIMEOUT) {
+                } else if (HAL::Platform::getMillis() - connectionStartTime > connectionTimeoutMs_) {
                     // Connection timeout
                     isConnecting = false;
                     DLOG_E(LOG_WIFI, "Wifi connection timeout - status: %d", HAL::WiFiHAL::getRawStatus());
@@ -489,6 +488,11 @@ public:
     }
     
     bool scanNetworks(std::vector<String>& networks) {
+        // The SDK holds one scan at a time: a blocking one would restart the async one.
+        if (scanInProgress) {
+            DLOG_W(LOG_WIFI, "Scan refused: an async scan is running");
+            return false;
+        }
         int n = HAL::WiFiHAL::scanNetworks(false);
         networks.clear();
         networks.shrink_to_fit();
@@ -537,13 +541,19 @@ public:
         return true;
     }
 
-    // Start a non-blocking scan. Returns false when one is already running:
-    // the SDK holds a single result set, so a second scan would be ignored.
+    // Start a non-blocking scan. Returns false when one is already running (the
+    // SDK holds a single result set) or when the SDK refuses to start it.
     bool startScanAsync() {
         if (scanInProgress) return false;
-        HAL::WiFiHAL::scanNetworks(true /* async */);
-        scanInProgress = true;
+        scanStartedAt_ = HAL::Platform::getMillis();   // before the flag: loop() reads both
+        const int16_t started = HAL::WiFiHAL::scanNetworks(true /* async */);
+        if (started == -2) {
+            DLOG_W(LOG_WIFI, "Wifi async scan did not start");
+            lastScanSummary_ = "Scan failed";
+            return false;
+        }
         lastScanSummary_ = "Scanning...";
+        scanInProgress = true;
         DLOG_I(LOG_WIFI, "Started async WiFi scan");
         return true;
     }
@@ -622,8 +632,8 @@ public:
         cfg.enableAP = apEnabled;
         cfg.apSSID = apSSID_;
         cfg.apPassword = apPassword_;
-        cfg.reconnectInterval = 5000; // Default from constructor
-        cfg.connectionTimeout = CONNECTION_TIMEOUT;
+        cfg.reconnectInterval = reconnectTimer.getInterval();
+        cfg.connectionTimeout = connectionTimeoutMs_;
         return cfg;
     }
     
@@ -639,6 +649,9 @@ public:
         apEnabled = cfg.enableAP;
         apSSID_ = cfg.apSSID;
         apPassword_ = cfg.apPassword;
+        // Zero would time every attempt out at once, or retry on every loop(): keep the current value.
+        if (cfg.reconnectInterval) reconnectTimer.setInterval(cfg.reconnectInterval);
+        if (cfg.connectionTimeout) connectionTimeoutMs_ = cfg.connectionTimeout;
         
         DLOG_I(LOG_WIFI, "Config updated: SSID=%s, autoConnect=%d, AP=%s (enabled=%d)", 
                ssid.c_str(), wifiEnabled, apSSID_.c_str(), apEnabled);
@@ -704,13 +717,8 @@ public:
                 wifiEnabled = false;
                 shouldConnect = false;
                 if (configSaveCallback_) {
-                    WifiConfig cfg;
-                    cfg.ssid = ssid;
-                    cfg.password = password;
+                    WifiConfig cfg = getConfig();   // keeps the timing fields
                     cfg.autoConnect = false;
-                    cfg.enableAP = apEnabled;
-                    cfg.apSSID = apSSID_;
-                    cfg.apPassword = apPassword_;
                     configSaveCallback_(cfg);
                     DLOG_I(LOG_WIFI, "Config saved with autoConnect=false (heap guard)");
                 }
@@ -840,8 +848,14 @@ private:
     void pollScanCompletion() {
         if (scanInProgress) {
             int res = HAL::WiFiHAL::scanComplete();
-            if (res == -2) {  // WIFI_SCAN_FAILED
+            if (res == -1 && HAL::Platform::getMillis() - scanStartedAt_ > SCAN_DEADLINE_MS) {
+                DLOG_W(LOG_WIFI, "Wifi async scan unanswered after %u ms", (unsigned)SCAN_DEADLINE_MS);
+                HAL::WiFiHAL::scanDelete();
+                lastScanSummary_ = "Scan failed";
+                scanInProgress = false;
+            } else if (res == -2) {  // WIFI_SCAN_FAILED
                 DLOG_W(LOG_WIFI, "Wifi async scan failed");
+                HAL::WiFiHAL::scanDelete();   // a result landing later is not kept
                 lastScanSummary_ = "Scan failed";
                 scanInProgress = false;
             } else if (res >= 0) {

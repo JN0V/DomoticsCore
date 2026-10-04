@@ -30,6 +30,80 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.13.0] - 2026-10-03
+
+> **This minor release removes public API.** Each removal had no caller in the
+> library and did nothing it promised; the break is at compile time.
+>
+> - **WebUI**: `WebUIPresentation`, `WebUIContext::presentation`, the fifth
+>   `WebUIContext` constructor argument and `WebUIContext::gauge()` /
+>   `graph()`. Delete the argument; use `dashboard()` or a
+>   `WebUILocation::ComponentDetail` constructor. The schema JSON no longer
+>   carries `"presentation"`: a context is drawn by its location and each value
+>   by its field type, and a new kind of display is a new `WebUIFieldType`.
+> - **WebUI**: `BaseWebUIComponents::selectDropdown()` and `radioGroup()`.
+> - **Core**: `ComponentConfig`, `ConfigParam`, `ConfigType`,
+>   `ValidationResult`. `ComponentConfig::digitsOnly()` is now
+>   `Utils::digitsOnly()` in `DomoticsCore/StringParse.h`.
+> - **Core**: `MemoryManager::getBufferSize()`, `shouldEnable()`,
+>   `getWsUpdateInterval()`, `getChartHistoryPoints()`, `getCurrentFreeHeap()`,
+>   `isCriticalMemory()`, the `BufferType` and `Feature` enums; `ProfileLimits`
+>   keeps `maxWsClients` only.
+
+> **Behaviour that changes on update:**
+>
+> - An **ESP8266** System's default access point was named `<name>-00000000`
+>   on every board; it is now `<name>-XXXXXXXX` from the chip id, so two boards
+>   sharing a name no longer broadcast one SSID. A stored empty AP SSID now
+>   gets the same name as registration (upper case, eight digits), and a name
+>   over 23 characters is cut so the SSID fits.
+> - `StorageConfig::readOnly` now refuses every write on every platform; on
+>   ESP8266 a read-only namespace used to be written.
+> - `MQTTComponent::topicMatches()` follows MQTT 3.1.1: `a/#` matches `a`, a
+>   filter starting with a wildcard no longer matches `$` topics, and a
+>   malformed filter or an empty string matches nothing.
+> - `SystemInfoConfig::enableDetailedInfo` and `enableMemoryInfo` now hide
+>   their fields in the WebUI; they were ignored.
+> - `WifiConfig::reconnectInterval` and `connectionTimeout` are now applied
+>   (0 keeps the current value); they were ignored.
+
+### Added
+
+- A path a WebUI context declares with `withAPI()` now answers `GET` with
+  `{contextId: data}` for each context declaring it, behind the same
+  authentication; writes stay on `POST /api/ui/action`. An explicit route on
+  the same path keeps it.
+- `HAEntity::describeCommand()` and `echoesCommandAsState()`, defaulted, for
+  an entity that parses its commands or echoes them as state.
+- `SystemHelpers::defaultApSsid()` and the public `System::MIN_HEAP_POST_INIT`.
+- The WebUI front end (`app.js`) runs in jsdom in CI.
+
+### Fixed
+
+- **ESP32 in AP mode**: WiFi scans that succeeded were reported as failed,
+  most of them, because the Arduino core gives up after 6 s and the SDK needs
+  6-8 s with an AP running. They are now delivered; a scan that really fails
+  is reported at 15 s, one never answered is given up at 20 s, a blocking
+  scan is refused while an async one runs, and a scan the SDK refuses to start
+  answers `Scan did not start`.
+- WebUI: the update buffer was read outside its lock by the poll handler and
+  the SSE broadcast, which could send one client the other's document.
+- WebUI: the SSE source was deleted twice when a `WebUIComponent` was
+  destroyed.
+- The WiFi fallback paths that persist `autoConnect = false` no longer save
+  the default timing over the configured one.
+
+### Changed
+
+- `topicMatches()` allocates nothing.
+- `System::begin()` is split into its steps; behaviour and messages unchanged.
+
+### Known issues
+
+- SSE events can arrive interleaved when `wsUpdateInterval` is well under a
+  second; not seen at the 5 s default.
+- A context placed with `quickControl()` is not drawn by the page.
+
 ## [2.12.1] - 2026-10-02
 
 > **On ESP8266, local time now follows the configured timezone.** It never

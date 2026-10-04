@@ -1,5 +1,5 @@
 <!-- workline
-sources: [library.json, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h, tools/bump_version.py, tools/check_versions.py]
+sources: [library.json, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h, tools/check_versions.py, release-please-config.json]
 checked: 4b811cd
 verified: agent:documentalist
 -->
@@ -347,7 +347,7 @@ DomoticsCore          v2.0.0
 2. **Component versions** are independently maintained
 3. **Patch versions** diverge for bug fixes
 4. Use semantic versioning strictly
-5. Use `tools/bump_version.py` for version changes (never manual edits)
+5. Versions move through release-please's release pull request (never manual edits)
 6. `tools/check_versions.py` validates consistency across all `library.json` files
 
 ---
@@ -404,6 +404,6 @@ The `System` component provides a high-level API that handles common setup autom
 1. Monorepo structure maintained
 2. Root `library.json` acts as meta-package with external dependencies
 3. Individual components publishable to PlatformIO registry
-4. Version tooling via `tools/bump_version.py` and `tools/check_versions.py`
+4. Versions moved by release-please (`release-please-config.json`), checked by `tools/check_versions.py`
 5. Component interdependencies documented in each component's `library.json`
 6. `CHANGELOG.md` maintained at root level

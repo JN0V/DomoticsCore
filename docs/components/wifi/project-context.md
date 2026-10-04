@@ -83,14 +83,15 @@ Mock support is provided by `tests/mocks/MockWifiHAL.h` in the project root `tes
 
 - **Inherits**: `IComponent`, `INetworkProvider`
 - **Responsibilities**: WiFi STA/AP lifecycle, non-blocking connection, reconnection, async scanning, mode switching
-- **State**: `wifiEnabled`, `apEnabled`, `ssid`, `password`, `apSSID_`, `apPassword_`, `scanInProgress`, `isConnecting`, `shouldConnect`
-- **Timers**: `reconnectTimer` (5s), `statusTimer` (30s), `connectionTimer` (100ms), `staFallbackTimer_` (30s), `rebootTimer_` (1.5s)
+- **State**: `wifiEnabled`, `apEnabled`, `ssid`, `password`, `apSSID_`, `apPassword_`, `scanInProgress`, `isConnecting`, `shouldConnect`, `connectionTimeoutMs_` (15s, `connectionTimeout`)
+- **Timers**: `reconnectTimer` (5s, `reconnectInterval`), `statusTimer` (30s), `connectionTimer` (100ms), `staFallbackTimer_` (30s), `rebootTimer_` (1.5s)
 - **Deferred flags**: `pendingModeUpdate_`, `pendingConfigSave_`, `pendingReboot_`
 
 ### WifiConfig
 
 - **Type**: Plain struct
 - **Fields**: ssid, password, autoConnect, enableAP, apSSID, apPassword, reconnectInterval, connectionTimeout
+- **Timing**: `setConfig()` applies `reconnectInterval` and `connectionTimeout` (0 keeps the current value); `getConfig()` returns the values in force
 - **Note**: Allocates 6+ Strings; avoid constructing in low-heap HTTP handler paths. Use `setSTACredentials()` instead.
 
 ### INetworkProvider

@@ -50,7 +50,6 @@ public:
         Title, TitleValue, TitleComma,
         Icon, IconValue, IconComma,
         Location, LocationValue, LocationComma,
-        Presentation, PresentationValue, PresentationComma,
         Priority, PriorityValue, PriorityComma,
         ApiEndpoint, ApiEndpointValue, ApiEndpointComma,
         AlwaysInteractive, AlwaysInteractiveValue,
@@ -216,22 +215,6 @@ public:
                     break;
 
                 case State::LocationComma:
-                    n = writeLiteral(buffer + written, remaining, ",");
-                    if (isLiteralComplete()) state = State::Presentation;
-                    break;
-
-                case State::Presentation:
-                    n = writeLiteral(buffer + written, remaining, "\"presentation\":");
-                    if (isLiteralComplete()) state = State::PresentationValue;
-                    break;
-
-                case State::PresentationValue:
-                    snprintf(numBuf, sizeof(numBuf), "%d", (int)ctx->presentation);
-                    n = writeLiteral(buffer + written, remaining, numBuf);
-                    if (isLiteralComplete()) state = State::PresentationComma;
-                    break;
-
-                case State::PresentationComma:
                     n = writeLiteral(buffer + written, remaining, ",");
                     if (isLiteralComplete()) state = State::Priority;
                     break;

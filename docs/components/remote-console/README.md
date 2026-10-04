@@ -1,6 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsole.h, DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsoleWebUI.h, DomoticsCore-RemoteConsole/examples/BasicRemoteConsole/platformio.ini, DomoticsCore-RemoteConsole/examples/BasicRemoteConsole/src/main.cpp, DomoticsCore-RemoteConsole/examples/RemoteConsoleWithWebUI/platformio.ini, DomoticsCore-RemoteConsole/examples/RemoteConsoleWithWebUI/src/main.cpp]
 checked: b73224f
+judged-in-parts: 7ffbca2
 -->
 # DomoticsCore-RemoteConsole
 
@@ -15,7 +16,7 @@ DomoticsCore-RemoteConsole is a Telnet-based remote debugging component for ESP3
 - **Telnet Server** -- Standard telnet protocol on configurable port (default 23).
 - **Real-time Log Streaming** -- All `DLOG_*` macro output is captured via the logger callback system and streamed to connected clients.
 - **Circular Log Buffer** -- Configurable size (platform-dependent default); lazily allocated to avoid OOM on startup. Oldest entries are overwritten when full.
-- **Built-in Commands** -- `help`, `clear`, `level`, `filter`, `info`, `heap`, `reboot`, `auth`, `quit`.
+- **Built-in Commands** -- `help`, `clear`, `level`, `filter`, `info`, `heap`, `core`, `reboot`, `auth`, `quit`.
 - **Custom Commands** -- Register application-specific commands with `registerCommand()`.
 - **ANSI Color Output** -- Color-coded log levels: red (ERROR), yellow (WARN), green (INFO), cyan (DEBUG).
 - **Tag Filtering** -- Show only logs matching a specific tag at runtime.

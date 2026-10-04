@@ -27,6 +27,20 @@ private:
     // Helper for authentication
     std::function<bool(AsyncWebServerRequest*)> authHandler;
 
+    // Path hash and method mask of every registered route, so a declared path
+    // never shadows a real one: 8 bytes a route instead of its string.
+    struct RouteKey { uint32_t path; uint32_t methods; };
+    std::vector<RouteKey> routeKeys_;
+
+    static uint32_t pathKey(const char* uri) {
+        uint32_t h = 2166136261u;                          // FNV-1a
+        for (const char* p = uri; *p; ++p) h = (h ^ static_cast<uint8_t>(*p)) * 16777619u;
+        return h;
+    }
+    void recordRoute(const String& uri, uint32_t methods) {
+        routeKeys_.push_back(RouteKey{pathKey(uri.c_str()), methods});
+    }
+
     // On ESP32, lwIP does not exist before the first network interface, and
     // listening before then aborts the firmware.
     void open() {
@@ -48,6 +62,7 @@ public:
 
     void begin() {
         server = new AsyncWebServer(config.port);
+        routeKeys_.clear();
         setupStaticRoutes();
     }
 
@@ -79,15 +94,27 @@ public:
     
     // Expose route registration
     void registerRoute(const String& uri, WebRequestMethod method, ArRequestHandlerFunction handler) {
-        if (server) server->on(uri.c_str(), method, handler);
+        if (!server) return;
+        server->on(uri.c_str(), method, handler);
+        recordRoute(uri, method);
     }
 
     void registerChunkedRoute(const String& uri, WebRequestMethod method, std::function<void(AsyncWebServerRequest*)> handler) {
-        if (server) server->on(uri.c_str(), method, handler);
+        if (!server) return;
+        server->on(uri.c_str(), method, handler);
+        recordRoute(uri, method);
     }
     
     void registerUploadRoute(const String& uri, ArRequestHandlerFunction handler, ArUploadHandlerFunction uploadHandler) {
-        if (server) server->on(uri.c_str(), HTTP_POST, handler, uploadHandler);
+        if (!server) return;
+        server->on(uri.c_str(), HTTP_POST, handler, uploadHandler);
+        recordRoute(uri, HTTP_POST);
+    }
+
+    bool hasRoute(const String& uri, uint32_t method) const {
+        const uint32_t key = pathKey(uri.c_str());
+        for (const auto& r : routeKeys_) if (r.path == key && (r.methods & method)) return true;
+        return false;
     }
 
     // Default static file serving

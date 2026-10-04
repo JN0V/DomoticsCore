@@ -118,6 +118,33 @@ jobs:
           fi
 
   # ---------------------------------------------------------------------------
+  # The front end every firmware embeds, webui_src/app.js, run in jsdom. A host
+  # DOM with a scripted fetch: it proves what the page draws and sends, not how
+  # a browser lays it out. jsdom is the one dependency, pinned by the lockfile.
+  # ---------------------------------------------------------------------------
+  webui-frontend:
+    name: WebUI front end (jsdom)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: DomoticsCore-WebUI/webui_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: DomoticsCore-WebUI/webui_test/package-lock.json
+
+      - name: Install jsdom
+        run: npm ci --no-audit --no-fund
+
+      - name: Run the front-end suite
+        run: npm test
+
+  # ---------------------------------------------------------------------------
   # Cross-compilation for the three targets every example declares, and that
   # library.json promises through `platforms: [espressif32, espressif8266]`.
   #

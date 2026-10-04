@@ -1,5 +1,5 @@
 <!-- workline
-sources: [DomoticsCore-Core/library.json, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Platform_Arduino.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_HAL.h, DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h]
+sources: [DomoticsCore-Core/library.json, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Platform_Arduino.h, DomoticsCore-Core/include/DomoticsCore/Filesystem_HAL.h, DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h, DomoticsCore-Core/include/DomoticsCore/StringParse.h]
 checked: ae5715e
 verified: agent:documentalist
 judged: 23b0933
@@ -29,7 +29,7 @@ Core has **zero external dependencies** -- it only requires the Arduino-ESP32 (o
 | **Platform HAL** | Hardware Abstraction Layer routing so business code never contains `#ifdef` |
 | **Platform Arduino** | Shared Arduino utilities (time, string, GPIO, math) factored out of ESP32/ESP8266 HAL files |
 | **Filesystem HAL** | Platform-agnostic filesystem access (`begin`, `exists`, `getFS`, `format`, `totalBytes`, `usedBytes`) |
-| **Configuration** | `ComponentConfig` class with typed parameters and built-in validation |
+| **Configuration** | Plain config structs with defaults, passed to the constructor and exposed through `getConfig()` / `setConfig()`; `Utils::digitsOnly()` for user-typed numbers |
 
 ## Quick Start
 
@@ -115,10 +115,12 @@ DLOG_E(LOG_MY_APP, "Failed to connect after %d retries", retries);
 #include <DomoticsCore/MemoryManager.h>
 
 auto& mm = MemoryManager::instance();
-if (mm.shouldEnable(Feature::ChartHistory)) {
+if (mm.getProfile() == MemoryProfile::FULL) {
     // Allocate chart history -- only on devices with enough RAM
 }
-size_t bufSize = mm.getBufferSize(BufferType::JsonDocument);
+if (mm.isLowMemory()) {
+    // Live heap below the MINIMAL threshold: skip the expensive step
+}
 ```
 
 ## Further Reading

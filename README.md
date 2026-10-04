@@ -1,12 +1,12 @@
 <!-- workline
-sources: [library.json, library.properties, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, tools/check_versions.py, tools/bump_version.py]
+sources: [library.json, library.properties, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, tools/check_versions.py, release-please-config.json]
 checked: d54dae8
-judged-in-parts: 25bc3f1
+judged-in-parts: 02495d2
 -->
 
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-2.12.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v2.0.0)
+[![Version](https://img.shields.io/badge/version-2.13.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v2.0.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32%20|%20ESP32--C3%20|%20ESP8266-orange.svg)](https://platformio.org/)
 
@@ -197,18 +197,18 @@ fixes. Read the entries between the version you run and the one you take.
 
 | Component | Version | Description | Size | Status |
 |-----------|---------|-------------|------|--------|
-| **Core** | 1.13.1 | Framework, registry, event bus, MemoryManager, HeapTracker | ~50KB | ✅ Stable |
-| **System** | 1.10.0 | High-level orchestration (batteries included) | ~100KB | ✅ Stable |
-| **WiFi** | 1.7.0 | Network connectivity with AP fallback | ~40KB | ✅ Stable |
+| **Core** | 1.14.0 | Framework, registry, event bus, MemoryManager, HeapTracker | ~50KB | ✅ Stable |
+| **System** | 1.11.0 | High-level orchestration (batteries included) | ~100KB | ✅ Stable |
+| **WiFi** | 1.8.0 | Network connectivity with AP fallback | ~40KB | ✅ Stable |
 | **LED** | 1.6.0 | Visual status indicators (6 effects) | ~20KB | ✅ Stable |
-| **Storage** | 1.6.1 | NVS / LittleFS persistent data | ~30KB | ✅ Stable |
-| **RemoteConsole** | 1.7.2 | Telnet debugging console with WebUI integration | ~25KB | ✅ Stable |
-| **WebUI** | 1.12.0 | Web interface with WebSocket + SSE dual-mode | ~150KB | ✅ Stable |
-| **MQTT** | 1.10.0 | Message broker with auto-reconnect | ~40KB | ✅ Stable |
-| **NTP** | 1.4.2 | Time synchronization | ~15KB | ✅ Stable |
+| **Storage** | 1.7.0 | NVS / LittleFS persistent data | ~30KB | ✅ Stable |
+| **RemoteConsole** | 1.7.3 | Telnet debugging console with WebUI integration | ~25KB | ✅ Stable |
+| **WebUI** | 1.13.0 | Web interface with WebSocket + SSE dual-mode | ~150KB | ✅ Stable |
+| **MQTT** | 1.11.0 | Message broker with auto-reconnect | ~40KB | ✅ Stable |
+| **NTP** | 1.4.3 | Time synchronization | ~15KB | ✅ Stable |
 | **OTA** | 1.11.0 | Over-the-air updates | ~30KB | ✅ Stable |
-| **HomeAssistant** | 2.6.0 | Auto-discovery integration | ~20KB | ✅ Stable |
-| **SystemInfo** | 1.7.0 | Real-time monitoring with charts | ~25KB | ✅ Stable |
+| **HomeAssistant** | 2.7.0 | Auto-discovery integration | ~20KB | ✅ Stable |
+| **SystemInfo** | 1.8.0 | Real-time monitoring with charts | ~25KB | ✅ Stable |
 
 **Total with everything:** ~545KB flash, ~50KB RAM
 
@@ -238,11 +238,7 @@ DomoticsCore uses [Semantic Versioning](https://semver.org/) with **per-componen
 
 - **Root library**: The top-level `library.json` defines the `DomoticsCore` framework version (`X.Y.Z`).
 - **Component libraries**: Each `DomoticsCore-*` sub-library has its own `library.json` `version` and a matching `metadata.version` in its C++ component class.
-- **Propagation rules** (Model B):
-  - Bumping a component **patch** -> bump the **root patch**.
-  - Bumping a component **minor** -> bump the **root minor** (and reset root patch).
-  - Bumping a component **major** -> bump the **root major** (and reset root minor/patch).
-  - Only the changed component and the root are bumped; other components keep their current versions.
+- **Versions move through release-please** (`release-please-config.json`): it keeps one pull request open, "chore: release main", with the next versions computed from the conventional commits — a component's only when its folder changed, the root by the highest level of any change (`fix` a patch, `feat` a minor, `!` a major) — in each `library.json`, `library.properties`, the components' `metadata.version`, and `CHANGELOG.md`. Merging it is the decision to release: release-please tags the merged commit (`vX.Y.Z` for the root, `DomoticsCore-<Component>-vX.Y.Z` for a component), writes the GitHub releases, and `release.yml` publishes the root to PlatformIO. Versions are never edited by hand; to force one, set `release-as` on its package in `release-please-config.json`, with the reason in that commit, and remove it once released.
 
 ### Versioning tools
 
@@ -256,29 +252,6 @@ DomoticsCore uses [Semantic Versioning](https://semver.org/) with **per-componen
 
   - `library.json.version` matches all `metadata.version = "X.Y.Z"` assignments under `include/` and `src/`.
   - (Optionally) with `--check-tag`, the root `library.json.version` matches the Git tag `vX.Y.Z` when run on a tagged commit.
-
-- **Version bump helper**:
-
-  ```bash
-  # Bump MQTT component and propagate the same level to the root DomoticsCore version
-  python tools/bump_version.py MQTT minor
-
-  # Equivalent explicit component name
-  python tools/bump_version.py DomoticsCore-MQTT patch
-
-  # Bump only the root DomoticsCore version
-  python tools/bump_version.py root major
-
-  # Preview changes without modifying files
-  python tools/bump_version.py MQTT minor --dry-run --verbose
-  ```
-
-The bump script:
-
-- Reads the current component `library.json.version`.
-- Computes the new SemVer according to the requested level.
-- Updates the component `library.json` and all `metadata.version` assignments inside that component.
-- Bumps the root `library.json.version` by the same level whenever a component is bumped.
 
 ## 📖 Documentation
 

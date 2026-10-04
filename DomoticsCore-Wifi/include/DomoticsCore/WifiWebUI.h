@@ -101,7 +101,7 @@ protected:
 
         // Components tab - compact status display
         ctxs.push_back(WebUIContext{
-            "wifi_component", "WiFi", "dc-wifi", WebUILocation::ComponentDetail, WebUIPresentation::Card
+            "wifi_component", "WiFi", "dc-wifi", WebUILocation::ComponentDetail
         }
         .withField(WebUIField("mode", "Mode", WebUIFieldType::Display, "AP", "", true))
         .withField(WebUIField("ssid_now", "Network", WebUIFieldType::Display, "", "", true))
@@ -197,7 +197,9 @@ public:
                 return "{\"success\":true}";
             } else if (field == "scan_networks") {
                 if (!wifi->startScanAsync()) {
-                    return "{\"success\":false,\"error\":\"Scan already running\"}";
+                    return wifi->getLastScanSummary() == "Scan failed"
+                        ? "{\"success\":false,\"error\":\"Scan did not start\"}"
+                        : "{\"success\":false,\"error\":\"Scan already running\"}";
                 }
                 return "{\"success\":true}";
             } else if (field == "ap_enabled") {

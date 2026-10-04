@@ -141,7 +141,7 @@ When modifying this component, ensure adherence to these key constitution princi
 - **Non-Blocking Timer (Section X)**: The component already uses `NonBlockingDelay`. Never introduce `delay()`.
 - **File Size (Section VII)**: Monitor the size of `LED.h`; the hard limit is 800 lines.
 - **Memory Leak Prevention (Section XIV)**: `LEDWebUI` caches LED names. Ensure any new caches are invalidated or bounded. No `new` without corresponding ownership transfer.
-- **Semantic Versioning (Section XV)**: Version changes must use `tools/bump_version.py`. The version in `library.json` must match `metadata.version` in `LEDComponent`'s constructor.
+- **Semantic Versioning (Section XV)**: Versions move only through release-please's release pull request. The version in `library.json` must match `metadata.version` in `LEDComponent`'s constructor.
 - **Documentation (Quality Gates)**: All documentation, specs, and code comments must be in English.
 
 ---

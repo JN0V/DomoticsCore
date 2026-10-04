@@ -198,7 +198,7 @@ When working on DomoticsCore-MQTT, the following Constitution principles are esp
 
 4. **Principle XIV (Memory Leak Prevention)**: Monitor heap impact of the message queue. `shrink_to_fit()` is called in three places: `unsubscribe()` (after erasing one subscription), `unsubscribeAll()` (after clearing the subscription vector), and `processMessageQueue()` (after draining queued messages). Event payload buffers are stack-allocated (fixed-size), avoiding heap churn.
 
-5. **Principle XV (Semantic Versioning)**: Version changes must use `tools/bump_version.py`. The version in `library.json` must match `metadata.version` in the constructor (`MQTT_impl.h` line 34).
+5. **Principle XV (Semantic Versioning)**: Versions move only through release-please's release pull request. The version in `library.json` must match `metadata.version` in the constructor (`MQTT_impl.h` line 34).
 
 6. **Principle VII (File Size Limits)**: `MQTT_impl.h` is the largest file at approximately 557 lines (including comments and blank lines). Monitor this if adding features -- it may need splitting if it approaches 800 lines of code.
 

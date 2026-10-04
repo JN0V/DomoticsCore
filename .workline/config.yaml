@@ -29,4 +29,7 @@ routing:
   # Before a push, the committer checks the commits leaving the machine; the
   # documentalist only counts the docs they made suspect (ADR-0010). Docs are
   # judged on the pull request, and by gardening at night.
-  events: {pre-push: [committer, documentalist]}
+  # Gardening at night: the docs, then the backlog (workline ADR-0018); the
+  # product owner's acts and proposals are listed in the issue "Backlog —
+  # product owner".
+  events: {pre-push: [committer, documentalist], schedule: [documentalist, product-owner]}

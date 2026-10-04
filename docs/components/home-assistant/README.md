@@ -2,6 +2,7 @@
 sources: [DomoticsCore-HomeAssistant/library.json, DomoticsCore-HomeAssistant/include/DomoticsCore/HAAlarmControlPanel.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HABinarySensor.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAButton.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEntity.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEvents.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HALight.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HASensor.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HASwitch.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistantWebUI.h]
 checked: c5aef9f
 judged: 6a979a6
+judged-in-parts: 9014958
 -->
 
 # DomoticsCore-HomeAssistant
@@ -12,7 +13,7 @@ judged: 6a979a6
 
 DomoticsCore-HomeAssistant is the Home Assistant MQTT Discovery integration component for the DomoticsCore IoT framework. It enables ESP32 and ESP8266 devices to register themselves and their entities with Home Assistant automatically -- no manual YAML configuration required. Devices, sensors, switches, lights, and buttons appear in Home Assistant the moment the firmware connects to the MQTT broker.
 
-The component is **header-only** and communicates with the MQTT component exclusively through the DomoticsCore EventBus, following the framework's decoupled architecture.
+The component is **header-only** and communicates with the MQTT component through the DomoticsCore EventBus for publishing and subscribing, and directly for its configuration and connection, following the framework's decoupled architecture.
 
 ## Key Features
 
