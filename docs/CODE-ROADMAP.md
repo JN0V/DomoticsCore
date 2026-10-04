@@ -3,6 +3,13 @@ sources: []
 -->
 # DomoticsCore — Code Remediation Roadmap v2
 
+> **Archived on 2026-10-04: no longer updated.** The items still to do are
+> GitHub issues now, one each, opened from this file with its text and the
+> lines it came from: [the open issues](https://github.com/JN0V/DomoticsCore/issues).
+> File new work there, not here. workline's product owner keeps them, and
+> lists what it does in the issue "Backlog — product owner". This file
+> stays for its history: the ids (BUG-6, LO-12…) it gave are the issues'.
+
 > Generated from adversarial code review of all 12 components + root (2026-03-10).
 > 13 parallel review agents — 196 total findings: 6 CRITICAL, 54 HIGH, 79 MEDIUM, 57 LOW.
 > Priority order follows the constitution. Each item is a separate commit/PR.
