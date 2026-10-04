@@ -3,7 +3,7 @@ sources: [library.json, library.properties, DomoticsCore-Core/library.json, Domo
 checked: 436872f
 verified: agent:documentalist
 judged: 23b0933
-judged-in-parts: 7ffbca2
+judged-in-parts: cff4019
 -->
 # DomoticsCore Documentation
 
@@ -195,7 +195,7 @@ Core (foundation - no dependencies)
   │       └── HomeAssistant
   └── WebUI (*WebUI providers for each component)
 
-System (meta-orchestrator - depends on all)
+System (meta-orchestrator - depends on Core, LED, RemoteConsole and Wifi)
 ```
 
 ---

@@ -2,6 +2,7 @@
 sources: [DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Wifi/include/DomoticsCore/WifiEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-NTP/include/DomoticsCore/NTPEvents.h, DomoticsCore-OTA/include/DomoticsCore/OTAEvents.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEvents.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h]
 checked: 4cdb3e6
 verified: agent:documentalist
+judged-in-parts: cff4019
 -->
 # EventBus Patterns
 
@@ -96,7 +97,7 @@ ComponentStatus begin() override {
 void setMode(const String& mode) {
     currentMode = mode;
     if (__dc_eventBus) {
-        __dc_eventBus->publish("mycomponent/mode", mode);
+        __dc_eventBus->publish("mycomponent/mode", mode.c_str(), mode.length() + 1);
     }
 }
 ```
@@ -105,15 +106,15 @@ void setMode(const String& mode) {
 
 ```cpp
 // Requester — using typed helper (from within a component)
-on<String>("sensor/response", [](const String& value) {
+on<const char*>("sensor/response", [](const char* value) {
     handleResponse(value);
 });
-emit<String>("sensor/request", String("temperature"));
+emit("sensor/request", "temperature", sizeof("temperature"));
 
 // Responder — using typed helper (from within a component)
-on<String>("sensor/request", [this](const String& param) {
+on<const char*>("sensor/request", [this](const char* param) {
     String value = getSensorValue(param);
-    emit<String>("sensor/response", value);
+    emit("sensor/response", value.c_str(), value.length() + 1);
 });
 ```
 
@@ -125,9 +126,9 @@ Core lifecycle events are defined in `DomoticsCore-Core/include/DomoticsCore/Eve
 |---------------|-------|---------|--------|
 | `EVENT_COMPONENT_READY` | `component/ready` | `const char*` (component name) | Core (ComponentRegistry) |
 | `EVENT_COMPONENT_ERROR` | `component/error` | Component name | Core |
-| `EVENT_SYSTEM_READY` | `system/ready` | `String("")` | Core (ComponentRegistry) |
+| `EVENT_SYSTEM_READY` | `system/ready` | - | Core (ComponentRegistry) |
 | `EVENT_SYSTEM_REBOOT` | `system/reboot` | - | System |
-| `EVENT_SHUTDOWN_START` | `shutdown/start` | `String("")` | Core (ComponentRegistry) |
+| `EVENT_SHUTDOWN_START` | `shutdown/start` | - | Core (ComponentRegistry) |
 
 Component-specific events are defined in their respective `*Events.h` files:
 
@@ -156,7 +157,7 @@ Component-specific events are defined in their respective `*Events.h` files:
 ```
 ┌─────────────┐     publish()     ┌───────────┐     poll()        ┌─────────────┐
 │  Publisher  │ ─────────────────▶│   Queue   │ ─────────────────▶│  Subscriber │
-└─────────────┘                   │ (max 32)  │   (up to 8/call)  └─────────────┘
+└─────────────┘                   │ (bytes)   │   (up to 8/call)  └─────────────┘
                                   └───────────┘
                                        │
                                        │ (if sticky)
