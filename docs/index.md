@@ -69,7 +69,7 @@ verified: agent:documentalist
 ### Reference
 
 - [EventBus Architecture](./reference/eventbus-architecture.md) -- Complete EventBus API and patterns
-- [Code Remediation Roadmap](./CODE-ROADMAP.md) -- All P1-P8 items completed
+- [Code Remediation Roadmap](./CODE-ROADMAP.md) -- archived 2026-10-04; what is left is in the [GitHub issues](https://github.com/JN0V/DomoticsCore/issues)
 
 ### Reliability
 
