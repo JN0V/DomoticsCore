@@ -2,11 +2,13 @@
 sources: [library.json, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h, tools/check_versions.py, release-please-config.json]
 checked: 4b811cd
 verified: agent:documentalist
+judged: 6fb0b14
+judged-in-parts: 6fb0b14
 -->
 
 # DomoticsCore Architecture
 
-**Version:** 2.0.0
+**Version:** 2.13.0
 **Status:** Production Ready
 
 ---
@@ -54,13 +56,13 @@ Some components separate declaration/implementation while staying header-only:
 ```cpp
 // MQTT.h (declaration)
 class MQTTComponent : public IComponent {
-    void begin() override;  // Declared
+    ComponentStatus begin() override;  // Declared
 };
 
 #include "MQTT_impl.h"  // ← Include implementation at end
 
 // MQTT_impl.h (implementation)
-inline void MQTTComponent::begin() {
+inline ComponentStatus MQTTComponent::begin() {
     // Implementation here
 }
 ```
@@ -135,7 +137,7 @@ domotics.begin();  // Everything automatic!
 SystemConfig config = SystemConfig::standard();
 ```
 
-**FullStack** (+ MQTT, HA, OTA):
+**FullStack** (+ MQTT, HA, OTA, SystemInfo):
 ```cpp
 SystemConfig config = SystemConfig::fullStack();
 config.mqttBroker = "192.168.1.100";
@@ -247,7 +249,7 @@ DomoticsCore/
 ```json
 {
   "name": "DomoticsCore",
-  "version": "2.0.0",
+  "version": "2.13.0",
   "description": "ESP32/ESP8266 domotics framework with WiFi, MQTT, web interface, Home Assistant integration, and persistent storage",
   "frameworks": ["arduino"],
   "platforms": ["espressif32", "espressif8266"],
@@ -263,7 +265,7 @@ DomoticsCore/
 **Purpose:**
 1. **Meta-package** - Represents the entire framework
 2. **PlatformIO Registry** - Searchable package name (`jn0v/DomoticsCore`)
-3. **Version Coordination** - Single version for the framework (currently 2.0.0)
+3. **Version Coordination** - Single version for the framework (currently 2.13.0)
 4. **Documentation Landing** - Entry point for users
 
 **Build Configuration:**
@@ -327,12 +329,12 @@ pio pkg publish DomoticsCore-HomeAssistant
 **Recommendation:** Synchronized major/minor, independent patches
 
 ```
-DomoticsCore          v2.0.0
-├── Core              v1.5.2
+DomoticsCore          v2.13.0
+├── Core              v1.14.0
 ├── System            v1.4.1
 ├── Wifi              v1.4.1
 ├── WebUI             v1.5.0
-├── MQTT              v1.4.1
+├── MQTT              v1.11.0
 ├── HomeAssistant     v2.0.0
 ├── NTP               v1.3.0
 ├── OTA               v1.4.1
@@ -343,7 +345,7 @@ DomoticsCore          v2.0.0
 ```
 
 **Rules:**
-1. **Root version** (2.0.0) represents the framework release
+1. **Root version** (2.13.0) represents the framework release
 2. **Component versions** are independently maintained
 3. **Patch versions** diverge for bug fixes
 4. Use semantic versioning strictly
@@ -365,7 +367,7 @@ The `System` component provides a high-level API that handles common setup autom
 1. **Preset Configurations**
    - `minimal()` - WiFi, LED, Console
    - `standard()` - + WebUI, NTP, Storage
-   - `fullStack()` - + MQTT, HA, OTA
+   - `fullStack()` - + MQTT, HA, OTA, SystemInfo
 
 2. **Automatic Setup**
    - State management built-in
