@@ -1,7 +1,8 @@
 <!-- workline
-sources: [DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Wifi/include/DomoticsCore/WifiEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-NTP/include/DomoticsCore/NTPEvents.h, DomoticsCore-OTA/include/DomoticsCore/OTAEvents.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEvents.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h]
-checked: 4cdb3e6
+sources: [DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Wifi/include/DomoticsCore/WifiEvents.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-NTP/include/DomoticsCore/NTPEvents.h, DomoticsCore-OTA/include/DomoticsCore/OTAEvents.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEvents.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h]
+checked: cff4019
 verified: agent:documentalist
+judged-in-parts: cff4019
 -->
 # EventBus Patterns
 
@@ -83,12 +84,16 @@ void afterAllComponentsReady() override {
 ```cpp
 ComponentStatus begin() override {
     // Subscribe to WiFi connected event (defined in WifiEvents.h)
-    on<bool>("wifi/sta/connected", [this](const bool&) {
-        onNetworkReady();
-    }, true);  // replayLast=true in case WiFi connected before this component
+    on<bool>("wifi/sta/connected", [this](const bool& connected) {
+        if (connected) onNetworkReady();  // Wifi publishes false on timeout
+    });
     return ComponentStatus::Success;
 }
 ```
+
+Wifi publishes `wifi/sta/connected` without `sticky`, so `replayLast` has
+nothing to replay: a component that subscribes after the connection should
+also ask the Wifi component (`isSTAConnected()`).
 
 ### 3. State Change Broadcasting
 
@@ -96,25 +101,35 @@ ComponentStatus begin() override {
 void setMode(const String& mode) {
     currentMode = mode;
     if (__dc_eventBus) {
-        __dc_eventBus->publish("mycomponent/mode", mode);
+        __dc_eventBus->publish("mycomponent/mode", mode.c_str(), mode.length() + 1);
     }
 }
 ```
 
 ### 4. Request/Response Pattern
 
-```cpp
-// Requester — using typed helper (from within a component)
-on<String>("sensor/response", [](const String& value) {
-    handleResponse(value);
-});
-emit<String>("sensor/request", String("temperature"));
+A string travels as its bytes, NUL included, through the sized
+`emit(topic, data, size, sticky)`; all four arguments are needed, since
+`emit(topic, x, n)` resolves to the typed `emit` with `n` as `sticky`. The
+handler receives a pointer to the queued copy, so subscribe with the raw API:
+`on<const char*>` would read those bytes as a pointer.
 
-// Responder — using typed helper (from within a component)
-on<String>("sensor/request", [this](const String& param) {
+```cpp
+// Requester (from within a component)
+eventBus().subscribe("sensor/response", [this](const void* p) {
+    const char* value = static_cast<const char*>(p);
+    if (value) handleResponse(value);
+}, this);
+static const char kParam[] = "temperature";
+emit("sensor/request", kParam, sizeof(kParam), false);
+
+// Responder (from within a component)
+eventBus().subscribe("sensor/request", [this](const void* p) {
+    const char* param = static_cast<const char*>(p);
+    if (!param) return;
     String value = getSensorValue(param);
-    emit<String>("sensor/response", value);
-});
+    emit("sensor/response", value.c_str(), value.length() + 1, false);
+}, this);
 ```
 
 ## Lifecycle Events
@@ -124,10 +139,10 @@ Core lifecycle events are defined in `DomoticsCore-Core/include/DomoticsCore/Eve
 | Event Constant | Topic | Payload | Source |
 |---------------|-------|---------|--------|
 | `EVENT_COMPONENT_READY` | `component/ready` | `const char*` (component name) | Core (ComponentRegistry) |
-| `EVENT_COMPONENT_ERROR` | `component/error` | Component name | Core |
-| `EVENT_SYSTEM_READY` | `system/ready` | `String("")` | Core (ComponentRegistry) |
-| `EVENT_SYSTEM_REBOOT` | `system/reboot` | - | System |
-| `EVENT_SHUTDOWN_START` | `shutdown/start` | `String("")` | Core (ComponentRegistry) |
+| `EVENT_COMPONENT_ERROR` | `component/error` | - | Defined only: nothing publishes it |
+| `EVENT_SYSTEM_READY` | `system/ready` | - | Core (ComponentRegistry) |
+| `EVENT_SYSTEM_REBOOT` | `system/reboot` | - | Defined only: nothing publishes it |
+| `EVENT_SHUTDOWN_START` | `shutdown/start` | - | Core (ComponentRegistry) |
 
 Component-specific events are defined in their respective `*Events.h` files:
 
@@ -156,7 +171,7 @@ Component-specific events are defined in their respective `*Events.h` files:
 ```
 ┌─────────────┐     publish()     ┌───────────┐     poll()        ┌─────────────┐
 │  Publisher  │ ─────────────────▶│   Queue   │ ─────────────────▶│  Subscriber │
-└─────────────┘                   │ (max 32)  │   (up to 8/call)  └─────────────┘
+└─────────────┘                   │ (bytes)   │   (up to 8/call)  └─────────────┘
                                   └───────────┘
                                        │
                                        │ (if sticky)
