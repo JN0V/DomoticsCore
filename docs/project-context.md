@@ -2,6 +2,7 @@
 sources: [library.json, library.properties, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, tools/check_versions.py, release-please-config.json, .github/workflows/release-please.yml, .github/workflows/version-check.yml, .github/workflows/release.yml, .github/workflows/test-github-install.yml, .specify/memory/constitution.md]
 checked: 4cdb3e6
 verified: agent:documentalist
+judged-in-parts: c14a9f8
 -->
 # DomoticsCore - Project Context
 
@@ -10,7 +11,7 @@ verified: agent:documentalist
 ## Project Identity
 
 - **Name**: DomoticsCore
-- **Version**: 2.0.0
+- **Version**: 2.13.0
 - **Type**: Embedded IoT library (PlatformIO / Arduino framework)
 - **Platforms**: ESP32, ESP32-C3, ESP8266
 - **Language**: C++ (header-only design)
@@ -56,16 +57,16 @@ Core (foundation - no dependencies)
   ├── LED
   ├── Storage
   ├── SystemInfo
-  ├── RemoteConsole
   ├── NTP
   ├── OTA
   ├── Wifi
+  │   ├── RemoteConsole
   │   └── MQTT
   │       └── HomeAssistant
   └── WebUI
       └── *WebUI providers (one per component)
 
-System (meta-orchestrator - depends on all)
+System (meta-orchestrator - depends on Core, LED, RemoteConsole and Wifi)
 ```
 
 ## Key Architectural Patterns
@@ -96,7 +97,7 @@ Instance-based, queue-based publish/subscribe messaging (`DomoticsCore::Utils::E
 - **Owner-based cleanup**: `unsubscribeOwner(ptr)` removes all subscriptions for a component (called automatically on shutdown)
 - **Topics use slash separators**: e.g., `wifi/sta/connected`, `mqtt/message`, `component/ready`
 - **Typed helpers on IComponent**: `on<T>(topic, cb)` and `emit<T>(topic, payload)` for type-safe pub/sub
-- **Thread safety**: Single-threaded assumption; subscribe/unsubscribe must NOT be called during `poll()` (guarded by assert in debug builds)
+- **Thread safety**: Bus state is lock-guarded; subscribe/unsubscribe must NOT be called during `poll()` (guarded by assert in debug builds)
 
 ### WebUI Provider Pattern
 Each component optionally provides a `*WebUI` class implementing `IWebUIProvider`. Providers register with the `WebUIComponent` and contribute to 6 UI locations: `Dashboard`, `ComponentDetail`, `HeaderStatus`, `QuickControls`, `Settings`, `HeaderInfo`.
@@ -113,7 +114,7 @@ Each component optionally provides a `*WebUI` class implementing `IWebUIProvider
 ## Build System
 
 - **PlatformIO** is the primary build system
-- `library.json` at root (v2.0.0) defines the library metadata, build flags, include paths, source filters, and external dependencies
+- `library.json` at root (v2.13.0) defines the library metadata, build flags, include paths, source filters, and external dependencies
 - Each component has its own `library.json` for standalone use
 - No root `platformio.ini` -- each example has its own
 - **Build scripts:**

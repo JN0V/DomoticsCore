@@ -6,7 +6,7 @@ judged-in-parts: 02495d2
 
 # DomoticsCore
 
-[![Version](https://img.shields.io/badge/version-2.13.0-blue.svg)](https://github.com/JN0V/DomoticsCore/releases/tag/v2.0.0)
+[![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2Flibrary.json&query=%24.version&label=version&color=blue)](https://github.com/JN0V/DomoticsCore/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-ESP32%20|%20ESP32--C3%20|%20ESP8266-orange.svg)](https://platformio.org/)
 
@@ -197,18 +197,18 @@ fixes. Read the entries between the version you run and the one you take.
 
 | Component | Version | Description | Size | Status |
 |-----------|---------|-------------|------|--------|
-| **Core** | 1.14.0 | Framework, registry, event bus, MemoryManager, HeapTracker | ~50KB | ✅ Stable |
-| **System** | 1.11.0 | High-level orchestration (batteries included) | ~100KB | ✅ Stable |
-| **WiFi** | 1.8.0 | Network connectivity with AP fallback | ~40KB | ✅ Stable |
-| **LED** | 1.6.0 | Visual status indicators (6 effects) | ~20KB | ✅ Stable |
-| **Storage** | 1.7.0 | NVS / LittleFS persistent data | ~30KB | ✅ Stable |
-| **RemoteConsole** | 1.7.3 | Telnet debugging console with WebUI integration | ~25KB | ✅ Stable |
-| **WebUI** | 1.13.0 | Web interface with WebSocket + SSE dual-mode | ~150KB | ✅ Stable |
-| **MQTT** | 1.11.0 | Message broker with auto-reconnect | ~40KB | ✅ Stable |
-| **NTP** | 1.4.3 | Time synchronization | ~15KB | ✅ Stable |
-| **OTA** | 1.11.0 | Over-the-air updates | ~30KB | ✅ Stable |
-| **HomeAssistant** | 2.7.0 | Auto-discovery integration | ~20KB | ✅ Stable |
-| **SystemInfo** | 1.8.0 | Real-time monitoring with charts | ~25KB | ✅ Stable |
+| **Core** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-Core%2Flibrary.json&query=%24.version&label=v&color=blue) | Framework, registry, event bus, MemoryManager, HeapTracker | ~50KB | ✅ Stable |
+| **System** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-System%2Flibrary.json&query=%24.version&label=v&color=blue) | High-level orchestration (batteries included) | ~100KB | ✅ Stable |
+| **WiFi** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-Wifi%2Flibrary.json&query=%24.version&label=v&color=blue) | Network connectivity with AP fallback | ~40KB | ✅ Stable |
+| **LED** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-LED%2Flibrary.json&query=%24.version&label=v&color=blue) | Visual status indicators (6 effects) | ~20KB | ✅ Stable |
+| **Storage** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-Storage%2Flibrary.json&query=%24.version&label=v&color=blue) | NVS / LittleFS persistent data | ~30KB | ✅ Stable |
+| **RemoteConsole** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-RemoteConsole%2Flibrary.json&query=%24.version&label=v&color=blue) | Telnet debugging console with WebUI integration | ~25KB | ✅ Stable |
+| **WebUI** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-WebUI%2Flibrary.json&query=%24.version&label=v&color=blue) | Web interface with WebSocket + SSE dual-mode | ~150KB | ✅ Stable |
+| **MQTT** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-MQTT%2Flibrary.json&query=%24.version&label=v&color=blue) | Message broker with auto-reconnect | ~40KB | ✅ Stable |
+| **NTP** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-NTP%2Flibrary.json&query=%24.version&label=v&color=blue) | Time synchronization | ~15KB | ✅ Stable |
+| **OTA** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-OTA%2Flibrary.json&query=%24.version&label=v&color=blue) | Over-the-air updates | ~30KB | ✅ Stable |
+| **HomeAssistant** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-HomeAssistant%2Flibrary.json&query=%24.version&label=v&color=blue) | Auto-discovery integration | ~20KB | ✅ Stable |
+| **SystemInfo** | ![version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FJN0V%2FDomoticsCore%2Fmain%2FDomoticsCore-SystemInfo%2Flibrary.json&query=%24.version&label=v&color=blue) | Real-time monitoring with charts | ~25KB | ✅ Stable |
 
 **Total with everything:** ~545KB flash, ~50KB RAM
 
