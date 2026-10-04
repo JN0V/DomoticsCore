@@ -1,6 +1,6 @@
 <!-- workline
-sources: [DomoticsCore-OTA/include/DomoticsCore/OTA.h, DomoticsCore-OTA/include/DomoticsCore/OTAEvents.h, DomoticsCore-OTA/include/DomoticsCore/OTAWebUI.h, DomoticsCore-OTA/include/DomoticsCore/Update_ESP32.h, DomoticsCore-OTA/include/DomoticsCore/Update_ESP8266.h, DomoticsCore-OTA/include/DomoticsCore/Update_HAL.h, DomoticsCore-OTA/include/DomoticsCore/Update_Stub.h, DomoticsCore-OTA/src/OTA.cpp, DomoticsCore-OTA/library.json, DomoticsCore-OTA/platformio.ini, DomoticsCore-OTA/test/test_ota_component/test_ota_component.cpp, DomoticsCore-OTA/examples/BasicOTA/src/main.cpp, DomoticsCore-OTA/examples/OTAWithWebUI/src/main.cpp]
-checked: f815f62
+sources: [DomoticsCore-OTA/include/DomoticsCore/OTA.h, DomoticsCore-OTA/include/DomoticsCore/OTAEvents.h, DomoticsCore-OTA/include/DomoticsCore/OTAWebUI.h, DomoticsCore-OTA/include/DomoticsCore/Update_ESP32.h, DomoticsCore-OTA/include/DomoticsCore/Update_ESP8266.h, DomoticsCore-OTA/include/DomoticsCore/Update_HAL.h, DomoticsCore-OTA/include/DomoticsCore/Update_Stub.h, DomoticsCore-OTA/src/OTA.cpp, DomoticsCore-OTA/library.json, DomoticsCore-OTA/platformio.ini, DomoticsCore-OTA/test/test_ota_component/test_ota_component.cpp, DomoticsCore-OTA/test/test_ota_esp32/test_ota_esp32.cpp, DomoticsCore-OTA/test/test_ota_esp8266/test_ota_esp8266.cpp, DomoticsCore-OTA/test/test_ota_http/test_ota_http.cpp, DomoticsCore-OTA/test/test_ota_status_allocations/test_ota_status_allocations.cpp, DomoticsCore-OTA/test/test_ota_url_hash/test_ota_url_hash.cpp, DomoticsCore-OTA/examples/BasicOTA/src/main.cpp, DomoticsCore-OTA/examples/OTAWithWebUI/src/main.cpp]
+checked: cff4019
 verified: agent:documentalist
 judged: cff4019
 -->
@@ -50,10 +50,14 @@ DomoticsCore-OTA/
     BasicOTA/            -- Minimal OTA with periodic URL checking, no WebUI
     OTAWithWebUI/        -- Full OTA with WebUI browser-based upload via Access Point
   test/
-    test_ota_component/
-      test_ota_component.cpp  -- 30 Unity tests: events, config, state, upload, lifecycle, integration
+    test_ota_component/          -- 56 Unity tests: events, config, state, hashes, upload, lifecycle, integration
+    test_ota_http/               -- 24 tests: the routes OTAWebUI registers, through the mocked async server
+    test_ota_url_hash/           -- 6 tests: a URL install carrying (or required to carry) its SHA-256
+    test_ota_status_allocations/ -- 2 tests: what a progress event allocates, counted at malloc
+    test_ota_esp32/              -- 9 tests on an ESP32 board: the boot partition a bad image never reaches
+    test_ota_esp8266/            -- 10 tests on an ESP8266 board: the eboot command a bad image never stages
   library.json           -- PlatformIO library manifest (v1.11.0)
-  platformio.ini         -- Native test environment (Unity, gnu++17)
+  platformio.ini         -- native (host tests), esp32cam and esp8266dev (on-board suites) environments
   README.md              -- Component-level README with usage examples
 ```
 
@@ -62,7 +66,7 @@ DomoticsCore-OTA/
 | File | Lines | Notes |
 |------|-------|-------|
 | `OTA.h` | 181 | Config struct (13 fields) + class declaration |
-| `OTAEvents.h` | 33 | Seven event topic constants |
+| `OTAEvents.h` | 33 | Six event topic constants |
 | `OTAWebUI.h` | 558 | Full WebUI provider with route registration |
 | `Update_HAL.h` | 37 | Platform routing only |
 | `Update_ESP32.h` | 83 | ESP32 HAL: direct flash write, no buffering |
@@ -96,7 +100,7 @@ Plain configuration struct with 13 fields. No methods. Passed by value to constr
 - Registers both standard WebUI contexts and custom REST/upload routes
 - `handleWebUIRequest` accepts both `ota_unified` and `ota_manager` as context IDs
 - Internal `UploadState` struct tracks active upload metadata (filename, total, success/error)
-- **Bug (minor)**: `getWebUIVersion()` returns hardcoded `"1.4.0"` instead of `"1.11.0"` -- mismatch with `library.json` and `metadata.version`
+- `getWebUIVersion()` returns `ota->metadata.version`, falling back to `"1.4.0"` only when constructed without an `OTAComponent`
 
 ### `OTAEvents` (namespace)
 
@@ -130,7 +134,11 @@ OTA does **not** depend on DomoticsCore-Wifi, DomoticsCore-MQTT, or any other co
 
 ### Build Configuration
 
-The native test environment (`platformio.ini`) uses `gnu++17`, `CORE_DEBUG_LEVEL=3`, and includes both Core and OTA headers. Tests link against `ArduinoJson@^7.0.0`.
+`platformio.ini` has three environments:
+
+- `native` runs the host suites (`test_ota_esp32` and `test_ota_esp8266` are ignored there). It builds with `gnu++17` and `CORE_DEBUG_LEVEL=3`, puts `tests/mocks/libraries` and the Core, OTA and WebUI headers on the include path, links Core, WebUI and `ArduinoJson@^7.0.0`, and `lib_ignore`s the real ESPAsyncWebServer and AsyncTCP so the mocked async server is found instead (`test_ota_http` compiles `OTAWebUI`). It also runs the tests with glibc's tcache disabled, so heap assertions do not depend on earlier tests.
+- `esp32cam` runs `test_ota_esp32` on a board, with the `default.csv` partition table that gives OTA its two app slots.
+- `esp8266dev` (`nodemcuv2`) runs `test_ota_esp8266` on a board.
 
 ---
 
@@ -166,24 +174,18 @@ All `#ifdef` platform branching is confined to `Update_HAL.h` and the platform-s
 
 ## Testing
 
-### Unit Tests (`test/test_ota_component/test_ota_component.cpp`)
+### Unit Tests
 
-30 Unity tests organized into 10 groups:
+| Suite | Tests | Runs on | Coverage |
+|-------|-------|---------|----------|
+| `test_ota_component` | 56 | `native` | Event constants, creation, config, state machine, triggers, SHA-256 on the download and upload paths (a mismatch never commits), the size cap, start/end/completed event order, upload states and progress, lifecycle, providers, non-blocking loop, Core integration, check interval |
+| `test_ota_http` | 24 | `native` | The upload and REST routes `OTAWebUI` registers: CSRF and credentials checks, state reset, abort on a dropped client, announced size |
+| `test_ota_url_hash` | 6 | `native` | A URL install carrying the SHA-256 its image must match, and `requireDownloadHash` |
+| `test_ota_status_allocations` | 2 | `native` | Allocations of a progress event, counted at `malloc` |
+| `test_ota_esp32` | 9 | `esp32cam` | SEC-2 and SEC-7 on silicon: a mismatched image never switches the boot partition |
+| `test_ota_esp8266` | 10 | `esp8266dev` | SEC-2 and SEC-7 on silicon: a mismatched image never stages the eboot command |
 
-| Group | Tests | Coverage |
-|-------|-------|----------|
-| Event constants | 2 | All 7 `OTAEvents::EVENT_*` constants verified |
-| Component creation | 3 | Default construction, config construction, type key |
-| Config | 4 | Defaults, get/set, auth options, security options |
-| State machine | 3 | Initial state, accessors, idle/busy |
-| Triggers | 2 | `triggerImmediateCheck` and `triggerUpdateFromUrl` without providers |
-| Upload session | 4 | Begin, chunk-before-begin, abort, finalize-without-begin |
-| Lifecycle | 4 | begin, shutdown, loop crash safety (1000 iterations), full sequence |
-| Providers | 2 | `setManifestFetcher`, `setDownloader` |
-| Non-blocking | 1 | 1000 loops in <1s (validates no blocking) |
-| Integration | 4 | Core registration, component lookup, check interval disabled/config |
-
-Tests run on `native` platform using the `Update_Stub.h` HAL. No real firmware flashing occurs.
+The host suites use the `Update_Stub.h` HAL: no real firmware flashing occurs.
 
 ### Examples
 
@@ -234,7 +236,7 @@ All three implementations expose the same function set in `DomoticsCore::HAL::OT
 | HAL Isolation (IX) | Compliant | All `#ifdef` confined to `Update_HAL.h` and platform headers |
 | Non-Blocking (X) | Compliant | Deferred execution via pending flags; `loop()` processes work; `delay()` only used in 100ms pre-reboot pause |
 | File Size (VII) | Warning | `OTA.cpp` is 759 lines, within the 800-line hard limit but above the 500-line target. `OTAWebUI.h` is 558 lines. Monitor growth. |
-| EventBus (VI) | Compliant | All status and progress updates published via `emit<String>()` |
+| EventBus (VI) | Compliant | All status and progress updates published via `publishStatusEvent()`, which emits the serialized JSON bytes |
 | Memory (XIV) | Compliant | Upload progress throttled; no String concatenation in hot paths; PROGMEM used for HTML |
 | Versioning (XV) | Compliant | `library.json` version `1.11.0` matches `metadata.version` in constructor |
 | Anti-Patterns (XIII) | Compliant | No singletons; centralized event constants in `OTAEvents.h`; dependencies declared |
@@ -246,11 +248,10 @@ All three implementations expose the same function set in `DomoticsCore::HAL::OT
 - Firmware signature verification is not implemented. The `signaturePublicKey` field that used to advertise it was removed in v2.1.0 (DC-7): it was never read, so it promised a check that did not happen. SHA-256 integrity verification *is* performed on the download path, and the image is committed to flash only after the digest matches (SEC-2). Note the ordering is the security property: `HAL::OTAUpdate::end(true)` is the point of no return — it switches the ESP32 boot partition and stages the ESP8266 eboot copy — and no Arduino core lets the application undo it, so `abort()` is only meaningful *before* `end()`. See the contract in `Update_HAL.h`. The **upload** path verifies on the same terms since SEC-7: `acceptUploadChunk()` hashes what it writes and `finalizeUpload()` checks the digest before `end(true)`. The expected hash is optional per upload (`X-Firmware-SHA256` header or `?sha256=`), because every caller before SEC-7 supplied none; set `OTAConfig::requireUploadHash` to refuse uploads without one, which also rejects the built-in browser form since it cannot send a digest.
 - ~~**(C14)**~~ **Resolved (BUG-21).** `EVENT_START` and `EVENT_END` are emitted at the points this entry named: the beginning of a download or upload, and the end of the transfer before verification.
 - **(C15)** `State::Applying` is defined in the enum and checked in `isBusy()` / `stateToString()` but is never entered via `transition()`. Either introduce a transition to `Applying` after download completes (before `finalizeUpdateOperation`), or remove the state from the enum to match actual runtime behavior.
-- **(Bug)** `OTAWebUI::getWebUIVersion()` returns hardcoded `"1.4.0"` instead of reading `metadata.version` (which is `"1.11.0"`). Should be updated to match.
 - `setConfig()` logs three of the ten `OTAConfig` fields (`updateUrl`, `autoReboot`, `enableWebUIUpload`); a runtime change to `maxDownloadSize`, `requireUploadHash`, `requireDownloadHash` or `uploadIdleTimeoutSec` leaves no trace in the log. The ESP8266 log buffer (128 bytes) is the constraint a fuller line has to fit.
-- The four `toInt()` calls in `OTA.cpp:717-722` parse a version string from the
+- The four `toInt()` calls in `OTA.cpp:685-690` parse a version string from the
   update manifest, so `"1.2x"` reads as a minor of 2 and a letter reads as 0.
-  No suite feeds them — every OTA test calls `beginUpload()` directly — and no
+  The suites that feed a manifest all give the well-formed `"9.9.9"`, and no
   consequence has been demonstrated: a malformed manifest version compares
   wrong, it does not flash anything. Recorded here rather than filed, since the
   digits-only rule that covers every settings field does not reach a manifest.
