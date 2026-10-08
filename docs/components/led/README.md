@@ -3,6 +3,7 @@ sources: [DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-LED/include/
 checked: ae5715e
 judged: 6a979a6
 verified: agent:documentalist
+judged-in-parts: 9345e8b
 -->
 
 # DomoticsCore-LED
@@ -20,7 +21,7 @@ The component is header-only, registers as `"LED"` in the Core component registr
 | Effect | Enum Value | Description |
 |--------|------------|-------------|
 | Solid | `LEDEffect::Solid` | Constant brightness, no animation |
-| Blink | `LEDEffect::Blink` | On/off toggle at a configurable interval |
+| Blink | `LEDEffect::Blink` | On for the first half of each cycle, off for the second |
 | Fade | `LEDEffect::Fade` | Smooth sine-wave fade in and out |
 | Pulse | `LEDEffect::Pulse` | Heartbeat-style double pulse followed by rest |
 | Rainbow | `LEDEffect::Rainbow` | Continuous hue rotation (RGB LEDs only) |
