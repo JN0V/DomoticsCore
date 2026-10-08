@@ -3,6 +3,7 @@ sources: [DomoticsCore-Core/library.json, DomoticsCore-Core/include/DomoticsCore
 checked: ae5715e
 verified: agent:documentalist
 judged: 23b0933
+judged-in-parts: 9345e8b
 -->
 # DomoticsCore-Core
 
