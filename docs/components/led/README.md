@@ -3,6 +3,7 @@ sources: [DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-LED/include/
 checked: ae5715e
 judged: 6a979a6
 verified: agent:documentalist
+judged-in-parts: 9345e8b
 -->
 
 # DomoticsCore-LED
