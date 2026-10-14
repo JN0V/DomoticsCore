@@ -25,7 +25,8 @@
 #   write  holds the write token and no AI key: it comments on the tracking
 #          issue, labels it, and opens the pull request, with the GitHub App
 #          when there is one (variable WORKLINE_APP_ID, secret
-#          WORKLINE_APP_PRIVATE_KEY; Issues, Contents, Pull requests).
+#          WORKLINE_APP_PRIVATE_KEY in the environment workline-app, which
+#          only the default branch may use; Issues, Contents, Pull requests).
 name: workline sample
 on:
   # Mondays, 05:43 UTC, after the night's gardening. Off the hour: GitHub may
@@ -37,7 +38,7 @@ on:
 permissions: {}
 
 env:
-  WORKLINE_VERSION: v0.17.0          # a release of workline: update it to take a newer one
+  WORKLINE_VERSION: v0.28.0          # a release of workline: update it to take a newer one
   # the job summary (--summary) needs the first release after v0.16.0
 
 jobs:
@@ -92,6 +93,7 @@ jobs:
     needs: read
     if: always() && needs.read.outputs.drawn == 'true'
     runs-on: ubuntu-latest
+    environment: workline-app       # the App's key: the default branch only (ADR-0044)
     permissions: {contents: write, pull-requests: write, issues: write}
     steps:
       - id: app
@@ -123,4 +125,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           fi
-          workline sample --apply sample.json --forge github
+          status=0
+          workline sample --apply sample.json --forge github --summary workline-summary.md || status=$?
+          [ ! -s workline-summary.md ] || cat workline-summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

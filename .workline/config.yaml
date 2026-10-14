@@ -13,10 +13,9 @@ roles:
       max-open-merge-requests: 3
       ai-max-calls: 5
       # Docs whose sources do not fit one call are judged in parts, a share
-      # of their sources at a time (workline ADR-0009): fixed, but `checked`
-      # stays for a person, who reads them whole. One doc in parts a night:
-      # at most 8 parts.
-      judge-in-parts: true
+      # of their sources at a time (workline ADR-0009; the default since
+      # workline v0.28.0): fixed, but `checked` stays for a person, who reads
+      # them whole. One doc in parts a night: at most 8 parts.
       parts-max-per-run: 8
       # A safety net on the tokens a night spends, all calls together. Past
       # it the rest waits; a doc whose parts it cuts is asked again later.
