@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/BaseWebUIComponents.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/StreamingContextSerializer.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/ProviderRegistry.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebUIConfig.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_Stub.h]
-checked: c1eb8f3
-verified: agent:claude-code
+checked: 3c4d96c
+verified: agent:documentalist
 -->
 # DomoticsCore-WebUI -- Modification Scenarios and Testing
 

@@ -1,7 +1,8 @@
 <!-- workline
 sources: [DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/ComponentRegistry.h, DomoticsCore-Core/include/DomoticsCore/ComponentConfig.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/Events.h, DomoticsCore-Core/include/DomoticsCore/Logger.h, DomoticsCore-Core/include/DomoticsCore/Timer.h, DomoticsCore-Core/include/DomoticsCore/StringParse.h, DomoticsCore-Core/include/DomoticsCore/MemoryManager.h, DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Core/include/DomoticsCore/Platform_Arduino.h, DomoticsCore-Core/include/DomoticsCore/Platform_Stub.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker_Native.h, DomoticsCore-Core/src/Core.cpp, DomoticsCore-Core/src/IComponent.cpp, DomoticsCore-Core/library.json]
-checked: e6ad62e
-verified: agent:claude-code
+checked: 4cdb3e6
+judged: b678013
+verified: agent:documentalist
 -->
 # DomoticsCore-Core -- File Inventory
 

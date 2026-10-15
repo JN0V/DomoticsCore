@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-WebUI/webui_src/index.html, DomoticsCore-WebUI/webui_src/style.css, DomoticsCore-WebUI/webui_src/app.js, DomoticsCore-WebUI/webui_test/harness.js, DomoticsCore-WebUI/webui_test/app.test.js, DomoticsCore-WebUI/webui_test/package.json]
-checked: c1eb8f3
-verified: agent:claude-code
+checked: 3c4d96c
+verified: agent:documentalist
 -->
 # DomoticsCore-WebUI -- Front End
 

@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-WebUI/library.json, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI_HAL.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebUIConfig.h]
-checked: c1eb8f3
-verified: agent:claude-code
+checked: 3c4d96c
+verified: agent:documentalist
 -->
 # DomoticsCore-WebUI -- Project Context (AI Reference)
 

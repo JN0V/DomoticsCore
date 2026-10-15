@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-Wifi/include/DomoticsCore/Wifi.h, DomoticsCore-Wifi/include/DomoticsCore/WifiEvents.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HASwitch.h]
-checked: 6687dc4
-verified: agent:claude-code
+checked: 76c0609
+verified: agent:documentalist
 -->
 # EventBus Event Flow Diagram
 

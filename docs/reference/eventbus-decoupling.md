@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-MQTT/include/DomoticsCore/MQTTEvents.h]
-checked: 6687dc4
-verified: agent:claude-code
+checked: 76c0609
+verified: agent:documentalist
 -->
 # EventBus Decoupling
 

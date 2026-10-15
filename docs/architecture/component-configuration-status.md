@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-Wifi/include/DomoticsCore/Wifi.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebUIConfig.h, DomoticsCore-NTP/include/DomoticsCore/NTP.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h, DomoticsCore-SystemInfo/include/DomoticsCore/SystemInfo.h, DomoticsCore-System/include/DomoticsCore/SystemPersistence.h]
-checked: f693278
-verified: agent:claude-code
+checked: 500862d
+verified: agent:documentalist
 -->
 # Component Configuration Pattern -- Current Component Status
 

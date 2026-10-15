@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-WebUI/library.json, DomoticsCore-WebUI/include/DomoticsCore/WebUI.h, DomoticsCore-WebUI/include/DomoticsCore/IWebUIProvider.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/ProviderRegistry.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebServerManager.h, DomoticsCore-WebUI/include/DomoticsCore/WebUI/WebSocketHandler.h]
-checked: c1eb8f3
-verified: agent:claude-code
+checked: 3c4d96c
+verified: agent:documentalist
 -->
 # DomoticsCore-WebUI -- Key Classes and Dependencies
 

@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-NTP/include/DomoticsCore/NTP.h]
-checked: f693278
-verified: agent:claude-code
+checked: 500862d
+verified: agent:documentalist
 -->
 # Component Configuration Pattern -- Configuration Structure and Component Implementation
 

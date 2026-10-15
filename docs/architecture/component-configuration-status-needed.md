@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-OTA/include/DomoticsCore/OTA.h, DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsole.h, DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-System/include/DomoticsCore/SystemPersistence.h]
-checked: f693278
-verified: agent:claude-code
+checked: 500862d
+verified: agent:documentalist
 -->
 # Component Configuration Pattern -- Components Needing Full Pattern
 

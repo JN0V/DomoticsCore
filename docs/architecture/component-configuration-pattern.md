@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-NTP/include/DomoticsCore/NTP.h, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemPersistence.h]
-checked: f693278
-verified: agent:claude-code
+checked: 500862d
+verified: agent:documentalist
 -->
 
 # Component Configuration Pattern

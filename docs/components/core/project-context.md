@@ -1,7 +1,8 @@
 <!-- workline
 sources: [DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core/include/DomoticsCore/StringParse.h, DomoticsCore-Core/include/DomoticsCore/Testing/HeapTracker_ESP32.h]
-checked: e6ad62e
-verified: agent:claude-code
+checked: 4cdb3e6
+judged: b678013
+verified: agent:documentalist
 -->
 # DomoticsCore-Core -- Project Context (AI Agent Reference)
 
