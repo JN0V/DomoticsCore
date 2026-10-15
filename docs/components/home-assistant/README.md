@@ -2,7 +2,7 @@
 sources: [DomoticsCore-HomeAssistant/library.json, DomoticsCore-HomeAssistant/include/DomoticsCore/HAAlarmControlPanel.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HABinarySensor.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAButton.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEntity.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HAEvents.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HALight.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HASensor.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HASwitch.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistant.h, DomoticsCore-HomeAssistant/include/DomoticsCore/HomeAssistantWebUI.h]
 checked: c5aef9f
 judged: 6a979a6
-judged-in-parts: 9014958
+judged-in-parts: 96f5d9e
 -->
 
 # DomoticsCore-HomeAssistant
@@ -130,7 +130,7 @@ homeassistant/{component}/{nodeId}/{entityId}/config       # Discovery
 homeassistant/{component}/{nodeId}/{entityId}/state        # State
 homeassistant/{component}/{nodeId}/{entityId}/set          # Commands
 homeassistant/{component}/{nodeId}/{entityId}/attributes   # Attributes
-{clientId}/status                                          # Online/offline (the MQTT Last Will topic)
+{availabilityTopic}                                        # Online/offline (default {discoveryPrefix}/{nodeId}/availability)
 ```
 
 ## Migration from v1.x
@@ -153,7 +153,7 @@ HA::setField(cfg.nodeId, "my-device", HA::MAX_NODE_ID);
 HA::setField(cfg.deviceName, "My Device", HA::MAX_DEVICE_NAME);
 ```
 
-All `HAConfig` fields are now fixed-size `char[]` arrays. Use `HA::setField(dest, src, maxLen)` to safely populate them. Available size constants: `HA::MAX_NODE_ID` (33), `HA::MAX_DEVICE_NAME` (65), `HA::MAX_MANUFACTURER` (33), `HA::MAX_MODEL` (33), `HA::MAX_SW_VERSION` (17), `HA::MAX_DISCOVERY_PREFIX` (33), `HA::MAX_AVAIL_TOPIC` (129), `HA::MAX_CONFIG_URL` (129), `HA::MAX_SUGGESTED_AREA` (33).
+All `HAConfig` text fields are now fixed-size `char[]` arrays. Use `HA::setField(dest, src, maxLen)` to safely populate them. Available size constants: `HA::MAX_NODE_ID` (33), `HA::MAX_DEVICE_NAME` (65), `HA::MAX_MANUFACTURER` (33), `HA::MAX_MODEL` (33), `HA::MAX_SW_VERSION` (17), `HA::MAX_DISCOVERY_PREFIX` (33), `HA::MAX_AVAIL_TOPIC` (129), `HA::MAX_CONFIG_URL` (129), `HA::MAX_SUGGESTED_AREA` (33).
 
 ### 2. Callbacks removed from add*() methods
 
