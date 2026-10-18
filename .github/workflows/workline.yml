@@ -15,9 +15,13 @@
 #          comments, and holds no write token but
 #          code scanning's, which only uploads its findings as SARIF (free on
 #          public repositories; private ones need GitHub Advanced Security —
-#          remove that step otherwise). It stops before applying (--no-apply),
-#          and leaves what it proposed and its verdict on the head as
-#          artifacts, for workline-apply.yml; a fork's report, for
+#          remove that step otherwise). The documentalist's and the
+#          reviewer's stay out of code scanning, a conversation each to
+#          resolve: workline-apply.yml shows the documentalist's as the
+#          annotations of the check `workline findings`, the reviewer's are
+#          its review (#412). It stops before applying (--no-apply),
+#          and leaves what it proposed, what it found and its verdict on the
+#          head as artifacts, for workline-apply.yml; a fork's report, for
 #          workline-fork.yml.
 #          With the secret CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`, a
 #          Claude subscription), Claude judges; without it, or on a fork,
@@ -33,20 +37,25 @@ on:
   # reviewer once, when the line runs it (ADR-0020).
   pull_request: {types: [opened, synchronize, reopened, ready_for_review]}
 permissions: {}
+# One run per pull request (#359): a push cancels the run still on the
+# head before, whose commits the newer run reviews with its own. Nothing
+# of a cancelled run is uploaded after (`!cancelled()`), nor applied
+# (workline-apply.yml).
+concurrency: {group: "workline-judge-${{ github.event.pull_request.number }}", cancel-in-progress: true}
 
 env:
-  WORKLINE_VERSION: v0.28.0          # a release of workline: update it to take a newer one
+  WORKLINE_VERSION: v0.31.0          # a release of workline: update it to take a newer one
   # the job summary (--summary) needs the first release after v0.16.0
   WORKLINE_RUNS_DIR: ${{ github.workspace }}/.workline-runs
 
 jobs:
   judge:
     runs-on: ubuntu-latest
-    # One run per pull request (#359): a push cancels the run still on the
-    # head before, whose commits this run reviews with its own. Nothing
-    # of a cancelled run is uploaded after (`!cancelled()`), nor applied
-    # (workline-apply.yml).
-    concurrency: {group: "workline-judge-${{ github.event.pull_request.number }}", cancel-in-progress: true}
+    # One review at a time per pull request (#375), with workline-apply.yml's
+    # apply, neither cancelling the other: a push waits while the run
+    # before it is applied, then reads its record and reviews only what is
+    # new.
+    concurrency: {group: "workline-review-${{ github.event.pull_request.number }}", cancel-in-progress: false}
     # pull-requests read: the reviewer, when the line runs it, reads its
     # summary comment, to review only the commits it has not reviewed yet.
     permissions: {contents: read, security-events: write, pull-requests: read}
@@ -102,6 +111,7 @@ jobs:
             --sarif workline.sarif --summary workline-summary.md --verdict workline-verdict.json --json > line.json || status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
           echo "proposed=$(jq '(.pending // []) | length > 0' line.json)" >> "$GITHUB_OUTPUT"
+          echo "found=$(jq '[.steps[]? | select(.name | startswith("documentalist")) | .result.findings[]?] | length > 0' line.json)" >> "$GITHUB_OUTPUT"
           [ ! -s workline-summary.md ] || cat workline-summary.md
           [ ! -s workline-summary.md ] || cat workline-summary.md >> "$GITHUB_STEP_SUMMARY"
           mkdir -p report && { [ ! -s workline-summary.md ] || cp workline-summary.md report/report.md; }
@@ -110,10 +120,10 @@ jobs:
       # Applied by workline-apply.yml, from the default branch: said when
       # this branch has no workflow run after this one.
       - name: Whether anything applies what it proposed
-        if: steps.line.outputs.proposed == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        if: (steps.line.outputs.proposed == 'true' || steps.line.outputs.found == 'true') && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           grep -qs 'workflows: \[workline\]' .github/workflows/*.yml ||
-            echo "::warning title=workline::no workflow applies what this run proposed; copy workline-apply.yml beside workline.yml (docs/ci-github.md)"
+            echo "::warning title=workline::no workflow applies what this run proposed, nor shows the docs' findings on their lines; copy workline-apply.yml beside workline.yml (docs/ci-github.md)"
 
       # From a fork, this job has no right to comment: the report goes to
       # workline-fork.yml, which comments it from the repository's side.
@@ -127,11 +137,14 @@ jobs:
         if: '!cancelled() && github.event.pull_request.head.repo.full_name == github.repository'
         with: {name: workline-verdict, path: "workline-verdict.json\nreport/number", if-no-files-found: ignore, retention-days: 1}
 
-      # What the line proposed, for workline-apply.yml to apply.
+      # What the line proposed, for workline-apply.yml to apply, and what
+      # the documentalist found, for it to show beside the docs' lines.
       - uses: actions/upload-artifact@v4
-        if: steps.line.outputs.proposed == 'true'
+        if: steps.line.outputs.proposed == 'true' || steps.line.outputs.found == 'true'
         with: {name: workline-runs, path: "line.json\n.workline-runs\nreport/number", include-hidden-files: true}
 
+      # The findings code scanning keeps: neither the documentalist's nor
+      # the reviewer's, which would each open a conversation (#412).
       - uses: github/codeql-action/upload-sarif@v4
         if: '!cancelled() && github.event.pull_request.head.repo.full_name == github.repository'
         with: {sarif_file: workline.sarif, category: workline}
