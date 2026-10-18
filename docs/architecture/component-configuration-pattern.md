@@ -2,6 +2,7 @@
 sources: [DomoticsCore-NTP/include/DomoticsCore/NTP.h, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemPersistence.h]
 checked: 500862d
 verified: agent:documentalist
+judged-in-parts: c9271a1
 -->
 
 # Component Configuration Pattern
@@ -26,7 +27,7 @@ Every component with persistent configuration MUST follow this pattern for consi
 ## 7. Benefits of This Pattern
 
 1. **Consistency**: All components work the same way
-2. **Safety**: Defaults always preserved
+2. **Safety**: Defaults kept when no value is stored
 3. **Flexibility**: Partial config updates supported
 4. **Testability**: Easy to mock and test
 5. **User-Friendly**: Graceful degradation if Storage empty
@@ -37,5 +38,5 @@ Every component with persistent configuration MUST follow this pattern for consi
 ## 10. References
 
 - **Implementation Example**: `DomoticsCore-NTP/include/DomoticsCore/NTP.h`
-- **Storage Integration**: `DomoticsCore-System/include/DomoticsCore/System.h` (sections 6.2-6.5)
+- **Storage Integration**: `DomoticsCore-System/include/DomoticsCore/System.h` (sections 6.2-6.5); loading is in `DomoticsCore-System/include/DomoticsCore/SystemPersistence.h` (`loadAllConfigs`)
 - **Custom Components Guide**: `docs/guides/custom-components.md`
