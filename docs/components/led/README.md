@@ -21,7 +21,7 @@ The component is header-only, registers as `"LED"` in the Core component registr
 | Effect | Enum Value | Description |
 |--------|------------|-------------|
 | Solid | `LEDEffect::Solid` | Constant brightness, no animation |
-| Blink | `LEDEffect::Blink` | On for the first half of each cycle, off for the second |
+| Blink | `LEDEffect::Blink` | On/off toggle at a configurable interval: on for the first half of each cycle, off for the second |
 | Fade | `LEDEffect::Fade` | Smooth sine-wave fade in and out |
 | Pulse | `LEDEffect::Pulse` | Heartbeat-style double pulse followed by rest |
 | Rainbow | `LEDEffect::Rainbow` | Continuous hue rotation (RGB LEDs only) |
