@@ -130,7 +130,7 @@ homeassistant/{component}/{nodeId}/{entityId}/config       # Discovery
 homeassistant/{component}/{nodeId}/{entityId}/state        # State
 homeassistant/{component}/{nodeId}/{entityId}/set          # Commands
 homeassistant/{component}/{nodeId}/{entityId}/attributes   # Attributes
-{availabilityTopic}                                        # Online/offline (default {discoveryPrefix}/{nodeId}/availability)
+{clientId}/status                                          # Online/offline (the MQTT Last Will topic)
 ```
 
 ## Migration from v1.x
