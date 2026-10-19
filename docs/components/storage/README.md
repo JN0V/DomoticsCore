@@ -1,6 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-Storage/include/DomoticsCore/Storage.h, DomoticsCore-Storage/include/DomoticsCore/StorageEvents.h, DomoticsCore-Storage/include/DomoticsCore/StorageWebUI.h]
 checked: ae5715e
+judged-in-parts: c9271a1
 -->
 # DomoticsCore-Storage
 
@@ -16,7 +17,7 @@ On ESP32, data is persisted to NVS (Non-Volatile Storage) via the Preferences li
 
 - **Typed key-value storage** -- String, int32, float, bool, uint64 (UInt64), and binary blob support
 - **Namespace isolation** -- each StorageComponent instance operates within its own namespace, preventing key collisions between components
-- **Write-through cache with deduplication** -- all `put*` calls check the in-memory cache first and skip the backend write when the value is unchanged, reducing flash wear
+- **Write-through cache with deduplication** -- `put*` calls other than `putBlob` check the in-memory cache first and skip the backend write when the value is unchanged, reducing flash wear
 - **Immediate persistence** -- writes are always committed to the backend immediately (the `autoCommit` configuration field has been removed)
 - **Read-only mode** -- open a namespace for diagnostic reads without risk of accidental writes
 - **Key registration** -- components declare their storage keys with type and description metadata
