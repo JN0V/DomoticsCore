@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-MQTT/include/DomoticsCore/MQTT.h, DomoticsCore-MQTT/include/DomoticsCore/MQTT_impl.h, DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h]
-checked: 76c0609
+judged: 76c0609
 verified: agent:documentalist
 -->
 # EventBus Implementation Details and Best Practices
