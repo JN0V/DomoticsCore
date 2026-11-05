@@ -1,7 +1,7 @@
 <!-- workline
 sources: [library.json, library.properties, DomoticsCore-Core/library.json, DomoticsCore-HomeAssistant/library.json, DomoticsCore-LED/library.json, DomoticsCore-MQTT/library.json, DomoticsCore-NTP/library.json, DomoticsCore-OTA/library.json, DomoticsCore-RemoteConsole/library.json, DomoticsCore-Storage/library.json, DomoticsCore-System/library.json, DomoticsCore-SystemInfo/library.json, DomoticsCore-WebUI/library.json, DomoticsCore-Wifi/library.json, DomoticsCore-System/include/DomoticsCore/System.h, DomoticsCore-System/include/DomoticsCore/SystemConfig.h, DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/include/DomoticsCore/IComponent.h, tools/check_versions.py, release-please-config.json]
 checked: d54dae8
-judged-in-parts: 02495d2
+judged-in-parts: c9271a1
 -->
 
 # DomoticsCore
@@ -12,7 +12,7 @@ judged-in-parts: 02495d2
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 2.0.0 Released!** Breaking change: HomeAssistant callbacks removed in favor of EventBus `ha/command` events. Virtual dispatch for all HA entities, complete code remediation roadmap done. See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
+> **🎉 Version 2.13.0 Released!** Breaking change (2.0.0): HomeAssistant callbacks removed in favor of EventBus `ha/command` events. Virtual dispatch for all HA entities, complete code remediation roadmap done. See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
 
 ## ✨ What Makes DomoticsCore Different
 
