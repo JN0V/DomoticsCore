@@ -31,7 +31,7 @@ The following constitution principles are especially relevant to Core developmen
 - Target: 200-500 lines per file.
 - Hard limit: 800 lines.
 - `ComponentRegistry.h` is currently ~378 lines. Watch for growth.
-- `EventBus.h` is currently ~283 lines.
+- `EventBus.h` is currently ~460 lines.
 - `ComponentConfig.h` is currently ~65 lines.
 - `MemoryManager.h` is currently ~201 lines.
 - `Platform_HAL.h` is currently ~368 lines.
