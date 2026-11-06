@@ -36,7 +36,7 @@ All paths are relative to `DomoticsCore-Storage/`.
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `Storage.h` | Main component: `StorageComponent`, `StorageConfig`, `StorageEntry`, `StorageKeyDef`, `StorageValueType` | 655 |
+| `Storage.h` | Main component: `StorageComponent`, `StorageConfig`, `StorageEntry`, `StorageKeyDef`, `StorageValueType` | 770 |
 | `Storage_HAL.h` | HAL routing header: `IStorage` abstract interface, platform `#ifdef` dispatch | 70 |
 | `Storage_ESP32.h` | ESP32 implementation: `PreferencesStorage` wrapping `<Preferences.h>` | 128 |
 | `Storage_ESP8266.h` | ESP8266 implementation: `LittleFSStorage` using LittleFS + ArduinoJson | 202 |
@@ -170,7 +170,7 @@ This section maps DomoticsCore-Storage design decisions to specific constitution
 | I. SOLID | SRP, DIP, ISP | `StorageComponent` handles storage only; depends on `IStorage` abstraction; `IStorage` interface is minimal |
 | V. Performance | Memory budget, no busy-wait | Cache uses `std::map` (bounded by `maxEntries`); timers are non-blocking |
 | VI. EventBus | Decoupled communication | Emits `storage/ready` and `storage/changed` events; no direct references to other components |
-| VII. File Size | < 800 lines per file | `Storage.h` is 655 lines; all other files are well under 210 lines |
+| VII. File Size | < 800 lines per file | `Storage.h` is 770 lines; all other files are well under 210 lines |
 | IX. HAL Isolation | `#ifdef` only in HAL files | Platform guards in `Storage_HAL.h`, `Storage_ESP32.h`, `Storage_ESP8266.h`, `Storage_Stub.h` only |
 | X. Non-Blocking Timer | No `delay()` | Uses `Utils::NonBlockingDelay` for status and maintenance timers |
 | XI. Centralized Storage | All persistence via Storage component | This IS the centralized storage component; other components must use it |
@@ -184,8 +184,8 @@ This section maps DomoticsCore-Storage design decisions to specific constitution
 
 These observations are provided for AI assistants planning future work:
 
-1. **Cache read-through for `get*` methods**: Write deduplication is already in place (`put*` checks the cache and skips unchanged writes), but `get*` methods still bypass the cache and always read from the backend. A cache-first read strategy could reduce HAL calls for frequently read keys.
+1. **Reads of missing keys**: `get*` methods serve a cached value first, and cache a backend read only when the key exists, so a caller default is never cached. A missing key therefore reaches the backend on every read (`isKey()` plus the get); a negative cache would have to keep the caller's default out of it.
 2. **getKeys scope**: `getKeys()` only returns registered keys that exist. Unregistered keys in the backend are invisible.
 3. **WebUI write support**: `StorageWebUI::handleWebUIRequest` refuses every request with `Storage has no editable settings`. No CRUD operations are exposed through the WebUI.
-4. **File size of Storage.h**: At 655 lines it approaches the 800-line hard limit. If new features are added, consider extracting the cache or key-registration logic into separate headers.
+4. **File size of Storage.h**: At 770 lines it approaches the 800-line hard limit. If new features are added, consider extracting the cache or key-registration logic into separate headers.
 5. **Blob deduplication**: Unlike other `put*` methods, `putBlob` does not check the cache before writing. Adding blob comparison would reduce unnecessary flash writes for unchanged binary data.
