@@ -367,9 +367,8 @@ public:
 
     // ------------------------------------------------------------------
     // Effect engine — pure arithmetic, no hardware and no member state.
-    // Split out of updateEffects() so the curves can be checked directly:
-    // the HAL swallows analogWrite() on the host, so the only way to test
-    // what a pin would receive is to test the value computed for it.
+    // Split out of updateEffects() so the curves can be checked directly,
+    // at any phase, without driving the update loop through time.
     // ------------------------------------------------------------------
 
     /**
@@ -509,10 +508,11 @@ private:
         for (size_t i = 0; i < ledStates.size(); i++) {
             auto& state = ledStates[i];
             
-            if (!state.enabled || state.effect == LEDEffect::Solid) {
-                if (state.effect == LEDEffect::Solid) {
-                    setLEDOutput(i, state.currentColor, state.brightness);
-                }
+            if (!state.enabled) {
+                continue;
+            }
+            if (state.effect == LEDEffect::Solid) {
+                setLEDOutput(i, state.currentColor, state.brightness);
                 continue;
             }
             

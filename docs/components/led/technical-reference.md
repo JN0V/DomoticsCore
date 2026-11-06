@@ -203,7 +203,7 @@ Name-based overload.
 
 #### `bool enableLED(size_t ledIndex, bool enabled = true)`
 
-Enables or disables an LED. Disabled LEDs are immediately forced off (`LEDColor::Off()`, brightness 0) and skipped during effect updates. Returns `false` if out of range.
+Enables or disables an LED. Disabled LEDs are immediately forced off (`LEDColor::Off()`, brightness 0) and skipped by the update loop, so they stay dark until enabled again. Returns `false` if out of range.
 
 #### `bool enableLED(const String& name, bool enabled = true)`
 
@@ -252,18 +252,23 @@ Applies the two-stage brightness scaling pipeline (see PWM Control Details below
 
 #### `void updateEffects()`
 
-Called by `loop()` at 20 Hz. For each enabled LED with a non-Solid effect, advances `effectPhase` based on elapsed time and `effectSpeed`, computes the output brightness/color per the effect formula, and calls `setLEDOutput()`. Solid-effect LEDs are written once per tick without phase advancement.
+Called by `loop()` at 20 Hz. A disabled LED is skipped, whatever its effect, so it keeps the off output `enableLED(..., false)` wrote. For each enabled LED with a non-Solid effect, advances `effectPhase` based on elapsed time and `effectSpeed`, computes the output brightness/color per the effect formula, and calls `setLEDOutput()`. Enabled Solid-effect LEDs are written once per tick without phase advancement.
 
 ---
 
 ## Test Coverage
 
-Two test suites exist:
+Five test suites exist:
 
 | Test File | Scope |
 |-----------|-------|
-| `test/test_led_types/test_led_types.cpp` | Pure data-type tests: `LEDColor` constructors and predefined colors, `LEDEffect` enum values, `LEDConfig` default values and field assignment, `LEDState` defaults. 17 test cases. |
-| `test/test_led_component/test_led_component.cpp` | Component integration tests: verifies `metadata.name` is `"LED"` and that `Core::getComponent<LEDComponent>("LED")` succeeds after registration. 2 test cases. |
+| `test/test_led_types/test_led_types.cpp` | Pure data-type tests: `LEDColor` constructors and predefined colors, `LEDEffect` enum values, `LEDConfig` default values and field assignment, `LEDState` defaults. 16 test cases. |
+| `test/test_led_component/test_led_component.cpp` | Component tests: metadata and Core lookup, lifecycle, state management, and a disabled LED staying dark then lit again once enabled. 36 test cases. |
+| `test/test_led_effects/test_led_effects.cpp` | The effect engine and the PWM arithmetic. 29 test cases. |
+| `test/test_led_webui/test_led_webui.cpp` | The `LEDWebUI` provider's input validation. 26 test cases. |
+| `test/test_led_disabled_led/test_led_disabled_led.cpp` | A disabled LED (by index or by name) stays dark across update ticks. 2 test cases. |
+
+The native stub's `analogWrite()` records the last value per pin (`HAL::Platform::lastAnalogWriteValue(pin)`), so a test can read what a pin received.
 
 Tests run on the `native` platform using the Unity framework (`platformio.ini` at the component root).
 
