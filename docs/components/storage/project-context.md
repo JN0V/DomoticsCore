@@ -37,12 +37,12 @@ All paths are relative to `DomoticsCore-Storage/`.
 | File | Purpose | Lines |
 |------|---------|-------|
 | `Storage.h` | Main component: `StorageComponent`, `StorageConfig`, `StorageEntry`, `StorageKeyDef`, `StorageValueType` | 770 |
-| `Storage_HAL.h` | HAL routing header: `IStorage` abstract interface, platform `#ifdef` dispatch | 70 |
-| `Storage_ESP32.h` | ESP32 implementation: `PreferencesStorage` wrapping `<Preferences.h>` | 128 |
-| `Storage_ESP8266.h` | ESP8266 implementation: `LittleFSStorage` using LittleFS + ArduinoJson | 202 |
-| `Storage_Stub.h` | Stub implementation: `RAMOnlyStorage` for native/test builds | 157 |
+| `Storage_HAL.h` | HAL routing header: `IStorage` abstract interface, platform `#ifdef` dispatch | 71 |
+| `Storage_ESP32.h` | ESP32 implementation: `PreferencesStorage` wrapping `<Preferences.h>` | 140 |
+| `Storage_ESP8266.h` | ESP8266 implementation: `LittleFSStorage` using LittleFS + ArduinoJson | 206 |
+| `Storage_Stub.h` | Stub implementation: `RAMOnlyStorage` for native/test builds | 243 |
 | `StorageEvents.h` | Event constants: `EVENT_READY`, `EVENT_CHANGED`; POD struct `StorageChangedEvent` | 26 |
-| `StorageWebUI.h` | WebUI provider: `StorageWebUI` extending `CachingWebUIProvider` | 65 |
+| `StorageWebUI.h` | WebUI provider: `StorageWebUI` extending `CachingWebUIProvider` | 64 |
 | `DocMainpage.h` | Doxygen `\mainpage` definition for generated API docs | 13 |
 
 ### Configuration
@@ -170,7 +170,7 @@ This section maps DomoticsCore-Storage design decisions to specific constitution
 | I. SOLID | SRP, DIP, ISP | `StorageComponent` handles storage only; depends on `IStorage` abstraction; `IStorage` interface is minimal |
 | V. Performance | Memory budget, no busy-wait | Cache uses `std::map` (bounded by `maxEntries`); timers are non-blocking |
 | VI. EventBus | Decoupled communication | Emits `storage/ready` and `storage/changed` events; no direct references to other components |
-| VII. File Size | < 800 lines per file | `Storage.h` is 770 lines; all other files are well under 210 lines |
+| VII. File Size | < 800 lines per file | `Storage.h` is 770 lines; all other files are under 250 lines |
 | IX. HAL Isolation | `#ifdef` only in HAL files | Platform guards in `Storage_HAL.h`, `Storage_ESP32.h`, `Storage_ESP8266.h`, `Storage_Stub.h` only |
 | X. Non-Blocking Timer | No `delay()` | Uses `Utils::NonBlockingDelay` for status and maintenance timers |
 | XI. Centralized Storage | All persistence via Storage component | This IS the centralized storage component; other components must use it |
