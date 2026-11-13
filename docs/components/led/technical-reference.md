@@ -1,7 +1,7 @@
 <!-- workline
 sources: [DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-LED/include/DomoticsCore/LEDWebUI.h, DomoticsCore-LED/test/test_led_types/test_led_types.cpp, DomoticsCore-LED/test/test_led_component/test_led_component.cpp]
 checked: 3c4d96c
-judged: 87fdb8b
+judged: 3e2533b
 -->
 
 # DomoticsCore-LED -- Technical Reference
@@ -352,7 +352,7 @@ Returns a JSON object with the current values for the requested context. Used by
 
 #### `String handleWebUIRequest(const String& contextId, const String& endpoint, const String& method, const std::map<String, String>& params)`
 
-Processes POST requests from the dashboard. Expects `field` and `value` in `params`. Updates internal mirrored state and delegates to `LEDComponent` methods. Returns `{"success":true}`, or `{"success":false,"error":"<reason>"}` naming what it refused: an effect name outside the six, an LED name that matches none, a brightness that is not digits, an unknown field.
+Processes POST requests from the dashboard. Expects `field` and `value` in `params`. Updates internal mirrored state and delegates to `LEDComponent` methods. Returns `{"success":true}`, or `{"success":false,"error":"<reason>"}` naming what it refused: an effect name outside the six, an LED name that matches none, a brightness that is not digits, an `enabled_toggle` value other than `true`/`1`/`on` or `false`/`0`/`off`, an unknown field.
 
 ### Internal State
 
