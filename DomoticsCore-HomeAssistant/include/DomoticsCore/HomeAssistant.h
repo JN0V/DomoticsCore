@@ -230,8 +230,12 @@ public:
     ComponentStatus shutdown() override {
         DLOG_I(LOG_HA, "Shutting down");
         resumeConnected = mqttConnected;
-        setAvailable(false);
-        removeDiscovery();
+        // Over a dropped link nothing can be delivered: queuing it would only
+        // waste EventBus space.
+        if (mqttConnected) {
+            setAvailable(false);
+            removeDiscovery();
+        }
         // begin() subscribed to the MQTT events; the WebUI switch calls
         // shutdown()/begin() directly, so drop them here or each begin() adds
         // a copy and a disabled component keeps obeying commands.
