@@ -38,5 +38,5 @@ Every component with persistent configuration MUST follow this pattern for consi
 ## 10. References
 
 - **Implementation Example**: `DomoticsCore-NTP/include/DomoticsCore/NTP.h`
-- **Storage Integration**: `DomoticsCore-System/include/DomoticsCore/System.h` (sections 6.2-6.5); loading is in `DomoticsCore-System/include/DomoticsCore/SystemPersistence.h` (`loadAllConfigs`)
+- **Storage Integration**: `DomoticsCore-System/include/DomoticsCore/System.h` (`registerStorageComponent`, and `begin()` calling `loadAllConfigs`); loading is in `DomoticsCore-System/include/DomoticsCore/SystemPersistence.h` (`loadAllConfigs`)
 - **Custom Components Guide**: `docs/guides/custom-components.md`

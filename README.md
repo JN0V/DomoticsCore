@@ -12,7 +12,7 @@ judged-in-parts: c9271a1
 
 **Production-ready ESP32 framework for IoT applications** with modular architecture, automatic error handling, and visual status indicators.
 
-> **🎉 Version 2.13.0 Released!** Breaking change (2.0.0): HomeAssistant callbacks removed in favor of EventBus `ha/command` events. Virtual dispatch for all HA entities, complete code remediation roadmap done. See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
+> **🎉 Latest release:** see the version badge above and [Releases](https://github.com/JN0V/DomoticsCore/releases/latest). Breaking change (2.0.0): HomeAssistant callbacks removed in favor of EventBus `ha/command` events. Virtual dispatch for all HA entities, complete code remediation roadmap done. See [CHANGELOG.md](CHANGELOG.md) and [Documentation Index](docs/README.md).
 
 ## ✨ What Makes DomoticsCore Different
 
