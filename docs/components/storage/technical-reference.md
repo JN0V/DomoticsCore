@@ -224,7 +224,7 @@ String getStorageInfo();          // Multi-line human-readable status string
 
 **Write-through**: When a value has actually changed (or is new), the backend write is performed first. On success, the cache is updated and a `storage/changed` event is emitted.
 
-**Read path**: `get*` methods always read from the backend; the cache is **not** consulted for reads. The cache is only used for `getEntryCount()` and `getFreeEntries()`.
+**Read path**: `get*` methods (String, Int, Float, Bool, ULong64) return a cached value when there is one. On a miss they read the backend and cache the result only when the key exists there: a caller-supplied default is returned but never cached, so a later read with another default gets that default, and a later `put*` of the same value still writes.
 
 **Eviction**: The cache is cleared on `shutdown()` and `clear()`. Individual entries are evicted on `remove()`.
 
