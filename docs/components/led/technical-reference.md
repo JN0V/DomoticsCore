@@ -209,6 +209,10 @@ Enables or disables an LED. Disabled LEDs are immediately forced off (`LEDColor:
 
 Name-based overload.
 
+#### `bool setLEDName(size_t ledIndex, const String& name)`
+
+Renames the LED at `ledIndex`. Returns `false` if the index is out of range or `name` is empty.
+
 ### Query Methods
 
 #### `size_t getLEDCount() const`
@@ -379,7 +383,7 @@ Called once (guarded by `initialApplied` flag) during the first `buildContexts()
 
 #### `const std::vector<String>& getCachedNames() const`
 
-Lazy-loads and caches LED names from `LEDComponent::getLEDNames()`. If the component returns an empty list, generates synthetic names (`"LED_0"`, `"LED_1"`, ...). The cache is populated once and never invalidated, which means LEDs added after the first WebUI context build will not appear.
+Lazy-loads and caches LED names from `LEDComponent::getLEDNames()`. If the component returns an empty list, generates synthetic names (`"LED_0"`, `"LED_1"`, ...). Before the context accessors answer, the live names are compared with the cached ones; when they differ (LED added or renamed), the name and context caches are dropped and rebuilt.
 
 ---
 
