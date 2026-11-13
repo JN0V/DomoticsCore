@@ -2,7 +2,7 @@
 sources: [DomoticsCore-OTA/include/DomoticsCore/OTA.h, DomoticsCore-RemoteConsole/include/DomoticsCore/RemoteConsole.h, DomoticsCore-LED/include/DomoticsCore/LED.h, DomoticsCore-System/include/DomoticsCore/SystemPersistence.h]
 checked: 500862d
 verified: agent:documentalist
-judged-in-parts: c9271a1
+judged-in-parts: f38e381
 -->
 # Component Configuration Pattern -- Components Needing Full Pattern
 

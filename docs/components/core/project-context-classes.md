@@ -3,6 +3,7 @@ sources: [DomoticsCore-Core/include/DomoticsCore/Core.h, DomoticsCore-Core/inclu
 checked: 4cdb3e6
 judged: b678013
 verified: agent:documentalist
+judged-in-parts: f38e381
 -->
 # DomoticsCore-Core -- Key Classes and Their Responsibilities
 
@@ -20,7 +21,7 @@ Part of the [DomoticsCore-Core Project Context](project-context.md) (AI agent re
 | `NativeAllocTracker` | Per-allocation heap tracking for native tests (singleton) | "Track individual allocations for leak diagnosis" |
 | `ScopedAllocTracking` | RAII helper that enables/disables `NativeAllocTracker` around a test | "Scope allocation tracking to a test" |
 | `AllocationRecord` | Record of a single allocation (ptr, size, source location, freed flag) | "Describe one allocation event" |
-| `LoggerCallbacks` | Broadcast log messages to registered listeners (note: `removeCallback` currently clears ALL callbacks) | "Route log output" |
+| `LoggerCallbacks` | Broadcast log messages to registered listeners | "Route log output" |
 | `MemoryThresholds` | Configurable heap thresholds for profile detection | "Define profile boundaries" |
 | `ProfileLimits` | Resource limits per profile (WS clients) | "Constrain resources per profile" |
 | `HeapCheckpoint` | Named checkpoint wrapping a `HeapSnapshot` | "Label a heap measurement" |
