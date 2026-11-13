@@ -3,6 +3,7 @@ sources: [DomoticsCore-Core/include/DomoticsCore/EventBus.h, DomoticsCore-Core/i
 checked: cff4019
 verified: agent:documentalist
 judged-in-parts: cff4019
+judged: 00c3b74
 -->
 # EventBus Patterns
 
