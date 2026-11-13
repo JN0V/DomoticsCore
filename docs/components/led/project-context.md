@@ -41,7 +41,7 @@ All paths are relative to the repository root.
 | `DomoticsCore-LED/include/DomoticsCore/LED.h` | Main header: `LEDEffect`, `LEDColor`, `LEDConfig`, `LEDState`, `LEDComponent` |
 | `DomoticsCore-LED/include/DomoticsCore/LEDWebUI.h` | WebUI provider: `LEDWebUI` (extends `CachingWebUIProvider`) |
 | `DomoticsCore-LED/test/test_led_types/test_led_types.cpp` | Unity tests for `LEDColor`, `LEDEffect`, `LEDConfig`, `LEDState` |
-| `DomoticsCore-LED/test/test_led_component/test_led_component.cpp` | Unity tests for `LEDComponent` lifecycle, state management, metadata and Core lookup |
+| `DomoticsCore-LED/test/test_led_component/test_led_component.cpp` | Unity tests for `LEDComponent` lifecycle, state management, metadata, Core lookup, and a disabled LED staying dark |
 | `DomoticsCore-LED/examples/BasicLED/src/main.cpp` | Standalone demo cycling six effects |
 | `DomoticsCore-LED/examples/BasicLED/platformio.ini` | PlatformIO config for the BasicLED example |
 | `DomoticsCore-LED/examples/BasicLED/README.md` | Hardware wiring guide and expected output |

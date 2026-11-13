@@ -2,9 +2,9 @@
  * @file test_led_effects.cpp
  * @brief The effect engine and the PWM arithmetic.
  *
- * The stub HAL swallows analogWrite(), so a native test cannot observe a pin.
- * What it can observe is the value computed for that pin — which is where the
- * arithmetic lives, and where BUG-18 (phase reset instead of wrap) hid.
+ * These tests check the value computed for a pin rather than the pin itself
+ * (the stub HAL records only the last analogWrite() per pin) — the arithmetic
+ * lives there, and that is where BUG-18 (phase reset instead of wrap) hid.
  *
  * Trigonometric expectations are asserted within 1, not exactly: the component
  * truncates a double to uint8_t, so a libm returning 0.9999999 instead of 1.0
