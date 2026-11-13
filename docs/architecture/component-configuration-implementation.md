@@ -1,6 +1,6 @@
 <!-- workline
 sources: [DomoticsCore-NTP/include/DomoticsCore/NTP.h]
-checked: 500862d
+judged: 500862d
 verified: agent:documentalist
 -->
 # Component Configuration Pattern -- Configuration Structure and Component Implementation
@@ -57,16 +57,16 @@ public:
 ```cpp
 /**
  * @brief Get current component configuration
- * @return Current MyComponentConfig
+ * @return Const reference to the current MyComponentConfig
  */
-MyComponentConfig getConfig() const {
+const MyComponentConfig& getConfig() const {
     return config;
 }
 ```
 
 **Uniform Naming Convention:**
 - All components use `getConfig()` for consistency
-- Returns config struct by value (safe copy)
+- Returns a const reference to the stored config (e.g. `const NTPConfig&`); Wifi alone returns a `WifiConfig` by value, built from its internal state
 - No `getMyComponentConfig()` - always just `getConfig()`
 
 ### 2.4. Setter Method (Smart Override)
@@ -133,7 +133,7 @@ public:
         return ComponentStatus::Success;
     }
     
-    MyComponentConfig getConfig() const {
+    const MyComponentConfig& getConfig() const {
         return config;
     }
     
