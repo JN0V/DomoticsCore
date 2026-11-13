@@ -137,9 +137,9 @@ void loop() override;
 ComponentStatus shutdown() override;
 ```
 
-- **`begin()`** -- Subscribes to EventBus events: `mqtt/connected`, `mqtt/disconnected`, and `mqtt/message`. On MQTT connect, publishes availability and discovery. Returns `ComponentStatus::Success`.
+- **`begin()`** -- Subscribes to EventBus events: `mqtt/connected`, `mqtt/disconnected`, and `mqtt/message`. On MQTT connect, publishes availability and discovery. Called again after `shutdown()` (the WebUI's component switch) while MQTT is up, it republishes availability and discovery at once. Returns `ComponentStatus::Success`.
 - **`loop()`** -- No-op. All communication is event-driven via the EventBus.
-- **`shutdown()`** -- Publishes `"offline"` availability and removes all discovery payloads (empty retained messages).
+- **`shutdown()`** -- Publishes `"offline"` availability and removes all discovery payloads (empty retained messages). Drops its EventBus subscriptions, so a disabled component handles no command and a re-enable does not handle each command twice; while off it only follows `mqtt/connected` / `mqtt/disconnected` for the next `begin()`.
 
 ### Entity Management Methods
 
