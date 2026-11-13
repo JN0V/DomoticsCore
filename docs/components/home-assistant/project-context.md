@@ -63,7 +63,7 @@ Total header files: 10 (all under `include/DomoticsCore/`).
 - **File:** `HomeAssistant.h`
 - **Inherits:** `IComponent`
 - **Role:** Top-level orchestrator. Manages entity vector, publishes discovery, routes commands via virtual dispatch, emits `ha/command` EventBus events, tracks statistics.
-- **EventBus subscriptions:** `mqtt/connected`, `mqtt/disconnected`, `mqtt/message`
+- **EventBus subscriptions:** `mqtt/connected`, `mqtt/disconnected`, `mqtt/message`, made in `begin()` and dropped in `shutdown()`
 - **EventBus emissions:** `ha/discovery_published`, `ha/entity_added`, `ha/command`
 
   The `ha/command` event (v2.0.0) is the primary mechanism for consumers to react to commands from Home Assistant. It carries an `HACommandEvent` struct with `entityId`, `component`, `command`, and `code` fields.
