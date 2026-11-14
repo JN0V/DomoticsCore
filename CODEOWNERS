@@ -1,0 +1,20 @@
+# The files that define oversight and authority: a pull request changing
+# one never merges by workline's policy alone, it waits for the person's
+# `workline:accepted` label (workline ADR-0068 §4). GitHub's required
+# code-owner review stays off: an author cannot approve their own pull
+# request. Every other file takes the line's normal path.
+
+# This list.
+/CODEOWNERS @JN0V
+
+# What runs the checks and holds the App's key.
+/.github/workflows/ @JN0V
+
+# workline's config: routing, gates, each role's settings.
+/.workline/ @JN0V
+
+# What steers agents: their rules, workflows and the project's constitution.
+/.windsurf/ @JN0V
+/.specify/memory/ @JN0V
+/AGENTS.md @JN0V
+/CLAUDE.md @JN0V
