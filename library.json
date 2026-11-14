@@ -1,8 +1,16 @@
 {
   "name": "DomoticsCore",
-  "version": "2.13.0",
+  "version": "2.13.1",
   "description": "ESP32/ESP8266 domotics framework with WiFi, MQTT, web interface, Home Assistant integration, and persistent storage",
-  "keywords": ["esp32", "esp8266", "domotics", "iot", "mqtt", "home-assistant", "wifi"],
+  "keywords": [
+    "esp32",
+    "esp8266",
+    "domotics",
+    "iot",
+    "mqtt",
+    "home-assistant",
+    "wifi"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/JN0V/DomoticsCore.git"
@@ -15,8 +23,13 @@
   ],
   "license": "MIT",
   "homepage": "https://github.com/JN0V/DomoticsCore",
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32", "espressif8266"],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32",
+    "espressif8266"
+  ],
   "export": {
     "include": [
       "DomoticsCore-*/include",
