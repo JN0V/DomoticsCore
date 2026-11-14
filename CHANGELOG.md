@@ -30,6 +30,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.13.1](https://github.com/JN0V/DomoticsCore/compare/v2.13.0...v2.13.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **core:** an event bus id is never 0 nor one still in use ([#225](https://github.com/JN0V/DomoticsCore/issues/225)) ([00c3b74](https://github.com/JN0V/DomoticsCore/commit/00c3b74f1ec6496d2cba6d5ff9616e91e7d1bba9))
+* **ha:** drop MQTT subscriptions on shutdown, republish on re-enable ([#228](https://github.com/JN0V/DomoticsCore/issues/228)) ([8b428be](https://github.com/JN0V/DomoticsCore/commit/8b428be9be51c616c295e7b56f59ea6544004608))
+* **ha:** shutdown publishes nothing while MQTT is down ([#221](https://github.com/JN0V/DomoticsCore/issues/221)) ([5dd26e9](https://github.com/JN0V/DomoticsCore/commit/5dd26e9431ced9133e885f1ed5458ae534a0c168))
+* **led:** keep a disabled LED dark on the next update tick ([#227](https://github.com/JN0V/DomoticsCore/issues/227)) ([b035b6a](https://github.com/JN0V/DomoticsCore/commit/b035b6a0b7564d5fbda066a1b288e3c0075c5b5a))
+* **led:** read 1 and on as true, refuse unknown booleans ([#223](https://github.com/JN0V/DomoticsCore/issues/223)) ([5b10132](https://github.com/JN0V/DomoticsCore/commit/5b101320271930c1790aabe8c22270cfeec44331))
+* **led:** the LED dropdown follows LEDs added or renamed ([#222](https://github.com/JN0V/DomoticsCore/issues/222)) ([160c57b](https://github.com/JN0V/DomoticsCore/commit/160c57b57507314c65f57f1b6c7d75eda559fa10))
+* **ota:** a chunk past the cap answers Firmware too large ([#224](https://github.com/JN0V/DomoticsCore/issues/224)) ([a775744](https://github.com/JN0V/DomoticsCore/commit/a7757441ec0b177b31f86e1611e6bc295cd64e1d))
+* **storage:** never cache a default as a stored value ([#226](https://github.com/JN0V/DomoticsCore/issues/226)) ([1ee8cb2](https://github.com/JN0V/DomoticsCore/commit/1ee8cb20a285640f7cc9a08167a37f3c885135bf))
+
 ## [2.13.0] - 2026-10-03
 
 > **This minor release removes public API.** Each removal had no caller in the
