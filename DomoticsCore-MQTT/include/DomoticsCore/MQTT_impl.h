@@ -105,6 +105,14 @@ inline ComponentStatus MQTTComponent::begin() {
 
 // Leaving the connected state without disconnect() having been called: move the
 // state and say so, so a subscriber's view of the link matches the component's.
+// Only the current state stays replayable: the opposite sticky event is cleared.
+inline void MQTTComponent::emitLinkState(bool up) {
+    if (__dc_eventBus) {
+        __dc_eventBus->clearSticky(up ? MQTTEvents::EVENT_DISCONNECTED : MQTTEvents::EVENT_CONNECTED);
+    }
+    emit(up ? MQTTEvents::EVENT_CONNECTED : MQTTEvents::EVENT_DISCONNECTED, true, true);
+}
+
 inline void MQTTComponent::announceConnectionLost() {
     state = MQTTState::Disconnected;
     stateChangeTime = HAL::Platform::getMillis();
@@ -112,7 +120,7 @@ inline void MQTTComponent::announceConnectionLost() {
     stats.lossCount++;
     stats.uptime = 0;
     // Sticky: a loss the full EventBus queue evicted is replayed to late subscribers.
-    emit(MQTTEvents::EVENT_DISCONNECTED, true, true);
+    emitLinkState(false);
 }
 
 inline void MQTTComponent::loop() {
@@ -208,7 +216,7 @@ inline bool MQTTComponent::connect() {
         }
         
         // Emit event for decoupled components
-        emit(MQTTEvents::EVENT_CONNECTED, true, true);
+        emitLinkState(true);
     } else {
         state = MQTTState::Error;
         stateChangeTime = HAL::Platform::getMillis();
@@ -235,7 +243,7 @@ inline void MQTTComponent::disconnect() {
     stats.uptime = 0;
 
     // Emit event for decoupled components
-    emit(MQTTEvents::EVENT_DISCONNECTED, true, true);
+    emitLinkState(false);
 }
 
 inline void MQTTComponent::resetReconnect() {

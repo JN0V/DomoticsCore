@@ -433,6 +433,7 @@ private:
     // Internal methods
     bool connectInternal();
     void handleReconnection();
+    void emitLinkState(bool up);
     void announceConnectionLost();
     void processMessageQueue();
     /**
