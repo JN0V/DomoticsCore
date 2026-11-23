@@ -495,12 +495,15 @@ inline uint32_t persistBootDiagnostics(Components::StorageComponent& storage,
 inline size_t formatPersistedBootDiagnostics(Components::StorageComponent& storage, char* buf, size_t len) {
     BootDiagRecord r;
     const bool have = readBootDiagRecord(storage, r);
-    int n = snprintf(buf, len,
+    static const char fmtPersisted[] PROGMEM =
              "\nPersisted Data:\n"
              "  boot_count: %d\n"
              "  last_reset: %ld\n"
              "  boot_heap: %lu\n"
-             "  boot_minheap: %s\n",
+             "  boot_minheap: %s\n";
+    static const char fmtDeath[] PROGMEM =
+                 "  last death: %s%s x%lu | phase %lu | uptime %lu s | reason %lu epc1 0x%08lx | fail %lu B from 0x%08lx | min free %lu B | build %08lx\n";
+    int n = DOMOTICS_SNPRINTF_FLASH(buf, len, fmtPersisted,
              storage.getInt("boot_count", 0),
              have ? static_cast<long>(r.lastReset) : -1L,
              have ? static_cast<unsigned long>(r.bootHeap) : 0UL,
@@ -508,8 +511,7 @@ inline size_t formatPersistedBootDiagnostics(Components::StorageComponent& stora
     if (n < 0) return 0;
     size_t used = static_cast<size_t>(n) < len ? static_cast<size_t>(n) : len - 1;
     if (have && r.promotion != 0) {
-        int m = snprintf(buf + used, len - used,
-                 "  last death: %s%s x%lu | phase %lu | uptime %lu s | reason %lu epc1 0x%08lx | fail %lu B from 0x%08lx | min free %lu B | build %08lx\n",
+        int m = DOMOTICS_SNPRINTF_FLASH(buf + used, len - used, fmtDeath,
                  FlightRecorder::promotionName(static_cast<FlightRecorder::Promotion>(r.promotion)),
                  (r.flags & 1u) ? " (torn)" : "",
                  static_cast<unsigned long>(r.sameCount), static_cast<unsigned long>(r.phase),

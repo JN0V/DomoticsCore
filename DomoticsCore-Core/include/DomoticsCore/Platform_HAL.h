@@ -203,6 +203,24 @@ inline bool crashKindSurvives(const char* kind) {
         #define DOMOTICS_FLASH_STR(p) (p)
     #endif
 #endif
+// snprintf whose format is a `static const char F[] PROGMEM`; the arguments
+// (%s ones included) stay ordinary RAM pointers. Plain snprintf elsewhere.
+#ifndef DOMOTICS_SNPRINTF_FLASH
+    #if defined(ESP8266)
+        #define DOMOTICS_SNPRINTF_FLASH(...) snprintf_P(__VA_ARGS__)
+    #else
+        #define DOMOTICS_SNPRINTF_FLASH(...) snprintf(__VA_ARGS__)
+    #endif
+#endif
+// Copy a PROGMEM object (a table row) into RAM before reading its fields:
+// flash is only word-readable on ESP8266. A plain copy elsewhere.
+#ifndef DOMOTICS_FLASH_COPY
+    #if defined(ESP8266)
+        #define DOMOTICS_FLASH_COPY(dst, src) memcpy_P(&(dst), &(src), sizeof(dst))
+    #else
+        #define DOMOTICS_FLASH_COPY(dst, src) memcpy(&(dst), &(src), sizeof(dst))
+    #endif
+#endif
 
 // ============================================================================
 // Backward-Compatible API (delegates to Platform namespace)
