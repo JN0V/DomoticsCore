@@ -570,6 +570,8 @@ void test_remoteconsole_client_id_wrap_stays_unique_and_nonzero(void) {
     testCore->loop();
     TEST_ASSERT_EQUAL_size_t_MESSAGE(4, console->clientStateEntriesForTest(),
                                      "no id reused among live clients");
+    TEST_ASSERT_FALSE_MESSAGE(console->clientStateHasIdForTest(0), "no client has id 0");
+    TEST_ASSERT_TRUE_MESSAGE(console->clientStateHasIdForTest(UINT32_MAX), "id UINT32_MAX in use");
 }
 
 void test_remoteconsole_color_output_disabled(void) {

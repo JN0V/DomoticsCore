@@ -133,6 +133,7 @@ public:
     uint16_t getPort() const { return config.port; }
     HAL::WiFiServer* getServer() const { return telnetServer; }
     size_t clientStateEntriesForTest() const { return clientState.size(); }
+    bool clientStateHasIdForTest(uint32_t id) const { return clientState.count(id) != 0; }
     void setNextClientIdForTest(uint32_t v) { nextClientId = v; }
     size_t logBufferCapacityForTest() const { return logBuffer.capacity(); }
 
