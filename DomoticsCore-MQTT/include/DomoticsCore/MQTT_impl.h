@@ -109,7 +109,10 @@ inline void MQTTComponent::announceConnectionLost() {
     state = MQTTState::Disconnected;
     stateChangeTime = HAL::Platform::getMillis();
     DLOG_W(LOG_MQTT, "Connection lost");
-    emit(MQTTEvents::EVENT_DISCONNECTED, true);
+    stats.lossCount++;
+    stats.uptime = 0;
+    // Sticky: a loss the full EventBus queue evicted is replayed to late subscribers.
+    emit(MQTTEvents::EVENT_DISCONNECTED, true, true);
 }
 
 inline void MQTTComponent::loop() {
@@ -205,7 +208,7 @@ inline bool MQTTComponent::connect() {
         }
         
         // Emit event for decoupled components
-        emit(MQTTEvents::EVENT_CONNECTED, true);
+        emit(MQTTEvents::EVENT_CONNECTED, true, true);
     } else {
         state = MQTTState::Error;
         stateChangeTime = HAL::Platform::getMillis();
@@ -229,12 +232,19 @@ inline void MQTTComponent::disconnect() {
     stateChangeTime = HAL::Platform::getMillis();
 
     DLOG_I(LOG_MQTT, "Disconnected from broker");
+    stats.uptime = 0;
 
     // Emit event for decoupled components
-    emit(MQTTEvents::EVENT_DISCONNECTED, true);
+    emit(MQTTEvents::EVENT_DISCONNECTED, true, true);
 }
 
 inline void MQTTComponent::resetReconnect() {
+    // Leaving Connected silently would leave every subscriber believing the
+    // link is up: close the session and say so.
+    if (state == MQTTState::Connected) {
+        if (mqttClient) mqttClient->disconnect();
+        announceConnectionLost();
+    }
     stats.reconnectCount = 0;
     reconnectTimer.setInterval(config.reconnectDelay);
     reconnectTimer.enable();
@@ -656,6 +666,8 @@ inline void MQTTComponent::handleIncomingMessage(char* topic, byte* payload, uns
 inline void MQTTComponent::updateStatistics() {
     if (isConnected()) {
         stats.uptime = (HAL::Platform::getMillis() - stateChangeTime) / 1000;
+    } else {
+        stats.uptime = 0;
     }
 }
 
