@@ -96,14 +96,10 @@ protected:
         String chipModel;
         uint8_t chipRevision = 0;
         uint32_t uptime = 0;
-        float cpuLoad = 0;              // Estimated CPU load percentage
+        float cpuLoad = 0;              // Always 0: the HAL offers no idle-time measure, and heap churn is not CPU use
         bool valid = false;
     } metrics;
     
-    // CPU load estimation variables
-    unsigned long lastHeapCheck = 0;
-    uint32_t lastHeapValue = 0;
-    float cpuLoadEma = 0.0f; // Exponential moving average for smoother CPU load
 
     String formatBytes(uint32_t bytes) {
         if (bytes < 1024) {
@@ -131,35 +127,6 @@ protected:
         } else {
             return String(minutes) + "m " + String(seconds) + "s";
         }
-    }
-        float calculateCpuLoad() {
-        // Heuristic CPU load estimation based on heap allocation activity.
-        // On ESP32 Arduino, direct CPU usage isn't available without special FreeRTOS config.
-        // We therefore estimate activity over time and smooth it with an EMA.
-        unsigned long currentTime = HAL::Platform::getMillis();
-        uint32_t currentHeap = HAL::Platform::getFreeHeap();
-
-        if (lastHeapCheck > 0) {
-            unsigned long dt = currentTime - lastHeapCheck;
-            if (dt > 0) {
-                // Heap activity in KB per second
-                float heapDiffKB = fabsf((float)((int32_t)currentHeap - (int32_t)lastHeapValue)) / 1024.0f;
-                float activityPerSec = heapDiffKB * (1000.0f / (float)dt);
-
-                // Map activity to an arbitrary 0-100 range
-                // Tuned scale: 10 KB/s ~ 100% load (cap at 100)
-                float instantLoad = HAL::Platform::constrain(activityPerSec * 10.0f, 0.0f, 100.0f);
-
-                // Exponential moving average for stability
-                const float alpha = 0.3f; // smoothing factor
-                cpuLoadEma = (alpha * instantLoad) + ((1.0f - alpha) * cpuLoadEma);
-                metrics.cpuLoad = HAL::Platform::constrain(cpuLoadEma, 0.0f, 100.0f);
-            }
-        }
-
-        lastHeapCheck = currentTime;
-        lastHeapValue = currentHeap;
-        return metrics.cpuLoad;
     }
 
 public:
@@ -347,9 +314,6 @@ private:
         metrics.chipModel = HAL::Platform::getChipModel();
         metrics.chipRevision = HAL::Platform::getChipRevision();
         metrics.uptime = HAL::Platform::getMillis() / 1000;
-        
-        // Calculate CPU load (simplified estimation)
-        calculateCpuLoad();
         
         metrics.valid = true;
     }
