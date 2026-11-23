@@ -57,7 +57,7 @@ Add to your `platformio.ini`:
 
 ```ini
 [env:esp32dev]
-platform = espressif32@7.1.3
+platform = espressif32@^8.0.0
 board = esp32dev
 framework = arduino
 
@@ -71,7 +71,7 @@ Add to your `platformio.ini`:
 
 ```ini
 [env:esp32dev]
-platform = espressif32@7.1.3
+platform = espressif32@^8.0.0
 board = esp32dev
 framework = arduino
 
