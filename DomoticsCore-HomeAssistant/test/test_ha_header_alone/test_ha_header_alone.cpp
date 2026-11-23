@@ -16,8 +16,16 @@ void test_headers_compile_alone() {
     TEST_ASSERT_EQUAL_INT(1, ha_header_alone_HAAlarmControlPanel());
 }
 
-int main(int, char**) {
+static int runAllTests() {
     UNITY_BEGIN();
     RUN_TEST(test_headers_compile_alone);
     return UNITY_END();
 }
+
+#ifdef ARDUINO
+#include <Arduino.h>
+void setup() { delay(2000); runAllTests(); }
+void loop() {}
+#else
+int main(int, char**) { return runAllTests(); }
+#endif
