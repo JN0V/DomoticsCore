@@ -1,6 +1,6 @@
 // Each alone_*.cpp is a translation unit that includes one HA entity header and
-// nothing else (LO-23): the suite builds only if every header carries its own
-// Logger.h include, whatever the include order.
+// nothing else: the suite builds only if every header carries its own Logger.h
+// include (it uses DLOG_*), whatever the include order.
 #include <unity.h>
 
 int ha_header_alone_HALight();
