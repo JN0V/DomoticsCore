@@ -723,6 +723,25 @@ static TelemetrySample healthySample() {
     return s;
 }
 
+void test_telemetry_reports_the_event_bus_peak_without_a_drop(void) {
+    Utils::EventBus bus;
+    const size_t cost = Utils::QueueCost::of(sizeof(int), strlen("peak/test"));
+    const size_t n = (Utils::QueueCost::kBudgetBytes / 2) / cost;   // about half the budget, no eviction
+    int v = 1;
+    for (size_t i = 0; i < n; ++i) bus.publish(String("peak/test"), v);
+    TEST_ASSERT_EQUAL_UINT32(0, bus.getDroppedCount());
+    const unsigned expected = (unsigned)(n * cost * 100u / Utils::QueueCost::kBudgetBytes);
+    TEST_ASSERT_GREATER_THAN_UINT32(0, expected);
+
+    TelemetrySample s = SystemHelpers::sampleTelemetry(nullptr, 0, 0, bus);
+    char buf[SystemTelemetry::TELEMETRY_MAX];
+    SystemTelemetry::formatTelemetry(buf, sizeof(buf), s, 0, 0, 0);
+    char want[32];
+    snprintf(want, sizeof(want), "\"queue_peak\":%u,", expected);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(buf, want), buf);
+}
+
+
 void test_telemetry_payload_is_this_exact_document(void) {
     char buf[SystemTelemetry::TELEMETRY_MAX];
     size_t n = SystemTelemetry::formatTelemetry(buf, sizeof(buf), healthySample(), 36864, 3, 1);
@@ -1085,6 +1104,7 @@ int main(int argc, char** argv) {
 
     // OBS-5 — the telemetry publisher and the crash summary
     RUN_TEST(test_telemetry_payload_is_this_exact_document);
+    RUN_TEST(test_telemetry_reports_the_event_bus_peak_without_a_drop);
     RUN_TEST(test_telemetry_and_crash_payloads_saturated_fit_their_buffers);
     RUN_TEST(test_crash_payload_shapes);
     RUN_TEST(test_telemetry_ticks_on_the_interval_and_not_before);
