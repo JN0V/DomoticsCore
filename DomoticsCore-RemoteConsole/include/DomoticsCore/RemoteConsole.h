@@ -78,6 +78,17 @@ private:
     bool coreLogDropEverReported_ = false;   // millis() == 0 is a timestamp, not a sentinel
     uint32_t nextClientId = 1;
     std::vector<std::pair<uint32_t, HAL::WiFiClient>> clients;
+
+    // Next id: never 0, never one a live client holds, also after the counter wraps.
+    uint32_t allocateClientId() {
+        for (;;) {
+            uint32_t id = nextClientId++;
+            if (id == 0) continue;
+            bool inUse = clientState.count(id) != 0;
+            for (const auto& c : clients) if (c.first == id) { inUse = true; break; }
+            if (!inUse) return id;
+        }
+    }
     
     // Circular buffer for log entries - grows lazily to avoid OOM on startup
     std::vector<LogEntry> logBuffer;
@@ -122,6 +133,8 @@ public:
     uint16_t getPort() const { return config.port; }
     HAL::WiFiServer* getServer() const { return telnetServer; }
     size_t clientStateEntriesForTest() const { return clientState.size(); }
+    bool clientStateHasIdForTest(uint32_t id) const { return clientState.count(id) != 0; }
+    void setNextClientIdForTest(uint32_t v) { nextClientId = v; }
     size_t logBufferCapacityForTest() const { return logBuffer.capacity(); }
 
     LogLevel getLogLevel() const { return currentLogLevel; }
@@ -245,7 +258,7 @@ public:
                     newClient.println("IP not allowed. Disconnecting.");
                     newClient.stop();
                 } else {
-                    uint32_t clientId = nextClientId++;
+                    uint32_t clientId = allocateClientId();
                     clients.push_back({clientId, newClient});
                     const unsigned long now = HAL::Platform::getMillis();
                     ClientState& st = clientState[clientId];
