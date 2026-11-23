@@ -96,7 +96,6 @@ protected:
         String chipModel;
         uint8_t chipRevision = 0;
         uint32_t uptime = 0;
-        float cpuLoad = 0;              // Always 0: the HAL offers no idle-time measure, and heap churn is not CPU use
         bool valid = false;
     } metrics;
     

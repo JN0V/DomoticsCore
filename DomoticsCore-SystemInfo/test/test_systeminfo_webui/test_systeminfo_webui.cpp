@@ -94,8 +94,20 @@ void test_memory_info_off_drops_the_memory_fields(void) {
     }
     TEST_ASSERT_FALSE(hasField(provider, "system_metrics", "heap_usage"));
     TEST_ASSERT_FALSE(dataHas(provider, "system_metrics", "heap_usage"));
-    TEST_ASSERT_TRUE(hasField(provider, "system_metrics", "cpu_load"));
     TEST_ASSERT_TRUE(hasField(provider, "system_info", "chip"));
+}
+
+// LO-14: the heap-churn "CPU load" is removed, not faked: no field, no data key,
+// whatever the flags, so the dashboard never charts a flat 0% as an idle CPU.
+void test_no_cpu_load_in_schema_or_data(void) {
+    for (int mem = 0; mem < 2; mem++) {
+        SystemInfoComponent sys(flags(true, mem));
+        SystemInfoWebUI provider(&sys);
+        TEST_ASSERT_FALSE(hasField(provider, "system_metrics", "cpu_load"));
+        TEST_ASSERT_FALSE(hasField(provider, "system_info", "cpu_load"));
+        TEST_ASSERT_FALSE(dataHas(provider, "system_metrics", "cpu_load"));
+        TEST_ASSERT_EQUAL(mem != 0, hasField(provider, "system_metrics", "heap_usage"));
+    }
 }
 
 // A flag changed after the schema was built leaves schema and data in step until
@@ -241,6 +253,7 @@ int main(int, char**) {
     RUN_TEST(test_both_flags_on_show_chip_and_memory);
     RUN_TEST(test_detailed_info_off_drops_the_chip_fields);
     RUN_TEST(test_memory_info_off_drops_the_memory_fields);
+    RUN_TEST(test_no_cpu_load_in_schema_or_data);
     RUN_TEST(test_a_later_flag_change_keeps_schema_and_data_together);
     RUN_TEST(test_a_null_component_is_refused_rather_than_dereferenced);
     return UNITY_END();
