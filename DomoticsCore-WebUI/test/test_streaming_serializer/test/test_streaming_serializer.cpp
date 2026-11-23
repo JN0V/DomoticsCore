@@ -571,9 +571,32 @@ void test_serialize_to_string_exact_json(void) {
     WebUIContext ctx = buildMaximalContext();
     ctx.withField(text);
     std::string body;
-    TEST_ASSERT_TRUE(StreamingContextSerializer::serializeToString(ctx, body));
+    TEST_ASSERT_TRUE(StreamingContextSerializer::serializeTo(ctx,
+        [&body](const uint8_t* d, size_t n) { body.append(reinterpret_cast<const char*>(d), n); return true; }));
+    size_t measured = 0;
+    TEST_ASSERT_TRUE(StreamingContextSerializer::measure(ctx, measured));
+    TEST_ASSERT_EQUAL_UINT32(body.size(), measured);
     TEST_ASSERT_EQUAL_STRING(serializeAtChunkSize(ctx, 1024).c_str(), body.c_str());
     TEST_ASSERT_EQUAL_STRING("{\"contextId\":\"maximal\",\"title\":\"Maximal Context\",\"icon\":\"dc-cog\",\"location\":4,\"priority\":0,\"apiEndpoint\":\"\",\"alwaysInteractive\":false,\"customHtml\":\"<div class=\\\"x\\\">html</div>\",\"customCss\":\".x { color: red; }\",\"customJs\":\"function f() { return 1; }\",\"fields\":[{\"name\":\"name\",\"label\":\"Device \\\"Name\\\"\",\"type\":0,\"value\":\"line1\\nline2\\u001end\",\"unit\":\"\",\"readOnly\":false,\"minValue\":0.00,\"maxValue\":100.00,\"endpoint\":\"\"},{\"name\":\"mode\",\"label\":\"Mode\",\"type\":4,\"value\":\"b\",\"unit\":\"\",\"readOnly\":false,\"minValue\":0.00,\"maxValue\":100.00,\"endpoint\":\"\",\"options\":[\"a\",\"b\"],\"optionLabels\":{\"a\":\"First\",\"b\":\"Second\"}},{\"name\":\"networks\",\"label\":\"Networks\",\"type\":14,\"value\":[\"office,5g\",\"guest\"],\"unit\":\"\",\"readOnly\":false,\"minValue\":0.00,\"maxValue\":100.00,\"endpoint\":\"\",\"options\":[\"office,5g\",\"guest\"]},{\"name\":\"t\",\"label\":\"Text\",\"type\":0,\"value\":\"v\",\"unit\":\"C\",\"readOnly\":false,\"minValue\":0.00,\"maxValue\":100.00,\"endpoint\":\"/api/t\"}]}", body.c_str());
+}
+
+// A sink that cannot take a chunk (an append that failed) is a failure, not a 200.
+void test_serialize_to_fails_when_sink_refuses(void) {
+    WebUIContext ctx = buildMaximalContext();
+    size_t calls = 0;
+    TEST_ASSERT_FALSE(StreamingContextSerializer::serializeTo(ctx,
+        [&calls](const uint8_t*, size_t) { return ++calls < 2; }));
+    TEST_ASSERT_EQUAL_UINT32(2, calls);
+}
+
+// A serializer that stalls (a chunk too small for an atomic escape) is a failure.
+void test_measure_fails_when_serializer_stalls(void) {
+    WebUIField text("t", "Text", WebUIFieldType::Text, "a\x1e" "b", "");
+    WebUIContext ctx = buildMaximalContext();
+    ctx.withField(text);
+    size_t total = 0;
+    TEST_ASSERT_FALSE(StreamingContextSerializer::measure(ctx, total, 1));
+    TEST_ASSERT_TRUE(StreamingContextSerializer::measure(ctx, total));
 }
 
 void setUp(void) {
@@ -599,6 +622,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_empty_multiselect_emits_empty_array_across_chunk_sizes);
     RUN_TEST(test_serializer_reuse_after_abandoned_run);
     RUN_TEST(test_serialize_to_string_exact_json);
+    RUN_TEST(test_serialize_to_fails_when_sink_refuses);
+    RUN_TEST(test_measure_fails_when_serializer_stalls);
     RUN_TEST(test_caching_provider_caches_contexts);
     RUN_TEST(test_serialize_multiple_contexts);
     RUN_TEST(test_chunked_serialization);

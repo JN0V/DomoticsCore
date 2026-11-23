@@ -732,9 +732,12 @@ private:
                 return;
             }
 
-            // Serialize the context with the one serializer the schema uses
-            String body;
-            if (!WebUI::StreamingContextSerializer::serializeToString(foundContext, body)) {
+            // The body is streamed with the one serializer the schema uses, never
+            // built whole (a big customHtml/Css/Js would take one contiguous block).
+            // A dry run first: a stall is answered 500 here, not sent as a
+            // truncated 200 (headers are out once the stream starts).
+            size_t bodyLen = 0;
+            if (!WebUI::StreamingContextSerializer::measure(foundContext, bodyLen)) {
                 AsyncWebServerResponse* err = request->beginResponse(500, "application/json",
                     "{\"error\":\"Context serialization failed\"}");
                 addCorsHeaders(err);
@@ -742,7 +745,22 @@ private:
                 return;
             }
 
-            AsyncWebServerResponse* response = request->beginResponse(200, "application/json", body);
+            // The context is copied into the stream's state: it outlives this handler.
+            struct ContextStream {
+                WebUIContext ctx;
+                WebUI::StreamingContextSerializer serializer;
+            };
+            std::shared_ptr<ContextStream> stream = std::make_shared<ContextStream>();
+            stream->ctx = foundContext;
+            stream->serializer.begin(stream->ctx);
+
+            AsyncWebServerResponse* response = request->beginChunkedResponse(
+                "application/json",
+                [stream](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
+                    (void)index;
+                    if (stream->serializer.isComplete()) return 0;
+                    return stream->serializer.write(buffer, maxLen);
+                });
             addCorsHeaders(response);
             request->send(response);
 

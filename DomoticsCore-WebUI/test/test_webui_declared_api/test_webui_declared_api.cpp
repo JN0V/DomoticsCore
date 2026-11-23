@@ -152,15 +152,16 @@ void test_a_provider_gone_since_can_handle_answers_404() {
     TEST_ASSERT_EQUAL_INT(404, request.sentCode);
 }
 
-// The context endpoint serializes through WebUI.h, not the streaming serializer.
+// The context endpoint streams the body (chunked): the test drains it as the server would.
 void test_the_context_endpoint_sends_no_presentation() {
     Fixture f;
     AsyncWebServerRequest request;
     request.addParam("id", "alpha");
     TEST_ASSERT_TRUE(f.get(request, "/api/ui/context"));
     TEST_ASSERT_EQUAL_INT(200, request.sentCode);
-    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("\"location\"") >= 0, request.sentBody.c_str());
-    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("presentation") < 0, request.sentBody.c_str());
+    const String body = request.drainChunked();
+    TEST_ASSERT_TRUE_MESSAGE(body.indexOf("\"location\"") >= 0, body.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(body.indexOf("presentation") < 0, body.c_str());
 }
 
 int main(int, char**) {

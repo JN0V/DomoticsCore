@@ -131,22 +131,33 @@ public:
     }
 
     /**
-     * @brief Serialize a whole context into a string (the /api/ui/context body)
-     * @return false when the serializer stalls (writes 0 bytes while
-     *         incomplete): out then holds a truncated body and must not be sent
+     * @brief Run a whole context through a sink, chunk by chunk, holding no body
+     * @param sink callable (const uint8_t*, size_t) -> bool; false = it could not take the chunk
+     * @param chunkSize bytes asked per write (capped at 256)
+     * @return false when the serializer stalls (writes 0 bytes while incomplete)
+     *         or the sink refuses a chunk: what the sink got is truncated
      */
-    template <typename Str>
-    static bool serializeToString(const WebUIContext& context, Str& out) {
+    template <typename Sink>
+    static bool serializeTo(const WebUIContext& context, Sink&& sink, size_t chunkSize = 256) {
+        if (chunkSize > 256) chunkSize = 256;
         StreamingContextSerializer serializer;
         serializer.begin(context);
-        uint8_t chunk[257];
+        uint8_t chunk[256];
         while (!serializer.isComplete()) {
-            size_t n = serializer.write(chunk, sizeof(chunk) - 1);
+            size_t n = serializer.write(chunk, chunkSize);
             if (n == 0) return false;
-            chunk[n] = 0;  // the JSON holds no NUL, so it is a C string
-            out += reinterpret_cast<const char*>(chunk);
+            if (!sink(static_cast<const uint8_t*>(chunk), n)) return false;
         }
         return true;
+    }
+
+    /**
+     * @brief Dry run: the body's length, or false when it cannot be serialized whole
+     *        (no heap held: lets a route answer 500 before it streams the body)
+     */
+    static bool measure(const WebUIContext& context, size_t& total, size_t chunkSize = 256) {
+        total = 0;
+        return serializeTo(context, [&total](const uint8_t*, size_t n) { total += n; return true; }, chunkSize);
     }
 
     /**
