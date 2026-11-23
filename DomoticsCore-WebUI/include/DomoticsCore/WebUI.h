@@ -15,7 +15,7 @@
 #include <map>
 #include <memory>
 #include <algorithm>
-#include <pgmspace.h>
+#include "DomoticsCore/WebUI/WebResponse_HAL.h"  // flash-string helpers
 #include <functional>
 
 #include "DomoticsCore/IComponent.h"

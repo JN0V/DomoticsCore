@@ -29,7 +29,6 @@ its include path; nothing else sees them.
 | `libraries/ESPAsyncWebServer.h` | `ESPAsyncWebServer` | Run route and upload handlers on the host |
 | `libraries/AsyncEventSource.h` | its SSE half | Assert what a handler pushed |
 | `libraries/FS.h` | `FS.h` | Compile headers that name `fs::FS` |
-| `libraries/pgmspace.h` | `pgmspace.h` | Compile headers using `PROGMEM` |
 | `libraries/DomoticsCore/Generated/WebUIAssets.h` | the generated web assets | Compile `WebUI.h` without a prior WebUI build |
 
 The assets one matters more than it looks: the real header is produced by

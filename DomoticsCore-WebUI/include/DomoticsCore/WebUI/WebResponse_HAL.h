@@ -11,6 +11,28 @@
 #include <ESPAsyncWebServer.h>
 #include "DomoticsCore/Platform_HAL.h"
 
+// Flash-string helpers (memcpy_P, pgm_read_*): the Arduino cores provide them
+// through <pgmspace.h>; the host has one address space, so they are the
+// ordinary accessors there.
+#if DOMOTICS_PLATFORM_ESP32 || DOMOTICS_PLATFORM_ESP8266
+    #include <pgmspace.h>
+#else
+    #include <cstring>
+    #include <cstdint>
+    #ifndef memcpy_P
+        #define memcpy_P(dest, src, n) memcpy((dest), (src), (n))
+    #endif
+    #ifndef strlen_P
+        #define strlen_P(s) strlen(s)
+    #endif
+    #ifndef strcmp_P
+        #define strcmp_P(a, b) strcmp((a), (b))
+    #endif
+    #ifndef pgm_read_byte
+        #define pgm_read_byte(addr) (*reinterpret_cast<const uint8_t*>(addr))
+    #endif
+#endif
+
 namespace DomoticsCore {
 namespace HAL {
 namespace WebResponse {
