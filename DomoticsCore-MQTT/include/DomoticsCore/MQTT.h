@@ -54,8 +54,10 @@ constexpr size_t MQTT_EVENT_PAYLOAD_SIZE = 700;  ///< Max payload (fits HA disco
 struct MQTTPublishEvent {
     char topic[MQTT_EVENT_TOPIC_SIZE];      ///< MQTT topic (null-terminated)
     char payload[MQTT_EVENT_PAYLOAD_SIZE];  ///< Message payload (null-terminated)
-    uint8_t qos = 0;                        ///< QoS level (0, 1, 2)
-    bool retain = false;                    ///< Retain flag
+    // qos and retain share one byte: the event is 829 bytes, not 830.
+    uint8_t qos : 2;                        ///< QoS level (0, 1, 2)
+    uint8_t retain : 1;                     ///< Retain flag
+    MQTTPublishEvent() : topic{}, payload{}, qos(0), retain(0) {}
 };
 
 /**
