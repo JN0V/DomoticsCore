@@ -100,6 +100,7 @@ class DomoticsApp {
     }
 
     renderUI() {
+        this.renderQuickControls();
         this.renderSection(this.WebUILocation.Dashboard, 'dashboardGrid');
         this.renderSection(this.WebUILocation.ComponentDetail, 'componentsGrid'); // Using ComponentDetail for the 'Components' tab for now
         this.renderSection(this.WebUILocation.Settings, 'settingsGrid');
@@ -134,6 +135,17 @@ class DomoticsApp {
         if (themeField && themeField.value) {
             this.applyTheme(themeField.value);
         }
+    }
+
+    // Quick controls: drawn above the dashboard grid; empty when none are placed.
+    renderQuickControls() {
+        const grid = document.getElementById('quickControlsGrid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        this.uiSchema
+            .filter(ctx => ctx.location === this.WebUILocation.QuickControls)
+            .sort((a, b) => (b.priority || 0) - (a.priority || 0))
+            .forEach(context => grid.appendChild(this.createContextCard(context)));
     }
 
     renderSection(location, gridId) {
