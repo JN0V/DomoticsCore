@@ -205,8 +205,10 @@ public:
                 // Deliver what this component published while shutting down
                 // (e.g. HomeAssistant's offline and discovery withdrawals) now,
                 // while the components shut later (MQTT) still listen: Core
-                // clears its flag right after and nothing polls again.
-                eventBus.poll();
+                // clears its flag right after and nothing polls again. One
+                // poll() handles 8 events and a device may withdraw more
+                // entities than that: drain, up to what the queue can hold.
+                eventBus.poll(DomoticsCore::Utils::QueueCost::kMaxEntries);
                 // Clean up EventBus subscriptions for this component
                 eventBus.unsubscribeOwner(component);
                 component->setActive(false);
