@@ -108,11 +108,11 @@ private:
 public:
     /**
      * Constructor
-     * @param ssid Wifi network name (empty = configure later)
-     * @param password Wifi password
+     * @param initialSsid Wifi network name (empty = configure later)
+     * @param initialPassword Wifi password
      */
-    WifiComponent(const String& ssid = "", const String& password = "") 
-        : ssid(ssid), password(password), 
+    WifiComponent(const String& initialSsid = "", const String& initialPassword = "")
+        : ssid(initialSsid), password(initialPassword),
           reconnectTimer(5000), statusTimer(30000), connectionTimer(100),
           shouldConnect(true), isConnecting(false), connectionStartTime(0),
           staFallbackTimer_(30000),
