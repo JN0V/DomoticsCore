@@ -1,6 +1,6 @@
 /**
  * @file test_webui_ap_event.cpp
- * @brief LO-26: the WebUI closes its connections when the AP-disabled event is
+ * @brief issue #180 (magic string "wifi/ap/enabled" in WebUI.h): the WebUI closes its connections when the AP-disabled event is
  * published on the shared topic (Events::EVENT_WIFI_AP_ENABLED).
  */
 
