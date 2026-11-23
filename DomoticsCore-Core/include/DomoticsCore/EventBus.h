@@ -45,7 +45,7 @@ struct QueueCost : QueueCostShape {
         return kNode + block(payloadBytes) + topicBlock(topicLen);
     }
     // A complete event: drop the topic term and the budget holds 30, not 32.
-    static constexpr size_t kReference   = kNode + block(830) + topicBlock(12);
+    static constexpr size_t kReference   = kNode + block(770) + topicBlock(12);
 #ifdef DOMOTICS_EVENTBUS_QUEUE_BYTES
     static constexpr size_t kBudgetBytes = (size_t)(DOMOTICS_EVENTBUS_QUEUE_BYTES);
 #else
