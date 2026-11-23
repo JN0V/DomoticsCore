@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DomoticsCore/Platform_HAL.h>  // String on the host
+#include <DomoticsCore/ArduinoJsonString.h>
 #include <ArduinoJson.h>
 #include "HAEvents.h"
 
