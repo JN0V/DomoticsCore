@@ -172,6 +172,34 @@ void test_a_loss_the_full_queue_dropped_is_not_forgotten() {
                              "no subscriber ever learned that the link is down");
 }
 
+// Given a connected client whose broker is cleared at runtime, and a full
+// EventBus queue that evicts the resulting mqtt/disconnected,
+// When the queue frees up and the component loops again,
+// Then the subscriber already listening is told the link is down, once.
+void test_a_loss_evicted_after_the_broker_is_cleared_is_announced_again() {
+    ConnectedBus bus(/*autoReconnect=*/false);
+
+    bus.floodTheQueue(64);
+    TEST_ASSERT_TRUE_MESSAGE(bus.core.getEventBus().getDroppedCount() > 0,
+                             "the queue was never full");
+
+    bus.mqtt->setBroker(String(), 1883);
+    bus.mqtt->loop();  // notices the abandoned session and announces the loss
+    // The queue stays full: what was queued first is evicted first.
+    bus.floodTheQueue(64);
+    bus.core.getEventBus().poll(1000);
+
+    TEST_ASSERT_FALSE(bus.mqtt->isConnected());
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, bus.disconnects,
+                                     "the announcement was not evicted: the queue never held it back");
+
+    bus.mqtt->loop();  // empty broker, nothing queued of the loss: resend it
+    bus.core.getEventBus().poll(1000);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, bus.disconnects,
+                                     "the lost mqtt/disconnected was not published again");
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -179,6 +207,7 @@ int main() {
     RUN_TEST(test_statistics_count_each_lost_link);
     RUN_TEST(test_uptime_is_zero_during_an_outage);
     RUN_TEST(test_a_loss_the_full_queue_dropped_is_not_forgotten);
+    RUN_TEST(test_a_loss_evicted_after_the_broker_is_cleared_is_announced_again);
 
     return UNITY_END();
 }
