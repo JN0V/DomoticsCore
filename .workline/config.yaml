@@ -74,6 +74,8 @@ routing:
   # wakes the developer.
   events: {pre-push: [committer, documentalist], merge-request: [committer, documentalist, tester, reviewer],
     schedule: [documentalist, product-owner, reviewer], issue: [product-owner, reviewer, tester, developer]}
+  # Ready holds 8 issues at most (5 shipped): the owner raised it, 11 were waiting for room.
+  wip: {ready: 8}
 
 # Cautious: the forge merges only what the owner accepted with the
 # label workline:accepted; nothing merges alone.
