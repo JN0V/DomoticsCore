@@ -131,6 +131,25 @@ public:
     }
 
     /**
+     * @brief Serialize a whole context into a string (the /api/ui/context body)
+     * @return false when the serializer stalls (writes 0 bytes while
+     *         incomplete): out then holds a truncated body and must not be sent
+     */
+    template <typename Str>
+    static bool serializeToString(const WebUIContext& context, Str& out) {
+        StreamingContextSerializer serializer;
+        serializer.begin(context);
+        uint8_t chunk[257];
+        while (!serializer.isComplete()) {
+            size_t n = serializer.write(chunk, sizeof(chunk) - 1);
+            if (n == 0) return false;
+            chunk[n] = 0;  // the JSON holds no NUL, so it is a C string
+            out += reinterpret_cast<const char*>(chunk);
+        }
+        return true;
+    }
+
+    /**
      * @brief Check if serialization is complete
      */
     bool isComplete() const {

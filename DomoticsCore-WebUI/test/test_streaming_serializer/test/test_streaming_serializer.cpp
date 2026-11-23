@@ -563,6 +563,19 @@ void test_serializer_reuse_after_abandoned_run(void) {
     TEST_ASSERT_EQUAL_STRING(reference.c_str(), json.c_str());
 }
 
+
+// The /api/ui/context body: exact JSON for a context with every field type.
+void test_serialize_to_string_exact_json(void) {
+    WebUIField text("t", "Text", WebUIFieldType::Text, "v", "C");
+    text.endpoint = "/api/t";
+    WebUIContext ctx = buildMaximalContext();
+    ctx.withField(text);
+    std::string body;
+    TEST_ASSERT_TRUE(StreamingContextSerializer::serializeToString(ctx, body));
+    TEST_ASSERT_EQUAL_STRING(serializeAtChunkSize(ctx, 1024).c_str(), body.c_str());
+    TEST_ASSERT_EQUAL_STRING("{\"contextId\":\"maximal\",\"title\":\"Maximal Context\",\"icon\":\"dc-cog\",\"location\":4,\"priority\":0,\"apiEndpoint\":\"\",\"alwaysInteractive\":false,\"customHtml\":\"<div class=\\\"x\\\">html</div>\",\"customCss\":\".x { color: red; }\",\"customJs\":\"function f() { return 1; }\",\"fields\":[{\"name\":\"name\",\"label\":\"Device \\\"Name\\\"\",\"type\":0,\"value\":\"line1\\nline2\\u001end\",\"unit\":\"\",\"readOnly\":false,\"minValue\":0.00,\"maxValue\":100.00,\"endpoint\":\"\"},{\"name\":\"mode\",\"label\":\"Mode\",\"type\":4,\"value\":\"b\",\"unit\":\"\",\"readOnly\":false,\"minValue\":0.00,\"maxValue\":100.00,\"endpoint\":\"\",\"options\":[\"a\",\"b\"],\"optionLabels\":{\"a\":\"First\",\"b\":\"Second\"}},{\"name\":\"networks\",\"label\":\"Networks\",\"type\":14,\"value\":[\"office,5g\",\"guest\"],\"unit\":\"\",\"readOnly\":false,\"minValue\":0.00,\"maxValue\":100.00,\"endpoint\":\"\",\"options\":[\"office,5g\",\"guest\"]},{\"name\":\"t\",\"label\":\"Text\",\"type\":0,\"value\":\"v\",\"unit\":\"C\",\"readOnly\":false,\"minValue\":0.00,\"maxValue\":100.00,\"endpoint\":\"/api/t\"}]}", body.c_str());
+}
+
 void setUp(void) {
     // Setup before each test
 }
@@ -585,6 +598,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_maximal_context_byte_identical_across_chunk_sizes);
     RUN_TEST(test_empty_multiselect_emits_empty_array_across_chunk_sizes);
     RUN_TEST(test_serializer_reuse_after_abandoned_run);
+    RUN_TEST(test_serialize_to_string_exact_json);
     RUN_TEST(test_caching_provider_caches_contexts);
     RUN_TEST(test_serialize_multiple_contexts);
     RUN_TEST(test_chunked_serialization);

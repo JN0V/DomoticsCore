@@ -733,15 +733,13 @@ private:
             }
 
             // Serialize the context with the one serializer the schema uses
-            WebUI::StreamingContextSerializer serializer;
-            serializer.begin(foundContext);
             String body;
-            uint8_t chunk[257];
-            while (!serializer.isComplete()) {
-                size_t n = serializer.write(chunk, sizeof(chunk) - 1);
-                if (n == 0) break;
-                chunk[n] = 0;  // the JSON holds no NUL, so it is a C string
-                body += reinterpret_cast<const char*>(chunk);
+            if (!WebUI::StreamingContextSerializer::serializeToString(foundContext, body)) {
+                AsyncWebServerResponse* err = request->beginResponse(500, "application/json",
+                    "{\"error\":\"Context serialization failed\"}");
+                addCorsHeaders(err);
+                request->send(err);
+                return;
             }
 
             AsyncWebServerResponse* response = request->beginResponse(200, "application/json", body);
