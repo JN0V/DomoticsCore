@@ -84,7 +84,7 @@ public:
 
     // IWebUIProvider
     String getWebUIName() const override { return sys ? sys->metadata.name : String("System Info"); }
-    String getWebUIVersion() const override { return sys ? sys->metadata.version : String("1.2.1"); }
+    String getWebUIVersion() const override { return sys ? sys->metadata.version : String(); }
 
     String getWebUIData(const String& contextId) override {
         if (!sys) return "{}";
