@@ -732,14 +732,20 @@ private:
                 return;
             }
 
-            // Serialize the context
-            JsonDocument doc;
-            JsonObject obj = doc.to<JsonObject>();
-            serializeContext(obj, foundContext);
+            // Serialize the context with the one serializer the schema uses
+            WebUI::StreamingContextSerializer serializer;
+            serializer.begin(foundContext);
+            String body;
+            uint8_t chunk[257];
+            while (!serializer.isComplete()) {
+                size_t n = serializer.write(chunk, sizeof(chunk) - 1);
+                if (n == 0) break;
+                chunk[n] = 0;  // the JSON holds no NUL, so it is a C string
+                body += reinterpret_cast<const char*>(chunk);
+            }
 
-            AsyncResponseStream *response = request->beginResponseStream("application/json");
+            AsyncWebServerResponse* response = request->beginResponse(200, "application/json", body);
             addCorsHeaders(response);
-            serializeJson(doc, *response);
             request->send(response);
 
             DLOG_I(LOG_WEB, "Context schema sent for: %s (heap: %u)", contextId.c_str(), HAL::Platform::getFreeHeap());
@@ -788,48 +794,6 @@ private:
         }
     }
     
-    // Duplicated helper to keep compilation working until I move it to a shared util or ProviderRegistry
-    void serializeContext(JsonObject& obj, const WebUIContext& context) {
-        obj["contextId"] = context.getContextIdCStr();
-        obj["title"] = context.getTitleCStr();
-        obj["icon"] = context.getIconCStr();
-        obj["location"] = (int)context.location;
-        obj["priority"] = context.priority;
-        obj["apiEndpoint"] = context.getApiEndpointCStr();
-        obj["alwaysInteractive"] = context.alwaysInteractive;
-        
-        if (context.hasCustomHtml()) obj["customHtml"] = context.getCustomHtmlCStr();
-        if (context.hasCustomCss()) obj["customCss"] = context.getCustomCssCStr();
-        if (context.hasCustomJs()) obj["customJs"] = context.getCustomJsCStr();
-
-        JsonArray fields = obj["fields"].to<JsonArray>();
-        for (const auto& field : context.fields) {
-            JsonObject fieldObj = fields.add<JsonObject>();
-            fieldObj["name"] = field.getNameCStr();
-            fieldObj["label"] = field.getLabelCStr();
-            fieldObj["type"] = (int)field.type;
-            if (field.type == WebUIFieldType::Multiselect) {
-                JsonArray values = fieldObj["value"].to<JsonArray>();
-                for (const String& value : field.selectedValues) values.add(value);
-            } else {
-                fieldObj["value"] = field.getValueCStr();
-            }
-            fieldObj["unit"] = field.getUnitCStr();
-            fieldObj["readOnly"] = field.readOnly;
-            fieldObj["minValue"] = field.minValue;
-            fieldObj["maxValue"] = field.maxValue;
-            fieldObj["endpoint"] = field.getEndpointCStr();
-            if (!field.options.empty()) {
-                JsonArray options = fieldObj["options"].to<JsonArray>();
-                for (const auto& opt : field.options) options.add(opt);
-            }
-            if (!field.optionLabels.empty()) {
-                JsonObject labels = fieldObj["optionLabels"].to<JsonObject>();
-                for (const auto& pair : field.optionLabels) labels[pair.first] = pair.second;
-            }
-        }
-    }
-
     // In polling mode, initial state is served via GET /api/ui/updates
     
     // Handle UI action — returns provider's JSON response (may contain errors)
