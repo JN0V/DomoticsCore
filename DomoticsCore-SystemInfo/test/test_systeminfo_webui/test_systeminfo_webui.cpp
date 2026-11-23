@@ -97,8 +97,9 @@ void test_memory_info_off_drops_the_memory_fields(void) {
     TEST_ASSERT_TRUE(hasField(provider, "system_info", "chip"));
 }
 
-// LO-14: the heap-churn "CPU load" is removed, not faked: no field, no data key,
-// whatever the flags, so the dashboard never charts a flat 0% as an idle CPU.
+// Issue #168: the CPU load figure was derived from free-heap changes, not CPU use.
+// It is removed, not faked: no field, no data key, whatever the flags, so the
+// dashboard never charts a flat 0% as an idle CPU.
 void test_no_cpu_load_in_schema_or_data(void) {
     for (int mem = 0; mem < 2; mem++) {
         SystemInfoComponent sys(flags(true, mem));
