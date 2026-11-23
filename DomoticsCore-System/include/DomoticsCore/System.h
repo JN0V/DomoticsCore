@@ -532,7 +532,7 @@ private:
 
     void telemetryTick() {
 #if __has_include(<DomoticsCore/MQTT.h>)
-        SystemHelpers::telemetryTick(telemetry_, wifi, bootCount_);
+        SystemHelpers::telemetryTick(telemetry_, wifi, bootCount_, core.getEventBus().getQueueHighWaterPct());
 #endif
     }
     

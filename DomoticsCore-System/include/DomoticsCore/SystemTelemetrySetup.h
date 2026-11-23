@@ -94,7 +94,8 @@ inline void captureLastDeath(Core& core, const SystemConfig& config, bool persis
 
 #if __has_include(<DomoticsCore/MQTT.h>)
 /** @brief Every System::loop(): note the clock, and when a tick is due, sample the device and publish. */
-inline void telemetryTick(SystemTelemetry& t, Components::WifiComponent* wifi, uint32_t bootCount) {
+inline void telemetryTick(SystemTelemetry& t, Components::WifiComponent* wifi, uint32_t bootCount,
+                          uint8_t queuePeakPct = 0) {
     const uint32_t now = static_cast<uint32_t>(HAL::Platform::getMillis());
     const uint64_t uptimeMs = t.noteMillis(now);
     if (!t.due(now)) return;
@@ -110,6 +111,7 @@ inline void telemetryTick(SystemTelemetry& t, Components::WifiComponent* wifi, u
     uint32_t count = 0, last = 0;
     fr.failedAllocSnapshot(count, last);
     s.fails = count; s.failLast = last;
+    s.queuePeak = queuePeakPct;
     s.buildId = fr.current().w[FlightRecord::W_BUILD];
     const uint32_t skippedBefore = t.skipped();
     t.tick(now, s);

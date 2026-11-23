@@ -32,6 +32,7 @@ struct TelemetrySample {
     int32_t  rssi = 0;
     uint32_t fails = 0;       // survived allocation failures this boot
     uint32_t failLast = 0;    // the last one's size, bytes
+    uint32_t queuePeak = 0;   // EventBus queue high-water mark, percent of its budget
     uint32_t buildId = 0;
 };
 
@@ -144,10 +145,10 @@ public:
         else snprintf(rssi, sizeof(rssi), "null");
         int n = snprintf(buf, len,
             "{\"heap\":%lu,\"largest\":%lu,\"min\":%lu,\"trough\":%lu,\"uptime\":%lu,\"boot\":%lu,\"rssi\":%s,"
-            "\"fails\":%lu,\"fail_last\":%lu,\"skipped\":%lu,\"failed\":%lu,\"build\":\"%08lx\"}",
+            "\"fails\":%lu,\"fail_last\":%lu,\"queue_peak\":%lu,\"skipped\":%lu,\"failed\":%lu,\"build\":\"%08lx\"}",
             (unsigned long)s.heap, (unsigned long)s.largest, (unsigned long)minSeen, (unsigned long)s.trough,
             (unsigned long)s.uptimeS, (unsigned long)s.bootCount, rssi,
-            (unsigned long)s.fails, (unsigned long)s.failLast,
+            (unsigned long)s.fails, (unsigned long)s.failLast, (unsigned long)s.queuePeak,
             (unsigned long)skipped, (unsigned long)failed, (unsigned long)s.buildId);
         return clamp(n, len);
     }
