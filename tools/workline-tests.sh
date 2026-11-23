@@ -52,11 +52,18 @@ for c in "${picked[@]}"; do
   [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
 done
 
+# The Python checker's fixture-tree tests, merged into the report as one suite.
+echo "== tools (check_versions)"
+python3 -m unittest discover -s tools -p 'test_check_versions.py' -v 2>&1 | tee "$parts/tools.log"
+[ "${PIPESTATUS[0]}" -eq 0 ] || status=1
+
 python3 - "$report" "$parts" <<'PY'
 import os, sys, xml.etree.ElementTree as ET
 report, parts = sys.argv[1], sys.argv[2]
 out = ET.Element("testsuites")
 for name in sorted(os.listdir(parts)):
+    if not name.endswith(".xml"):
+        continue
     comp = name[:-len(".xml")].replace("__", "/")
     for suite in ET.parse(os.path.join(parts, name)).getroot().iter("testsuite"):
         env, _, sname = suite.get("name", "").partition(":")
@@ -68,6 +75,16 @@ for name in sorted(os.listdir(parts)):
             if case.get("file"):
                 case.set("file", f"{comp}/{case.get('file')}")
         out.append(suite)
+import re
+log = open(os.path.join(parts, "tools.log")).read()
+m = re.search(r"^Ran (\d+) tests?", log, re.M)
+fails = re.findall(r"^(?:FAIL|ERROR): (\S+) \(", log, re.M)
+suite = ET.SubElement(out, "testsuite", name="tools/check_versions",
+                      tests=str(int(m.group(1)) if m else 0), failures=str(len(fails)))
+for t in re.findall(r"^(\S+) \(\S+\) \.\.\. ", log, re.M):
+    case = ET.SubElement(suite, "testcase", classname="tools/check_versions", name=t)
+    if t in fails:
+        ET.SubElement(case, "failure", message="failed")
 ET.ElementTree(out).write(report, encoding="utf-8", xml_declaration=True)
 PY
 exit $status
