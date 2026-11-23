@@ -30,6 +30,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [Unreleased]
+
+> **Protected members of `IComponent` were renamed.** The names began with a
+> double underscore, which C++ reserves for the implementation. External
+> subclasses or callers that use the old names no longer compile; rename them:
+> `__dc_eventBus` → `dc_eventBus`, `__dc_core` → `dc_core`,
+> `__dc_registry` → `dc_registry`, `__dc_setEventBus` → `dc_setEventBus`,
+> `__dc_setCore` → `dc_setCore`, `__dc_setRegistry` → `dc_setRegistry`.
+> The break is at compile time.
+
 ## [2.13.0] - 2026-10-03
 
 > **This minor release removes public API.** Each removal had no caller in the
