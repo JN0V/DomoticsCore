@@ -193,6 +193,16 @@ inline bool crashKindSurvives(const char* kind) {
 #ifndef PSTR
     #define PSTR(s) (s)
 #endif
+// A `static const char X[] PROGMEM` read as a String/Print argument:
+// DOMOTICS_FLASH_STR(X). ESP8266 wraps it in FPSTR so the String and Print
+// overloads read it from flash; everywhere else it is the plain pointer.
+#ifndef DOMOTICS_FLASH_STR
+    #if defined(ESP8266)
+        #define DOMOTICS_FLASH_STR(p) FPSTR(p)
+    #else
+        #define DOMOTICS_FLASH_STR(p) (p)
+    #endif
+#endif
 
 // ============================================================================
 // Backward-Compatible API (delegates to Platform namespace)
