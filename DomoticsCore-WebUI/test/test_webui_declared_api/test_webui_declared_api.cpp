@@ -164,6 +164,36 @@ void test_the_context_endpoint_sends_no_presentation() {
     TEST_ASSERT_TRUE_MESSAGE(body.indexOf("presentation") < 0, body.c_str());
 }
 
+// The streamed body is the serializer's output, whole, at any chunk size the server may ask.
+void test_the_context_stream_equals_the_serializer_output_at_any_chunk_size() {
+    Fixture f;
+    WebUIContext expectedCtx;
+    f.provider.forEachContext([&expectedCtx](const WebUIContext& c) {
+        if (strcmp(c.getContextIdCStr(), "alpha") == 0) {
+            expectedCtx = c;
+            return false;
+        }
+        return true;
+    });
+    String expected;
+    TEST_ASSERT_TRUE(StreamingContextSerializer::serializeTo(
+        expectedCtx, [&expected](const uint8_t* d, size_t n) {
+            for (size_t i = 0; i < n; ++i) expected += static_cast<char>(d[i]);
+            return true;
+        }));
+    TEST_ASSERT_TRUE(expected.length() > 0);
+
+    const size_t sizes[] = {7, 16, 61, 256};
+    for (size_t size : sizes) {
+        AsyncWebServerRequest request;
+        request.addParam("id", "alpha");
+        TEST_ASSERT_TRUE(f.get(request, "/api/ui/context"));
+        TEST_ASSERT_EQUAL_INT(200, request.sentCode);
+        const String body = request.drainChunked(size);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(expected.c_str(), body.c_str(), "chunked body differs");
+    }
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_a_declared_path_answers_with_its_context_data);
@@ -176,5 +206,6 @@ int main(int, char**) {
     RUN_TEST(test_low_memory_answers_503);
     RUN_TEST(test_a_provider_gone_since_can_handle_answers_404);
     RUN_TEST(test_the_context_endpoint_sends_no_presentation);
+    RUN_TEST(test_the_context_stream_equals_the_serializer_output_at_any_chunk_size);
     return UNITY_END();
 }
