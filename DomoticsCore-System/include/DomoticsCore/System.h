@@ -271,7 +271,7 @@ private:
         // ComponentRegistry::initializeAll() skips any component that is already
         // successfully initialised and active — and that skip is what made the
         // early call harmful rather than merely redundant. The skipped branch is
-        // the only place __dc_setEventBus() and __dc_setCore() are ever called,
+        // the only place dc_setEventBus() and dc_setCore() are ever called,
         // so a component initialised here never received them and ran for the
         // whole life of the device with both pointers null.
         //

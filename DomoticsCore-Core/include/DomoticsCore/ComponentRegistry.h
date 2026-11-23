@@ -61,7 +61,7 @@ public:
         IComponent* ptr = component.get();
         
         // Inject registry immediately for lazy Core access
-        ptr->__dc_setRegistry(this);
+        ptr->dc_setRegistry(this);
         
         componentMap[name] = ptr;
         components.push_back(std::move(component));
@@ -107,8 +107,8 @@ public:
             
             // Provide framework services (EventBus, Core) to the component before begin()
             if (component) {
-                component->__dc_setEventBus(&eventBus);
-                component->__dc_setCore(core_);
+                component->dc_setEventBus(&eventBus);
+                component->dc_setCore(core_);
             }
 
             ComponentStatus status = component->begin();

@@ -100,8 +100,8 @@ also ask the Wifi component (`isSTAConnected()`).
 ```cpp
 void setMode(const String& mode) {
     currentMode = mode;
-    if (__dc_eventBus) {
-        __dc_eventBus->publish("mycomponent/mode", mode.c_str(), mode.length() + 1);
+    if (dc_eventBus) {
+        dc_eventBus->publish("mycomponent/mode", mode.c_str(), mode.length() + 1);
     }
 }
 ```
