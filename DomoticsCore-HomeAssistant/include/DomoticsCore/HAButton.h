@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HAEntity.h"
+#include <DomoticsCore/Logger.h>
 
 namespace DomoticsCore {
 namespace Components {
