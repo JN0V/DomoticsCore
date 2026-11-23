@@ -125,6 +125,28 @@ void test_auth_off_ignores_the_wait() {
     TEST_ASSERT_EQUAL_INT(200, infoFrom(ATTACKER, ""));
 }
 
+// Given a connected client, When an update is broadcast, Then the client receives
+// the full event: the bytes the caller gave, as many as it said, nothing after them.
+void test_a_broadcast_reaches_a_connected_client_as_the_full_event() {
+    AsyncWebServer server(80);
+    WebUIConfig cfg;
+    DomoticsCore::Components::WebUI::WebSocketHandler handler(cfg);
+    handler.begin(&server);
+    TEST_ASSERT_TRUE_MESSAGE(handler.isSSEEnabled(), "the stream was not opened");
+    TEST_ASSERT_FALSE(server.handlers.empty());
+    AsyncEventSource* source = dynamic_cast<AsyncEventSource*>(server.handlers.back());
+    TEST_ASSERT_NOT_NULL_MESSAGE(source, "the stream handler was not added to the server");
+    source->connectClient();
+
+    const char event[] = "{\"type\":\"update\"}";
+    const char buffer[] = "{\"type\":\"update\"}-stale-tail-of-an-earlier-event";
+    handler.broadcast(buffer, strlen(event));
+
+    TEST_ASSERT_EQUAL_UINT32(1, (uint32_t)source->events.size());
+    TEST_ASSERT_EQUAL_STRING(event, source->events[0].message.c_str());
+    TEST_ASSERT_EQUAL_STRING("message", source->events[0].eventName.c_str());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_the_right_password_is_read_at_once);
@@ -135,5 +157,6 @@ int main(int, char**) {
     RUN_TEST(test_a_success_clears_the_count);
     RUN_TEST(test_a_zero_cap_restores_the_old_behaviour);
     RUN_TEST(test_auth_off_ignores_the_wait);
+    RUN_TEST(test_a_broadcast_reaches_a_connected_client_as_the_full_event);
     return UNITY_END();
 }
