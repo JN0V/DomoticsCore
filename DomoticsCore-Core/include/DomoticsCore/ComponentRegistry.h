@@ -202,9 +202,9 @@ public:
                     DLOG_W(LOG_CORE, "Component %s shutdown warning: %s", 
                            component->metadata.name, statusToString(status));
                 }
-                // BUG-66: deliver what this component published while shutting
-                // down (HomeAssistant's offline and discovery withdrawals) now,
-                // while the components shut later (MQTT) still listen; Core
+                // Deliver what this component published while shutting down
+                // (e.g. HomeAssistant's offline and discovery withdrawals) now,
+                // while the components shut later (MQTT) still listen: Core
                 // clears its flag right after and nothing polls again.
                 eventBus.poll();
                 // Clean up EventBus subscriptions for this component
