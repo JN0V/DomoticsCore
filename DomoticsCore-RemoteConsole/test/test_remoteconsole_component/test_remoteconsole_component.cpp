@@ -552,6 +552,26 @@ void test_remoteconsole_client_state_is_released_on_disconnect(void) {
     TEST_ASSERT_EQUAL_size_t(0, console->clientStateEntriesForTest());
 }
 
+void test_remoteconsole_client_id_wrap_stays_unique_and_nonzero(void) {
+    RemoteConsoleConfig config;
+    config.maxClients = 8;
+    auto owned = std::make_unique<RemoteConsoleComponent>(config);
+    RemoteConsoleComponent* console = owned.get();
+    testCore->addComponent(std::move(owned));
+    testCore->begin();
+    HAL::WiFiClient a = console->getServer()->simulateClient(true, 42);
+    testCore->loop();                       // takes id 1
+    console->setNextClientIdForTest(UINT32_MAX);
+    HAL::WiFiClient b = console->getServer()->simulateClient(true, 43);
+    testCore->loop();                       // UINT32_MAX
+    HAL::WiFiClient c = console->getServer()->simulateClient(true, 44);
+    testCore->loop();                       // wraps: skips 0, skips 1 (live)
+    HAL::WiFiClient d = console->getServer()->simulateClient(true, 45);
+    testCore->loop();
+    TEST_ASSERT_EQUAL_size_t_MESSAGE(4, console->clientStateEntriesForTest(),
+                                     "no id reused among live clients");
+}
+
 void test_remoteconsole_color_output_disabled(void) {
     RemoteConsoleConfig config;
     config.colorOutput = false;
@@ -1000,6 +1020,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_remoteconsole_auth_failures_are_forgotten_after_a_minute);
     RUN_TEST(test_remoteconsole_auth_wait_zero_restores_the_old_behaviour);
     RUN_TEST(test_remoteconsole_client_state_is_released_on_disconnect);
+    RUN_TEST(test_remoteconsole_client_id_wrap_stays_unique_and_nonzero);
 
     // Byte limit tests (BUG-22)
     RUN_TEST(test_remoteconsole_loop_bounded_read);
