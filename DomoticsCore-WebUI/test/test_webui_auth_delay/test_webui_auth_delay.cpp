@@ -9,6 +9,9 @@
 
 #include <unity.h>
 
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <DomoticsCore/WebUI.h>
 
 using namespace DomoticsCore;
@@ -18,6 +21,25 @@ namespace {
 
 constexpr uint32_t ATTACKER = 0x0A00002A;
 constexpr uint32_t NEIGHBOUR = 0x0A00002B;
+
+/**
+ * Reads a file of the repository, given from its root: the native program runs
+ * from the component's directory, so the root is one level up (or here).
+ * Returns false when the file is not there.
+ */
+bool readRepoFile(const std::string& fromRoot, std::string& content) {
+    const char* prefixes[] = {"", "../", "../../", "../../../"};
+    for (const char* prefix : prefixes) {
+        std::ifstream in(std::string(prefix) + fromRoot, std::ios::binary);
+        if (in) {
+            std::stringstream buffer;
+            buffer << in.rdbuf();
+            content = buffer.str();
+            return true;
+        }
+    }
+    return false;
+}
 
 WebUIConfig authConfig(uint32_t delayMaxMs = 8000) {
     WebUIConfig cfg;
@@ -125,6 +147,30 @@ void test_auth_off_ignores_the_wait() {
     TEST_ASSERT_EQUAL_INT(200, infoFrom(ATTACKER, ""));
 }
 
+// Given the WebUI component sources, When WebUI.h is searched for <pgmspace.h>,
+// Then it is not included there directly: it comes through a HAL header.
+void test_webui_header_does_not_include_pgmspace_directly() {
+    std::string header;
+    TEST_ASSERT_TRUE_MESSAGE(readRepoFile("DomoticsCore-WebUI/include/DomoticsCore/WebUI.h", header),
+                             "WebUI.h was not found from the test's working directory");
+    TEST_ASSERT_TRUE_MESSAGE(header.find("#include \"DomoticsCore/Platform_HAL.h\"") != std::string::npos,
+                             "the file read is not the WebUI header");
+    TEST_ASSERT_TRUE_MESSAGE(header.find("<pgmspace.h>") == std::string::npos,
+                             "WebUI.h names <pgmspace.h> itself instead of reaching it through a HAL header");
+}
+
+// Given tests/mocks/libraries/pgmspace.h removed, When the native WebUI tests are
+// built and run, Then they build and pass: the mock is gone and this suite, which
+// includes WebUI.h, is the proof it is not needed.
+void test_host_build_has_no_pgmspace_mock() {
+    std::string neighbour;
+    TEST_ASSERT_TRUE_MESSAGE(readRepoFile("tests/mocks/libraries/ESPAsyncWebServer.h", neighbour),
+                             "the host mocks directory was not found from the test's working directory");
+    std::string mock;
+    TEST_ASSERT_FALSE_MESSAGE(readRepoFile("tests/mocks/libraries/pgmspace.h", mock),
+                              "tests/mocks/libraries/pgmspace.h still exists");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_the_right_password_is_read_at_once);
@@ -135,5 +181,7 @@ int main(int, char**) {
     RUN_TEST(test_a_success_clears_the_count);
     RUN_TEST(test_a_zero_cap_restores_the_old_behaviour);
     RUN_TEST(test_auth_off_ignores_the_wait);
+    RUN_TEST(test_webui_header_does_not_include_pgmspace_directly);
+    RUN_TEST(test_host_build_has_no_pgmspace_mock);
     return UNITY_END();
 }
