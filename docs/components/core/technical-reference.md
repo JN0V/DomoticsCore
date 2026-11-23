@@ -893,6 +893,8 @@ Component-specific events are defined in their respective libraries (e.g., `Wifi
 
 `publishSticky()` stores the last payload for a topic. When a new subscriber calls `subscribe()` with `replayLast = true`, it immediately receives the stored value without waiting for the next publish. This is essential for state events like `wifi/sta/connected` that late-starting components need.
 
+**Bound:** the sticky store (`lastByTopic`) is outside the byte budget. It keeps one entry per distinct sticky topic ever published, and the payload-less `publishSticky()` clears the payload but keeps the key; only `reset()` erases the map. Its size is therefore the number of distinct sticky topic names times their payload and key size. Use a fixed set of sticky topics, and never compose a sticky topic name at run time from unbounded input (a sensor id, for instance). Evicting entries would change what a late subscriber replays, so the bus does not.
+
 ### Wildcard Subscriptions
 
 Topics containing `*` are treated as prefix patterns. Example: subscribing to `"sensor/*"` matches `"sensor/temperature"`, `"sensor/humidity"`, etc. The matching algorithm:
@@ -902,7 +904,9 @@ Topics containing `*` are treated as prefix patterns. Example: subscribing to `"
 
 ### Backpressure
 
-The event queue is bounded by the **bytes it holds** — `QueueCost::kBudgetBytes`, which is 32 events the size of an `MQTTPublishEvent` (about 28 KB). When a new event does not fit, the **oldest are dropped** until it does. `QueueCost` models what one event costs the heap with the shape of the allocator, and its constants are platform constants; `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` lowers the budget where the heap cannot carry it. The `poll()` method processes up to `maxPerPoll` (default 8) events per call.
+The event queue is bounded by the **bytes it holds** — `QueueCost::kBudgetBytes`, which is 32 events the size of an `MQTTPublishEvent` (about 28 KB). When a new event does not fit, the **oldest are dropped** until it does. `QueueCost` models what one event costs the heap with the shape of the allocator, and its constants are platform constants; `-DDOMOTICS_EVENTBUS_QUEUE_BYTES` lowers the budget where the heap cannot carry it. Set it in `build_flags`, never in `build_src_flags`: `enqueue()` is inline, so with `build_src_flags` the application and the library compile against different budgets and the linker silently picks one.
+
+The budget bills the queued events only. The topic maps, `lastByTopic` and `pendingByTopic` (its map nodes and their `String` keys), are outside it. `pendingByTopic` holds one entry per queued event at most, so its bound is the entry guard rail `QueueCost::kMaxEntries` (256) entries; `lastByTopic` has no bound but the number of distinct sticky topics (see Sticky Events). The `poll()` method processes up to `maxPerPoll` (default 8) events per call.
 
 ---
 
