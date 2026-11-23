@@ -54,6 +54,9 @@ inline ComponentStatus MQTTComponent::begin() {
         publish(ev.topic, ev.payload, ev.qos, ev.retain);
     });
 
+    // Dispatch of mqtt/disconnected reaches every listener at once: it is delivered.
+    on<bool>(MQTTEvents::EVENT_DISCONNECTED, [this](const bool&) { lossUnseen_ = false; });
+
     on<MQTTSubscribeEvent>(MQTTEvents::EVENT_SUBSCRIBE, [this](const MQTTSubscribeEvent& ev) {
         subscribe(ev.topic, ev.qos);
     });
@@ -110,7 +113,17 @@ inline void MQTTComponent::emitLinkState(bool up) {
     if (__dc_eventBus) {
         __dc_eventBus->clearSticky(up ? MQTTEvents::EVENT_DISCONNECTED : MQTTEvents::EVENT_CONNECTED);
     }
+    lossUnseen_ = !up;
     emit(up ? MQTTEvents::EVENT_CONNECTED : MQTTEvents::EVENT_DISCONNECTED, true, true);
+}
+
+// A subscriber already listening is not served by the sticky replay: when the
+// full queue evicted the mqtt/disconnected before it was dispatched, publish it
+// again once nothing of it is left queued. Our own listener marks it delivered.
+inline void MQTTComponent::resendLostAnnouncement() {
+    if (!lossUnseen_ || state != MQTTState::Disconnected || !__dc_eventBus) return;
+    if (__dc_eventBus->hasPending(String(MQTTEvents::EVENT_DISCONNECTED))) return;
+    emitLinkState(false);
 }
 
 inline void MQTTComponent::announceConnectionLost() {
@@ -128,6 +141,7 @@ inline void MQTTComponent::loop() {
         // Clearing the broker at runtime abandons a live session, and nothing
         // below this return would ever notice it leaving Connected.
         if (state == MQTTState::Connected) announceConnectionLost();
+        else resendLostAnnouncement();
         return;
     }
 
@@ -150,6 +164,7 @@ inline void MQTTComponent::loop() {
     // loss is noticed here, at the transition out of Connected, and announced
     // before a reconnection attempt can announce its own success.
     if (state == MQTTState::Connected) announceConnectionLost();
+    else resendLostAnnouncement();
 
     rebuildClientIfNeeded();
     if (config.enabled && config.autoReconnect) {

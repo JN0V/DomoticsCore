@@ -393,6 +393,7 @@ private:
     HAL::MQTT::MQTTClientImpl* mqttClient;
     bool clientTLS_;              ///< The TLS flag mqttClient was built with
     const char* clientCa_;        ///< The CA mqttClient was built with
+    bool lossUnseen_ = false;     ///< mqtt/disconnected was published, no dispatch has delivered it yet
     bool reopenPending_ = false;  ///< A session setting changed while connected
 
     // State management
@@ -435,6 +436,7 @@ private:
     void handleReconnection();
     void emitLinkState(bool up);
     void announceConnectionLost();
+    void resendLostAnnouncement();
     void processMessageQueue();
     /**
      * @brief Advance the tumbling window and report whether a publish may go out now.
