@@ -719,7 +719,7 @@ struct SinkLog {
 static TelemetrySample healthySample() {
     TelemetrySample s;
     s.heap = 41216; s.largest = 20480; s.trough = 38400; s.uptimeS = 60; s.bootCount = 7;
-    s.hasRssi = true; s.rssi = -61; s.fails = 2; s.failLast = 1024; s.buildId = 0x1a2b3c4du;
+    s.hasRssi = true; s.rssi = -61; s.fails = 2; s.failLast = 1024; s.queuePeak = 95; s.buildId = 0x1a2b3c4du;
     return s;
 }
 
@@ -728,7 +728,7 @@ void test_telemetry_payload_is_this_exact_document(void) {
     size_t n = SystemTelemetry::formatTelemetry(buf, sizeof(buf), healthySample(), 36864, 3, 1);
     TEST_ASSERT_EQUAL_STRING(
         "{\"heap\":41216,\"largest\":20480,\"min\":36864,\"trough\":38400,\"uptime\":60,\"boot\":7,\"rssi\":-61,"
-        "\"fails\":2,\"fail_last\":1024,\"skipped\":3,\"failed\":1,\"build\":\"1a2b3c4d\"}", buf);
+        "\"fails\":2,\"fail_last\":1024,\"queue_peak\":95,\"skipped\":3,\"failed\":1,\"build\":\"1a2b3c4d\"}", buf);
     TEST_ASSERT_EQUAL_size_t(strlen(buf), n);
 }
 
