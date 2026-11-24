@@ -23,5 +23,10 @@ static constexpr const char* EVENT_SYSTEM_READY = "system/ready";
 static constexpr const char* EVENT_SYSTEM_REBOOT = "system/reboot";
 static constexpr const char* EVENT_SHUTDOWN_START = "shutdown/start";
 
+// Topics shared between a publisher and subscribers in other components, so
+// that neither side holds the literal. Published by DomoticsCore-Wifi (payload
+// bool: AP enabled), subscribed by DomoticsCore-WebUI.
+static constexpr const char* EVENT_WIFI_AP_ENABLED = "wifi/ap/enabled";
+
 } // namespace Events
 } // namespace DomoticsCore

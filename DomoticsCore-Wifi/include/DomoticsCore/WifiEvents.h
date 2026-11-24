@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DomoticsCore/Events.h"
+
 /**
  * @file WifiEvents.h
  * @brief WiFi component events.
@@ -15,7 +17,7 @@ namespace WifiEvents {
 static constexpr const char* EVENT_STA_CONNECTED = "wifi/sta/connected";
 
 /// Published when AP mode is enabled
-static constexpr const char* EVENT_AP_ENABLED = "wifi/ap/enabled";
+static constexpr const char* EVENT_AP_ENABLED = Events::EVENT_WIFI_AP_ENABLED;
 
 /// Published when network becomes available (STA or AP)
 static constexpr const char* EVENT_NETWORK_READY = "network/ready";

@@ -115,7 +115,6 @@ directory on its include path gets them.
 | `libraries/ESPAsyncWebServer.h` | the async web server — records routes, responses, timeouts |
 | `libraries/AsyncEventSource.h` | its SSE half |
 | `libraries/FS.h` | the Arduino filesystem header |
-| `libraries/pgmspace.h` | the flash-string macros |
 | `libraries/DomoticsCore/Generated/WebUIAssets.h` | the generated web assets (gitignored, so absent on a clean checkout) |
 
 See [`tests/mocks/README.md`](mocks/README.md) for usage details.

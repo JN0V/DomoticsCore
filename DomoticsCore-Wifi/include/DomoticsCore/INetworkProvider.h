@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <DomoticsCore/Platform_HAL.h>
 
 namespace DomoticsCore {

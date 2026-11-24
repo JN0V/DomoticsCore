@@ -24,8 +24,7 @@ This document is the complete API reference for the DomoticsCore-SystemInfo comp
    - [Configuration Access](#configuration-access)
    - [Utility Methods](#utility-methods)
 5. [SystemMetrics (Internal Struct)](#systemmetrics-internal-struct)
-6. [CPU Load Estimation](#cpu-load-estimation)
-7. [SystemInfoWebUI](#systeminfowebui)
+6. [SystemInfoWebUI](#systeminfowebui)
    - [Constructor](#webui-constructor)
    - [WebUI Contexts](#webui-contexts)
    - [Data Methods](#data-methods)
@@ -33,7 +32,7 @@ This document is the complete API reference for the DomoticsCore-SystemInfo comp
    - [Change Detection](#change-detection)
    - [Internal: SystemInfoState](#internal-systeminfostate-private-struct)
    - [Internal: buildContexts](#internal-buildcontexts-protected-override)
-8. [Header Includes](#header-includes)
+7. [Header Includes](#header-includes)
 
 ---
 
@@ -142,7 +141,7 @@ Accepts an optional configuration struct. When omitted, all defaults from `Syste
 
 #### `void loop()`
 
-Checks whether `config.updateInterval` milliseconds have elapsed since the last update. If so, calls `updateMetrics()` to refresh all cached metrics including the CPU load estimate.
+Checks whether `config.updateInterval` milliseconds have elapsed since the last update. If so, calls `updateMetrics()` to refresh all cached metrics.
 
 The interval check uses `HAL::Platform::getMillis()` for non-blocking timing, in compliance with Constitution Principle X.
 
@@ -247,23 +246,7 @@ Defined as a protected nested struct inside `SystemInfoComponent`. Accessible th
 | `chipModel` | `String` | Chip model identifier (e.g., `"ESP32-D0WDQ6"`). |
 | `chipRevision` | `uint8_t` | Silicon revision number. |
 | `uptime` | `uint32_t` | Seconds since boot. |
-| `cpuLoad` | `float` | Estimated CPU load percentage (0--100). |
 | `valid` | `bool` | `true` once at least one `updateMetrics()` call has completed. |
-
----
-
-## CPU Load Estimation
-
-Direct CPU usage measurement is not available on ESP32 Arduino without special FreeRTOS configuration. The component uses a **heap-activity heuristic**:
-
-1. On each `updateMetrics()` call, the absolute difference in free heap since the previous call is calculated.
-2. This difference is converted to KB/s based on the elapsed time.
-3. The KB/s value is mapped to a 0--100 range (10 KB/s maps to 100%).
-4. An **exponential moving average** (EMA) with smoothing factor `alpha = 0.3` stabilises the reading.
-
-The result is stored in `metrics.cpuLoad` and clamped to `[0, 100]` via `HAL::Platform::constrain()`.
-
-**Note:** This is an activity estimator, not a true CPU utilisation metric. It correlates with allocation-heavy workloads but may underreport compute-bound tasks that do not allocate memory.
 
 ---
 
@@ -309,7 +292,6 @@ Real-time metrics with chart visualisation. Configured with `withRealTime(2000)`
 
 | Field ID | Label | Type | Unit |
 |----------|-------|------|------|
-| `cpu_load` | CPU Load | Chart | % |
 | `heap_usage` | Memory Usage | Chart | % (calculated as used/total * 100) |
 
 `heap_usage` is present only with `enableMemoryInfo`.
@@ -337,7 +319,7 @@ Returns `sys->metadata.version` (typically `"1.4.0"`).
 Returns a JSON string with field values for the requested context:
 
 - **`system_info`:** Static device/hardware fields as JSON object.
-- **`system_metrics`:** `cpu_load` (float) and `heap_usage` (float, percentage, with `enableMemoryInfo`).
+- **`system_metrics`:** `heap_usage` (float, percentage, with `enableMemoryInfo`).
 - **`system_settings`:** `device_name` string.
 
 Returns `"{}"` for unknown context IDs or if the component pointer is null.
@@ -407,7 +389,6 @@ Overrides `CachingWebUIProvider::buildContexts()` to register the three contexts
 ```
 DomoticsCore/IComponent.h        -- IComponent base class
 DomoticsCore/Platform_HAL.h      -- Hardware abstraction (getMillis, getFreeHeap, etc.)
-<cmath>                           -- fabsf for CPU load calculation
 ```
 
 ### SystemInfoWebUI.h

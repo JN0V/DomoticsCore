@@ -26,7 +26,7 @@ struct TimezoneLookupEntry {
  * This replaces std::map<String, String> to save ~3-4KB RAM on ESP8266.
  * Linear search is acceptable for 29 entries (O(29) worst case).
  */
-static constexpr TimezoneLookupEntry TIMEZONE_LOOKUP[] = {
+inline constexpr TimezoneLookupEntry TIMEZONE_LOOKUP[] = {
     {"UTC0", "UTC"},
     {"WET0WEST,M3.5.0/1,M10.5.0", "London"},
     {"CET-1CEST,M3.5.0,M10.5.0/3", "Paris (CET)"},
@@ -58,7 +58,7 @@ static constexpr TimezoneLookupEntry TIMEZONE_LOOKUP[] = {
     {"<+03>-3", "Riyadh"},
 };
 
-static constexpr size_t TIMEZONE_LOOKUP_COUNT = sizeof(TIMEZONE_LOOKUP) / sizeof(TIMEZONE_LOOKUP[0]);
+inline constexpr size_t TIMEZONE_LOOKUP_COUNT = sizeof(TIMEZONE_LOOKUP) / sizeof(TIMEZONE_LOOKUP[0]);
 
 /**
  * @brief WebUI provider for NTP component
@@ -142,7 +142,7 @@ public:
     }
 
     String getWebUIVersion() const override {
-        return ntp ? ntp->metadata.version : String("1.0.2");
+        return ntp ? ntp->metadata.version : String();
     }
 
 protected:

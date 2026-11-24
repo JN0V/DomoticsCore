@@ -30,6 +30,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [Unreleased]
+
+> **Removes public API.** `SystemInfoComponent::SystemMetrics::cpuLoad` and the
+> `cpu_load` WebUI field and chart are gone. The figure was derived from free-heap
+> changes, not CPU use, so a flat or churning value misled. Neither ESP32 nor
+> ESP8266 offers an idle-time measure through the HAL, so none replaces it.
+> Delete reads of `cpuLoad`; the "System Metrics" dashboard now shows memory only
+> (and is absent with `enableMemoryInfo` off).
+
 ## [2.13.0] - 2026-10-03
 
 > **This minor release removes public API.** Each removal had no caller in the

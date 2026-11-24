@@ -100,6 +100,8 @@ Namespace containing two `static constexpr const char*` event topic constants: `
 
 HAL namespace providing platform-independent inline functions: `init`, `setTimezone`, `setSyncInterval`, `stop`, `forceSync`, `isSynced`, `getTime`, `getFormattedTime`.
 
+On ESP8266, `setSyncInterval` has no effect: the SNTP backend has no interval control, so the interval is ignored, with no message, and re-syncs do not follow it.
+
 ### `DomoticsCore::Components::WebUI::NTPWebUI`
 
 WebUI provider extending `CachingWebUIProvider`. Holds a non-owning pointer to `NTPComponent`. Exposes two UI contexts (`ntp_time`, `ntp_settings`) and registers the `/api/ntp/timezones` endpoint. Contains a 29-entry constexpr timezone lookup table stored in flash.

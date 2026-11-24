@@ -44,7 +44,7 @@ if (webui && sys) {
 
 - Collects ESP-IDF system metrics during `loop()` and pushes via `getWebUIData()` when registered with WebUI.
 - Exposes read-only fields: uptime, free heap, chip model, CPU frequency, SDK version.
-- Estimates CPU usage (percentage) via heap-activity heuristic and smooths it with an exponential moving average.
+- Reports no CPU load: the HAL has no idle-time measure, and heap churn is not CPU use.
 - No persistent configuration required; begins immediately once registered.
 
 ## Examples
