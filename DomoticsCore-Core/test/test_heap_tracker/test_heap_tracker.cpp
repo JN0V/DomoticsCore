@@ -86,6 +86,14 @@ void test_delta_same_checkpoint() {
     TEST_ASSERT_EQUAL(0, delta);
 }
 
+void test_delta_unknown_name_is_error() {
+    tracker->checkpoint("known");
+    TEST_ASSERT_EQUAL_INT32(HeapTracker::kDeltaError, tracker->getDelta("known", "misspelled"));
+    TEST_ASSERT_EQUAL_INT32(HeapTracker::kDeltaError, tracker->getDelta("misspelled", "known"));
+    TEST_ASSERT_EQUAL_INT32(HeapTracker::kDeltaError, tracker->getDelta("nope", "nada"));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, tracker->getLeakRate("known", "misspelled"));
+}
+
 void test_delta_calculation() {
     tracker->checkpoint("start");
     tracker->checkpoint("end");
@@ -329,6 +337,7 @@ int main(int argc, char **argv) {
     
     // Delta tests
     RUN_TEST(test_delta_same_checkpoint);
+    RUN_TEST(test_delta_unknown_name_is_error);
     RUN_TEST(test_delta_calculation);
     
     // Stability assertion tests

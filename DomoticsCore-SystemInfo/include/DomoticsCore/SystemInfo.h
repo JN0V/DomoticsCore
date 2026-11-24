@@ -242,7 +242,7 @@ public:
             pos += snprintf(buf + pos, len - pos,
                             "  Core dump: %s\n",
                             !diag.coreDump.partitionPresent ? "no coredump partition in this table"
-                            : diag.coreDump.dumpPresent    ? "WAITING — a previous panic left a dump"
+                            : diag.coreDump.dumpPresent    ? "WAITING - a previous panic left a dump"
                                                            : "partition present, no dump waiting");
             if (pos < 0) pos = 0;
             if ((size_t)pos >= len) pos = len - 1;
@@ -306,7 +306,7 @@ private:
                bootDiag.getResetReasonString().c_str(), bootDiag.bootHeap);
 
         if (bootDiag.wasUnexpectedReset()) {
-            DLOG_W(LOG_SYSTEM, "⚠ Previous boot ended unexpectedly: %s",
+            DLOG_W(LOG_SYSTEM, "WARNING: Previous boot ended unexpectedly: %s",
                    bootDiag.getResetReasonString().c_str());
         }
         // OBS-2: epc1 locates the fault, or the loop the watchdog interrupted —
@@ -329,7 +329,7 @@ private:
             if (!bootDiag.coreDump.partitionPresent) {
                 DLOG_W(LOG_SYSTEM, "No coredump partition in this partition table: panics leave no dump");
             } else if (bootDiag.coreDump.dumpPresent) {
-                DLOG_W(LOG_SYSTEM, "⚠ A core dump from a previous panic is waiting: %u bytes in the coredump partition",
+                DLOG_W(LOG_SYSTEM, "WARNING: A core dump from a previous panic is waiting: %u bytes in the coredump partition",
                        bootDiag.coreDump.size);
             }
         }

@@ -1101,6 +1101,11 @@ private:
         memcpy(entityId, idStart, idCopy);
         entityId[idCopy] = '\0';
 
+        if (idLen == 0) {
+            DLOG_W(LOG_HA, "Command refused: empty entity ID in topic");
+            return;
+        }
+
         DLOG_I(LOG_HA, "Extracted entity ID: '%.*s', looking up entity...", (int)idLen, idStart);
         HAEntity* entity = findEntity(idStart, idLen);
         if (!entity) {
@@ -1136,9 +1141,9 @@ private:
         entity->describeCommand(ev);
         emit(HAEvents::EVENT_COMMAND, ev);
 
-        // entity->id rather than the local buffer: publishState builds its own Strings anyway.
+        // The entity is already in hand: no second lookup.
         if (entity->echoesCommandAsState()) {
-            publishState(entity->id, payload);
+            publishOrHold(entity, String(payload), false);
         }
     }
 };

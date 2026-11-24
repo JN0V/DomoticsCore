@@ -25,6 +25,7 @@
 
 #include <unity.h>
 #include <Arduino.h>
+#include <LittleFS.h>
 #include <DomoticsCore/Testing/HeapTracker.h>
 #include <DomoticsCore/Core.h>
 #include <DomoticsCore/Storage.h>
@@ -49,8 +50,9 @@ void tearDown() {}
 struct OpenStorage {
     Core core;
     StorageComponent* storage = nullptr;
+    String path;
 
-    explicit OpenStorage(const char* ns) {
+    explicit OpenStorage(const char* ns) : path(String("/") + ns + ".json") {
         StorageConfig cfg;
         cfg.namespace_name = ns;
         auto ptr = std::make_unique<StorageComponent>(cfg);
@@ -58,6 +60,18 @@ struct OpenStorage {
         core.addComponent(std::move(ptr));
         core.begin();
     }
+
+    // Leave nothing resident: shut the Core down, then delete the namespace's
+    // file, so that a second run starts from the same heap and flash as the
+    // first. The file name is the one LittleFSStorage derives from the namespace.
+    ~OpenStorage() {
+        core.shutdown();
+        storage = nullptr;
+        if (LittleFS.exists(path)) LittleFS.remove(path);
+    }
+
+    OpenStorage(const OpenStorage&) = delete;
+    OpenStorage& operator=(const OpenStorage&) = delete;
 };
 
 // ============================================================================

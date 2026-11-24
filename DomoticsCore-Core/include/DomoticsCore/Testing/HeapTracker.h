@@ -131,9 +131,14 @@ public:
      * @brief Calculate heap delta between two checkpoints
      * @param startName Start checkpoint name
      * @param endName End checkpoint name
-     * @return Bytes difference (positive = memory increased/leaked)
+     * @return Bytes difference (positive = memory increased/leaked), or
+     *         kDeltaError when either checkpoint does not exist: a missing name
+     *         must not be read as a snapshot of zero bytes and a huge "leak".
      */
+    static constexpr int32_t kDeltaError = INT32_MIN;
+
     int32_t getDelta(const String& startName, const String& endName) const {
+        if (!hasCheckpoint(startName) || !hasCheckpoint(endName)) return kDeltaError;
         HeapSnapshot start = getCheckpoint(startName);
         HeapSnapshot end = getCheckpoint(endName);
         // Note: freeHeap decrease = memory used/leaked
@@ -151,6 +156,7 @@ public:
         HeapSnapshot end = getCheckpoint(endName);
         
         int32_t delta = getDelta(startName, endName);
+        if (delta == kDeltaError) return 0.0f;
         uint32_t durationMs = end.timestamp - start.timestamp;
         
         if (durationMs == 0) return 0.0f;

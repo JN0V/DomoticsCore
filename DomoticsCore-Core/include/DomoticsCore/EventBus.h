@@ -46,6 +46,11 @@ struct QueueCost : QueueCostShape {
     }
     // A complete event: drop the topic term and the budget holds 30, not 32.
     static constexpr size_t kReference   = kNode + block(770) + topicBlock(12);
+// Set DOMOTICS_EVENTBUS_QUEUE_BYTES in build_flags, never in build_src_flags:
+// enqueue() is inline, so the application and the library would compile
+// against different budgets and the linker would pick one silently.
+// Not in the budget: the maps lastByTopic (one entry per distinct sticky topic,
+// until reset()) and pendingByTopic (at most kMaxEntries entries).
 #ifdef DOMOTICS_EVENTBUS_QUEUE_BYTES
     static constexpr size_t kBudgetBytes = (size_t)(DOMOTICS_EVENTBUS_QUEUE_BYTES);
 #else
