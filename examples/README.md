@@ -2,6 +2,13 @@
 
 The examples for DomoticsCore are organized by component to keep them relevant and focused.
 
+## Arduino Library Manager Examples
+
+Short sketches listed under File > Examples > DomoticsCore:
+
+- **[CoreOnly](CoreOnly/CoreOnly.ino)**: Bare minimum framework.
+- **[Minimal](Minimal/Minimal.ino)**: WiFi, LED and RemoteConsole in a few lines.
+
 ## "All-in-One" Starter Kits
 
 For complete, ready-to-use examples that combine WiFi, MQTT, WebUI, and more, please refer to the **System** component examples:
