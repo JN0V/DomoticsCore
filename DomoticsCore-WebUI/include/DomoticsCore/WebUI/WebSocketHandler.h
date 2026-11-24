@@ -3,6 +3,7 @@
 #include <DomoticsCore/Platform_HAL.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncEventSource.h>
+#include <atomic>
 #include <functional>
 #include "DomoticsCore/Logger.h"
 #include "WebUIConfig.h"
@@ -44,7 +45,7 @@ private:
     std::function<bool(AsyncWebServerRequest*)> authGate;   // SEC-13: WebUIComponent::authorize, live
     
     // Polling fallback state
-    volatile int pollingClients = 0;
+    std::atomic<int> pollingClients{0};
     unsigned long lastPollTime = 0;
 
 public:
