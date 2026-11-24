@@ -71,6 +71,10 @@ roles:
       # Lines of the files changed a lens reads whole (600 shipped): this
       # project's headers run long, and misses sat outside the hunks.
       code-lines-max: 3000
+      # The shipped lenses, then this project's own: heap, String, flash,
+      # stack, ESP8266 against ESP32, blocking calls in loop()
+      # (.workline/roles/reviewer/prompts/lenses/embedded.md). It warns.
+      lenses: [correctness, edge-cases, tests, intent, claims, simplicity, comments, embedded]
 
 routing:
   # Before a push, the committer checks the commits leaving the machine; the
