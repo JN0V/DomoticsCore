@@ -3,6 +3,7 @@ sources: [DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core
 checked: ae5715e
 judged: 6a979a6
 verified: agent:documentalist
+judged-in-parts: 77e4b91
 -->
 # Component Lifecycle
 
