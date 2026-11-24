@@ -63,7 +63,7 @@ public:
     }
 
     String getWebUIVersion() const override {
-        return console ? console->metadata.version : String("1.4.0");
+        return console ? console->metadata.version : String();
     }
 
 protected:

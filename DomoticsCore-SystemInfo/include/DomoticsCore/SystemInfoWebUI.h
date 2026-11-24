@@ -62,11 +62,11 @@ protected:
 
         // Dashboard: Real-time metrics with charts
         WebUIContext live = WebUIContext::dashboard("system_metrics", "System Metrics");
-        live.withField(WebUIField("cpu_load", "CPU Load", WebUIFieldType::Chart, "", "%"));
+        // No CPU load chart: the HAL has no idle-time measure, so none is shown.
         if (showMemory_) {
             live.withField(WebUIField("heap_usage", "Memory Usage", WebUIFieldType::Chart, "", "%"));
+            contexts.push_back(live.withRealTime(2000));
         }
-        contexts.push_back(live.withRealTime(2000));
 
         // Settings: Device Name only
         contexts.push_back(WebUIContext::settings("system_settings", "Device Settings")
@@ -84,7 +84,7 @@ public:
 
     // IWebUIProvider
     String getWebUIName() const override { return sys ? sys->metadata.name : String("System Info"); }
-    String getWebUIVersion() const override { return sys ? sys->metadata.version : String("1.2.1"); }
+    String getWebUIVersion() const override { return sys ? sys->metadata.version : String(); }
 
     String getWebUIData(const String& contextId) override {
         if (!sys) return "{}";
@@ -109,7 +109,6 @@ public:
 
         } else if (contextId == "system_metrics") {
             JsonDocument doc;
-            doc["cpu_load"] = metrics.cpuLoad;
             if (showMemory_) {
                 float heapPercent = metrics.totalHeap > 0 ?
                     ((float)(metrics.totalHeap - metrics.freeHeap) / metrics.totalHeap) * 100.0f : 0.0f;

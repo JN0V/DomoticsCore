@@ -27,7 +27,6 @@ public:
             DLOG_I(LOG_SYSTEM, "=== System Metrics ===");
             DLOG_I(LOG_SYSTEM, "Uptime: %s", sys.getFormattedUptimePublic().c_str());
             DLOG_I(LOG_SYSTEM, "CPU Frequency: %.1f MHz", m.cpuFreq);
-            DLOG_I(LOG_SYSTEM, "CPU Load (est.): %.1f%%", m.cpuLoad);
             DLOG_I(LOG_SYSTEM, "Free Heap: %s", sys.formatBytesPublic(m.freeHeap).c_str());
             DLOG_I(LOG_SYSTEM, "Total Heap: %s", sys.formatBytesPublic(m.totalHeap).c_str());
             DLOG_I(LOG_SYSTEM, "Min Free Heap: %s", sys.formatBytesPublic(m.minFreeHeap).c_str());

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HAEntity.h"
+#include <DomoticsCore/Logger.h>
 
 namespace DomoticsCore {
 namespace Components {
@@ -25,26 +26,12 @@ public:
                               const String& discoveryPrefix,
                               const JsonObject& device,
                               const String& availabilityTopic) const override {
-        // Call base implementation (without state_topic for buttons)
+        HAEntity::buildDiscoveryPayload(doc, nodeId, discoveryPrefix, device, availabilityTopic);
+        // A button has no state
+        doc.remove("stat_t");
+        doc.remove("val_tpl");
+
         char buf[HA_TOPIC_BUF_SIZE];
-        doc["name"] = name;
-        getUniqueId(buf, sizeof(buf), nodeId.c_str());
-        doc["uniq_id"] = buf;
-
-        if (!icon.isEmpty()) {
-            doc["ic"] = icon;
-        }
-
-        if (!deviceClass.isEmpty()) {
-            doc["dev_cla"] = deviceClass;
-        }
-
-        doc["dev"] = device;
-
-        addAvailability(doc, availabilityTopic);
-        addEntityCategory(doc);
-        addAttributesTopic(doc);
-
         // Add button-specific fields
         getCommandTopic(buf, sizeof(buf), nodeId.c_str(), discoveryPrefix.c_str());
         doc["cmd_t"] = buf;

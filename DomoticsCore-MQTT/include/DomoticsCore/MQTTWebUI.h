@@ -53,7 +53,7 @@ public:
     }
 
     String getWebUIVersion() const override {
-        return mqtt ? mqtt->metadata.version : String("1.4.0");
+        return mqtt ? mqtt->metadata.version : String();
     }
 
 protected:
