@@ -19,6 +19,7 @@
 #include <functional>
 
 #include "DomoticsCore/IComponent.h"
+#include "DomoticsCore/Events.h"
 #include "DomoticsCore/AuthDelay.h"
 #include "DomoticsCore/Logger.h"
 #include "DomoticsCore/Platform_HAL.h"  // For HAL::getFreeHeap()
@@ -306,9 +307,9 @@ public:
         
         // Subscribe to WiFi AP events - close WebSocket connections when network changes
         // This prevents crashes from sending to clients connected via the old network
-        // Note: Using string literal to avoid WebUI depending on Wifi module
-        // Event topic matches WifiEvents::EVENT_AP_ENABLED from DomoticsCore-Wifi
-        on<bool>("wifi/ap/enabled", [this](const bool& enabled) {
+        // The topic is the Core constant WifiEvents::EVENT_AP_ENABLED aliases,
+        // so WebUI does not depend on the Wifi module.
+        on<bool>(Events::EVENT_WIFI_AP_ENABLED, [this](const bool& enabled) {
             if (!enabled) {
                 DLOG_I(LOG_WEB, "AP disabled - closing WebSocket connections");
                 webSocket->closeAllConnections();
