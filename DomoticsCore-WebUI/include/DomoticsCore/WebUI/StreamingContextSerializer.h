@@ -131,6 +131,36 @@ public:
     }
 
     /**
+     * @brief Run a whole context through a sink, chunk by chunk, holding no body
+     * @param sink callable (const uint8_t*, size_t) -> bool; false = it could not take the chunk
+     * @param chunkSize bytes asked per write (capped at 256)
+     * @return false when the serializer stalls (writes 0 bytes while incomplete)
+     *         or the sink refuses a chunk: what the sink got is truncated
+     */
+    template <typename Sink>
+    static bool serializeTo(const WebUIContext& context, Sink&& sink, size_t chunkSize = 256) {
+        if (chunkSize > 256) chunkSize = 256;
+        StreamingContextSerializer serializer;
+        serializer.begin(context);
+        uint8_t chunk[256];
+        while (!serializer.isComplete()) {
+            size_t n = serializer.write(chunk, chunkSize);
+            if (n == 0) return false;
+            if (!sink(static_cast<const uint8_t*>(chunk), n)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * @brief Dry run: the body's length, or false when it cannot be serialized whole
+     *        (no heap held: lets a route answer 500 before it streams the body)
+     */
+    static bool measure(const WebUIContext& context, size_t& total, size_t chunkSize = 256) {
+        total = 0;
+        return serializeTo(context, [&total](const uint8_t*, size_t n) { total += n; return true; }, chunkSize);
+    }
+
+    /**
      * @brief Check if serialization is complete
      */
     bool isComplete() const {

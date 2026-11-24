@@ -152,15 +152,46 @@ void test_a_provider_gone_since_can_handle_answers_404() {
     TEST_ASSERT_EQUAL_INT(404, request.sentCode);
 }
 
-// The context endpoint serializes through WebUI.h, not the streaming serializer.
+// The context endpoint streams the body (chunked): the test drains it as the server would.
 void test_the_context_endpoint_sends_no_presentation() {
     Fixture f;
     AsyncWebServerRequest request;
     request.addParam("id", "alpha");
     TEST_ASSERT_TRUE(f.get(request, "/api/ui/context"));
     TEST_ASSERT_EQUAL_INT(200, request.sentCode);
-    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("\"location\"") >= 0, request.sentBody.c_str());
-    TEST_ASSERT_TRUE_MESSAGE(request.sentBody.indexOf("presentation") < 0, request.sentBody.c_str());
+    const String body = request.drainChunked();
+    TEST_ASSERT_TRUE_MESSAGE(body.indexOf("\"location\"") >= 0, body.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(body.indexOf("presentation") < 0, body.c_str());
+}
+
+// The streamed body is the serializer's output, whole, at any chunk size the server may ask.
+void test_the_context_stream_equals_the_serializer_output_at_any_chunk_size() {
+    Fixture f;
+    WebUIContext expectedCtx;
+    f.provider.forEachContext([&expectedCtx](const WebUIContext& c) {
+        if (strcmp(c.getContextIdCStr(), "alpha") == 0) {
+            expectedCtx = c;
+            return false;
+        }
+        return true;
+    });
+    String expected;
+    TEST_ASSERT_TRUE(StreamingContextSerializer::serializeTo(
+        expectedCtx, [&expected](const uint8_t* d, size_t n) {
+            for (size_t i = 0; i < n; ++i) expected += static_cast<char>(d[i]);
+            return true;
+        }));
+    TEST_ASSERT_TRUE(expected.length() > 0);
+
+    const size_t sizes[] = {7, 16, 61, 256};
+    for (size_t size : sizes) {
+        AsyncWebServerRequest request;
+        request.addParam("id", "alpha");
+        TEST_ASSERT_TRUE(f.get(request, "/api/ui/context"));
+        TEST_ASSERT_EQUAL_INT(200, request.sentCode);
+        const String body = request.drainChunked(size);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(expected.c_str(), body.c_str(), "chunked body differs");
+    }
 }
 
 int main(int, char**) {
@@ -175,5 +206,6 @@ int main(int, char**) {
     RUN_TEST(test_low_memory_answers_503);
     RUN_TEST(test_a_provider_gone_since_can_handle_answers_404);
     RUN_TEST(test_the_context_endpoint_sends_no_presentation);
+    RUN_TEST(test_the_context_stream_equals_the_serializer_output_at_any_chunk_size);
     return UNITY_END();
 }
