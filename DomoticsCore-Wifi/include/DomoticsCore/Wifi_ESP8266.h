@@ -67,6 +67,7 @@ inline int32_t getRSSI() { return WiFi.RSSI(); }
 inline String getMacAddress() { return WiFi.macAddress(); }
 inline void setHostname(const char* hostname) { WiFi.hostname(hostname); }
 inline void setAutoReconnect(bool enabled) { WiFi.setAutoReconnect(enabled); }
+inline void setSleep(bool enabled) { WiFi.setSleepMode(enabled ? WIFI_LIGHT_SLEEP : WIFI_NONE_SLEEP); }
 inline int16_t scanNetworks(bool async) { return WiFi.scanNetworks(async); }
 inline String getScannedSSID(uint8_t index) { return WiFi.SSID(index); }
 inline int32_t getScannedRSSI(uint8_t index) { return WiFi.RSSI(index); }

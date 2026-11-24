@@ -146,6 +146,7 @@ inline int32_t getRSSI() { return 0; }
 inline String getMacAddress() { return "00:00:00:00:00:00"; }
 inline void setHostname(const char*) {}
 inline void setAutoReconnect(bool) {}
+inline void setSleep(bool) {}
 inline int16_t scanNetworks(bool) {
     if (stubbedScanResult < 0) return stubbedScanResult;
     return static_cast<int16_t>(stubbedNetworks().size());
