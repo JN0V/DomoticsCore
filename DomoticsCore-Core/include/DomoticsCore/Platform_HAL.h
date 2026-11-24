@@ -193,6 +193,12 @@ inline bool crashKindSurvives(const char* kind) {
 #ifndef PSTR
     #define PSTR(s) (s)
 #endif
+// Why a literal lands in DRAM on ESP8266: the core's linker script puts
+// `.rodata` (every plain `const char[]` and unqualified string literal) in
+// DRAM, and only an object carrying PROGMEM (`.irom.text` / `.irom0.text`)
+// or a PSTR()/F() literal is placed in flash. Where a given literal ends up is
+// per translation unit, so only the ones that are plain `static const char[]`
+// or passed as bare "..." need the macros below.
 // A `static const char X[] PROGMEM` read as a String/Print argument:
 // DOMOTICS_FLASH_STR(X). ESP8266 wraps it in FPSTR so the String and Print
 // overloads read it from flash; everywhere else it is the plain pointer.
