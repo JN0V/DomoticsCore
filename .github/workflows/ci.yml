@@ -32,6 +32,28 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # What the pull request changes. A pull request that changes only
+  # documentation (*.md, docs/) cannot change what the jobs below prove, so
+  # they skip. They are gated with `if:` rather than a workflow-level
+  # paths-ignore: a skipped job still reports its check, and a required check
+  # that is skipped counts as passed, where a workflow that never starts leaves
+  # the required checks waiting and the pull request unmergeable. If this job
+  # fails, its output is empty and every job runs.
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Changed files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.files.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: files
+        uses: ./.github/actions/docs-only
+
+  # ---------------------------------------------------------------------------
   # The unit-test suites. Every component carries its own platformio.ini with a
   # `native` environment; there is no top-level project that runs them all, so
   # the projects are discovered rather than listed. Discovery walks the tracked
@@ -49,6 +71,8 @@ jobs:
   # ---------------------------------------------------------------------------
   native-tests:
     name: Unit tests (native)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -124,6 +148,8 @@ jobs:
   # ---------------------------------------------------------------------------
   webui-frontend:
     name: WebUI front end (jsdom)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -158,6 +184,12 @@ jobs:
   # ---------------------------------------------------------------------------
   build-targets:
     name: Build ${{ matrix.target }}
+    # Gated step by step, not as a job: a matrix job skipped as a whole reports
+    # one check under its unexpanded name, matrix expression and all, and the three
+    # required checks Build esp32dev, esp8266dev and esp32c3 never report. The
+    # job runs, skips its steps, and each target reports a success in seconds.
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -166,12 +198,15 @@ jobs:
         target: [esp32dev, esp8266dev, esp32c3]
     steps:
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.code != 'false'
 
       - uses: actions/setup-python@v5
+        if: needs.changes.outputs.code != 'false'
         with:
           python-version: '3.11'
 
       - name: Cache PlatformIO
+        if: needs.changes.outputs.code != 'false'
         uses: actions/cache@v4
         with:
           path: ~/.platformio
@@ -184,9 +219,11 @@ jobs:
       # worth pinning down: the on-device job broke the first time its cache key
       # changed and it had to install espressif32 from scratch.
       - name: Install PlatformIO
+        if: needs.changes.outputs.code != 'false'
         run: pip install platformio==6.1.19 intelhex
 
       - name: Build FullStack example
+        if: needs.changes.outputs.code != 'false'
         working-directory: DomoticsCore-System/examples/FullStack
         run: pio run -e ${{ matrix.target }}
 
@@ -194,11 +231,13 @@ jobs:
       # They were compiled once by hand for the removal checks; this keeps them
       # compiling, which is how three on-device suites did not stay compiled.
       - name: Build FullStack with the flight recorder opted out
+        if: needs.changes.outputs.code != 'false'
         working-directory: DomoticsCore-System/examples/FullStack
         env:
           PLATFORMIO_BUILD_FLAGS: -DDOMOTICS_CRASH_HOOKS=0 -DDOMOTICS_FLIGHT_RECORDER_TICK=0 -DDOMOTICS_FLIGHT_RECORDER_PHASE=0
         run: pio run -e ${{ matrix.target }}
       - name: No local component copied into libdeps
+        if: needs.changes.outputs.code != 'false'
         run: |
           if find . -path '*/libdeps/*/DomoticsCore-*' -type d | grep .; then
             echo "::error::a local component was copied into libdeps"
@@ -250,6 +289,8 @@ jobs:
   # ---------------------------------------------------------------------------
   build-device-tests:
     name: Build on-device suites
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     # Three ESP32 framework builds now, against eight ESP8266 ones
     timeout-minutes: 30

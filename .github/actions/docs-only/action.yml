@@ -1,0 +1,45 @@
+name: Documentation only
+description: >
+  Tells whether a pull request changes code, or only documentation: every
+  changed file a Markdown file (*.md, anywhere) or under docs/. Anything else
+  (sources, examples, platformio.ini, library.json, a workflow, a script)
+  counts as code. A push, or a list that cannot be read, counts as code, so
+  the jobs gated on it run rather than skip.
+
+  Needs the merge commit and its first parent: actions/checkout with
+  fetch-depth 2. On pull_request the checkout is refs/pull/N/merge, whose
+  first parent is the base branch: the diff between the two is exactly what
+  the pull request brings.
+
+outputs:
+  code:
+    description: "'false' when every changed file is documentation, else 'true'."
+    value: ${{ steps.classify.outputs.code }}
+
+runs:
+  using: composite
+  steps:
+    - id: classify
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+      run: |
+        code=true
+        if [ "$EVENT" = pull_request ]; then
+          # --no-renames: a source renamed to a .md file lists both names,
+          # so the source side still counts as code.
+          if files=$(git diff --no-renames --name-only HEAD^1 HEAD); then
+            [ -n "$files" ] && code=false
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              case "$file" in
+                *.md|docs/*) ;;
+                *) code=true; echo "code changed: $file"; break ;;
+              esac
+            done <<< "$files"
+          else
+            echo "::warning::the changed files cannot be listed; every job runs"
+          fi
+        fi
+        [ "$code" = false ] && echo "documentation only: the builds and tests are skipped"
+        echo "code=$code" >> "$GITHUB_OUTPUT"
