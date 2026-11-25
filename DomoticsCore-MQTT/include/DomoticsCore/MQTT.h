@@ -371,6 +371,13 @@ public:
     size_t getQueuedBytes() const { return queuedBytes; }
     /** @brief The HAL client, for a native test to read what the stub was handed. */
     HAL::MQTT::MQTTClientImpl* getClientForTest() { return mqttClient; }
+
+    /**
+     * @brief Whether a component of that name sits beside this one in the registry.
+     */
+    bool hasSiblingComponent(const char* name) const {
+        return __dc_registry && __dc_registry->getComponent(String(name)) != nullptr;
+    }
     
     /**
      * @brief Get last error message

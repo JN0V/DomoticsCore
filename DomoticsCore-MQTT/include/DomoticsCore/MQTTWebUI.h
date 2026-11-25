@@ -248,6 +248,13 @@ public:
                 } else if (field == "lwt_enabled") {
                     cfg.enableLWT = (value == "true" || value == "1");
                 } else if (field == "lwt_topic") {
+                    // HomeAssistant advertises the will topic in its retained
+                    // discovery documents and reconciles the will onto it: an edit
+                    // here would be undone at the next connection or leave the
+                    // documents on a topic no will writes.
+                    if (mqtt->hasSiblingComponent("HomeAssistant")) {
+                        return "{\"success\":false,\"error\":\"The Last Will topic is managed by the HomeAssistant component: set its availability topic instead\"}";
+                    }
                     cfg.lwtTopic = value;
                 } else if (field == "lwt_message") {
                     cfg.lwtMessage = value;
