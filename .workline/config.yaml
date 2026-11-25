@@ -62,6 +62,24 @@ roles:
       # suites only; the pull request's CI runs every suite and every
       # board build.
       proof-command: tools/workline-tests.sh {report} {packages}
+  reviewer:
+    settings:
+      # A verified important finding of these lenses holds the merge: the
+      # owner was finding them after the line had them and let them pass.
+      # The other lenses warn.
+      ai-findings: {correctness: block, intent: block, tests: block}
+      # Lines of the files changed a lens reads whole (600 shipped): this
+      # project's headers run long, and misses sat outside the hunks.
+      code-lines-max: 3000
+      # Whole files make a change take more calls: up to 4 parts, and the
+      # tokens of a run to match, as workline's own line has them (2 and
+      # 300k shipped). Caps, not a spend.
+      parts-max: 4
+      ai-max-tokens: 600000
+      # The shipped lenses, then this project's own: heap, String, flash,
+      # stack, ESP8266 against ESP32, blocking calls in loop()
+      # (.workline/roles/reviewer/prompts/lenses/embedded.md). It warns.
+      lenses: [correctness, edge-cases, tests, intent, claims, simplicity, comments, embedded]
 
 routing:
   # Before a push, the committer checks the commits leaving the machine; the
