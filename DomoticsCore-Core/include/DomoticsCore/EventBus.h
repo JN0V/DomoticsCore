@@ -251,6 +251,20 @@ public:
         publish(topic);
     }
 
+    // Forget the sticky value of a topic: later subscribers with replay get nothing.
+    void clearSticky(const String& topic) {
+        HAL::Platform::LockGuard guard(lock_);
+        lastByTopic.erase(topic);
+    }
+
+    // True while an event of this sticky topic waits in the queue. Only sticky
+    // topics are counted: for any other, the answer is always false.
+    bool hasPending(const String& topic) const {
+        HAL::Platform::LockGuard guard(lock_);
+        auto it = pendingByTopic.find(topic);
+        return it != pendingByTopic.end() && it->second > 0;
+    }
+
     // Dispatch queued events; call from main loop. Handlers must NOT call
     // subscribe/unsubscribe during dispatch; dispatching_ guards that in debug
     // builds. The lock is released before a handler runs: a publisher on

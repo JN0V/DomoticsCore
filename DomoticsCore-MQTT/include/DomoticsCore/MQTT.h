@@ -145,6 +145,7 @@ struct MQTTStatistics {
     uint32_t publishErrors = 0;         ///< Failed publish attempts
     uint32_t receiveCount = 0;          ///< Total messages received
     uint32_t subscriptionCount = 0;     ///< Active subscriptions
+    uint32_t lossCount = 0;             ///< Links lost without a disconnect() call
     uint32_t uptime = 0;                ///< Seconds connected
     uint32_t lastLatency = 0;           ///< Last measured latency (ms)
 };
@@ -396,6 +397,7 @@ private:
     HAL::MQTT::MQTTClientImpl* mqttClient;
     bool clientTLS_;              ///< The TLS flag mqttClient was built with
     const char* clientCa_;        ///< The CA mqttClient was built with
+    bool lossUnseen_ = false;     ///< mqtt/disconnected was published, no dispatch has delivered it yet
     bool reopenPending_ = false;  ///< A session setting changed while connected
 
     // State management
@@ -436,7 +438,9 @@ private:
     // Internal methods
     bool connectInternal();
     void handleReconnection();
+    void emitLinkState(bool up);
     void announceConnectionLost();
+    void resendLostAnnouncement();
     void processMessageQueue();
     /**
      * @brief Advance the tumbling window and report whether a publish may go out now.
