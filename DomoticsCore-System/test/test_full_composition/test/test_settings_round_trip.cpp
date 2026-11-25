@@ -230,7 +230,7 @@ void test_mqtt_card_edits_survive_a_reboot() {
     TEST_ASSERT_TRUE(m.useTLS);
     TEST_ASSERT_EQUAL_PTR_MESSAGE(Boot::compiledCa(), m.caCert, "the stored settings dropped the firmware's CA");
     TEST_ASSERT_FALSE(m.enableLWT);
-    TEST_ASSERT_TRUE(strcmp(m.lwtTopic.c_str(), "house/panel/alive") != 0);
+    TEST_ASSERT_EQUAL_STRING("compiled-id/status", m.lwtTopic.c_str());
     TEST_ASSERT_EQUAL_STRING("gone", m.lwtMessage.c_str());
 }
 
