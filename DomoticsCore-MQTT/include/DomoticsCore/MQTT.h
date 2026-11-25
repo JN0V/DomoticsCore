@@ -35,7 +35,7 @@ namespace Components {
 // Buffer sizes for MQTT events - fixed-size for safe memcpy in EventBus
 // These are copied by value, so must be reasonable for ESP8266 stack/heap
 constexpr size_t MQTT_EVENT_TOPIC_SIZE = 128;    ///< Max topic length
-constexpr size_t MQTT_EVENT_PAYLOAD_SIZE = 700;  ///< Max payload (fits HA discovery ~600 bytes with headroom)
+constexpr size_t MQTT_EVENT_PAYLOAD_SIZE = 640;  ///< Max payload (fits HA discovery ~600 bytes with headroom)
 
 /**
  * @brief Event for publishing MQTT messages via EventBus
@@ -57,6 +57,10 @@ struct MQTTPublishEvent {
     uint8_t qos = 0;                        ///< QoS level (0, 1, 2)
     bool retain = false;                    ///< Retain flag
 };
+
+// The event bus sizes its queue from this figure (QueueCost::kReference in
+// EventBus.h): change one, change the other.
+static_assert(sizeof(MQTTPublishEvent) == 770, "update QueueCost::kReference in EventBus.h");
 
 /**
  * @brief Event for subscribing to MQTT topics via EventBus
