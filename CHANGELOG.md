@@ -2087,8 +2087,8 @@ Complete HAL refactoring for ESP8266 portability preparation.
 ### 📚 Documentation
 
 - **NEW:** `docs/reference/eventbus-architecture.md` - Complete EventBus reference
-- **NEW:** `docs/migration/v1.2.0.md` - Migration guide from v1.1.x
-- **REORGANIZED:** Documentation structure with guides/, migration/, reference/ folders
+- **NEW:** Migration notes from v1.1.x (the release notes in this file; no separate migration folder)
+- **REORGANIZED:** Documentation structure with guides/ and reference/ folders
 - **UPDATED:** All component examples with EventBus usage
 - **UPDATED:** Component README files with new APIs
 
@@ -2101,7 +2101,7 @@ Complete HAL refactoring for ESP8266 portability preparation.
 
 ### 📦 Migration Required
 
-This is a breaking release. See [Migration Guide](docs/migration/v1.2.1.md) for step-by-step migration instructions.
+This is a breaking release. See the release notes above for migration instructions.
 
 ---
 
@@ -2439,7 +2439,7 @@ core.addComponent(...);  // Works perfectly! Core injected on first getCore() ca
 
 #### 📚 Documentation
 
-Updated `docs/CUSTOM_COMPONENTS.md`:
+Updated `docs/guides/custom-components.md`:
 - Enhanced `getDependencies()` limitations section
 - Component initialization timeline diagram
 - Defensive programming patterns for built-in dependencies
@@ -2521,7 +2521,7 @@ uint64_t count = storage->getULong64("pulse_count", 0);
 
 ### 📚 Documentation
 
-- **New Guide**: `docs/CUSTOM_COMPONENTS.md` - Comprehensive guide for creating custom components
+- **New Guide**: `docs/guides/custom-components.md` - Comprehensive guide for creating custom components
   - Basic component structure
   - Accessing other components with `getCore()`
   - ESP32 ISR best practices (IRAM requirements)
