@@ -26,6 +26,7 @@ void test_copy_keeps_name() {
 void test_move_keeps_name() {
     StorageComponent* a = new StorageComponent(named());
     StorageComponent b(std::move(*a));
+    TEST_ASSERT_TRUE(b.metadata.name != a->metadata.name);
     delete a;
     TEST_ASSERT_EQUAL_STRING("short-name", b.metadata.name);
 }
