@@ -577,10 +577,12 @@ GitHub Actions in `.github/workflows/`:
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `version-check.yml` | Push/PR to main, master, develop | Runs `check_versions.py` to validate version consistency |
-| `test-github-install.yml` | Push/PR | Creates a test project, installs DomoticsCore from the current commit, and verifies compilation on ESP32 |
+| `version-check.yml` | Push/PR to main, master, develop | Runs `check_versions.py` to validate version consistency; skipped on a PR that changes only docs |
+| `test-github-install.yml` | Push/PR | Creates a test project, installs DomoticsCore from the current commit, and verifies compilation on ESP32; skipped on a PR that changes only docs |
 | `release-please.yml` | Push to main | Keeps the release pull request; on its merge, tags the commit and writes the GitHub releases, then calls `release.yml` |
 | `release.yml` | Called by `release-please.yml`, or by hand with a tag | Runs version check, publishes to PlatformIO Registry |
+
+A PR that changes only docs (`*.md`, `docs/`) skips the builds and tests of `ci.yml`, `version-check.yml` and `test-github-install.yml`; their required checks still report, as skipped, and pass.
 
 **Release process:**
 1. release-please keeps one pull request open, "chore: release main", with the next versions (from the conventional commits since the last release) and `CHANGELOG.md`

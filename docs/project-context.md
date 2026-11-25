@@ -123,7 +123,7 @@ Each component optionally provides a `*WebUI` class implementing `IWebUIProvider
   - `check_everything.sh` -- Full build + test
   - `tools/local_ci.sh` -- Local CI simulation
   - `tools/check_versions.py` -- Version consistency validation
-- **CI**: GitHub Actions (`.github/workflows/`)
+- **CI**: GitHub Actions (`.github/workflows/`); a PR that changes only docs skips the builds and tests
   - `version-check.yml` -- Version consistency on push/PR
   - `test-github-install.yml` -- Test installation from GitHub
   - `release-please.yml` -- the release pull request; on its merge, tags and GitHub releases
