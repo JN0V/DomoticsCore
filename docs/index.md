@@ -115,3 +115,4 @@ Each component has 3 files: README.md (overview), technical-reference.md (full A
 ---
 
 **DomoticsCore Version:** 2.0.0 | **Scan Level:** Exhaustive | **Last Updated:** 2026-03-10
+
