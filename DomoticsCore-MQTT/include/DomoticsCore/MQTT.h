@@ -11,6 +11,7 @@
  */
 
 #include <DomoticsCore/IComponent.h>
+#include <DomoticsCore/ComponentRegistry.h>  // hasSiblingComponent()
 #include <DomoticsCore/Platform_HAL.h>  // For chip ID, platform info, and MQTT_MAX_PACKET_SIZE
 #include <DomoticsCore/Wifi_HAL.h>      // For WiFi connectivity check
 #include <DomoticsCore/MQTT_HAL.h>      // Platform-abstracted MQTT client

@@ -1,0 +1,1 @@
+DomoticsCore-MQTT/include/DomoticsCore/MQTT.h: hasSiblingComponent() lets the settings page see a HomeAssistant component; it needs the full ComponentRegistry type.
