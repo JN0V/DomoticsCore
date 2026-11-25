@@ -582,7 +582,10 @@ GitHub Actions in `.github/workflows/`:
 | `release-please.yml` | Push to main | Keeps the release pull request; on its merge, tags the commit and writes the GitHub releases, then calls `release.yml` |
 | `release.yml` | Called by `release-please.yml`, or by hand with a tag | Runs version check, publishes to PlatformIO Registry |
 
-A PR that changes only docs (`*.md`, `docs/`) skips the builds and tests of `ci.yml`, `version-check.yml` and `test-github-install.yml`; their required checks still report, as skipped, and pass.
+A PR that changes only docs skips the builds and tests of `ci.yml`, `version-check.yml` and `test-github-install.yml`; their required checks still report, as skipped, and pass.
+
+- **Docs only**: every file added or modified, `*.md` or under `docs/`, outside `examples/`, and named by no test (a native suite that reads a doc makes it code). A deleted or renamed file counts as code. The rule is `.github/actions/docs-only/classify.sh`.
+- **Cancel window**: a run cancelled during its `Changed files` job (about 10 s) leaves the gated jobs skipped, which counts as passed: push again, or re-run the workflow, to get a real result.
 
 **Release process:**
 1. release-please keeps one pull request open, "chore: release main", with the next versions (from the conventional commits since the last release) and `CHANGELOG.md`

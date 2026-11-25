@@ -17,6 +17,9 @@ check() {
     cd "$repo"
     mkdir -p docs src
     echo a > README.md; echo a > src/a.cpp; echo a > docs/Doxyfile; echo a > library.json
+    mkdir -p docs/c Comp/test/t examples/Ex
+    echo a > docs/c/read.md; echo a > docs/c/free.md; echo a > examples/README.md
+    echo 'readRepoFile("docs/c/read.md");' > Comp/test/t/t.cpp
     git add -A
     base=$(git commit-tree "$(git write-tree)" -m base)
     git reset -q "$base"
@@ -42,4 +45,10 @@ check mixed            pull_request true  'echo b >> README.md; echo b >> src/a.
 check rename-to-md     pull_request true  'git mv src/a.cpp src/a.md'
 check docs-dir-nested  pull_request true  'mkdir -p x/docs; echo b > x/docs/f.h'
 check docs-on-push     push         true  'echo b >> README.md'
+check doc-read-by-test pull_request true  'echo b >> docs/c/read.md'
+check doc-not-read     pull_request false 'echo b >> docs/c/free.md'
+check doc-added        pull_request false 'echo b > docs/c/new.md'
+check doc-deleted      pull_request true  'git rm -q docs/c/free.md'
+check doc-renamed      pull_request true  'git mv docs/c/free.md docs/c/moved.md'
+check examples-readme  pull_request true  'echo b >> examples/README.md'
 exit $failed
