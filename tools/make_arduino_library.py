@@ -25,6 +25,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+MARKER = ".made-by-make_arduino_library"
+EXAMPLES = ("CoreOnly", "Minimal")
 SKIP_HEADERS = {"DocMainpage.h"}
 UMBRELLA = """#pragma once
 // Umbrella header of the Arduino copy of DomoticsCore: System.h pulls in every
@@ -76,10 +78,21 @@ def generate_web_assets(dest: Path) -> None:
 
 
 def build(out: Path) -> None:
+    if out == ROOT or out in ROOT.parents or ROOT in out.parents:
+        raise SystemExit(f"{out} contains or lies inside the repository: refused")
     if out.exists():
-        shutil.rmtree(out)
+        if not out.is_dir():
+            raise SystemExit(f"{out} is not a folder")
+        if any(out.iterdir()):
+            if not (out / MARKER).is_file():
+                raise SystemExit(f"{out} is not empty and was not made by this script: refused")
+            shutil.rmtree(out)
+    for name in ("library.properties",) + tuple(f"examples/{e}" for e in EXAMPLES):
+        if not (ROOT / name).exists():
+            raise SystemExit(f"{name} is missing from the repository")
     src = out / "src"
     src.mkdir(parents=True)
+    (out / MARKER).write_text("made by tools/make_arduino_library.py\n", encoding="utf-8")
 
     for comp in sorted(ROOT.glob("DomoticsCore-*")):
         inc = comp / "include"
@@ -107,12 +120,12 @@ def build(out: Path) -> None:
     (src / "DomoticsCore.h").write_text(UMBRELLA, encoding="utf-8")
     generate_web_assets(src / "DomoticsCore" / "Generated")
 
-    for name in ("library.properties", "LICENSE", "README.md"):
+    shutil.copy2(ROOT / "library.properties", out / "library.properties")
+    for name in ("LICENSE", "README.md"):
         if (ROOT / name).is_file():
             shutil.copy2(ROOT / name, out / name)
-    for ex in ("CoreOnly", "Minimal"):
-        if (ROOT / "examples" / ex).is_dir():
-            shutil.copytree(ROOT / "examples" / ex, out / "examples" / ex)
+    for ex in EXAMPLES:
+        shutil.copytree(ROOT / "examples" / ex, out / "examples" / ex)
 
 
 def main() -> None:
