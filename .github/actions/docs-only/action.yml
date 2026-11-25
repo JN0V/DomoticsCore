@@ -7,9 +7,7 @@ description: >
   the jobs gated on it run rather than skip.
 
   Needs the merge commit and its first parent: actions/checkout with
-  fetch-depth 2. On pull_request the checkout is refs/pull/N/merge, whose
-  first parent is the base branch: the diff between the two is exactly what
-  the pull request brings.
+  fetch-depth 2. The rule is in classify.sh, its cases in test.sh.
 
 outputs:
   code:
@@ -23,23 +21,4 @@ runs:
       shell: bash
       env:
         EVENT: ${{ github.event_name }}
-      run: |
-        code=true
-        if [ "$EVENT" = pull_request ]; then
-          # --no-renames: a source renamed to a .md file lists both names,
-          # so the source side still counts as code.
-          if files=$(git diff --no-renames --name-only HEAD^1 HEAD); then
-            [ -n "$files" ] && code=false
-            while IFS= read -r file; do
-              [ -z "$file" ] && continue
-              case "$file" in
-                *.md|docs/*) ;;
-                *) code=true; echo "code changed: $file"; break ;;
-              esac
-            done <<< "$files"
-          else
-            echo "::warning::the changed files cannot be listed; every job runs"
-          fi
-        fi
-        [ "$code" = false ] && echo "documentation only: the builds and tests are skipped"
-        echo "code=$code" >> "$GITHUB_OUTPUT"
+      run: bash "$GITHUB_ACTION_PATH/classify.sh"

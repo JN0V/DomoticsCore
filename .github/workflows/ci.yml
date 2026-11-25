@@ -32,13 +32,10 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # What the pull request changes. A pull request that changes only
-  # documentation (*.md, docs/) cannot change what the jobs below prove, so
-  # they skip. They are gated with `if:` rather than a workflow-level
-  # paths-ignore: a skipped job still reports its check, and a required check
-  # that is skipped counts as passed, where a workflow that never starts leaves
-  # the required checks waiting and the pull request unmergeable. If this job
-  # fails, its output is empty and every job runs.
+  # What the pull request changes. Only docs (*.md, docs/): the jobs below
+  # skip, gated with `if:`, never a workflow paths-ignore, so that each
+  # required check still reports (a skipped one counts as passed). If this
+  # job fails, its output is empty and every job runs.
   # ---------------------------------------------------------------------------
   changes:
     name: Changed files
@@ -50,6 +47,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
+      - name: The classifier's own cases
+        run: bash .github/actions/docs-only/test.sh
       - id: files
         uses: ./.github/actions/docs-only
 
