@@ -39,6 +39,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > Delete reads of `cpuLoad`; the "System Metrics" dashboard now shows memory only
 > (and is absent with `enableMemoryInfo` off).
 
+> **Changes public API.** `StorageComponent` copy and move assignment are now
+> deleted (copy and move construction still work). A copied or moved component
+> keeps a correct `metadata.name`, which points into the component's own name
+> buffer; assignment could not keep that guarantee. Construct a new instance
+> instead of assigning.
+
 ## [2.13.0] - 2026-10-03
 
 > **This minor release removes public API.** Each removal had no caller in the
