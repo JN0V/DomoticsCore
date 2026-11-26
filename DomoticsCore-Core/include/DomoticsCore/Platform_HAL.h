@@ -193,6 +193,40 @@ inline bool crashKindSurvives(const char* kind) {
 #ifndef PSTR
     #define PSTR(s) (s)
 #endif
+// Why a literal lands in DRAM on ESP8266: the core's linker script puts
+// `.rodata` (every plain `const char[]` and unqualified string literal) in
+// DRAM, and only an object carrying PROGMEM (`.irom.text` / `.irom0.text`)
+// or a PSTR()/F() literal is placed in flash. Where a given literal ends up is
+// per translation unit, so only the ones that are plain `static const char[]`
+// or passed as bare "..." need the macros below.
+// A `static const char X[] PROGMEM` read as a String/Print argument:
+// DOMOTICS_FLASH_STR(X). ESP8266 wraps it in FPSTR so the String and Print
+// overloads read it from flash; everywhere else it is the plain pointer.
+#ifndef DOMOTICS_FLASH_STR
+    #if defined(ESP8266)
+        #define DOMOTICS_FLASH_STR(p) FPSTR(p)
+    #else
+        #define DOMOTICS_FLASH_STR(p) (p)
+    #endif
+#endif
+// snprintf whose format is a `static const char F[] PROGMEM`; the arguments
+// (%s ones included) stay ordinary RAM pointers. Plain snprintf elsewhere.
+#ifndef DOMOTICS_SNPRINTF_FLASH
+    #if defined(ESP8266)
+        #define DOMOTICS_SNPRINTF_FLASH(...) snprintf_P(__VA_ARGS__)
+    #else
+        #define DOMOTICS_SNPRINTF_FLASH(...) snprintf(__VA_ARGS__)
+    #endif
+#endif
+// Copy a PROGMEM object (a table row) into RAM before reading its fields:
+// flash is only word-readable on ESP8266. A plain copy elsewhere.
+#ifndef DOMOTICS_FLASH_COPY
+    #if defined(ESP8266)
+        #define DOMOTICS_FLASH_COPY(dst, src) memcpy_P(&(dst), &(src), sizeof(dst))
+    #else
+        #define DOMOTICS_FLASH_COPY(dst, src) memcpy(&(dst), &(src), sizeof(dst))
+    #endif
+#endif
 
 // ============================================================================
 // Backward-Compatible API (delegates to Platform namespace)

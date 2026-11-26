@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <functional>
+#include <DomoticsCore/Platform_HAL.h>   // DOMOTICS_SNPRINTF_FLASH, a no-op off ESP8266
 
 namespace DomoticsCore {
 namespace SystemHelpers {
@@ -61,14 +62,28 @@ public:
     };
     /** The seven sensors over `{clientId}/telemetry`; the last-death sensor over `{clientId}/crash` is LAST_DEATH_ID. */
     static const EntityDef* entityDefs(size_t& count) {
-        static const EntityDef defs[] = {
-            { "free_heap",          "Free Heap",           "B",   "data_size",       "mdi:memory",        "measurement",      "heap" },
-            { "sys_heap_largest",   "Largest Free Block",  "B",   "data_size",       "mdi:memory",        "measurement",      "largest" },
-            { "sys_heap_min",       "Minimum Free Heap",   "B",   "data_size",       "mdi:memory",        "measurement",      "min" },
-            { "uptime",             "Uptime",              "s",   "duration",        "mdi:clock-outline", "total_increasing", "uptime" },
-            { "sys_boot_count",     "Boot Count",          "",    "",                "mdi:restart",       "total_increasing", "boot" },
-            { "wifi_signal",        "WiFi Signal",         "dBm", "signal_strength", "mdi:wifi",          "measurement",      "rssi" },
-            { "sys_alloc_failures", "Allocation Failures", "",    "",                "mdi:alert-outline", "total_increasing", "fails" },
+        // Every string and the table itself live in flash on ESP8266 (PROGMEM);
+        // read a row with DOMOTICS_FLASH_COPY and its strings with DOMOTICS_FLASH_STR.
+        static const char heapId[] PROGMEM = "free_heap", heapName[] PROGMEM = "Free Heap", heapKey[] PROGMEM = "heap";
+        static const char largestId[] PROGMEM = "sys_heap_largest", largestName[] PROGMEM = "Largest Free Block", largestKey[] PROGMEM = "largest";
+        static const char minId[] PROGMEM = "sys_heap_min", minName[] PROGMEM = "Minimum Free Heap", minKey[] PROGMEM = "min";
+        static const char upId[] PROGMEM = "uptime", upName[] PROGMEM = "Uptime", upKey[] PROGMEM = "uptime";
+        static const char bootId[] PROGMEM = "sys_boot_count", bootName[] PROGMEM = "Boot Count", bootKey[] PROGMEM = "boot";
+        static const char wifiId[] PROGMEM = "wifi_signal", wifiName[] PROGMEM = "WiFi Signal", wifiKey[] PROGMEM = "rssi";
+        static const char failId[] PROGMEM = "sys_alloc_failures", failName[] PROGMEM = "Allocation Failures", failKey[] PROGMEM = "fails";
+        static const char uB[] PROGMEM = "B", uS[] PROGMEM = "s", uDbm[] PROGMEM = "dBm", empty[] PROGMEM = "";
+        static const char dcSize[] PROGMEM = "data_size", dcDur[] PROGMEM = "duration", dcSig[] PROGMEM = "signal_strength";
+        static const char icMem[] PROGMEM = "mdi:memory", icClock[] PROGMEM = "mdi:clock-outline", icRestart[] PROGMEM = "mdi:restart";
+        static const char icWifi[] PROGMEM = "mdi:wifi", icAlert[] PROGMEM = "mdi:alert-outline";
+        static const char scMeas[] PROGMEM = "measurement", scTotal[] PROGMEM = "total_increasing";
+        static const EntityDef defs[] PROGMEM = {
+            { heapId,    heapName,    uB,   dcSize, icMem,     scMeas,  heapKey },
+            { largestId, largestName, uB,   dcSize, icMem,     scMeas,  largestKey },
+            { minId,     minName,     uB,   dcSize, icMem,     scMeas,  minKey },
+            { upId,      upName,      uS,   dcDur,  icClock,   scTotal, upKey },
+            { bootId,    bootName,    empty, empty, icRestart, scTotal, bootKey },
+            { wifiId,    wifiName,    uDbm, dcSig,  icWifi,    scMeas,  wifiKey },
+            { failId,    failName,    empty, empty, icAlert,   scTotal, failKey },
         };
         count = sizeof(defs) / sizeof(defs[0]);
         return defs;
@@ -143,9 +158,10 @@ public:
         char rssi[16];
         if (s.hasRssi) snprintf(rssi, sizeof(rssi), "%ld", (long)s.rssi);
         else snprintf(rssi, sizeof(rssi), "null");
-        int n = snprintf(buf, len,
+        static const char fmt[] PROGMEM =
             "{\"heap\":%lu,\"largest\":%lu,\"min\":%lu,\"trough\":%lu,\"uptime\":%lu,\"boot\":%lu,\"rssi\":%s,"
-            "\"fails\":%lu,\"fail_last\":%lu,\"queue_peak\":%lu,\"skipped\":%lu,\"failed\":%lu,\"build\":\"%08lx\"}",
+            "\"fails\":%lu,\"fail_last\":%lu,\"queue_peak\":%lu,\"skipped\":%lu,\"failed\":%lu,\"build\":\"%08lx\"}";
+        int n = DOMOTICS_SNPRINTF_FLASH(buf, len, fmt,
             (unsigned long)s.heap, (unsigned long)s.largest, (unsigned long)minSeen, (unsigned long)s.trough,
             (unsigned long)s.uptimeS, (unsigned long)s.bootCount, rssi,
             (unsigned long)s.fails, (unsigned long)s.failLast, (unsigned long)s.queuePeak,
@@ -159,28 +175,35 @@ public:
         const char* promotion = c.promotion ? c.promotion : "none";
         int n;
         if (c.source == CrashSummary::None) {
-            n = snprintf(buf, len, "{\"source\":\"none\",\"promotion\":\"none\"}");
+            static const char fmtNone[] PROGMEM = "{\"source\":\"none\",\"promotion\":\"none\"}";
+            n = DOMOTICS_SNPRINTF_FLASH(buf, len, fmtNone);
         } else if (c.torn) {
             // the other fields are what the crc could not vouch for
-            n = snprintf(buf, len, "{\"source\":\"%s\",\"promotion\":\"%s\",\"phase\":%lu,\"torn\":1}",
+            static const char fmtTorn[] PROGMEM = "{\"source\":\"%s\",\"promotion\":\"%s\",\"phase\":%lu,\"torn\":1}";
+            n = DOMOTICS_SNPRINTF_FLASH(buf, len, fmtTorn,
                          source, promotion, (unsigned long)c.phase);
         } else {
-            n = snprintf(buf, len,
+            static const char fmtFull[] PROGMEM =
                 "{\"source\":\"%s\",\"promotion\":\"%s\",\"phase\":%lu,\"build\":\"%08lx\","
                 "\"uptime_ms\":%lu,\"reason\":%lu,\"epc1\":\"0x%08lx\",\"fail_size\":%lu,"
-                "\"fail_caller\":\"0x%08lx\",\"min_free\":%lu,\"dedup\":\"%08lx\"",
+                "\"fail_caller\":\"0x%08lx\",\"min_free\":%lu,\"dedup\":\"%08lx\"";
+            static const char fmtReset[] PROGMEM = ",\"reset\":\"%s\"";
+            static const char fmtSame[] PROGMEM = ",\"same_count\":%lu";
+            static const char fmtDump[] PROGMEM = ",\"coredump\":{\"waiting\":%s,\"size\":%lu}";
+            static const char fmtEnd[] PROGMEM = "}";
+            n = DOMOTICS_SNPRINTF_FLASH(buf, len, fmtFull,
                 source, promotion, (unsigned long)c.phase, (unsigned long)c.buildId,
                 (unsigned long)c.uptimeMs, (unsigned long)c.reason, (unsigned long)c.epc1,
                 (unsigned long)c.failSize, (unsigned long)c.failCaller, (unsigned long)c.minFree,
                 (unsigned long)c.dedupKey);
             size_t pos = clamp(n, len);
-            if (c.reset[0]) pos += clamp(snprintf(buf + pos, len - pos, ",\"reset\":\"%s\"", c.reset), len - pos);
-            if (c.sameCount) pos += clamp(snprintf(buf + pos, len - pos, ",\"same_count\":%lu", (unsigned long)c.sameCount), len - pos);
+            if (c.reset[0]) pos += clamp(DOMOTICS_SNPRINTF_FLASH(buf + pos, len - pos, fmtReset, c.reset), len - pos);
+            if (c.sameCount) pos += clamp(DOMOTICS_SNPRINTF_FLASH(buf + pos, len - pos, fmtSame, (unsigned long)c.sameCount), len - pos);
             if (c.coreDumpSupported) {
-                pos += clamp(snprintf(buf + pos, len - pos, ",\"coredump\":{\"waiting\":%s,\"size\":%lu}",
+                pos += clamp(DOMOTICS_SNPRINTF_FLASH(buf + pos, len - pos, fmtDump,
                                       c.coreDumpWaiting ? "true" : "false", (unsigned long)c.coreDumpSize), len - pos);
             }
-            pos += clamp(snprintf(buf + pos, len - pos, "}"), len - pos);
+            pos += clamp(DOMOTICS_SNPRINTF_FLASH(buf + pos, len - pos, fmtEnd), len - pos);
             return pos;
         }
         return clamp(n, len);
