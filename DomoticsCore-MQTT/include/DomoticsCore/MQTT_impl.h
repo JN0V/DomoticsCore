@@ -369,10 +369,10 @@ inline bool MQTTComponent::writeNow(const String& topic, const String& payload, 
     if (success) {
         stats.publishCount++;
         publishCountThisSecond++;
-        DLOG_D(LOG_MQTT, "  ✓ Published successfully");
+        DLOG_D(LOG_MQTT, "  [OK] Published successfully");
     } else {
         stats.publishErrors++;
-        DLOG_E(LOG_MQTT, "  ✗ Publish failed! Client state: %d, buffer size: %d",
+        DLOG_E(LOG_MQTT, "  [FAIL] Publish failed! Client state: %d, buffer size: %d",
                mqttClient->state(), mqttClient->getBufferSize());
     }
     
