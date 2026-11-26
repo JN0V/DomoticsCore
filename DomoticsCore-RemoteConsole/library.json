@@ -1,25 +1,46 @@
 {
   "name": "DomoticsCore-RemoteConsole",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "Telnet-based remote console for DomoticsCore with log streaming and command execution",
-  "keywords": ["esp32", "domotics", "telnet", "console", "debug", "logging"],
+  "keywords": [
+    "esp32",
+    "domotics",
+    "telnet",
+    "console",
+    "debug",
+    "logging"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/JN0V/DomoticsCore.git"
   },
   "authors": [
-    { "name": "JN0V", "maintainer": true }
+    {
+      "name": "JN0V",
+      "maintainer": true
+    }
   ],
   "license": "MIT",
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32", "espressif8266"],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32",
+    "espressif8266"
+  ],
   "build": {
     "includeDir": "include",
     "srcDir": "src",
     "lib_archive": false
   },
   "dependencies": [
-    { "name": "DomoticsCore-Core", "version": ">=1.13.0" },
-    { "name": "DomoticsCore-Wifi", "version": ">=1.4.0" }
+    {
+      "name": "DomoticsCore-Core",
+      "version": ">=1.13.0"
+    },
+    {
+      "name": "DomoticsCore-Wifi",
+      "version": ">=1.4.0"
+    }
   ]
 }

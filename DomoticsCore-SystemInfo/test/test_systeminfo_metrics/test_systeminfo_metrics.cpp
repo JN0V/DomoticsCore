@@ -1,5 +1,5 @@
 // Unit tests for SystemInfoComponent metrics collection
-// Verifies heap, uptime, CPU load, and system metrics
+// Verifies heap, uptime, and system metrics
 
 #include <unity.h>
 #include <DomoticsCore/Core.h>
@@ -77,23 +77,6 @@ void test_systeminfo_metrics_uptime_increases(void) {
     uint32_t uptime2 = metrics2.uptime;
 
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(uptime1, uptime2);
-}
-
-void test_systeminfo_metrics_cpu_load_range(void) {
-    SystemInfoComponent sysinfo;
-    sysinfo.begin();
-
-    // Force a few updates to establish baseline
-    for (int i = 0; i < 5; i++) {
-        sysinfo.forceUpdateMetrics();
-        HAL::Platform::delayMs(10);
-    }
-
-    const auto& metrics = sysinfo.getMetrics();
-
-    // CPU load should be between 0 and 100
-    TEST_ASSERT_GREATER_OR_EQUAL_FLOAT(0.0f, metrics.cpuLoad);
-    TEST_ASSERT_LESS_OR_EQUAL_FLOAT(100.0f, metrics.cpuLoad);
 }
 
 // ============================================================================
@@ -236,7 +219,6 @@ int main(int argc, char **argv) {
     RUN_TEST(test_systeminfo_metrics_cpu_freq_nonzero);
     RUN_TEST(test_systeminfo_metrics_chip_model_not_empty);
     RUN_TEST(test_systeminfo_metrics_uptime_increases);
-    RUN_TEST(test_systeminfo_metrics_cpu_load_range);
 
     // Format helpers
     RUN_TEST(test_systeminfo_format_bytes_under_1kb);

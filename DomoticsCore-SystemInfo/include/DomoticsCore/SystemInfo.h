@@ -96,14 +96,9 @@ protected:
         String chipModel;
         uint8_t chipRevision = 0;
         uint32_t uptime = 0;
-        float cpuLoad = 0;              // Estimated CPU load percentage
         bool valid = false;
     } metrics;
     
-    // CPU load estimation variables
-    unsigned long lastHeapCheck = 0;
-    uint32_t lastHeapValue = 0;
-    float cpuLoadEma = 0.0f; // Exponential moving average for smoother CPU load
 
     String formatBytes(uint32_t bytes) {
         if (bytes < 1024) {
@@ -132,41 +127,12 @@ protected:
             return String(minutes) + "m " + String(seconds) + "s";
         }
     }
-        float calculateCpuLoad() {
-        // Heuristic CPU load estimation based on heap allocation activity.
-        // On ESP32 Arduino, direct CPU usage isn't available without special FreeRTOS config.
-        // We therefore estimate activity over time and smooth it with an EMA.
-        unsigned long currentTime = HAL::Platform::getMillis();
-        uint32_t currentHeap = HAL::Platform::getFreeHeap();
-
-        if (lastHeapCheck > 0) {
-            unsigned long dt = currentTime - lastHeapCheck;
-            if (dt > 0) {
-                // Heap activity in KB per second
-                float heapDiffKB = fabsf((float)((int32_t)currentHeap - (int32_t)lastHeapValue)) / 1024.0f;
-                float activityPerSec = heapDiffKB * (1000.0f / (float)dt);
-
-                // Map activity to an arbitrary 0-100 range
-                // Tuned scale: 10 KB/s ~ 100% load (cap at 100)
-                float instantLoad = HAL::Platform::constrain(activityPerSec * 10.0f, 0.0f, 100.0f);
-
-                // Exponential moving average for stability
-                const float alpha = 0.3f; // smoothing factor
-                cpuLoadEma = (alpha * instantLoad) + ((1.0f - alpha) * cpuLoadEma);
-                metrics.cpuLoad = HAL::Platform::constrain(cpuLoadEma, 0.0f, 100.0f);
-            }
-        }
-
-        lastHeapCheck = currentTime;
-        lastHeapValue = currentHeap;
-        return metrics.cpuLoad;
-    }
 
 public:
     SystemInfoComponent(const SystemInfoConfig& cfg = SystemInfoConfig()) 
         : config(cfg) {
         metadata.name = "System Info";
-        metadata.version = "1.8.0";  // x-release-please-version
+        metadata.version = "1.8.1";  // x-release-please-version
     }
 
     // IComponent interface
@@ -242,7 +208,7 @@ public:
             pos += snprintf(buf + pos, len - pos,
                             "  Core dump: %s\n",
                             !diag.coreDump.partitionPresent ? "no coredump partition in this table"
-                            : diag.coreDump.dumpPresent    ? "WAITING — a previous panic left a dump"
+                            : diag.coreDump.dumpPresent    ? "WAITING - a previous panic left a dump"
                                                            : "partition present, no dump waiting");
             if (pos < 0) pos = 0;
             if ((size_t)pos >= len) pos = len - 1;
@@ -306,7 +272,7 @@ private:
                bootDiag.getResetReasonString().c_str(), bootDiag.bootHeap);
 
         if (bootDiag.wasUnexpectedReset()) {
-            DLOG_W(LOG_SYSTEM, "⚠ Previous boot ended unexpectedly: %s",
+            DLOG_W(LOG_SYSTEM, "WARNING: Previous boot ended unexpectedly: %s",
                    bootDiag.getResetReasonString().c_str());
         }
         // OBS-2: epc1 locates the fault, or the loop the watchdog interrupted —
@@ -329,7 +295,7 @@ private:
             if (!bootDiag.coreDump.partitionPresent) {
                 DLOG_W(LOG_SYSTEM, "No coredump partition in this partition table: panics leave no dump");
             } else if (bootDiag.coreDump.dumpPresent) {
-                DLOG_W(LOG_SYSTEM, "⚠ A core dump from a previous panic is waiting: %u bytes in the coredump partition",
+                DLOG_W(LOG_SYSTEM, "WARNING: A core dump from a previous panic is waiting: %u bytes in the coredump partition",
                        bootDiag.coreDump.size);
             }
         }
@@ -347,9 +313,6 @@ private:
         metrics.chipModel = HAL::Platform::getChipModel();
         metrics.chipRevision = HAL::Platform::getChipRevision();
         metrics.uptime = HAL::Platform::getMillis() / 1000;
-        
-        // Calculate CPU load (simplified estimation)
-        calculateCpuLoad();
         
         metrics.valid = true;
     }

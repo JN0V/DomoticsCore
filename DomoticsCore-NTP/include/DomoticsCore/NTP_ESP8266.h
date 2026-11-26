@@ -58,7 +58,8 @@ inline void setTimezone(const char* tz) {
 inline time_t now() { return time(nullptr); }
 
 inline void setSyncInterval(uint32_t) {
-    // ESP8266 SNTP doesn't have direct interval control
+    // ESP8266 SNTP doesn't have direct interval control: the interval is
+    // ignored on this platform, and no re-sync happens at that interval.
 }
 
 inline void stop() {

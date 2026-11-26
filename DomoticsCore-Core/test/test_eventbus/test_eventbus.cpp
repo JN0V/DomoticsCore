@@ -328,10 +328,10 @@ void test_boot_sequence_is_delivered_in_full(void) {
 // The cliff has to stay exactly where it is today: the budget is 32 reference
 // events, so the 33rd costs one and not before.
 void test_cliff_is_where_it_was(void) {
-    std::vector<uint8_t> buf(830, 0x11);
-    for (int i = 0; i < 32; ++i) testBus->publish(String(REF_TOPIC), buf.data(), 830);
+    std::vector<uint8_t> buf(770, 0x11);
+    for (int i = 0; i < 32; ++i) testBus->publish(String(REF_TOPIC), buf.data(), 770);
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, testBus->getDroppedCount(), "32 reference events must fit exactly");
-    testBus->publish(String(REF_TOPIC), buf.data(), 830);
+    testBus->publish(String(REF_TOPIC), buf.data(), 770);
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(1, testBus->getDroppedCount(), "the 33rd must cost exactly one");
 }
 

@@ -95,6 +95,11 @@ private:
     size_t entryCount;
     String nameStr_;  // Holds dynamic name when not a string literal
     
+private:
+    void fixName(const StorageComponent& other) {
+        if (other.metadata.name == other.nameStr_.c_str()) metadata.name = nameStr_.c_str();
+    }
+
 public:
     /**
      * Constructor
@@ -111,13 +116,34 @@ public:
         } else {
             metadata.name = "Storage";
         }
-        metadata.version = "1.7.0";  // x-release-please-version
+        metadata.version = "1.7.1";  // x-release-please-version
         metadata.author = "DomoticsCore";
         metadata.description = "Key-value storage component for preferences and app data";
         metadata.category = "Storage";
         metadata.tags = {"storage", "preferences", "nvs", "settings", "config"};
     }
     
+    // metadata.name may point into nameStr_: re-point it on copy/move so it
+    // never refers to the source object's buffer.
+    StorageComponent(const StorageComponent& other)
+        : IComponent(other), storageConfig(other.storageConfig), storage(other.storage),
+          statusTimer(other.statusTimer), maintenanceTimer(other.maintenanceTimer),
+          cache(other.cache), registeredKeys(other.registeredKeys),
+          isOpen(other.isOpen), entryCount(other.entryCount), nameStr_(other.nameStr_) {
+        fixName(other);
+    }
+
+    StorageComponent(StorageComponent&& other)
+        : IComponent(other), storageConfig(other.storageConfig), storage(other.storage),
+          statusTimer(other.statusTimer), maintenanceTimer(other.maintenanceTimer),
+          cache(std::move(other.cache)), registeredKeys(std::move(other.registeredKeys)),
+          isOpen(other.isOpen), entryCount(other.entryCount), nameStr_(other.nameStr_) {
+        fixName(other);
+    }
+
+    StorageComponent& operator=(const StorageComponent&) = delete;
+    StorageComponent& operator=(StorageComponent&&) = delete;
+
     ComponentStatus begin() override {
         DLOG_I(LOG_STORAGE, "Initializing...");
         

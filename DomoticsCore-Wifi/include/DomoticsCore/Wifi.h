@@ -108,11 +108,11 @@ private:
 public:
     /**
      * Constructor
-     * @param ssid Wifi network name (empty = configure later)
-     * @param password Wifi password
+     * @param initialSsid Wifi network name (empty = configure later)
+     * @param initialPassword Wifi password
      */
-    WifiComponent(const String& ssid = "", const String& password = "") 
-        : ssid(ssid), password(password), 
+    WifiComponent(const String& initialSsid = "", const String& initialPassword = "")
+        : ssid(initialSsid), password(initialPassword),
           reconnectTimer(5000), statusTimer(30000), connectionTimer(100),
           shouldConnect(true), isConnecting(false), connectionStartTime(0),
           staFallbackTimer_(30000),
@@ -122,7 +122,7 @@ public:
         rebootTimer_.disable();       // Only enabled when reboot-to-STA is pending
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "Wifi";
-        metadata.version = "1.8.0";  // x-release-please-version
+        metadata.version = "1.8.1";  // x-release-please-version
         metadata.author = "DomoticsCore";
         metadata.description = "Wifi connectivity management component";
     }

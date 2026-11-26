@@ -1,0 +1,25 @@
+name: Documentation only
+description: >
+  Tells whether a pull request changes code, or only documentation: every
+  changed file added or modified, *.md or under docs/, outside examples/,
+  and named by no test. Anything else (sources, examples, platformio.ini,
+  library.json, a workflow, a script, a doc a test reads, a deletion or a
+  rename) counts as code. A push, or a list that cannot be read, counts as
+  code, so the jobs gated on it run rather than skip.
+
+  Needs the merge commit and its first parent: actions/checkout with
+  fetch-depth 2. The rule is in classify.sh, its cases in test.sh.
+
+outputs:
+  code:
+    description: "'false' when every changed file is documentation, else 'true'."
+    value: ${{ steps.classify.outputs.code }}
+
+runs:
+  using: composite
+  steps:
+    - id: classify
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+      run: bash "$GITHUB_ACTION_PATH/classify.sh"

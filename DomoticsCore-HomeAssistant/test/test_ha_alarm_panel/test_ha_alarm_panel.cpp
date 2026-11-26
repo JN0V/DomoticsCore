@@ -434,7 +434,7 @@ void test_alarm_panel_over_the_event_field_is_refused_and_counted() {
 
     simulateMqttConnect(core);
     TEST_ASSERT_FALSE_MESSAGE(discoveryPublished, "BUG-38: a document over the event field must be refused, not cut");
-    TEST_ASSERT_EQUAL_STRING("Payload for 'homeassistant/alarm_control_panel/abcdefghijklmnopqrstuvwxyz012345/alarm/config' is 713 bytes, over the 699-byte event field: not published", warn);
+    TEST_ASSERT_EQUAL_STRING("Payload for 'homeassistant/alarm_control_panel/abcdefghijklmnopqrstuvwxyz012345/alarm/config' is 713 bytes, over the 639-byte event field: not published", warn);
     TEST_ASSERT_EQUAL_UINT32(1, haPtr->getStatistics().discoveryRefused);
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, queuedInfo, "a refused config must not be announced as queued");
     LoggerCallbacks::removeCallback(cb);

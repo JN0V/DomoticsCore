@@ -110,7 +110,7 @@ public:
         : config(config) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "HomeAssistant";
-        metadata.version = "2.7.0";  // x-release-please-version
+        metadata.version = "2.7.1";  // x-release-please-version
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
         availabilityTopicNamed = (this->config.availabilityTopic[0] != '\0');
@@ -652,7 +652,7 @@ private:
     // Small enough that a reconnection's discovery documents and the states
     // behind them never fill the event queue at once.
     static constexpr size_t FLUSH_PER_LOOP = 4;
-    // Each document is an 830-byte event: sent all at once from the connect
+    // Each document is a 770-byte event: sent all at once from the connect
     // handler, twenty of them outgrow an ESP8266's heap before any is written.
     bool discoveryPending = false;
     size_t discoveryNext = 0;
@@ -1101,6 +1101,11 @@ private:
         memcpy(entityId, idStart, idCopy);
         entityId[idCopy] = '\0';
 
+        if (idLen == 0) {
+            DLOG_W(LOG_HA, "Command refused: empty entity ID in topic");
+            return;
+        }
+
         DLOG_I(LOG_HA, "Extracted entity ID: '%.*s', looking up entity...", (int)idLen, idStart);
         HAEntity* entity = findEntity(idStart, idLen);
         if (!entity) {
@@ -1136,9 +1141,9 @@ private:
         entity->describeCommand(ev);
         emit(HAEvents::EVENT_COMMAND, ev);
 
-        // entity->id rather than the local buffer: publishState builds its own Strings anyway.
+        // The entity is already in hand: no second lookup.
         if (entity->echoesCommandAsState()) {
-            publishState(entity->id, payload);
+            publishOrHold(entity, String(payload), false);
         }
     }
 };

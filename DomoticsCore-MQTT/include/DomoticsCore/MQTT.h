@@ -35,7 +35,7 @@ namespace Components {
 // Buffer sizes for MQTT events - fixed-size for safe memcpy in EventBus
 // These are copied by value, so must be reasonable for ESP8266 stack/heap
 constexpr size_t MQTT_EVENT_TOPIC_SIZE = 128;    ///< Max topic length
-constexpr size_t MQTT_EVENT_PAYLOAD_SIZE = 700;  ///< Max payload (fits HA discovery ~600 bytes with headroom)
+constexpr size_t MQTT_EVENT_PAYLOAD_SIZE = 640;  ///< Max payload (fits HA discovery ~600 bytes with headroom)
 
 /**
  * @brief Event for publishing MQTT messages via EventBus
@@ -57,6 +57,10 @@ struct MQTTPublishEvent {
     uint8_t qos = 0;                        ///< QoS level (0, 1, 2)
     bool retain = false;                    ///< Retain flag
 };
+
+// The event bus sizes its queue from this figure (QueueCost::kReference in
+// EventBus.h): change one, change the other.
+static_assert(sizeof(MQTTPublishEvent) == 770, "update QueueCost::kReference in EventBus.h");
 
 /**
  * @brief Event for subscribing to MQTT topics via EventBus
@@ -141,6 +145,7 @@ struct MQTTStatistics {
     uint32_t publishErrors = 0;         ///< Failed publish attempts
     uint32_t receiveCount = 0;          ///< Total messages received
     uint32_t subscriptionCount = 0;     ///< Active subscriptions
+    uint32_t lossCount = 0;             ///< Links lost without a disconnect() call
     uint32_t uptime = 0;                ///< Seconds connected
     uint32_t lastLatency = 0;           ///< Last measured latency (ms)
 };
@@ -392,6 +397,7 @@ private:
     HAL::MQTT::MQTTClientImpl* mqttClient;
     bool clientTLS_;              ///< The TLS flag mqttClient was built with
     const char* clientCa_;        ///< The CA mqttClient was built with
+    bool lossUnseen_ = false;     ///< mqtt/disconnected was published, no dispatch has delivered it yet
     bool reopenPending_ = false;  ///< A session setting changed while connected
 
     // State management
@@ -432,7 +438,9 @@ private:
     // Internal methods
     bool connectInternal();
     void handleReconnection();
+    void emitLinkState(bool up);
     void announceConnectionLost();
+    void resendLostAnnouncement();
     void processMessageQueue();
     /**
      * @brief Advance the tumbling window and report whether a publish may go out now.

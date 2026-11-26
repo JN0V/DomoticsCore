@@ -71,8 +71,7 @@ This file provides structured context for AI assistants and developers working o
 - Core responsibility: collect and cache system metrics at a configurable interval.
 - Header-only implementation; all logic resides in `SystemInfo.h`.
 - Protected nested struct `SystemMetrics` stores cached values.
-- Protected EMA state: `lastHeapCheck`, `lastHeapValue`, `cpuLoadEma` support the CPU load heuristic.
-- CPU load estimated via heap-activity heuristic with EMA smoothing (alpha = 0.3).
+- No CPU load metric (the heap-activity heuristic was removed).
 - Boot diagnostics (volatile) captured in `begin()`; boot count set externally by `System`.
 - Private methods: `initBootDiagnostics()` (boot-time capture) and `updateMetrics()` (periodic refresh).
 

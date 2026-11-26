@@ -8,7 +8,7 @@ checked: ae5715e
 
 ## Overview
 
-DomoticsCore-SystemInfo is a lightweight diagnostic component that collects runtime system metrics on ESP32 and ESP8266 devices. It reports heap memory usage, uptime, CPU frequency, chip model, estimated CPU load, flash usage, and boot diagnostics -- all through the standard `IComponent` lifecycle.
+DomoticsCore-SystemInfo is a lightweight diagnostic component that collects runtime system metrics on ESP32 and ESP8266 devices. It reports heap memory usage, uptime, CPU frequency, chip model, flash usage, and boot diagnostics -- all through the standard `IComponent` lifecycle.
 
 When paired with the optional `SystemInfoWebUI` provider, these metrics are exposed as real-time dashboard widgets and WebSocket updates through the DomoticsCore WebUI framework.
 
@@ -20,7 +20,6 @@ When paired with the optional `SystemInfoWebUI` provider, these metrics are expo
 | Max Alloc Heap | Largest contiguous free block (fragmentation indicator) |
 | Uptime | Seconds since boot, with human-readable formatting |
 | CPU Frequency | Clock speed in MHz |
-| CPU Load (estimated) | Heuristic based on heap activity, smoothed with EMA |
 | Chip Model / Revision | Hardware identification |
 | Flash / Sketch / Free Sketch Space | Firmware storage and OTA update capacity |
 | Boot Diagnostics | Reset reason, boot count, heap at boot |
