@@ -3,6 +3,7 @@ sources: [DomoticsCore-Core/include/DomoticsCore/IComponent.h, DomoticsCore-Core
 checked: ae5715e
 judged: 6a979a6
 verified: agent:documentalist
+judged-in-parts: 0dbc4fd
 -->
 # Component Lifecycle
 
@@ -83,7 +84,7 @@ Core lifecycle events (defined in `Events.h`):
 | Event Constant | Topic | When Published |
 |---------------|-------|----------------|
 | `EVENT_COMPONENT_READY` | `component/ready` | After each successful `begin()` |
-| `EVENT_COMPONENT_ERROR` | `component/error` | On component initialization failure |
+| `EVENT_COMPONENT_ERROR` | `component/error` | Not published by the registry when `begin()` fails (it logs and returns the status) |
 | `EVENT_SYSTEM_READY` | `system/ready` | After ALL components initialized |
 | `EVENT_SYSTEM_REBOOT` | `system/reboot` | Before system reboot |
 | `EVENT_SHUTDOWN_START` | `shutdown/start` | Before shutdown begins |
