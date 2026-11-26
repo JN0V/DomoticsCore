@@ -183,6 +183,9 @@ body {
   margin-top: 1.5rem;
 }
 
+/* No quick control placed: no area, no gap above the dashboard. */
+.quick-controls-grid:empty { display: none; }
+
 .card {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
