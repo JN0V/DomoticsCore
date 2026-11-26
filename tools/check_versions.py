@@ -21,6 +21,12 @@ from typing import Iterable, Set, Tuple, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# Constitution XV propagation rules, named in every error they raise.
+RULE_COMPONENT = "Constitution XV [component-metadata]"
+RULE_TAG = "Constitution XV [root-tag]"
+RULE_ROOT = "Constitution XV [root-vs-components]"
+RULE_PROPS = "Constitution XV [properties-vs-root]"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Check DomoticsCore versions")
@@ -117,14 +123,14 @@ def check_component_versions(root: Path, verbose: bool = False) -> Tuple[bool, l
         json_version = data.get("version")
 
         if not json_version:
-            errors.append(f"{name}: library.json has no 'version' field")
+            errors.append(f"{RULE_COMPONENT}: {name}: library.json has no 'version' field")
             ok = False
             continue
 
         try:
             parse_semver(json_version)
         except ValueError as e:
-            errors.append(f"{name}: {e}")
+            errors.append(f"{RULE_COMPONENT}: {name}: {e}")
             ok = False
             continue
 
@@ -143,7 +149,7 @@ def check_component_versions(root: Path, verbose: bool = False) -> Tuple[bool, l
         if len(versions_in_code) > 1:
             values = ", ".join(sorted(versions_in_code))
             errors.append(
-                f"{name}: multiple metadata.version values in code ({values}) "
+                f"{RULE_COMPONENT}: {name}: multiple metadata.version values in code ({values}) "
                 f"but library.json is {json_version}"
             )
             ok = False
@@ -152,7 +158,7 @@ def check_component_versions(root: Path, verbose: bool = False) -> Tuple[bool, l
         (code_version,) = tuple(versions_in_code)
         if code_version != json_version:
             errors.append(
-                f"{name}: version mismatch - library.json={json_version} "
+                f"{RULE_COMPONENT}: {name}: version mismatch - library.json={json_version} "
                 f"!= metadata.version={code_version}"
             )
             ok = False
@@ -187,30 +193,30 @@ def check_root_against_tag(root: Path, args: argparse.Namespace, errors: list) -
         return True
 
     if not tag_name:
-        errors.append("Tag check requested but no tag provided and GITHUB_REF is not a tag")
+        errors.append(f"{RULE_TAG}: Tag check requested but no tag provided and GITHUB_REF is not a tag")
         return False
 
     m = re.match(r"^v?(\d+\.\d+\.\d+)$", tag_name)
     if not m:
-        errors.append(f"Tag '{tag_name}' does not look like vX.Y.Z")
+        errors.append(f"{RULE_TAG}: Tag '{tag_name}' does not look like vX.Y.Z")
         return False
 
     tag_version = m.group(1)
 
     root_lib = root / "library.json"
     if not root_lib.is_file():
-        errors.append("Root library.json not found for tag check")
+        errors.append(f"{RULE_TAG}: Root library.json not found for tag check")
         return False
 
     data = load_json(root_lib)
     root_version = data.get("version")
     if not root_version:
-        errors.append("Root library.json is missing 'version' field")
+        errors.append(f"{RULE_TAG}: Root library.json is missing 'version' field")
         return False
 
     if root_version != tag_version:
         errors.append(
-            f"Root version mismatch for tag {tag_name}: library.json={root_version} "
+            f"{RULE_TAG}: Root version mismatch for tag {tag_name}: library.json={root_version} "
             f"!= tag={tag_version}"
         )
         return False
@@ -223,19 +229,19 @@ def check_root_vs_components(root: Path, errors: list) -> bool:
 
     root_lib = root / "library.json"
     if not root_lib.is_file():
-        errors.append("Root library.json not found for root vs components check")
+        errors.append(f"{RULE_ROOT}: Root library.json not found for root vs components check")
         return False
 
     data = load_json(root_lib)
     root_version = data.get("version")
     if not root_version:
-        errors.append("Root library.json is missing 'version' field")
+        errors.append(f"{RULE_ROOT}: Root library.json is missing 'version' field")
         return False
 
     try:
         root_tuple = parse_semver(root_version)
     except ValueError as e:
-        errors.append(f"Root library.json has invalid version: {e}")
+        errors.append(f"{RULE_ROOT}: Root library.json has invalid version: {e}")
         return False
 
     max_comp_version = None
@@ -264,7 +270,7 @@ def check_root_vs_components(root: Path, errors: list) -> bool:
     if root_tuple < max_comp_version:
         max_version_str = ".".join(str(x) for x in max_comp_version)
         errors.append(
-            f"Root version {root_version} is lower than component {max_comp_name} version {max_version_str}"
+            f"{RULE_ROOT}: Root version {root_version} is lower than component {max_comp_name} version {max_version_str}"
         )
         return False
 
@@ -277,10 +283,11 @@ def check_properties_vs_root(root: Path, errors: list) -> bool:
     if not props.is_file():
         return True
     m = re.search(r"^version=(.*)$", props.read_text(encoding="utf-8"), flags=re.M)
-    root_version = load_json(root / "library.json").get("version")
+    root_lib = root / "library.json"
+    root_version = load_json(root_lib).get("version") if root_lib.is_file() else None
     if not m or m.group(1).strip() != root_version:
         found = m.group(1).strip() if m else "none"
-        errors.append(f"library.properties version {found} does not match root library.json {root_version}")
+        errors.append(f"{RULE_PROPS}: library.properties version {found} does not match root library.json {root_version}")
         return False
     return True
 

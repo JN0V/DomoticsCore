@@ -240,7 +240,7 @@ Each factory has both `const char*` and `String` overloads:
 | `quickControl(id, title, icon)` | QuickControls | `dc-settings` |
 | `settings(id, title, icon)` | Settings | `dc-cog` |
 
-The location decides how a context is drawn: a card on the Dashboard, in Settings and in the component details, a badge in HeaderStatus, a line in HeaderInfo. QuickControls is not drawn by the current page: a context there reaches the schema and is shown nowhere. How each value is drawn is its field's `WebUIFieldType`; a new kind of display (a gauge, a table) is added as a field type.
+The location decides how a context is drawn: a card on the Dashboard, in a quick-controls area above the Dashboard grid (hidden while it holds no control), in Settings and in the component details, a badge in HeaderStatus, a line in HeaderInfo. How each value is drawn is its field's `WebUIFieldType`; a new kind of display (a gauge, a table) is added as a field type.
 
 ### Hybrid String Accessors
 
@@ -309,7 +309,7 @@ WebUIField& api(const char* endpoint);
 | `Dashboard` | Main dashboard overview |
 | `ComponentDetail` | Detailed component view |
 | `HeaderStatus` | Top-right status indicators |
-| `QuickControls` | Sidebar quick actions |
+| `QuickControls` | Quick controls, drawn above the Dashboard grid |
 | `Settings` | Settings / configuration area |
 | `HeaderInfo` | Main header info zone (time, uptime) |
 

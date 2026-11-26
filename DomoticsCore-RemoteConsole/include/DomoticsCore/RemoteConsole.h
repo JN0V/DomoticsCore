@@ -120,7 +120,7 @@ public:
         : config(cfg), currentLogLevel(cfg.defaultLogLevel) {
         
         metadata.name = "RemoteConsole";
-        metadata.version = "1.7.3";  // x-release-please-version
+        metadata.version = "1.7.4";  // x-release-please-version
         metadata.author = "DomoticsCore";
         metadata.description = "Telnet-based remote console with log streaming";
         metadata.category = "Debug";

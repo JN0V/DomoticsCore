@@ -356,7 +356,7 @@ enum class WebUILocation {
     Dashboard,          // Main dashboard cards
     ComponentDetail,    // Detailed component view
     HeaderStatus,       // Top-right status badges
-    QuickControls,      // Sidebar quick actions
+    QuickControls,      // Quick controls, drawn above the Dashboard grid
     Settings,           // Settings/configuration panels
     HeaderInfo          // Main header info zone (time, uptime, etc.)
 };

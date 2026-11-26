@@ -110,7 +110,7 @@ public:
         : config(config) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "HomeAssistant";
-        metadata.version = "2.7.0";  // x-release-please-version
+        metadata.version = "2.7.1";  // x-release-please-version
         metadata.author = "DomoticsCore";
         metadata.description = "Home Assistant MQTT Discovery integration";
         availabilityTopicNamed = (this->config.availabilityTopic[0] != '\0');
@@ -652,7 +652,7 @@ private:
     // Small enough that a reconnection's discovery documents and the states
     // behind them never fill the event queue at once.
     static constexpr size_t FLUSH_PER_LOOP = 4;
-    // Each document is an 830-byte event: sent all at once from the connect
+    // Each document is a 770-byte event: sent all at once from the connect
     // handler, twenty of them outgrow an ESP8266's heap before any is written.
     bool discoveryPending = false;
     size_t discoveryNext = 0;

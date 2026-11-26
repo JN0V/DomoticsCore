@@ -45,7 +45,7 @@ struct QueueCost : QueueCostShape {
         return kNode + block(payloadBytes) + topicBlock(topicLen);
     }
     // A complete event: drop the topic term and the budget holds 30, not 32.
-    static constexpr size_t kReference   = kNode + block(830) + topicBlock(12);
+    static constexpr size_t kReference   = kNode + block(770) + topicBlock(12);
 // Set DOMOTICS_EVENTBUS_QUEUE_BYTES in build_flags, never in build_src_flags:
 // enqueue() is inline, so the application and the library would compile
 // against different budgets and the linker would pick one silently.
@@ -249,6 +249,20 @@ public:
             lastByTopic[topic].shrink_to_fit();
         }
         publish(topic);
+    }
+
+    // Forget the sticky value of a topic: later subscribers with replay get nothing.
+    void clearSticky(const String& topic) {
+        HAL::Platform::LockGuard guard(lock_);
+        lastByTopic.erase(topic);
+    }
+
+    // True while an event of this sticky topic waits in the queue. Only sticky
+    // topics are counted: for any other, the answer is always false.
+    bool hasPending(const String& topic) const {
+        HAL::Platform::LockGuard guard(lock_);
+        auto it = pendingByTopic.find(topic);
+        return it != pendingByTopic.end() && it->second > 0;
     }
 
     // Dispatch queued events; call from main loop. Handlers must NOT call

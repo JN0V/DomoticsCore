@@ -29,7 +29,7 @@ inline MQTTComponent::MQTTComponent(const MQTTConfig& cfg)
 
     // Initialize metadata
     metadata.name = "MQTT";
-    metadata.version = "1.11.0";  // x-release-please-version
+    metadata.version = "1.11.1";  // x-release-please-version
     metadata.author = "DomoticsCore";
     metadata.description = "MQTT client with auto-reconnection";
 }
@@ -53,6 +53,9 @@ inline ComponentStatus MQTTComponent::begin() {
     on<MQTTPublishEvent>(MQTTEvents::EVENT_PUBLISH, [this](const MQTTPublishEvent& ev) {
         publish(ev.topic, ev.payload, ev.qos, ev.retain);
     });
+
+    // Dispatch of mqtt/disconnected reaches every listener at once: it is delivered.
+    on<bool>(MQTTEvents::EVENT_DISCONNECTED, [this](const bool&) { lossUnseen_ = false; });
 
     on<MQTTSubscribeEvent>(MQTTEvents::EVENT_SUBSCRIBE, [this](const MQTTSubscribeEvent& ev) {
         subscribe(ev.topic, ev.qos);
@@ -105,11 +108,32 @@ inline ComponentStatus MQTTComponent::begin() {
 
 // Leaving the connected state without disconnect() having been called: move the
 // state and say so, so a subscriber's view of the link matches the component's.
+// Only the current state stays replayable: the opposite sticky event is cleared.
+inline void MQTTComponent::emitLinkState(bool up) {
+    if (__dc_eventBus) {
+        __dc_eventBus->clearSticky(up ? MQTTEvents::EVENT_DISCONNECTED : MQTTEvents::EVENT_CONNECTED);
+    }
+    lossUnseen_ = !up;
+    emit(up ? MQTTEvents::EVENT_CONNECTED : MQTTEvents::EVENT_DISCONNECTED, true, true);
+}
+
+// A subscriber already listening is not served by the sticky replay: when the
+// full queue evicted the mqtt/disconnected before it was dispatched, publish it
+// again once nothing of it is left queued. Our own listener marks it delivered.
+inline void MQTTComponent::resendLostAnnouncement() {
+    if (!lossUnseen_ || state != MQTTState::Disconnected || !__dc_eventBus) return;
+    if (__dc_eventBus->hasPending(String(MQTTEvents::EVENT_DISCONNECTED))) return;
+    emitLinkState(false);
+}
+
 inline void MQTTComponent::announceConnectionLost() {
     state = MQTTState::Disconnected;
     stateChangeTime = HAL::Platform::getMillis();
     DLOG_W(LOG_MQTT, "Connection lost");
-    emit(MQTTEvents::EVENT_DISCONNECTED, true);
+    stats.lossCount++;
+    stats.uptime = 0;
+    // Sticky: a loss the full EventBus queue evicted is replayed to late subscribers.
+    emitLinkState(false);
 }
 
 inline void MQTTComponent::loop() {
@@ -117,6 +141,7 @@ inline void MQTTComponent::loop() {
         // Clearing the broker at runtime abandons a live session, and nothing
         // below this return would ever notice it leaving Connected.
         if (state == MQTTState::Connected) announceConnectionLost();
+        else resendLostAnnouncement();
         return;
     }
 
@@ -139,6 +164,7 @@ inline void MQTTComponent::loop() {
     // loss is noticed here, at the transition out of Connected, and announced
     // before a reconnection attempt can announce its own success.
     if (state == MQTTState::Connected) announceConnectionLost();
+    else resendLostAnnouncement();
 
     rebuildClientIfNeeded();
     if (config.enabled && config.autoReconnect) {
@@ -205,7 +231,7 @@ inline bool MQTTComponent::connect() {
         }
         
         // Emit event for decoupled components
-        emit(MQTTEvents::EVENT_CONNECTED, true);
+        emitLinkState(true);
     } else {
         state = MQTTState::Error;
         stateChangeTime = HAL::Platform::getMillis();
@@ -229,12 +255,19 @@ inline void MQTTComponent::disconnect() {
     stateChangeTime = HAL::Platform::getMillis();
 
     DLOG_I(LOG_MQTT, "Disconnected from broker");
+    stats.uptime = 0;
 
     // Emit event for decoupled components
-    emit(MQTTEvents::EVENT_DISCONNECTED, true);
+    emitLinkState(false);
 }
 
 inline void MQTTComponent::resetReconnect() {
+    // Leaving Connected silently would leave every subscriber believing the
+    // link is up: close the session and say so.
+    if (state == MQTTState::Connected) {
+        if (mqttClient) mqttClient->disconnect();
+        announceConnectionLost();
+    }
     stats.reconnectCount = 0;
     reconnectTimer.setInterval(config.reconnectDelay);
     reconnectTimer.enable();
@@ -336,10 +369,10 @@ inline bool MQTTComponent::writeNow(const String& topic, const String& payload, 
     if (success) {
         stats.publishCount++;
         publishCountThisSecond++;
-        DLOG_D(LOG_MQTT, "  ✓ Published successfully");
+        DLOG_D(LOG_MQTT, "  [OK] Published successfully");
     } else {
         stats.publishErrors++;
-        DLOG_E(LOG_MQTT, "  ✗ Publish failed! Client state: %d, buffer size: %d",
+        DLOG_E(LOG_MQTT, "  [FAIL] Publish failed! Client state: %d, buffer size: %d",
                mqttClient->state(), mqttClient->getBufferSize());
     }
     
@@ -656,6 +689,8 @@ inline void MQTTComponent::handleIncomingMessage(char* topic, byte* payload, uns
 inline void MQTTComponent::updateStatistics() {
     if (isConnected()) {
         stats.uptime = (HAL::Platform::getMillis() - stateChangeTime) / 1000;
+    } else {
+        stats.uptime = 0;
     }
 }
 
