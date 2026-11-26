@@ -30,6 +30,40 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.14.0](https://github.com/JN0V/DomoticsCore/compare/v2.13.0...v2.14.0) (2026-11-25)
+
+
+### Features
+
+* **domoticscore-core:** the queue's high-water mark reaches no ([#254](https://github.com/JN0V/DomoticsCore/issues/254)) ([b4505c8](https://github.com/JN0V/DomoticsCore/commit/b4505c8db9b6515015b5c8f9e1c18427f7b9a1b2))
+
+
+### Bug Fixes
+
+* **core:** an event bus id is never 0 nor one still in use ([#225](https://github.com/JN0V/DomoticsCore/issues/225)) ([00c3b74](https://github.com/JN0V/DomoticsCore/commit/00c3b74f1ec6496d2cba6d5ff9616e91e7d1bba9))
+* **domoticscore-led:** LED library.json uses ^1.3.0 constraint ([#285](https://github.com/JN0V/DomoticsCore/issues/285)) ([5d38b3a](https://github.com/JN0V/DomoticsCore/commit/5d38b3a3f927687164eb4aad59756b707f9be82d))
+* **domoticscore:** core: what the EventBus byte budget does not ([#257](https://github.com/JN0V/DomoticsCore/issues/257)) ([90a4949](https://github.com/JN0V/DomoticsCore/commit/90a4949cabc1df680cbbcaa23795d547fef935b8))
+* **domoticscore:** HA: three costs on the command path left by ([#251](https://github.com/JN0V/DomoticsCore/issues/251)) ([9899138](https://github.com/JN0V/DomoticsCore/commit/989913887667cee16314dd26c407a4ec8f77f2e1))
+* **domoticscore:** MQTT: what a dropped link still gets wrong ([#262](https://github.com/JN0V/DomoticsCore/issues/262)) ([cfc5f6e](https://github.com/JN0V/DomoticsCore/commit/cfc5f6e7bfbdea00ebfdfb1ed5ea4a1ce5920667))
+* **domoticscore:** remoteConsole nextClientId wraps after 4B ([#241](https://github.com/JN0V/DomoticsCore/issues/241)) ([de3ac38](https://github.com/JN0V/DomoticsCore/commit/de3ac3864ff15b87a598b9401a97a1ca5175f3c8))
+* HA headers rely on transitive Logger.h include ([#245](https://github.com/JN0V/DomoticsCore/issues/245)) ([3059c7e](https://github.com/JN0V/DomoticsCore/commit/3059c7ef0eb25170000087fdc444491d6cb8e38f))
+* **ha:** drop MQTT subscriptions on shutdown, republish on re-enable ([#228](https://github.com/JN0V/DomoticsCore/issues/228)) ([8b428be](https://github.com/JN0V/DomoticsCore/commit/8b428be9be51c616c295e7b56f59ea6544004608))
+* hardcoded fallback versions in getWebUIVersion drift ([#276](https://github.com/JN0V/DomoticsCore/issues/276)) ([e945632](https://github.com/JN0V/DomoticsCore/commit/e94563214ad29a702ba3e5846751f0eacb15b483))
+* **ha:** shutdown publishes nothing while MQTT is down ([#221](https://github.com/JN0V/DomoticsCore/issues/221)) ([5dd26e9](https://github.com/JN0V/DomoticsCore/commit/5dd26e9431ced9133e885f1ed5458ae534a0c168))
+* homeAssistant: what shutdown publishes never leaves the ([#260](https://github.com/JN0V/DomoticsCore/issues/260)) ([1070a71](https://github.com/JN0V/DomoticsCore/commit/1070a71438859182886bcd2538136a9c9245460a))
+* **led:** keep a disabled LED dark on the next update tick ([#227](https://github.com/JN0V/DomoticsCore/issues/227)) ([b035b6a](https://github.com/JN0V/DomoticsCore/commit/b035b6a0b7564d5fbda066a1b288e3c0075c5b5a))
+* **led:** read 1 and on as true, refuse unknown booleans ([#223](https://github.com/JN0V/DomoticsCore/issues/223)) ([5b10132](https://github.com/JN0V/DomoticsCore/commit/5b101320271930c1790aabe8c22270cfeec44331))
+* **led:** the LED dropdown follows LEDs added or renamed ([#222](https://github.com/JN0V/DomoticsCore/issues/222)) ([160c57b](https://github.com/JN0V/DomoticsCore/commit/160c57b57507314c65f57f1b6c7d75eda559fa10))
+* **mqtt:** cap event payloads at 640 bytes; Home Assistant documents of 640 to 699 bytes are now refused and inbound messages are cut at 639 bytes ([f894e52](https://github.com/JN0V/DomoticsCore/commit/f894e52fa76b8a4f243f3d696d3bc80ad33d9479))
+* **ota:** a chunk past the cap answers Firmware too large ([#224](https://github.com/JN0V/DomoticsCore/issues/224)) ([a775744](https://github.com/JN0V/DomoticsCore/commit/a7757441ec0b177b31f86e1611e6bc295cd64e1d))
+* **storage:** changes public API: StorageComponent copy and move assignment are deleted (copy and move construction still work), so a copied or moved component keeps a correct metadata.name; construct a new instance instead of assigning ([d5c4eb7](https://github.com/JN0V/DomoticsCore/commit/d5c4eb747bac75c152e252a5a2345b093863bcf8))
+* **storage:** never cache a default as a stored value ([#226](https://github.com/JN0V/DomoticsCore/issues/226)) ([1ee8cb2](https://github.com/JN0V/DomoticsCore/commit/1ee8cb20a285640f7cc9a08167a37f3c885135bf))
+* **systeminfo:** removes public API: SystemMetrics::cpuLoad and the cpu_load WebUI field and chart are gone, as they measured heap churn, not CPU use, and no HAL idle-time measure replaces them; delete reads of cpuLoad, the System Metrics dashboard shows memory only ([9ed2d12](https://github.com/JN0V/DomoticsCore/commit/9ed2d12d42a5537de141d09a980303817a478336))
+* **test_heap_esp8266:** ESP8266 heap measurements: getDelta on ([#253](https://github.com/JN0V/DomoticsCore/issues/253)) ([bdde459](https://github.com/JN0V/DomoticsCore/commit/bdde45983ac8c4587eb7a57595bccc2a11011ea2))
+* **webui:** close WebSocket connections on the shared access-point event topic, no longer a string copied from Wifi ([55eb812](https://github.com/JN0V/DomoticsCore/commit/55eb8125467c8755ed330ba67cd23f2c93eeac8c))
+* **webui:** flash-string helpers come from WebResponse_HAL.h, so WebUI.h builds on the host without a pgmspace.h mock ([c499038](https://github.com/JN0V/DomoticsCore/commit/c4990381fa4930d2a8201996021241ef7d16e151))
+* **webui:** stream a context schema with the one serializer the schema uses, answering 500 instead of a truncated 200 when it stalls ([661b01a](https://github.com/JN0V/DomoticsCore/commit/661b01aad061d1d623f5598b14706efeea747cdc))
+
 ## [Unreleased]
 
 > **Removes public API.** `SystemInfoComponent::SystemMetrics::cpuLoad` and the
@@ -38,6 +72,36 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > ESP8266 offers an idle-time measure through the HAL, so none replaces it.
 > Delete reads of `cpuLoad`; the "System Metrics" dashboard now shows memory only
 > (and is absent with `enableMemoryInfo` off).
+
+> **Changes public API.** `StorageComponent` copy and move assignment are now
+> deleted (copy and move construction still work). A copied or moved component
+> keeps a correct `metadata.name`, which points into the component's own name
+> buffer; assignment could not keep that guarantee. Construct a new instance
+> instead of assigning.
+
+> **The 2.5.0 note's "13 entities" no longer holds, and was never derived.**
+> It described the EventBus's 32-entry cap, which the byte budget replaced; the
+> 21 before it was not derived either. The figure now comes from `QueueCost`
+> (`DomoticsCore/EventBus.h`), the model the suites read:
+>
+> - An MQTT publish event is 770 bytes (`sizeof(MQTTPublishEvent)`, pinned by a
+>   `static_assert` in `MQTT.h`) on the topic `mqtt/publish`. It costs
+>   `QueueCost::of(770, 12)`: the deque node, the payload block, and the topic
+>   block when the topic is longer than the board's inline string. That is
+>   **821 B on ESP32** (33 + 16 + 772) and **833 B on ESP8266** (29 + 8 + 772 +
+>   24), the reference event itself.
+> - The budget is `QueueCost::kBudgetBytes`, 32 reference events: **26 272 B on
+>   ESP32** and **26 656 B on ESP8266**. Both hold **32** such events at once
+>   (26 272 / 821 and 26 656 / 833).
+> - Those 32 are not a limit on entities. A connect now queues a few events,
+>   not one per entity: the Home Assistant suite pins the burst's high-water
+>   mark at three events' cost or less and declares three times the budget's
+>   worth of sensors (`3 * kBudgetBytes / QueueCost::of(sizeof(MQTTPublishEvent), ...)`)
+>   without a drop. The EventBus leaves no entity cap to an application at
+>   connect.
+>
+> `QueueCost` is a close estimate, not a ceiling: a full queue measures 2-3 %
+> above what it charges on the boards measured.
 
 ## [2.13.0] - 2026-10-03
 
