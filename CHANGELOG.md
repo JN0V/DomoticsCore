@@ -79,6 +79,30 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > buffer; assignment could not keep that guarantee. Construct a new instance
 > instead of assigning.
 
+> **The 2.5.0 note's "13 entities" no longer holds, and was never derived.**
+> It described the EventBus's 32-entry cap, which the byte budget replaced; the
+> 21 before it was not derived either. The figure now comes from `QueueCost`
+> (`DomoticsCore/EventBus.h`), the model the suites read:
+>
+> - An MQTT publish event is 770 bytes (`sizeof(MQTTPublishEvent)`, pinned by a
+>   `static_assert` in `MQTT.h`) on the topic `mqtt/publish`. It costs
+>   `QueueCost::of(770, 12)`: the deque node, the payload block, and the topic
+>   block when the topic is longer than the board's inline string. That is
+>   **821 B on ESP32** (33 + 16 + 772) and **833 B on ESP8266** (29 + 8 + 772 +
+>   24), the reference event itself.
+> - The budget is `QueueCost::kBudgetBytes`, 32 reference events: **26 272 B on
+>   ESP32** and **26 656 B on ESP8266**. Both hold **32** such events at once
+>   (26 272 / 821 and 26 656 / 833).
+> - Those 32 are not a limit on entities. A connect now queues a few events,
+>   not one per entity: the Home Assistant suite pins the burst's high-water
+>   mark at three events' cost or less and declares three times the budget's
+>   worth of sensors (`3 * kBudgetBytes / QueueCost::of(sizeof(MQTTPublishEvent), ...)`)
+>   without a drop. The EventBus leaves no entity cap to an application at
+>   connect.
+>
+> `QueueCost` is a close estimate, not a ceiling: a full queue measures 2-3 %
+> above what it charges on the boards measured.
+
 ## [2.13.0] - 2026-10-03
 
 > **This minor release removes public API.** Each removal had no caller in the
