@@ -11,7 +11,6 @@
  */
 
 #include <DomoticsCore/IComponent.h>
-#include <DomoticsCore/ComponentRegistry.h>  // hasSiblingComponent()
 #include <DomoticsCore/Platform_HAL.h>  // For chip ID, platform info, and MQTT_MAX_PACKET_SIZE
 #include <DomoticsCore/Wifi_HAL.h>      // For WiFi connectivity check
 #include <DomoticsCore/MQTT_HAL.h>      // Platform-abstracted MQTT client
@@ -374,12 +373,14 @@ public:
     HAL::MQTT::MQTTClientImpl* getClientForTest() { return mqttClient; }
 
     /**
-     * @brief Whether a component of that name sits beside this one in the registry.
+     * @brief Whether another component (HomeAssistant) holds the Last Will topic.
+     *
+     * Set by a component that was handed a topic by the application and moves
+     * the will onto it; the settings page then refuses to edit the will topic.
      */
-    bool hasSiblingComponent(const char* name) const {
-        return __dc_registry && __dc_registry->getComponent(String(name)) != nullptr;
-    }
-    
+    bool isLwtTopicOwned() const { return lwtTopicOwned_; }
+    void setLwtTopicOwned(bool owned) { lwtTopicOwned_ = owned; }
+
     /**
      * @brief Get last error message
      * @return Error string
@@ -397,6 +398,7 @@ public:
     static bool topicMatches(const String& filter, const String& topic);
 
 private:
+    bool lwtTopicOwned_ = false;  // see setLwtTopicOwned()
     // Configuration
     MQTTConfig config;
     char brokerBuffer_[128] = {0};  ///< Persistent buffer for broker address (PubSubClient stores raw pointer)

@@ -220,8 +220,7 @@ void test_mqtt_card_edits_survive_a_reboot() {
         Boot b;
         TEST_ASSERT_NOT_NULL(b.providers.mqtt);
         TEST_ASSERT_TRUE(succeeded(b.post(b.providers.mqtt, "mqtt_settings", "use_tls", "true")));
-        // HomeAssistant is composed in, and owns the will topic: the page refuses.
-        TEST_ASSERT_FALSE(succeeded(b.post(b.providers.mqtt, "mqtt_settings", "lwt_topic", "house/panel/alive")));
+        TEST_ASSERT_TRUE(succeeded(b.post(b.providers.mqtt, "mqtt_settings", "lwt_topic", "house/panel/alive")));
         TEST_ASSERT_TRUE(succeeded(b.post(b.providers.mqtt, "mqtt_settings", "lwt_message", "gone")));
         TEST_ASSERT_TRUE(succeeded(b.post(b.providers.mqtt, "mqtt_settings", "lwt_enabled", "false")));
     }
@@ -230,7 +229,7 @@ void test_mqtt_card_edits_survive_a_reboot() {
     TEST_ASSERT_TRUE(m.useTLS);
     TEST_ASSERT_EQUAL_PTR_MESSAGE(Boot::compiledCa(), m.caCert, "the stored settings dropped the firmware's CA");
     TEST_ASSERT_FALSE(m.enableLWT);
-    TEST_ASSERT_EQUAL_STRING("compiled-id/status", m.lwtTopic.c_str());
+    TEST_ASSERT_EQUAL_STRING("house/panel/alive", m.lwtTopic.c_str());
     TEST_ASSERT_EQUAL_STRING("gone", m.lwtMessage.c_str());
 }
 

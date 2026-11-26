@@ -1121,7 +1121,7 @@ What the component publishes itself:
 - **On MQTT connect**: `"online"` to the availability topic (retained).
 - **On shutdown**: `"offline"` (retained).
 
-Moving `MQTTConfig::lwtTopic` from the MQTT side afterwards — through the MQTT settings page, or by changing the client id the default topic follows — reopens the MQTT session, and the reconciliation at that connection moves availability onto the new will before the discovery documents are republished. The retained `"online"` on the previous topic is left where it was.
+Moving `MQTTConfig::lwtTopic` from the MQTT side afterwards — through the MQTT settings page (when `availabilityTopic` is left empty), or by changing the client id the default topic follows — reopens the MQTT session, and the reconciliation at that connection moves availability onto the new will before the discovery documents are republished. The retained `"online"` on the previous topic is left where it was. When the application set `availabilityTopic`, the MQTT settings page refuses to edit the Last Will topic (the will follows availability): change `availabilityTopic` instead.
 
 The `isReady()` method returns `true` only when both conditions are met:
 1. MQTT is connected (`mqttConnected == true`)
