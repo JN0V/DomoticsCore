@@ -139,3 +139,19 @@ test('a 403 refetches the token once and retries with the new one', async () => 
     assert.deepStrictEqual(actions.map(a => a.headers['X-DC-Token']), ['token-1', 'token-2']);
     assert.strictEqual(card.querySelector('.field-error'), null);
 });
+
+// QuickControls was named by the schema and drawn nowhere.
+test('a QuickControls context is drawn as a card in the quick-controls area', () => {
+    const env = boot();
+    const L = env.app.WebUILocation;
+    env.app.uiSchema = [
+        { contextId: 'qc_id', title: 'Quick', location: L.QuickControls, alwaysInteractive: false, fields: [] },
+        { contextId: 'other', title: 'Other', location: L.Dashboard, alwaysInteractive: false, fields: [] },
+    ];
+    env.app.renderUI();
+    const area = env.document.getElementById('quickControlsGrid');
+    assert.ok(area, 'the page has no quick-controls area');
+    assert.strictEqual(area.children.length, 1);
+    assert.ok(area.textContent.includes('Quick'), 'the card of qc_id is not in the area');
+    assert.ok(!area.textContent.includes('Other'), 'a Dashboard card leaked into the area');
+});
