@@ -175,16 +175,20 @@ inline void registerTelemetryEntities(Components::HomeAssistant::HomeAssistantCo
     const SystemTelemetry::EntityDef* defs = SystemTelemetry::entityDefs(n);
     int registered = 0;
     for (size_t i = 0; i < n; i++) {
-        const SystemTelemetry::EntityDef& d = defs[i];
-        if (ha->entity(d.id)) {
-            DLOG_W(LOG_TELEMETRY, "Entity '%s' already declared by the application; the system one is not registered", d.id);
+        SystemTelemetry::EntityDef d;
+        DOMOTICS_FLASH_COPY(d, defs[i]);   // the row and its strings are in flash on ESP8266
+        const String id(DOMOTICS_FLASH_STR(d.id));
+        if (ha->entity(id)) {
+            DLOG_W(LOG_TELEMETRY, "Entity '%s' already declared by the application; the system one is not registered", id.c_str());
             continue;
         }
-        ha->addSensor(d.id, d.name, d.unit, d.deviceClass, d.icon, d.stateClass);
-        if (HAEntity* e = ha->entity(d.id)) {
+        ha->addSensor(id, String(DOMOTICS_FLASH_STR(d.name)), String(DOMOTICS_FLASH_STR(d.unit)),
+                      String(DOMOTICS_FLASH_STR(d.deviceClass)), String(DOMOTICS_FLASH_STR(d.icon)),
+                      String(DOMOTICS_FLASH_STR(d.stateClass)));
+        if (HAEntity* e = ha->entity(id)) {
             e->entityCategory = "diagnostic";
             e->stateTopicOverride = t.telemetryTopic();
-            e->valueTemplate = String("{{ value_json.") + d.key + " }}";
+            e->valueTemplate = String("{{ value_json.") + String(DOMOTICS_FLASH_STR(d.key)) + " }}";
             registered++;
         }
     }

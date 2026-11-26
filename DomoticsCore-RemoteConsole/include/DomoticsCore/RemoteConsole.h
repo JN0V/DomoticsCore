@@ -545,7 +545,7 @@ private:
             // declares no ESP8266 environment. Measuring it would mean
             // inventing public API and a device suite for a string built once
             // per typed command.
-            static const char HELP_TEXT[] =
+            static const char HELP_TEXT[] PROGMEM =
                 "\nAvailable commands:\n"
                 "  help              - Show this help\n"
                 "  clear             - Clear log buffer\n"
@@ -558,7 +558,7 @@ private:
                 "  auth <password>   - Authenticate (if auth required)\n"
                 "  quit              - Disconnect\n";
 
-            String help = HELP_TEXT;
+            String help = DOMOTICS_FLASH_STR(HELP_TEXT);
 
             // Add custom commands
             for (const auto& cmd : commands) {
