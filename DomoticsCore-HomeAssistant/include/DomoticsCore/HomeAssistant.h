@@ -134,7 +134,7 @@ public:
 
         // Drop the link tracker shutdown() left running (resumeConnected is
         // the live link state by now); the real handlers replace it.
-        if (__dc_eventBus) __dc_eventBus->unsubscribeOwner(this);
+        if (dc_eventBus) dc_eventBus->unsubscribeOwner(this);
 
         // Before anything advertises a topic, make it the one the broker corrects.
         reconcileAvailabilityWithWill();
@@ -239,7 +239,7 @@ public:
         // begin() subscribed to the MQTT events; the WebUI switch calls
         // shutdown()/begin() directly, so drop them here or each begin() adds
         // a copy and a disabled component keeps obeying commands.
-        if (__dc_eventBus) __dc_eventBus->unsubscribeOwner(this);
+        if (dc_eventBus) dc_eventBus->unsubscribeOwner(this);
         mqttConnected = false;
         // While off, keep following the link only (no command handling), so a
         // drop in this window is not mistaken for "still up" by the next begin().
@@ -566,7 +566,7 @@ public:
         }
         // Persistence and the WebUI both land here after begin(), so the two
         // topics have to be reconciled again or they drift apart.
-        if (__dc_registry) reconcileAvailabilityWithWill();
+        if (dc_registry) reconcileAvailabilityWithWill();
         // The command filter was built from the prefix at connect time. A prefix
         // changed here moves where commands arrive, so the subscription follows
         // it now rather than at the next reconnection.
@@ -838,7 +838,7 @@ private:
     void reconcileAvailabilityWithWill() {
         // Injected at addComponent(), so the initialisation order is irrelevant.
         // The downcast is the framework's accepted one: the name selects the type.
-        IComponent* found = __dc_registry ? __dc_registry->getComponent("MQTT") : nullptr;
+        IComponent* found = dc_registry ? dc_registry->getComponent("MQTT") : nullptr;
         MQTTComponent* mqtt = static_cast<MQTTComponent*>(found);
         if (!mqtt) {
             // Every other exit from this function says why; this one used to be

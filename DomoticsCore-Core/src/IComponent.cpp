@@ -5,11 +5,11 @@ namespace DomoticsCore {
 namespace Components {
 
 DomoticsCore::Core* IComponent::getCore() const {
-    if (!__dc_core && __dc_registry) {
+    if (!dc_core && dc_registry) {
         // Lazy injection: get Core from registry on first access
-        __dc_core = const_cast<DomoticsCore::Core*>(__dc_registry->getCore());
+        dc_core = const_cast<DomoticsCore::Core*>(dc_registry->getCore());
     }
-    return __dc_core;
+    return dc_core;
 }
 
 } // namespace Components

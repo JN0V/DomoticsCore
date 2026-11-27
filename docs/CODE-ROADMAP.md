@@ -1887,7 +1887,7 @@ one worth a one-line change, and six rows that are not defects.
 - **Fixed**: the manual `begin()` is gone; `core.begin()` initialises the component.
 - **Worse than the title suggested**: `ComponentRegistry::initializeAll()` skips any
   component already initialised and active, and that skipped branch is the only place
-  `__dc_setEventBus()` and `__dc_setCore()` are ever called. The early call removed the
+  `dc_setEventBus()` and `dc_setCore()` are ever called. The early call removed the
   injection rather than merely reordering it: the LED ran with both framework pointers
   null for the life of the device. Latent only because LEDComponent uses neither —
   `eventBus()` dereferences with no null check, and `on<T>()` returns 0 instead of
@@ -6327,7 +6327,7 @@ with a Breaking note, and nothing waits on a contributor's branch.
 |----|-----------|-------|
 | LO-1 | Multiple | Hardcoded fallback versions in `getWebUIVersion()` drift from actual version |
 | LO-2 | MQTT | `MQTTPublishEvent` is 830 bytes (`sizeof`, both cores; this row said 832 until 2026-09-20) — consider reducing field sizes |
-| LO-3 | Core | `__dc_*` field names use reserved double-underscore prefix |
+| LO-3 | Core | `__dc_*` field names use reserved double-underscore prefix (renamed `dc_*`, #159) |
 | LO-4 | Core | `nextId` overflow after 4B subscribe/unsubscribe cycles (theoretical) |
 | ~~LO-5~~ | Core | ~~Backpressure silently drops oldest event with no logging~~ — **DONE**: logged since OBS Lot B, and the line now carries the budget and the peak occupancy (BUG-41) |
 | LO-6 | NTP | `TIMEZONE_LOOKUP` static constexpr duplicated per TU |

@@ -140,9 +140,9 @@ struct Dependency {
 |--------|------|-------------|
 | `active` | `bool` | Whether the component is running. |
 | `lastStatus` | `ComponentStatus` | Last status from a lifecycle operation. |
-| `__dc_eventBus` | `EventBus*` | Injected by registry before `begin()`. |
-| `__dc_core` | `Core*` | Injected by registry; lazy via `getCore()`. |
-| `__dc_registry` | `ComponentRegistry*` | Injected immediately on registration. |
+| `dc_eventBus` | `EventBus*` | Injected by registry before `begin()`. |
+| `dc_core` | `Core*` | Injected by registry; lazy via `getCore()`. |
+| `dc_registry` | `ComponentRegistry*` | Injected immediately on registration. |
 
 ### Lifecycle Order
 

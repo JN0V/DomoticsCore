@@ -44,9 +44,9 @@ protected:
     bool active = false;
     ComponentStatus lastStatus = ComponentStatus::Success;
     // Set by ComponentRegistry before begin(); framework services
-    DomoticsCore::Utils::EventBus* __dc_eventBus = nullptr; // preferred injection
-    mutable DomoticsCore::Core* __dc_core = nullptr; // automatic Core injection (lazy)
-    mutable DomoticsCore::Components::ComponentRegistry* __dc_registry = nullptr; // for lazy Core injection
+    DomoticsCore::Utils::EventBus* dc_eventBus = nullptr; // preferred injection
+    mutable DomoticsCore::Core* dc_core = nullptr; // automatic Core injection (lazy)
+    mutable DomoticsCore::Components::ComponentRegistry* dc_registry = nullptr; // for lazy Core injection
     
 public:
     virtual ~IComponent() = default;
@@ -195,9 +195,9 @@ protected:
     
     friend class ComponentRegistry;
     // Called by ComponentRegistry prior to begin()
-    void __dc_setEventBus(DomoticsCore::Utils::EventBus* eb) { __dc_eventBus = eb; }
-    void __dc_setCore(DomoticsCore::Core* core) { __dc_core = core; }
-    void __dc_setRegistry(DomoticsCore::Components::ComponentRegistry* reg) { __dc_registry = reg; }
+    void dc_setEventBus(DomoticsCore::Utils::EventBus* eb) { dc_eventBus = eb; }
+    void dc_setCore(DomoticsCore::Core* core) { dc_core = core; }
+    void dc_setRegistry(DomoticsCore::Components::ComponentRegistry* reg) { dc_registry = reg; }
 
 public:
     /**
@@ -205,14 +205,14 @@ public:
      * @return Reference to EventBus
      */
     DomoticsCore::Utils::EventBus& eventBus() {
-        return *__dc_eventBus;
+        return *dc_eventBus;
     }
     
     // Typed helper: subscribe to a topic and receive a const T& payload. Owner is this component by default.
     template<typename T>
     uint32_t on(const String& topic, std::function<void(const T&)> cb, bool replayLast = false) {
-        if (!__dc_eventBus || topic.length() == 0 || !cb) return 0;
-        return __dc_eventBus->subscribe(topic, [cb](const void* p){
+        if (!dc_eventBus || topic.length() == 0 || !cb) return 0;
+        return dc_eventBus->subscribe(topic, [cb](const void* p){
             const T* tp = static_cast<const T*>(p);
             if (tp) cb(*tp);
         }, this, replayLast);
@@ -221,29 +221,29 @@ public:
     // Typed helper: publish or publishSticky a payload of type T
     template<typename T>
     void emit(const String& topic, const T& payload, bool sticky = false) {
-        if (!__dc_eventBus || topic.length() == 0) return;
-        if (sticky) __dc_eventBus->publishSticky(topic, payload);
-        else __dc_eventBus->publish(topic, payload);
+        if (!dc_eventBus || topic.length() == 0) return;
+        if (sticky) dc_eventBus->publishSticky(topic, payload);
+        else dc_eventBus->publish(topic, payload);
     }
 
     // A const char* topic goes to the queue without a temporary String.
     template<typename T>
     void emit(const char* topic, const T& payload, bool sticky = false) {
-        if (!__dc_eventBus || !topic || !*topic) return;
-        if (sticky) __dc_eventBus->publishSticky(String(topic), payload);
-        else __dc_eventBus->publish(topic, payload);
+        if (!dc_eventBus || !topic || !*topic) return;
+        if (sticky) dc_eventBus->publishSticky(String(topic), payload);
+        else dc_eventBus->publish(topic, payload);
     }
 
     // Publish a variable-length payload. EventBus deep-copies payloadSize bytes.
     void emit(const String& topic, const void* payload, size_t payloadSize, bool sticky) {
-        if (!__dc_eventBus || topic.length() == 0) return;
-        if (sticky) __dc_eventBus->publishSticky(topic, payload, payloadSize);
-        else __dc_eventBus->publish(topic, payload, payloadSize);
+        if (!dc_eventBus || topic.length() == 0) return;
+        if (sticky) dc_eventBus->publishSticky(topic, payload, payloadSize);
+        else dc_eventBus->publish(topic, payload, payloadSize);
     }
     void emit(const char* topic, const void* payload, size_t payloadSize, bool sticky) {
-        if (!__dc_eventBus || !topic || !*topic) return;
-        if (sticky) __dc_eventBus->publishSticky(String(topic), payload, payloadSize);
-        else __dc_eventBus->publish(topic, payload, payloadSize);
+        if (!dc_eventBus || !topic || !*topic) return;
+        if (sticky) dc_eventBus->publishSticky(String(topic), payload, payloadSize);
+        else dc_eventBus->publish(topic, payload, payloadSize);
     }
 };
 

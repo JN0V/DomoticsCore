@@ -66,6 +66,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Breaking changes
+
+> **Protected members of `IComponent` were renamed.** The names began with a
+> double underscore, which C++ reserves for the implementation. The break is at
+> compile time.
+>
+> | Old name | New name |
+> |---|---|
+> | `__dc_eventBus` | `dc_eventBus` |
+> | `__dc_core` | `dc_core` |
+> | `__dc_registry` | `dc_registry` |
+> | `__dc_setEventBus` | `dc_setEventBus` |
+> | `__dc_setCore` | `dc_setCore` |
+> | `__dc_setRegistry` | `dc_setRegistry` |
+>
+> Migration: in your subclasses and callers, replace each `__dc_` prefix with `dc_`.
+
 > **Removes public API.** `SystemInfoComponent::SystemMetrics::cpuLoad` and the
 > `cpu_load` WebUI field and chart are gone. The figure was derived from free-heap
 > changes, not CPU use, so a flat or churning value misled. Neither ESP32 nor

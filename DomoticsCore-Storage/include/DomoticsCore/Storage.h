@@ -171,7 +171,7 @@ public:
         setStatus(status);
 
         // Emit storage ready event if successful
-        if (status == ComponentStatus::Success && __dc_eventBus) {
+        if (status == ComponentStatus::Success && dc_eventBus) {
             // BUG-30: publish the bytes, not the String. This one is a member
             // rather than a temporary, so the copied pointer stays valid while the
             // config does — and stops the moment setConfig() replaces it. Same
