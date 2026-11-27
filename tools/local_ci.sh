@@ -50,11 +50,13 @@ fi
 echo ""
 
 echo "3. Checking file sizes (max 800 lines)..."
+# Count code lines only (constitution VII): blank lines and lines holding
+# nothing but a // comment are not counted.
 OVERSIZED=0
 while IFS= read -r -d '' file; do
-    lines=$(wc -l < "$file")
+    lines=$(grep -cvE '^[[:space:]]*(//.*)?$' "$file" || true)
     if [ "$lines" -gt 800 ]; then
-        echo -e "${RED}✗ $file has $lines lines (max 800)${NC}"
+        echo -e "${RED}✗ $file has $lines code lines (max 800)${NC}"
         OVERSIZED=$((OVERSIZED + 1))
     fi
 done < <(find . -type f \( -name "*.h" -o -name "*.cpp" \) -not -path "./.pio/*" -not -path "./*/\.pio/*" -not -path "*/Generated/*" -print0)
