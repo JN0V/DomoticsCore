@@ -248,6 +248,13 @@ public:
                 } else if (field == "lwt_enabled") {
                     cfg.enableLWT = (value == "true" || value == "1");
                 } else if (field == "lwt_topic") {
+                    // A HomeAssistant component handed an availability topic by
+                    // the application moves the will onto it: an edit here would
+                    // be undone at the next connection. Otherwise HomeAssistant
+                    // adopts the will's topic, so the edit stands.
+                    if (mqtt->isLwtTopicOwned()) {
+                        return "{\"success\":false,\"error\":\"The Last Will topic is managed by the HomeAssistant component: set its availability topic instead\"}";
+                    }
                     cfg.lwtTopic = value;
                 } else if (field == "lwt_message") {
                     cfg.lwtMessage = value;

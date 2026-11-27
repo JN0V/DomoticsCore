@@ -848,6 +848,9 @@ private:
             return;
         }
 
+        // Only a named availability topic owns the will; an adopted one follows it.
+        mqtt->setLwtTopicOwned(availabilityTopicNamed);
+
         MQTTConfig cfg = mqtt->getConfig();
         if (!cfg.enableLWT) {
             DLOG_W(LOG_HA, "MQTT Last Will is off: '%s' will never report offline and "

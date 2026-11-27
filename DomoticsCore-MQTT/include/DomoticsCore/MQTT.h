@@ -371,7 +371,16 @@ public:
     size_t getQueuedBytes() const { return queuedBytes; }
     /** @brief The HAL client, for a native test to read what the stub was handed. */
     HAL::MQTT::MQTTClientImpl* getClientForTest() { return mqttClient; }
-    
+
+    /**
+     * @brief Whether another component (HomeAssistant) holds the Last Will topic.
+     *
+     * Set by a component that was handed a topic by the application and moves
+     * the will onto it; the settings page then refuses to edit the will topic.
+     */
+    bool isLwtTopicOwned() const { return lwtTopicOwned_; }
+    void setLwtTopicOwned(bool owned) { lwtTopicOwned_ = owned; }
+
     /**
      * @brief Get last error message
      * @return Error string
@@ -389,6 +398,7 @@ public:
     static bool topicMatches(const String& filter, const String& topic);
 
 private:
+    bool lwtTopicOwned_ = false;  // see setLwtTopicOwned()
     // Configuration
     MQTTConfig config;
     char brokerBuffer_[128] = {0};  ///< Persistent buffer for broker address (PubSubClient stores raw pointer)
