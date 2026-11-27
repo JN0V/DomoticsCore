@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-LED",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "DomoticsCore LED component (LED control and effects)",
   "keywords": [
     "esp32",

@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore",
-  "version": "2.14.0",
+  "version": "2.14.1",
   "description": "ESP32/ESP8266 domotics framework with WiFi, MQTT, web interface, Home Assistant integration, and persistent storage",
   "keywords": [
     "esp32",

@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-Storage",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "DomoticsCore Storage component for ESP32/ESP8266 persistent storage",
   "keywords": [
     "esp32",

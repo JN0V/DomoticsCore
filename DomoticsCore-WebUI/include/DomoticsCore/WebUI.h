@@ -97,7 +97,7 @@ public:
         : config(cfg) {
         // Initialize component metadata immediately for dependency resolution
         metadata.name = "WebUI";
-        metadata.version = "1.13.1";  // x-release-please-version
+        metadata.version = "1.13.2";  // x-release-please-version
         metadata.author = "DomoticsCore";
         metadata.description = "Web dashboard and API component";
 

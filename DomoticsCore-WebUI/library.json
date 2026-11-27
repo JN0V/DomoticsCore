@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-WebUI",
-  "version": "1.13.1",
+  "version": "1.13.2",
   "description": "DomoticsCore WebUI component with AsyncWebServer and WebSocket UI",
   "keywords": [
     "esp32",

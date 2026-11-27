@@ -1,15 +1,15 @@
 {
-  ".": "2.14.0",
+  ".": "2.14.1",
   "DomoticsCore-Core": "1.14.1",
-  "DomoticsCore-HomeAssistant": "2.7.1",
-  "DomoticsCore-LED": "1.6.1",
+  "DomoticsCore-HomeAssistant": "2.7.2",
+  "DomoticsCore-LED": "1.6.2",
   "DomoticsCore-MQTT": "1.11.1",
   "DomoticsCore-NTP": "1.4.4",
   "DomoticsCore-OTA": "1.11.1",
   "DomoticsCore-RemoteConsole": "1.7.4",
-  "DomoticsCore-Storage": "1.7.1",
+  "DomoticsCore-Storage": "1.7.2",
   "DomoticsCore-System": "1.12.0",
-  "DomoticsCore-SystemInfo": "1.8.1",
-  "DomoticsCore-WebUI": "1.13.1",
-  "DomoticsCore-Wifi": "1.8.1"
+  "DomoticsCore-SystemInfo": "1.8.2",
+  "DomoticsCore-WebUI": "1.13.2",
+  "DomoticsCore-Wifi": "1.8.2"
 }

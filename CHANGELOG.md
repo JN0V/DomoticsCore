@@ -30,6 +30,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 > 2.1.0 does. If you need the guarantee that a minor release never breaks you,
 > pin an exact version.
 
+## [2.14.1](https://github.com/JN0V/DomoticsCore/compare/v2.14.0...v2.14.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **domoticscore-webui:** webUI: QuickControls is a location the ([#278](https://github.com/JN0V/DomoticsCore/issues/278)) ([0db2e21](https://github.com/JN0V/DomoticsCore/commit/0db2e21efb7a97138794a22062cc729b5c695f00))
+* generated WebUIAssets.h is a gitignored input the host ([#314](https://github.com/JN0V/DomoticsCore/issues/314)) ([e7a57b6](https://github.com/JN0V/DomoticsCore/commit/e7a57b61eb1537f264a15f9a64c2364a869fdccc))
+* the 2.5.0 release note's "13 entities" is derived nowhere ([#310](https://github.com/JN0V/DomoticsCore/issues/310)) ([5a2ea81](https://github.com/JN0V/DomoticsCore/commit/5a2ea815117522243c014c8fb2570cf624d37e76))
+
 ## [2.14.0](https://github.com/JN0V/DomoticsCore/compare/v2.13.0...v2.14.0) (2026-11-25)
 
 
