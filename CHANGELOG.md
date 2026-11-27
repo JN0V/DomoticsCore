@@ -2679,4 +2679,41 @@ This 1.0.0 release represents a complete, production-ready framework for ESP32 I
 
 **Breaking Changes**: None (initial release)
 
+[2.14.0]: https://github.com/JN0V/DomoticsCore/releases/tag/v2.14.0
+[Unreleased]: https://github.com/JN0V/DomoticsCore/compare/v2.14.0...HEAD#Unreleased
+[2.13.0]: https://github.com/JN0V/DomoticsCore/compare/v2.12.1...v2.13.0
+[2.12.1]: https://github.com/JN0V/DomoticsCore/compare/v2.12.0...v2.12.1
+[2.12.0]: https://github.com/JN0V/DomoticsCore/compare/v2.11.0...v2.12.0
+[2.11.0]: https://github.com/JN0V/DomoticsCore/compare/v2.10.0...v2.11.0
+[2.10.0]: https://github.com/JN0V/DomoticsCore/compare/v2.9.0...v2.10.0
+[2.9.0]: https://github.com/JN0V/DomoticsCore/compare/v2.8.0...v2.9.0
+[2.8.0]: https://github.com/JN0V/DomoticsCore/compare/v2.7.1...v2.8.0
+[2.7.1]: https://github.com/JN0V/DomoticsCore/compare/v2.7.0...v2.7.1
+[2.7.0]: https://github.com/JN0V/DomoticsCore/compare/v2.6.1...v2.7.0
+[2.6.1]: https://github.com/JN0V/DomoticsCore/compare/v2.6.0...v2.6.1
+[2.6.0]: https://github.com/JN0V/DomoticsCore/compare/v2.5.0...v2.6.0
+[2.5.0]: https://github.com/JN0V/DomoticsCore/compare/v2.4.0...v2.5.0
+[2.4.0]: https://github.com/JN0V/DomoticsCore/compare/v2.3.0...v2.4.0
+[2.3.0]: https://github.com/JN0V/DomoticsCore/compare/v2.2.0...v2.3.0
+[2.2.0]: https://github.com/JN0V/DomoticsCore/compare/v2.1.1...v2.2.0
+[2.1.1]: https://github.com/JN0V/DomoticsCore/compare/v2.1.0...v2.1.1
+[2.1.0]: https://github.com/JN0V/DomoticsCore/compare/v2.0.1...v2.1.0
+[2.0.1]: https://github.com/JN0V/DomoticsCore/releases/tag/v2.0.1
+[2.0.0]: https://github.com/JN0V/DomoticsCore/releases/tag/v2.0.0
+[1.9.0]: https://github.com/JN0V/DomoticsCore/releases/tag/v1.9.0
+[1.6.0]: https://github.com/JN0V/DomoticsCore/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/JN0V/DomoticsCore/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/JN0V/DomoticsCore/compare/v1.3.3...v1.4.0
+[1.3.3]: https://github.com/JN0V/DomoticsCore/compare/v1.3.2...v1.3.3
+[1.3.2]: https://github.com/JN0V/DomoticsCore/compare/v1.3.0...v1.3.2
+[1.3.0]: https://github.com/JN0V/DomoticsCore/compare/v1.2.1...v1.3.0
+[1.2.1]: https://github.com/JN0V/DomoticsCore/compare/v1.1.4...v1.2.1
+[1.1.4]: https://github.com/JN0V/DomoticsCore/releases/tag/v1.1.4
+[1.1.3]: https://github.com/JN0V/DomoticsCore/releases/tag/v1.1.3
+[1.1.2]: https://github.com/JN0V/DomoticsCore/releases/tag/v1.1.2
+[1.1.1]: https://github.com/JN0V/DomoticsCore/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/JN0V/DomoticsCore/releases/tag/v1.1.0
+[1.0.3]: https://github.com/JN0V/DomoticsCore/releases/tag/v1.0.3
+[1.0.2]: https://github.com/JN0V/DomoticsCore/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/JN0V/DomoticsCore/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/JN0V/DomoticsCore/releases/tag/v1.0.0
