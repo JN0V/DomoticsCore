@@ -188,9 +188,11 @@ public:
         if (!initialized) return;
 
         // Publish shutdown start event and dispatch immediately
-        // so listeners can react before components are shut down
+        // so listeners can react before components are shut down. A backlog
+        // of more than 8 events may sit ahead of it: drain, up to what the
+        // queue can hold, as the per-component poll below does.
         eventBus.publish(Events::EVENT_SHUTDOWN_START);  // BUG-30: see EVENT_SYSTEM_READY above
-        eventBus.poll();
+        eventBus.poll(DomoticsCore::Utils::QueueCost::kMaxEntries);
 
         // Shutdown in reverse order
         for (auto it = initializationOrder.rbegin(); it != initializationOrder.rend(); ++it) {
