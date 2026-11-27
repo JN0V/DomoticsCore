@@ -187,6 +187,73 @@ void test_event_shutdown_start_published(void) {
     TEST_ASSERT_TRUE(shutdownStartReceived);
 }
 
+// What a component saw at shutdown, in order: the shutdown notice, the
+// cleanup message it published in answer, and its own shutdown.
+static std::vector<String> noticeLog;
+static Utils::EventBus* noticeBus = nullptr;
+
+class NoticeListener : public IComponent {
+public:
+    NoticeListener(const char* name) {
+        metadata.name = name;
+        metadata.version = "1.0.0";
+    }
+    ComponentStatus begin() override {
+        noticeBus = &eventBus();
+        eventBus().subscribe(Events::EVENT_SHUTDOWN_START, [](const void*) {
+            noticeLog.push_back("notice");
+            noticeBus->publish(String("cleanup/done"));
+        }, this);
+        eventBus().subscribe(String("cleanup/done"), [](const void*) {
+            noticeLog.push_back("cleanup");
+        }, this);
+        return ComponentStatus::Success;
+    }
+    void loop() override {}
+    ComponentStatus shutdown() override {
+        noticeLog.push_back("shutdown");
+        return ComponentStatus::Success;
+    }
+    std::vector<Dependency> getDependencies() const override { return {}; }
+};
+
+// Given more than 8 events already queued and a component that publishes a
+// cleanup message when it hears the shutdown notice,
+// When the device shuts down,
+// Then that component hears the notice before the first component is shut down.
+void test_shutdown_notice_delivered_before_first_shutdown_with_backlog(void) {
+    noticeLog.clear();
+    testCore->addComponent(std::make_unique<NoticeListener>("NoticeListener"));
+    testCore->begin();
+
+    for (int i = 0; i < 20; ++i) {
+        testCore->getEventBus().publish(String("backlog/event"));
+    }
+
+    testCore->shutdown();
+
+    TEST_ASSERT_EQUAL(3, noticeLog.size());
+    TEST_ASSERT_EQUAL_STRING("notice", noticeLog[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("cleanup", noticeLog[1].c_str());
+    TEST_ASSERT_EQUAL_STRING("shutdown", noticeLog[2].c_str());
+}
+
+// Given fewer than 8 queued events,
+// When the device shuts down,
+// Then the shutdown notice is still delivered before any component is shut down.
+void test_shutdown_notice_delivered_before_first_shutdown_few_events(void) {
+    noticeLog.clear();
+    testCore->addComponent(std::make_unique<NoticeListener>("NoticeListener"));
+    testCore->begin();
+
+    testCore->shutdown();
+
+    TEST_ASSERT_EQUAL(3, noticeLog.size());
+    TEST_ASSERT_EQUAL_STRING("notice", noticeLog[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("cleanup", noticeLog[1].c_str());
+    TEST_ASSERT_EQUAL_STRING("shutdown", noticeLog[2].c_str());
+}
+
 int main(int argc, char** argv) {
     UNITY_BEGIN();
 
@@ -198,6 +265,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_event_component_ready_published);
     RUN_TEST(test_event_system_ready_published);
     RUN_TEST(test_event_shutdown_start_published);
+    RUN_TEST(test_shutdown_notice_delivered_before_first_shutdown_with_backlog);
+    RUN_TEST(test_shutdown_notice_delivered_before_first_shutdown_few_events);
 
     return UNITY_END();
 }
