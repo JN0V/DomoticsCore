@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-SystemInfo",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "DomoticsCore SystemInfo component (system metrics, CPU/heap, uptime)",
   "keywords": [
     "esp32",

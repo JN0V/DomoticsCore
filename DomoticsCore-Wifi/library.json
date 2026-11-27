@@ -1,6 +1,6 @@
 {
   "name": "DomoticsCore-Wifi",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "DomoticsCore WiFi component (header-only) providing connection management and AP/STA control",
   "keywords": [
     "esp32",

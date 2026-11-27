@@ -132,7 +132,7 @@ public:
     SystemInfoComponent(const SystemInfoConfig& cfg = SystemInfoConfig()) 
         : config(cfg) {
         metadata.name = "System Info";
-        metadata.version = "1.8.1";  // x-release-please-version
+        metadata.version = "1.8.2";  // x-release-please-version
     }
 
     // IComponent interface
