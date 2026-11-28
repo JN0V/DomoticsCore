@@ -88,6 +88,7 @@ inline int32_t getRSSI() { return WiFiImpl::getRSSI(); }
 inline String getMacAddress() { return WiFiImpl::getMacAddress(); }
 inline void setHostname(const char* hostname) { WiFiImpl::setHostname(hostname); }
 inline void setAutoReconnect(bool enabled) { WiFiImpl::setAutoReconnect(enabled); }
+inline void setSleep(bool enabled) { WiFiImpl::setSleep(enabled); }
 inline int16_t scanNetworks(bool async = false) { return WiFiImpl::scanNetworks(async); }
 inline String getScannedSSID(uint8_t index) { return WiFiImpl::getScannedSSID(index); }
 inline int32_t getScannedRSSI(uint8_t index) { return WiFiImpl::getScannedRSSI(index); }

@@ -156,6 +156,10 @@ public:
         // Normal STA connection
         HAL::WiFiHAL::setMode(HAL::WiFiHAL::Mode::Station);
         HAL::WiFiHAL::setAutoReconnect(false);
+#ifdef DOMOTICS_WIFI_NO_SLEEP
+        // Measurement build: modem sleep off, to compare upload speed/RTT/retransmissions
+        HAL::WiFiHAL::setSleep(false);
+#endif
         ComponentStatus status = connectToWifi();
         setStatus(status);
         return status;
