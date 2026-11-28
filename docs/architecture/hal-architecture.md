@@ -3,6 +3,7 @@ sources: [DomoticsCore-Core/include/DomoticsCore/Platform_HAL.h, DomoticsCore-Co
 checked: ae5715e
 judged: 1e9326b
 verified: agent:documentalist
+judged-in-parts: 0dbc4fd
 -->
 # HAL Architecture: Routing Header + Platform Files
 
@@ -41,11 +42,11 @@ The actual pattern used in `Platform_HAL.h` (the root routing header):
 #endif
 ```
 
-The same pattern is used by all component HAL files. Example for a component HAL:
+Storage and Update HALs follow the same pattern, but some (e.g. `WebUI_HAL.h`) route on `ARDUINO_ARCH_*` macros instead. Example for a component HAL:
 
 ```cpp
 // Storage_HAL.h
-#pragma once
+// guarded by #ifndef DOMOTICS_CORE_HAL_STORAGE_H
 #include "DomoticsCore/Platform_HAL.h"
 
 #if DOMOTICS_PLATFORM_ESP32
